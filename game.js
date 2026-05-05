@@ -4,6 +4,10 @@ class GameScene extends Phaser.Scene {
             frameWidth: 32,
             frameHeight: 32
         });
+        this.load.spritesheet('slime_red', 'assets/Slime_Red_32x32.png', {
+            frameWidth: 32,
+            frameHeight: 32
+        });
         this.load.spritesheet('tiles', 'assets/roguelikeDungeon_transparent.png', {
             frameWidth: 17,
             frameHeight: 17
@@ -17,7 +21,7 @@ class GameScene extends Phaser.Scene {
         this.WORLD_WIDTH = 200;
         this.WORLD_HEIGHT = 150;
         this.SLIME_Y_OFFSET = -10;
-        
+
         this.NOTHING = 0;
         this.FLOOR = 1;
         this.WALL = 2;
@@ -45,6 +49,20 @@ class GameScene extends Phaser.Scene {
         
         this.renderWorld();
         this.placePlayer();
+        // enemy management
+
+        this.anims.create({
+            key: 'red_idle',
+            frames: [
+                { key: 'slime_red', frame: 0 },
+                { key: 'slime_red', frame: 18 }
+            ],
+            frameRate: 2,
+            repeat: -1
+        });
+
+        this.enemies = [];
+        this.spawnEnemies();
         
         this.anims.create({
             key: 'idle',
@@ -55,7 +73,7 @@ class GameScene extends Phaser.Scene {
             frameRate: 2,
             repeat: -1
         });
-        
+
         // camera follows player
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setBounds(0, 0, this.WORLD_WIDTH * this.TILE_SIZE, this.WORLD_HEIGHT * this.TILE_SIZE);
@@ -70,6 +88,8 @@ class GameScene extends Phaser.Scene {
         
         this.lastMoveTime = 0;
         this.moveCooldown = 200;
+        this.lastEnemyMoveTime = 0;
+        this.enemyMoveCooldown = 1200;
         this.idleDelay = 500;
         this.isIdling = false;
     }
@@ -363,6 +383,14 @@ class GameScene extends Phaser.Scene {
                 const newX = this.playerX + dx;
                 const newY = this.playerY + dy;
                 
+                // check if moving into an enemy
+                const enemyAtTarget = this.getEnemyAt(newX, newY);
+                if (enemyAtTarget) {
+                    this.takeDamage(1);
+                    this.lastMoveTime = time;
+                    return;
+                }
+
                 if (newX >= 0 && newX < this.WORLD_WIDTH &&
                     newY >= 0 && newY < this.WORLD_HEIGHT &&
                     this.world[newX][newY] === this.FLOOR) {
@@ -379,6 +407,10 @@ class GameScene extends Phaser.Scene {
                     this.updateHUD();
                 }
             }
+            if (time - this.lastEnemyMoveTime >= this.enemyMoveCooldown) {
+                this.moveEnemies();
+                this.lastEnemyMoveTime = time;
+            }    
         }
         
         if (!this.isIdling && time - this.lastMoveTime > this.idleDelay) {
@@ -431,6 +463,223 @@ class GameScene extends Phaser.Scene {
         this.input.on('pointerup', () => {
             isPointerDown = false;
             this.touchInput = { up: false, down: false, left: false, right: false };
+        });
+    }
+
+    spawnEnemies() {
+        const numEnemies = 15 + Math.floor(this.rng() * 10); // 15-25 enemies (more to find)
+        let spawned = 0;
+        let attempts = 0;
+        
+        while (spawned < numEnemies && attempts < 1000) {
+            const x = Math.floor(this.rng() * this.WORLD_WIDTH);
+            const y = Math.floor(this.rng() * this.WORLD_HEIGHT);
+            
+            // must be floor tile, not too close to player
+            if (this.world[x][y] === this.FLOOR) {
+                const distToPlayer = Math.abs(x - this.playerX) + Math.abs(y - this.playerY);
+                if (distToPlayer > 5 && distToPlayer < 50) { // spawn within reasonable distance
+                    this.createEnemy(x, y);
+                    spawned++;
+                }
+            }
+            attempts++;
+        }
+        
+        console.log(`Spawned ${this.enemies.length} enemies`);
+    }
+
+    createEnemy(x, y) {
+        const sprite = this.add.sprite(
+            x * this.TILE_SIZE + this.TILE_SIZE / 2,
+            y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET,
+            'slime_red',
+            0
+        );
+        sprite.setScale(this.SLIME_SCALE);
+        sprite.play('red_idle');
+        
+        const enemy = {
+            x: x,
+            y: y,
+            sprite: sprite,
+            health: 3,
+            maxHealth: 3
+        };
+        
+        this.enemies.push(enemy);
+    }
+
+    takeDamage(amount) {
+        this.health -= amount;
+        
+        // visual feedback - flash player red
+        this.player.setTint(0xff0000);
+        this.time.delayedCall(200, () => {
+            this.player.clearTint();
+        });
+        
+        this.updateHUD();
+        
+        // check for death
+        if (this.health <= 0) {
+            this.gameOver();
+        }
+    }
+
+    gameOver() {
+        // for now just log it, we'll make a proper screen later
+        console.log("You died!");
+        this.scene.restart(); // restart the game
+    }
+
+    getEnemyAt(x, y) {
+        for (let enemy of this.enemies) {
+            if (enemy.x === x && enemy.y === y) {
+                return enemy;
+            }
+        }
+        return null;
+    }
+
+    // BFS pathfinding - finds shortest path from (startX, startY) to (targetX, targetY)
+    findPathBFS(startX, startY, targetX, targetY) {
+        // if already at target, no path needed
+        if (startX === targetX && startY === targetY) {
+            return null;
+        }
+        
+        const queue = [];
+        const visited = new Set();
+        const parent = new Map();
+        
+        // start position
+        const startKey = `${startX},${startY}`;
+        queue.push({ x: startX, y: startY });
+        visited.add(startKey);
+        parent.set(startKey, null);
+        
+        // BFS
+        while (queue.length > 0) {
+            const current = queue.shift();
+            
+            // found target
+            if (current.x === targetX && current.y === targetY) {
+                return this.reconstructPath(parent, startX, startY, targetX, targetY);
+            }
+            
+            // check 4 neighbors (up, down, left, right)
+            const neighbors = [
+                { x: current.x, y: current.y - 1 },  // up
+                { x: current.x, y: current.y + 1 },  // down
+                { x: current.x - 1, y: current.y },  // left
+                { x: current.x + 1, y: current.y }   // right
+            ];
+            
+            for (let neighbor of neighbors) {
+                const nx = neighbor.x;
+                const ny = neighbor.y;
+                const nKey = `${nx},${ny}`;
+                
+                // skip if already visited
+                if (visited.has(nKey)) continue;
+                
+                // skip if out of bounds
+                if (nx < 0 || nx >= this.WORLD_WIDTH || ny < 0 || ny >= this.WORLD_HEIGHT) continue;
+                
+                // skip if not floor (wall or nothing)
+                if (this.world[nx][ny] !== this.FLOOR) continue;
+                
+                // skip if another enemy is there (don't path through enemies)
+                if (this.getEnemyAt(nx, ny)) continue;
+                
+                // valid neighbor
+                visited.add(nKey);
+                parent.set(nKey, current);
+                queue.push({ x: nx, y: ny });
+            }
+        }
+        
+        // no path found
+        return null;
+    }
+
+    // reconstruct the path from parent pointers
+    reconstructPath(parent, startX, startY, targetX, targetY) {
+        const path = [];
+        let current = { x: targetX, y: targetY };
+        
+        while (current) {
+            path.unshift(current);
+            const key = `${current.x},${current.y}`;
+            current = parent.get(key);
+        }
+        
+        return path;
+    }
+
+    // move all enemies toward the player
+    moveEnemies() {
+        for (let enemy of this.enemies) {
+            const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
+            
+            if (dist < 20) {
+                const path = this.findPathBFS(enemy.x, enemy.y, this.playerX, this.playerY);
+                
+                if (path && path.length > 1) {
+                    const nextStep = path[1];
+                    
+                    // if next step is player's position, attack!
+                    if (nextStep.x === this.playerX && nextStep.y === this.playerY) {
+                        this.enemyAttackAnimation(enemy, this.playerX, this.playerY); // ADD THIS
+                        this.takeDamage(1);
+                        continue;
+                    }
+                    
+                    // move enemy to next step
+                    enemy.x = nextStep.x;
+                    enemy.y = nextStep.y;
+                    
+                    // update sprite position
+                    enemy.sprite.x = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+                    enemy.sprite.y = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+                }
+            }
+        }
+    }
+
+    enemyAttackAnimation(enemy, targetX, targetY) {
+        // calculate direction toward target
+        const dirX = targetX - enemy.x;
+        const dirY = targetY - enemy.y;
+        
+        // move sprite slightly toward target (about 40% of a tile)
+        const lungeDistance = this.TILE_SIZE * 0.4;
+        const targetSpriteX = enemy.sprite.x + (dirX * lungeDistance);
+        const targetSpriteY = enemy.sprite.y + (dirY * lungeDistance);
+        
+        // squish the sprite (scale down then back up)
+        this.tweens.add({
+            targets: enemy.sprite,
+            scaleX: this.SLIME_SCALE * 0.8, // squish horizontally
+            scaleY: this.SLIME_SCALE * 1.2, // stretch vertically
+            duration: 100,
+            yoyo: true, // return to normal
+            ease: 'Quad.easeOut'
+        });
+        
+        // lunge toward player
+        this.tweens.add({
+            targets: enemy.sprite,
+            x: targetSpriteX,
+            y: targetSpriteY,
+            duration: 150,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                // snap back to grid position
+                enemy.sprite.x = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+                enemy.sprite.y = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+            }
         });
     }
 }

@@ -1,0 +1,69 @@
+This is for notes:
+
+important notes: 
+- enemies will gain like 0.2 seconds stun immunity after each stun to prevent like stunlock bugs
+- after switching from an element you cannot switch to it again for a minute, and if any other elements have <10s cooldown, they are given a 10 second cooldown as well. this is to prevent spamming element changes
+e
+Antagonistic enemies will be in frenzy mode in hard mode 
+
+Power ups: 
+- stealth, go invisible for 2.5 seconds
+- dash: dash 3 tiles in the next direction you press. invulnerable in the dash
+
+Elements:
+    Lightning:
+    - main attack (retribution)
+        - 
+    - special passive ability
+        - chain: attacks chain to enemies within 2 tiles of each other, each subsequent chain dealing 50% less damage. normally, chained targets cannot be hurt by chain again
+        - thunder mark: whenever an enemy is hurt by lightning, apply a stack of thunder which lasts for 5 seconds. if 3 stacks are achieved on a target, stuns them for 1.5 seconds, but they take 40% less damage.
+    - ultimate: fork cd: 59s
+        - rebribution is now automated and strikes any enemy within a 4 tile radius. however, chain will now chain between enemies indefinitely until damage drops near 0, and the damage falloff between chains is decreased to only -30%. this makes lightning a crowd control powerhouse.
+
+        so the idea of the lightning element is aoe control
+
+    Fire:
+    - main attack (fireball) cd: 2s
+        - fires a fireball in the direction of the mouse relative to the player position
+    - special passive ability
+        - burn: attacks inflict burn stacks on the enemy. these stacks disappear when no more consecutive attacks are inflicted on the enemy in 4 seconds. there are 4 degrees of burn
+            - 1st degree: small damage and only 2 ticks, every 3 seconds, requires 0 stacks
+            - 2nd degree: mediocre damage and 4 ticks, every 2 seconds, requires 3 stacks
+            - 3rd degree: high damage and 4 ticks, every second, requires 6 stacks
+            - 4th degree: very high damage and 4 ticks, every half second, requires 12 stacks
+            - important note: when progressing to a higher degree, the previous remaining ticks of the lower burn are dissolved and only the higher tier burn will apply
+            - another important note: when inflicting a burn on a certain degree, it will only refresh the burn of the the degree it is currently in. so scorching an enemy that is already in degree 2 isnt as worth it as scorching an enemy that will move from degree 1 to 2
+    - ultimate: scorch cd: 1m
+        - in a small radius around your mouse pointer, apply 1 burn stack every 0.5 seconds to all enemies in that radius, this lasts for 3 seconds (so applies a maximum of 6 stacks but you can move it around to be strategic as higher stacks in the same degree dont do anything)        
+
+        so the idea of the fire element is pure compounding single target dps (like say bosses)
+
+    Ice:
+    - main attack (hailstorm) cd: 3.2s
+        - choose a 3x3 area with your mouse. when you click it, a hailstorm will rain down for 3 seconds, dealing small damage every 0.25 seconds and slowing the enemy by 0.7x
+    - special passive ability
+        - ice skate: whenever the player moves, converts the previous tile into an ice tile, which lasts for 2 seconds. this ice tile slows any enemy by 0.7x for 2 seconds.
+        - subzero: everytime an enemy is hit by a skill from the ice element (passive or active attack), every 0.2 seconds theres a 5% chance for the enemy to be *frozen* for a second. frozen enemies cannot move and enter the *brittle* state 
+        - brittle: when an enemy is *frozen*, they receive 1.5x damage in the duration.
+    - ultimate: blizzard of courage cd: 1m30s
+        - enters a state where you take 60% less damage from all sources. in this state, your main attack cooldown is reduced to 1 seconds, and the chance for the freeze ability is increased to 70%.
+            - in this state, everytime damage is taken, the cooldown of hailstorm is reduced by 0.3 seconds, allowing you to spam the chip damage more often. this passive has a cooldown of 0.2 seconds so its not broken when tanking
+
+        so the idea of the ice element is tank and utility. this can be comboed with like fire or lightning, where you freeze as many enemies as possible with ice ult then change to fire or lightning to take advantage of brittle
+
+    Cosmic: (the high cortisol element)
+    - main attack (cosmic beam) cd: 0s
+        - consumes 1 cosmic charge. 
+        - fires an endless axis-wide beam that is one tile wide that extends indefinitely in the direction where you last moved. this attack takes 1.5s to charge up and deals huge damage.
+    - special passive ability
+        - cosmic charge: in order to use any of cosmics abilities, the player must accumulate cosmic charge
+            - cosmic charges spawn randomly in battle dungeons across the map. these cosmic charges despawn every 3 seconds, and regenerated in random locations again.
+            - cosmic charges also regenerate passively, every 20 seconds.
+            - cosmic charges are not lost when switching elements. instead, only 0.75x of cosmic charge is retained before switching elements
+            - you can stack up to 15 charges.
+    - ultimate: extraterrestrial cd: 0s
+        - this skill's potency depends on the charge threshold you are in. 1/2/3 means that 1 will apply to 1-5 charge threshold, 2 will apply to 6-10 charge threshold, and 3 will apply to 11-15 charge threshold
+        - immediately gains a burst of 100%/60%/30% speed that decays rapidly over the next 7/4/2 seconds (decreases by 10% per 0.5 seconds, so it ends with 60%/80%/90% of original speed) the resulting slow debuff lasts for 2 seconds
+        - in this state, beams fired by cosmic beam are 5/3/3 tiles wide and deal 1.5x/1.25x/1x damage, but consumes 2/2/1 charges.
+        - this skill only ends if charges are not spent up in 10 seconds, or if all charges have been used up.
+
