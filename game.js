@@ -61,6 +61,9 @@ class GameScene extends Phaser.Scene {
         
         // create HUD (uses scrollFactor 0 so it stays fixed on screen)
         this.createHUD();
+
+        // for mobile
+        this.createTouchControls();
         
         this.keys = this.input.keyboard.addKeys('W,A,S,D');
         
@@ -341,10 +344,19 @@ class GameScene extends Phaser.Scene {
         if (time - this.lastMoveTime >= this.moveCooldown) {
             let dx = 0, dy = 0;
             
+            // keyboard input
             if (this.keys.W.isDown) dy = -1;
             else if (this.keys.S.isDown) dy = 1;
             else if (this.keys.A.isDown) dx = -1;
             else if (this.keys.D.isDown) dx = 1;
+            
+            // touch input (only if mobile and no keyboard input)
+            if (this.isMobile && dx === 0 && dy === 0) {
+                if (this.touchInput.up) dy = -1;
+                else if (this.touchInput.down) dy = 1;
+                else if (this.touchInput.left) dx = -1;
+                else if (this.touchInput.right) dx = 1;
+            }
             
             if (dx !== 0 || dy !== 0) {
                 const newX = this.playerX + dx;
@@ -357,7 +369,7 @@ class GameScene extends Phaser.Scene {
                     this.playerX = newX;
                     this.playerY = newY;
                     this.player.x = newX * this.TILE_SIZE + this.TILE_SIZE / 2;
-                    this.player.y = newY * this.TILE_SIZE + this.TILE_SIZE / 2 - 10;
+                    this.player.y = newY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
                     this.lastMoveTime = time;
                     this.player.stop();
                     this.player.setFrame(0);
@@ -372,6 +384,61 @@ class GameScene extends Phaser.Scene {
             this.player.play('idle');
             this.isIdling = true;
         }
+    }
+
+    createTouchControls() {
+        // detect if mobile
+        this.isMobile = !this.sys.game.device.os.desktop;
+        
+        if (!this.isMobile) return;
+        
+        const buttonSize = 70;
+        const padding = 20;
+        const baseX = padding + buttonSize;
+        const baseY = this.scale.height - padding - buttonSize;
+        
+        // create 4 directional buttons
+        const buttonStyle = { fontSize: '32px', color: '#ffffff' };
+        const buttonAlpha = 0.4;
+        
+        // up
+        this.btnUp = this.add.rectangle(baseX, baseY - buttonSize, buttonSize, buttonSize, 0x000000, buttonAlpha)
+            .setScrollFactor(0).setInteractive();
+        this.add.text(baseX, baseY - buttonSize, '▲', buttonStyle).setOrigin(0.5).setScrollFactor(0);
+        
+        // down
+        this.btnDown = this.add.rectangle(baseX, baseY + buttonSize, buttonSize, buttonSize, 0x000000, buttonAlpha)
+            .setScrollFactor(0).setInteractive();
+        this.add.text(baseX, baseY + buttonSize, '▼', buttonStyle).setOrigin(0.5).setScrollFactor(0);
+        
+        // left
+        this.btnLeft = this.add.rectangle(baseX - buttonSize, baseY, buttonSize, buttonSize, 0x000000, buttonAlpha)
+            .setScrollFactor(0).setInteractive();
+        this.add.text(baseX - buttonSize, baseY, '◀', buttonStyle).setOrigin(0.5).setScrollFactor(0);
+        
+        // right
+        this.btnRight = this.add.rectangle(baseX + buttonSize, baseY, buttonSize, buttonSize, 0x000000, buttonAlpha)
+            .setScrollFactor(0).setInteractive();
+        this.add.text(baseX + buttonSize, baseY, '▶', buttonStyle).setOrigin(0.5).setScrollFactor(0);
+        
+        // track which buttons are being pressed
+        this.touchInput = { up: false, down: false, left: false, right: false };
+        
+        this.btnUp.on('pointerdown', () => this.touchInput.up = true);
+        this.btnUp.on('pointerup', () => this.touchInput.up = false);
+        this.btnUp.on('pointerout', () => this.touchInput.up = false);
+        
+        this.btnDown.on('pointerdown', () => this.touchInput.down = true);
+        this.btnDown.on('pointerup', () => this.touchInput.down = false);
+        this.btnDown.on('pointerout', () => this.touchInput.down = false);
+        
+        this.btnLeft.on('pointerdown', () => this.touchInput.left = true);
+        this.btnLeft.on('pointerup', () => this.touchInput.left = false);
+        this.btnLeft.on('pointerout', () => this.touchInput.left = false);
+        
+        this.btnRight.on('pointerdown', () => this.touchInput.right = true);
+        this.btnRight.on('pointerup', () => this.touchInput.right = false);
+        this.btnRight.on('pointerout', () => this.touchInput.right = false);
     }
 }
 
