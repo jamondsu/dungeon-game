@@ -16,6 +16,7 @@ class GameScene extends Phaser.Scene {
         this.SLIME_SCALE = 1.2;
         this.WORLD_WIDTH = 200;
         this.WORLD_HEIGHT = 150;
+        this.SLIME_Y_OFFSET = -10;
         
         this.NOTHING = 0;
         this.FLOOR = 1;
@@ -387,58 +388,50 @@ class GameScene extends Phaser.Scene {
     }
 
     createTouchControls() {
-        // detect if mobile
         this.isMobile = !this.sys.game.device.os.desktop;
         
         if (!this.isMobile) return;
         
-        const buttonSize = 70;
-        const padding = 20;
-        const baseX = padding + buttonSize;
-        const baseY = this.scale.height - padding - buttonSize;
-        
-        // create 4 directional buttons
-        const buttonStyle = { fontSize: '32px', color: '#ffffff' };
-        const buttonAlpha = 0.4;
-        
-        // up
-        this.btnUp = this.add.rectangle(baseX, baseY - buttonSize, buttonSize, buttonSize, 0x000000, buttonAlpha)
-            .setScrollFactor(0).setInteractive();
-        this.add.text(baseX, baseY - buttonSize, '▲', buttonStyle).setOrigin(0.5).setScrollFactor(0);
-        
-        // down
-        this.btnDown = this.add.rectangle(baseX, baseY + buttonSize, buttonSize, buttonSize, 0x000000, buttonAlpha)
-            .setScrollFactor(0).setInteractive();
-        this.add.text(baseX, baseY + buttonSize, '▼', buttonStyle).setOrigin(0.5).setScrollFactor(0);
-        
-        // left
-        this.btnLeft = this.add.rectangle(baseX - buttonSize, baseY, buttonSize, buttonSize, 0x000000, buttonAlpha)
-            .setScrollFactor(0).setInteractive();
-        this.add.text(baseX - buttonSize, baseY, '◀', buttonStyle).setOrigin(0.5).setScrollFactor(0);
-        
-        // right
-        this.btnRight = this.add.rectangle(baseX + buttonSize, baseY, buttonSize, buttonSize, 0x000000, buttonAlpha)
-            .setScrollFactor(0).setInteractive();
-        this.add.text(baseX + buttonSize, baseY, '▶', buttonStyle).setOrigin(0.5).setScrollFactor(0);
-        
-        // track which buttons are being pressed
         this.touchInput = { up: false, down: false, left: false, right: false };
         
-        this.btnUp.on('pointerdown', () => this.touchInput.up = true);
-        this.btnUp.on('pointerup', () => this.touchInput.up = false);
-        this.btnUp.on('pointerout', () => this.touchInput.up = false);
+        let startX = 0;
+        let startY = 0;
+        let isPointerDown = false;
+        const swipeThreshold = 40;
         
-        this.btnDown.on('pointerdown', () => this.touchInput.down = true);
-        this.btnDown.on('pointerup', () => this.touchInput.down = false);
-        this.btnDown.on('pointerout', () => this.touchInput.down = false);
+        this.input.on('pointerdown', (pointer) => {
+            startX = pointer.x;
+            startY = pointer.y;
+            isPointerDown = true;
+        });
         
-        this.btnLeft.on('pointerdown', () => this.touchInput.left = true);
-        this.btnLeft.on('pointerup', () => this.touchInput.left = false);
-        this.btnLeft.on('pointerout', () => this.touchInput.left = false);
+        this.input.on('pointermove', (pointer) => {
+            if (!isPointerDown) return;
+            
+            const dx = pointer.x - startX;
+            const dy = pointer.y - startY;
+            const absDx = Math.abs(dx);
+            const absDy = Math.abs(dy);
+            
+            // reset all directions
+            this.touchInput = { up: false, down: false, left: false, right: false };
+            
+            // only trigger if past threshold
+            if (absDx < swipeThreshold && absDy < swipeThreshold) return;
+            
+            if (absDx > absDy) {
+                if (dx > 0) this.touchInput.right = true;
+                else this.touchInput.left = true;
+            } else {
+                if (dy > 0) this.touchInput.down = true;
+                else this.touchInput.up = true;
+            }
+        });
         
-        this.btnRight.on('pointerdown', () => this.touchInput.right = true);
-        this.btnRight.on('pointerup', () => this.touchInput.right = false);
-        this.btnRight.on('pointerout', () => this.touchInput.right = false);
+        this.input.on('pointerup', () => {
+            isPointerDown = false;
+            this.touchInput = { up: false, down: false, left: false, right: false };
+        });
     }
 }
 
