@@ -1,11 +1,39 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Dungeon Game</title>
+    <title>Dungeon Slime</title>
+    
+    <!-- prevent caching so updates show immediately -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
+    <!-- mobile viewport, prevents zoom and resize quirks -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    
+    <!-- phaser library -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    
+    <!-- styling -->
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        background: black;
+        overflow: hidden;
+        touch-action: none; /* prevents mobile pull-to-refresh and other touch gestures */
+      }
+      
+      canvas {
+        display: block;
+      }
+    </style>
   </head>
   <body>
     <script src="game.js"></script>
   </body>
 </html>
-
