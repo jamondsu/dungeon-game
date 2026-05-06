@@ -25,6 +25,8 @@ class GameScene extends Phaser.Scene {
         this.NOTHING = 0;
         this.FLOOR = 1;
         this.WALL = 2;
+
+        this.shiftWasDown = false;  
         
         this.FRAMES = {
             FLOOR: 156,
@@ -49,11 +51,11 @@ class GameScene extends Phaser.Scene {
             degree2: 1.5,
             degree3: 2.0,
             degree4: 2.5,
-            degree5: 1.25
+            degree5: 0.5
         };
         
         // game state
-        this.maxHealth = 5;
+        this.maxHealth = 100;
         this.health = this.maxHealth;
         this.lastPlayerDamageTime = 0;
         this.playerDamageCooldown = 500;
@@ -110,7 +112,7 @@ class GameScene extends Phaser.Scene {
 
         // Element system
         this.currentElement = 'fire'; // start with fire
-        this.elements = ['fire', 'ice', 'lightning'];
+        this.elements = ['fire', 'ice', 'lightning', 'cosmic'];
         this.elementSwitchCooldown = 1000; // 1 second cooldown
         this.lastElementSwitchTime = 0;
 
@@ -122,21 +124,22 @@ class GameScene extends Phaser.Scene {
         this.hailstormDamage = 1.25;
 
         this.lightningChainRange = 4; // tiles - range to chain between enemies
-        this.baseLightningDamage = 0.6; // weak first hit
-        this.lightningChainFalloff = 0.6; // 60% damage per chain (manual attacks)
+        this.baseLightningDamage = 1; // weak first hit
+        this.lightningChainFalloff = 0.5; // 50% damage per chain (manual attacks)
         this.lightningUltChainFalloff = 0.95; // 95% damage per chain (ult attacks)
-        this.lightningCooldown = 100;
+        this.lightningCooldown = 250;
         this.lightningMaxRange = 20; // can target enemies up to 20 tiles away
 
         this.stormCloud = null;
+        this.stormCloudRadius = 8;
         this.stormCloudCharge = 100;
-        this.stormCloudAutoAttackInterval = 90; 
+        this.stormCloudAutoAttackInterval = 150; 
         this.stormCloudLastAttack = 0;
-        this.stormCloudChargeDecayPerAttack = 1; 
+        this.stormCloudChargeDecayPerAttack = 3; 
         this.stormCloudActive = false;
 
         this.stormField = null;
-        this.stormFieldRadius = 4; 
+        this.stormFieldRadius = 6; 
         this.stormFieldMaxRadius = 15; 
         this.stormFieldTickInterval = 75; 
         this.stormFieldLastTick = 0;
@@ -145,9 +148,62 @@ class GameScene extends Phaser.Scene {
         this.stormFieldLifeGainCooldown = 800;  
         this.stormFieldRadiusGrowthPerHit = 0.15;
 
-        // Q key to switch elements
-        this.input.keyboard.on('keydown-Q', () => {
-            this.switchElement();
+        // COSMIC ELEMENT - BATTERY CHARGE SYSTEM
+        this.cosmicBatteryCharges = 5; // start with 5 charges
+        this.cosmicMaxCharges = 10; // cap at 10
+        this.cosmicPassiveChargeInterval = 10000; // gain 1 charge every 10 seconds
+        this.lastCosmicPassiveCharge = 0;
+        this.cosmicDropChance = 0.5; // 50% chance on enemy death
+
+        this.cosmicCharging = false;
+        this.cosmicChargeStartTime = 0;
+        this.cosmicChargeHoldTime = 0; // how long holding
+        this.cosmicChargeIndicator = null;
+
+        // Beam properties
+        this.cosmicBaseBeamDamage = 2.0;
+        this.cosmicBeamWidth = 1.5; // tiles
+
+        // Cosmic marks system
+        this.cosmicMarkDamagePerStack = 5; // bonus damage per mark consumed
+        this.cosmicMaxMarks = 3; // max 3 marks per enemy
+
+        // Black hole ult
+        this.cosmicBlackHole = null;
+        this.cosmicBlackHoleProjectile = null;
+        this.cosmicBlackHoleDuration = 7000; // 5 seconds
+        this.cosmicBlackHoleRadius = 6; // tiles
+        this.cosmicBlackHoleMarkInterval = 1500;
+        this.cosmicBlackHoleSpeed = 50; // projectile speed
+        this.cosmicInfiniteBeamActive = false;
+        this.cosmicInfiniteBeamEndTime = 0;
+        this.cosmicBlackHoleGracePeriod = 4000;
+
+        // Cosmic dash
+        this.cosmicDashDistance = 3; // tiles
+        this.cosmicDashCooldown = 1000; 
+        this.cosmicDashCooldownUlt = 100;
+        this.lastCosmicDashTime = 0;
+        this.cosmicDashStunDuration = 800; // 0.8s stun
+        this.cosmicDashDamage = 3.0; // damage per enemy hit
+
+        // Visual battery display
+        this.cosmicBatteryDisplay = null;
+
+        this.input.keyboard.on('keydown-ONE', () => {
+            this.switchToElement('fire');
+        });
+
+        this.input.keyboard.on('keydown-TWO', () => {
+            this.switchToElement('ice');
+        });
+
+        this.input.keyboard.on('keydown-THREE', () => {
+            this.switchToElement('lightning');
+        });
+
+        this.input.keyboard.on('keydown-FOUR', () => {
+            this.switchToElement('cosmic');
         });
 
         // Element ultimate abilities
@@ -155,12 +211,14 @@ class GameScene extends Phaser.Scene {
         this.ultCooldowns = {
             'fire': 0,   
             'ice': 0,
-            'lightning': 0
+            'lightning': 0,
+            'cosmic': 0
         };
         this.lastUltTimes = {
             'fire': -99999,
             'ice': -99999,
-            'lightning': -99999
+            'lightning': -99999,
+            'cosmic': -99999
         };
 
         // Ice ult specific state
@@ -172,6 +230,32 @@ class GameScene extends Phaser.Scene {
         // E key to activate ult
         this.input.keyboard.on('keydown-E', () => {
             this.activateUlt();
+        });
+
+        // SPACE key to charge cosmic beam
+        this.input.keyboard.on('keydown-SPACE', () => {
+            if (this.currentElement === 'cosmic' && !this.cosmicCharging) {
+                const chargeCost = this.cosmicInfiniteBeamActive ? 2 : 1;
+                if (this.cosmicBatteryCharges >= chargeCost) {
+                    // CONSUME CHARGE IMMEDIATELY
+                    this.cosmicBatteryCharges -= chargeCost;
+                    this.updateHUD();
+                    
+                    this.cosmicCharging = true;
+                    this.cosmicChargeStartTime = this.time.now;
+                } else {
+                    console.log('No charges available!');
+                }
+            }
+        });
+
+        // Cosmic dash: hold Shift to charge, release to dash in last moved direction
+        this.shiftKey = this.input.keyboard.addKey('SHIFT');
+
+        this.input.keyboard.on('keyup-SPACE', () => {
+            if (this.cosmicCharging && this.currentElement === 'cosmic') {
+                this.releaseCosmicBeam();
+            }
         });
 
         // camera follows player
@@ -203,9 +287,17 @@ class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', (pointer) => {
             if (pointer.button !== 0) return; // only left mouse button
             
-            // Check if storm cloud is active - click to deploy
-            if (this.stormCloudActive && this.stormCloud) {
-                this.deployStormField(pointer.x, pointer.y);
+            // Check if storm cloud is active - click to throw it
+            if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
+                this.throwLightning();
+                return;
+            }
+            
+            // COSMIC: Start charging
+            if (this.currentElement === 'cosmic' && !this.cosmicInfiniteBeamActive) {
+                // Don't start charging, SPACE handles it
+                this.pointerX = pointer.x;
+                this.pointerY = pointer.y;
                 return;
             }
             
@@ -216,10 +308,8 @@ class GameScene extends Phaser.Scene {
         });
 
         this.input.on('pointermove', (pointer) => {
-            if (this.isPointerDown) {
-                this.pointerX = pointer.x;
-                this.pointerY = pointer.y;
-            }
+            this.pointerX = pointer.x;
+            this.pointerY = pointer.y;
         });
 
         this.input.on('pointerup', () => {
@@ -277,6 +367,19 @@ class GameScene extends Phaser.Scene {
         });
         this.posText.setOrigin(1, 0);
         this.posText.setScrollFactor(0);
+
+        // Cosmic battery display
+        this.cosmicBatteryDisplay = this.add.text(this.scale.width / 2, 50, '', {
+            fontSize: '24px',
+            fontFamily: 'monospace',
+            color: '#9966ff',
+            stroke: '#000000',
+            strokeThickness: 4,
+            fontStyle: 'bold'
+        });
+        this.cosmicBatteryDisplay.setOrigin(0.5);
+        this.cosmicBatteryDisplay.setScrollFactor(0);
+        this.cosmicBatteryDisplay.setVisible(false);
         
         this.updateHUD();
     }
@@ -289,7 +392,8 @@ class GameScene extends Phaser.Scene {
         const elementSymbols = {
             'fire': '🔥 FIRE',
             'ice': '❄️ ICE',
-            'lightning': '⚡ LIGHTNING'
+            'lightning': '⚡ LIGHTNING',
+            'cosmic': '🌌 COSMIC'
         };
         
         let elementText = elementSymbols[this.currentElement] || '';
@@ -309,6 +413,14 @@ class GameScene extends Phaser.Scene {
         
         if (this.playerX !== undefined) {
             this.posText.setText(`Pos: (${this.playerX}, ${this.playerY}) | Enemies: ${this.enemies.length}`);
+        }
+
+        // Show battery only when using cosmic
+        if (this.currentElement === 'cosmic') {
+            this.cosmicBatteryDisplay.setVisible(true);
+            this.cosmicBatteryDisplay.setText(`⚡ ${this.cosmicBatteryCharges}/${this.cosmicMaxCharges}`);
+        } else {
+            this.cosmicBatteryDisplay.setVisible(false);
         }
     }
     
@@ -539,14 +651,43 @@ class GameScene extends Phaser.Scene {
         };
     }
     
-    update(time, delta) {
+    update(time, delta) {   
+        const preUpdatePlayerX = this.playerX;
+        const preUpdatePlayerY = this.playerY;
+        
+        if (this.currentElement === 'cosmic' && this.shiftKey.isDown && !this.shiftWasDown) {
+            const mouseX = this.input.activePointer.worldX;
+            const mouseY = this.input.activePointer.worldY;
+            const playerCenterX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+            const playerCenterY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+            
+            const dx = mouseX - playerCenterX;
+            const dy = mouseY - playerCenterY;
+            
+            let dirX = 0;
+            let dirY = 0;
+            
+            if (Math.abs(dx) > Math.abs(dy)) {
+                dirX = dx > 0 ? 1 : -1;
+            } else {
+                dirY = dy > 0 ? 1 : -1;
+            }
+            
+            this.cosmicDash(dirX, dirY, preUpdatePlayerX, preUpdatePlayerY);
+        }
+        this.shiftWasDown = this.shiftKey.isDown;
+
         if (time - this.lastMoveTime >= this.moveCooldown) {
             let dx = 0, dy = 0;
             
-            if (this.keys.W.isDown) dy = -1;
-            else if (this.keys.S.isDown) dy = 1;
-            else if (this.keys.A.isDown) dx = -1;
-            else if (this.keys.D.isDown) dx = 1;
+            const isCosmicCharging = this.currentElement === 'cosmic' && this.cosmicCharging;
+
+            if (!isCosmicCharging) {
+                if (this.keys.W.isDown) dy = -1;
+                else if (this.keys.S.isDown) dy = 1;
+                else if (this.keys.A.isDown) dx = -1;
+                else if (this.keys.D.isDown) dx = 1;
+            }
             
             if (this.isMobile && dx === 0 && dy === 0) {
                 if (this.touchInput.up) dy = -1;
@@ -591,7 +732,7 @@ class GameScene extends Phaser.Scene {
             this.isIdling = true;
         }
 
-        if (this.isPointerDown) {
+        if (this.isPointerDown && this.currentElement !== 'cosmic') {
             this.shootAttack(this.pointerX, this.pointerY);
         }
         this.updateFireballs(delta);
@@ -599,6 +740,17 @@ class GameScene extends Phaser.Scene {
         this.updateHailstorms(time);
         this.updateStormCloud(time); 
         this.updateStormField(time);
+        this.updateCosmicPassiveCharge(time);
+        this.updateCosmicCharge(time);
+        this.updateCosmicBlackHoleProjectile(delta);
+        this.updateCosmicBlackHole(time);
+
+        // Check if fast charging grace period ended
+        if (this.cosmicInfiniteBeamActive && this.time.now >= this.cosmicInfiniteBeamEndTime) {
+            this.cosmicInfiniteBeamActive = false;
+            this.player.clearTint();
+            console.log('Cosmic fast charging ended');
+        }
     }
 
     createTouchControls() {
@@ -712,7 +864,13 @@ class GameScene extends Phaser.Scene {
             frozenUntil: 0,        
             isSlowed: false,     
             slowedUntil: 0,
-            lastMoveTime: 0
+            lastMoveTime: 0,
+            isStunned: false,
+            stunnedUntil: 0,
+            
+            // COSMIC MARKS
+            cosmicMarks: 0, // 0-3 marks
+            cosmicMarkVisuals: null
         };
         
         this.enemies.push(enemy);
@@ -839,6 +997,13 @@ class GameScene extends Phaser.Scene {
         const currentTime = this.time.now;
         
         for (let enemy of this.enemies) {
+            // STUN CHECK
+            if (enemy.isStunned && currentTime < enemy.stunnedUntil) {
+                continue;
+            } else if (enemy.isStunned && currentTime >= enemy.stunnedUntil) {
+                enemy.isStunned = false;
+            }
+            
             if (enemy.isFrozen) {
                 if (currentTime >= enemy.frozenUntil) {
                     enemy.isFrozen = false;
@@ -930,6 +1095,74 @@ class GameScene extends Phaser.Scene {
                             }
                         }
                     }
+                    
+                    // Update cosmic mark visuals
+                    if (enemy.cosmicMarkVisuals && enemy.cosmicMarkVisuals.length > 0) {
+                        const markY = enemy.sprite.y - 25;
+                        for (let i = 0; i < enemy.cosmicMarks; i++) {
+                            const offsetX = (i - 1) * 12;
+                            const visualIndex = i * 2;
+                            if (visualIndex < enemy.cosmicMarkVisuals.length) {
+                                enemy.cosmicMarkVisuals[visualIndex].x = enemy.sprite.x + offsetX;
+                                enemy.cosmicMarkVisuals[visualIndex].y = markY;
+                            }
+                            if (visualIndex + 1 < enemy.cosmicMarkVisuals.length) {
+                                enemy.cosmicMarkVisuals[visualIndex + 1].x = enemy.sprite.x + offsetX;
+                                enemy.cosmicMarkVisuals[visualIndex + 1].y = markY;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // SAFEGUARD: Teleport any enemies that ended up in walls back to nearest floor
+        for (let enemy of this.enemies) {
+            if (this.world[enemy.x][enemy.y] !== this.FLOOR) {
+                console.log('Enemy clipped into wall! Teleporting back...');
+                
+                // Find nearest floor tile
+                let foundFloor = false;
+                for (let radius = 1; radius <= 5 && !foundFloor; radius++) {
+                    for (let dx = -radius; dx <= radius && !foundFloor; dx++) {
+                        for (let dy = -radius; dy <= radius && !foundFloor; dy++) {
+                            const checkX = enemy.x + dx;
+                            const checkY = enemy.y + dy;
+                            
+                            if (checkX >= 0 && checkX < this.WORLD_WIDTH &&
+                                checkY >= 0 && checkY < this.WORLD_HEIGHT &&
+                                this.world[checkX][checkY] === this.FLOOR) {
+                                
+                                // Teleport enemy to this floor tile
+                                enemy.x = checkX;
+                                enemy.y = checkY;
+                                enemy.sprite.x = checkX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                                enemy.sprite.y = checkY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+                                
+                                // Update health bars
+                                this.updateEnemyHealthBar(enemy);
+                                
+                                // Update mark visuals
+                                if (enemy.cosmicMarkVisuals && enemy.cosmicMarkVisuals.length > 0) {
+                                    const markY = enemy.sprite.y - 25;
+                                    for (let i = 0; i < enemy.cosmicMarks; i++) {
+                                        const offsetX = (i - 1) * 12;
+                                        const visualIndex = i * 2;
+                                        if (visualIndex < enemy.cosmicMarkVisuals.length) {
+                                            enemy.cosmicMarkVisuals[visualIndex].x = enemy.sprite.x + offsetX;
+                                            enemy.cosmicMarkVisuals[visualIndex].y = markY;
+                                        }
+                                        if (visualIndex + 1 < enemy.cosmicMarkVisuals.length) {
+                                            enemy.cosmicMarkVisuals[visualIndex + 1].x = enemy.sprite.x + offsetX;
+                                            enemy.cosmicMarkVisuals[visualIndex + 1].y = markY;
+                                        }
+                                    }
+                                }
+                                
+                                foundFloor = true;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -985,7 +1218,7 @@ class GameScene extends Phaser.Scene {
         let attackMultiplier = 1.0;
         if (this.currentElement === 'fire') {
             const hasSuperburn = this.enemies.some(e => e.burnDegree === 5 && e.hadSuperburn);
-            attackMultiplier = hasSuperburn ? 1000.0 : 1.0;
+            attackMultiplier = hasSuperburn ? 100000.0 : 1.0;
         }
         
         let baseCooldown;
@@ -1031,11 +1264,11 @@ class GameScene extends Phaser.Scene {
         const dirY = dy / distance;
         
         const hasSuperburn = this.enemies.some(e => e.burnDegree === 5 && e.hadSuperburn);
-        const damageMultiplier = hasSuperburn ? 0.02 : 1.0;
+        const damageMultiplier = hasSuperburn ? 0.0075 : 1.0;
         
         if (hasSuperburn) {
             const baseAngle = Math.atan2(dirY, dirX);
-            const spreadAngle = Math.PI / 8;
+            const spreadAngle = Math.PI / 12;
             
             for (let i = -1; i <= 1; i++) {
                 const angle = baseAngle + (i * spreadAngle);
@@ -1321,16 +1554,23 @@ class GameScene extends Phaser.Scene {
     }
 
     killEnemy(enemy) {
+        // COSMIC: 50% chance to drop charge
+        if (this.currentElement === 'cosmic' && Math.random() < this.cosmicDropChance) {
+            this.addCosmicCharge(enemy.sprite.x, enemy.sprite.y);
+        }
+
         if (enemy.sprite) enemy.sprite.destroy();
         if (enemy.healthBarBg) enemy.healthBarBg.destroy();
         if (enemy.healthBarFill) enemy.healthBarFill.destroy();
         if (enemy.burnText) enemy.burnText.destroy();
+        
         if (enemy.burnIndicators) {
             enemy.burnIndicators.forEach(indicator => {
                 this.tweens.killTweensOf(indicator);
                 indicator.destroy();
             });
         }
+        
         if (enemy.freezeVisuals) {
             this.tweens.killTweensOf(enemy.freezeVisuals.iceBlock);
             this.tweens.killTweensOf(enemy.freezeVisuals.iceBorder);
@@ -1340,21 +1580,37 @@ class GameScene extends Phaser.Scene {
             enemy.freezeVisuals.multiplierText.destroy();
         }
         
+        // COSMIC MARKS CLEANUP (make sure this is here!)
+        if (enemy.cosmicMarkVisuals) {
+            enemy.cosmicMarkVisuals.forEach(v => {
+                this.tweens.killTweensOf(v);
+                v.destroy();
+            });
+            enemy.cosmicMarkVisuals = null; // Set to null after destroying
+        }
+        
         const index = this.enemies.indexOf(enemy);
         if (index > -1) {
             this.enemies.splice(index, 1);
         }
     }
 
-    switchElement() {
+    switchToElement(targetElement) {
         const currentTime = this.time.now;
         
+        // Can't switch to same element
+        if (this.currentElement === targetElement) {
+            return;
+        }
+        
+        // Check cooldown
         if (currentTime - this.lastElementSwitchTime < this.elementSwitchCooldown) {
             return;
         }
         
         this.isPointerDown = false;
         
+        // Clear projectiles
         for (let fireball of this.fireballs) {
             if (fireball.sprite) {
                 fireball.sprite.destroy();
@@ -1362,6 +1618,7 @@ class GameScene extends Phaser.Scene {
         }
         this.fireballs = [];
         
+        // Clear hailstorms
         for (let hailstorm of this.hailstorms) {
             if (hailstorm.visuals) {
                 hailstorm.visuals.forEach(v => {
@@ -1372,14 +1629,14 @@ class GameScene extends Phaser.Scene {
         }
         this.hailstorms = [];
         
-        const currentIndex = this.elements.indexOf(this.currentElement);
-        const nextIndex = (currentIndex + 1) % this.elements.length;
-        this.currentElement = this.elements[nextIndex];
+        // Switch to new element
+        this.currentElement = targetElement;
         
         const colors = {
             'fire': 0xff6600,
             'ice': 0x00ccff,
-            'lightning': 0xffff00
+            'lightning': 0xffff00,
+            'cosmic': 0x9966ff
         };
         
         const pulseColor = colors[this.currentElement];
@@ -1630,7 +1887,6 @@ class GameScene extends Phaser.Scene {
                 targetEnemy
             );
             
-            // Use manual falloff for non-ult attacks
             const falloff = this.stormCloudActive ? this.lightningUltChainFalloff : this.lightningChainFalloff;
             this.performChainLightning(targetEnemy, this.baseLightningDamage * this.damageScaling, [], falloff);
         } else {
@@ -1683,9 +1939,10 @@ class GameScene extends Phaser.Scene {
         
         const graphics = this.add.graphics();
         
-        graphics.lineStyle(3, 0xffff00, 1);
+        // MAIN BOLT - bright yellow core
+        graphics.lineStyle(4, 0xffff00, 1);
         
-        const segments = 6;
+        const segments = 8; // More segments for more jagged look
         const points = [];
         
         for (let i = 0; i <= segments; i++) {
@@ -1701,7 +1958,8 @@ class GameScene extends Phaser.Scene {
                 const perpX = -dy / length;
                 const perpY = dx / length;
                 
-                const offset = (Math.random() - 0.5) * 16;
+                // More aggressive jagged offsets
+                const offset = (Math.random() - 0.5) * 20;
                 
                 points.push({
                     x: x + perpX * offset,
@@ -1712,6 +1970,8 @@ class GameScene extends Phaser.Scene {
             }
         }
         
+        // OUTER GLOW (white/cyan)
+        graphics.lineStyle(12, 0xaaffff, 0.3);
         graphics.beginPath();
         graphics.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) {
@@ -1719,7 +1979,8 @@ class GameScene extends Phaser.Scene {
         }
         graphics.strokePath();
         
-        graphics.lineStyle(6, 0xffffff, 0.4);
+        // MIDDLE LAYER (bright white)
+        graphics.lineStyle(8, 0xffffff, 0.6);
         graphics.beginPath();
         graphics.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) {
@@ -1727,26 +1988,115 @@ class GameScene extends Phaser.Scene {
         }
         graphics.strokePath();
         
+        // CORE BOLT (bright yellow)
+        graphics.lineStyle(4, 0xffff00, 1);
+        graphics.beginPath();
+        graphics.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            graphics.lineTo(points[i].x, points[i].y);
+        }
+        graphics.strokePath();
+        
+        // INNER BRIGHT LINE (pure white)
+        graphics.lineStyle(2, 0xffffff, 1);
+        graphics.beginPath();
+        graphics.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            graphics.lineTo(points[i].x, points[i].y);
+        }
+        graphics.strokePath();
+        
+        // SECONDARY FORKS (more and better)
         for (let i = 1; i < points.length - 1; i++) {
-            if (Math.random() < 0.3) {
-                const forkLength = 10 + Math.random() * 15;
+            if (Math.random() < 0.5) { // 50% chance for forks
+                const forkLength = 15 + Math.random() * 25;
                 const angle = Math.random() * Math.PI * 2;
                 
-                const forkEndX = points[i].x + Math.cos(angle) * forkLength;
-                const forkEndY = points[i].y + Math.sin(angle) * forkLength;
+                const forkMidX = points[i].x + Math.cos(angle) * (forkLength * 0.6);
+                const forkMidY = points[i].y + Math.sin(angle) * (forkLength * 0.6);
                 
-                graphics.lineStyle(2, 0xffff00, 0.8);
+                const forkEndX = points[i].x + Math.cos(angle + (Math.random() - 0.5) * 0.5) * forkLength;
+                const forkEndY = points[i].y + Math.sin(angle + (Math.random() - 0.5) * 0.5) * forkLength;
+                
+                // Fork outer glow
+                graphics.lineStyle(6, 0xaaffff, 0.3);
                 graphics.beginPath();
                 graphics.moveTo(points[i].x, points[i].y);
+                graphics.lineTo(forkMidX, forkMidY);
+                graphics.lineTo(forkEndX, forkEndY);
+                graphics.strokePath();
+                
+                // Fork core
+                graphics.lineStyle(2, 0xffff00, 0.9);
+                graphics.beginPath();
+                graphics.moveTo(points[i].x, points[i].y);
+                graphics.lineTo(forkMidX, forkMidY);
+                graphics.lineTo(forkEndX, forkEndY);
+                graphics.strokePath();
+                
+                // Fork bright line
+                graphics.lineStyle(1, 0xffffff, 1);
+                graphics.beginPath();
+                graphics.moveTo(points[i].x, points[i].y);
+                graphics.lineTo(forkMidX, forkMidY);
                 graphics.lineTo(forkEndX, forkEndY);
                 graphics.strokePath();
             }
         }
         
+        // IMPACT SPARKS at destination
+        const numSparks = 8;
+        for (let i = 0; i < numSparks; i++) {
+            const angle = (Math.PI * 2 / numSparks) * i + Math.random() * 0.3;
+            const length = 8 + Math.random() * 12;
+            const endX = toX + Math.cos(angle) * length;
+            const endY = toY + Math.sin(angle) * length;
+            
+            graphics.lineStyle(2, 0xffff00, 0.8);
+            graphics.beginPath();
+            graphics.moveTo(toX, toY);
+            graphics.lineTo(endX, endY);
+            graphics.strokePath();
+        }
+        
+        // ORIGIN GLOW
+        const originGlow = this.add.circle(fromX, fromY, 8, 0xffff00, 0.6);
+        originGlow.setStrokeStyle(2, 0xffffff, 0.8);
+        
+        // DESTINATION IMPACT
+        const impactFlash = this.add.circle(toX, toY, 12, 0xffffff, 0.9);
+        const impactRing = this.add.circle(toX, toY, 12, 0xffff00, 0);
+        impactRing.setStrokeStyle(3, 0xffff00, 1);
+        
+        // Animate impact
+        this.tweens.add({
+            targets: [impactFlash, impactRing],
+            scaleX: 2,
+            scaleY: 2,
+            alpha: 0,
+            duration: 200,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                impactFlash.destroy();
+                impactRing.destroy();
+            }
+        });
+        
+        // Fade out origin glow
+        this.tweens.add({
+            targets: originGlow,
+            alpha: 0,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: 150,
+            onComplete: () => originGlow.destroy()
+        });
+        
+        // Main bolt fade out (faster)
         this.tweens.add({
             targets: graphics,
             alpha: 0,
-            duration: 150,
+            duration: 120,
             onComplete: () => {
                 graphics.destroy();
             }
@@ -1765,12 +2115,23 @@ class GameScene extends Phaser.Scene {
         const centerPixelX = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const centerPixelY = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
         
+        // Destroy storm cloud visuals
         if (this.stormCloud) {
+            if (this.stormCloud.flashInterval) {
+                this.stormCloud.flashInterval.remove();
+            }
             this.tweens.killTweensOf(this.stormCloud.body);
+            this.tweens.killTweensOf(this.stormCloud.darkCore);
             this.tweens.killTweensOf(this.stormCloud.crackle);
+            this.tweens.killTweensOf(this.stormCloud.outerCrackle);
+            this.stormCloud.sparks.forEach(spark => this.tweens.killTweensOf(spark));
+            
             this.stormCloud.body.destroy();
+            this.stormCloud.darkCore.destroy();
             this.stormCloud.crackle.destroy();
+            this.stormCloud.outerCrackle.destroy();
             this.stormCloud.chargeText.destroy();
+            this.stormCloud.sparks.forEach(spark => spark.destroy());
             this.stormCloud = null;
         }
         
@@ -1824,15 +2185,16 @@ class GameScene extends Phaser.Scene {
             lifespanText: lifespanText,
             tileX: tileX,
             tileY: tileY,
-            currentRadius: startRadius,
             createdAt: this.time.now,
             expiresAt: this.time.now + (this.stormFieldDuration * chargePercent),
             radiusTiles: startRadius,
-            lastLifeGainTime: 0 
+            lastLifeGainTime: 0
         };
         
         this.stormCloudActive = false;
         this.stormFieldLastTick = this.time.now;
+        
+        console.log(`Storm field deployed with ${startRadius.toFixed(1)} tile radius`);
     }
 
     updateStormField(time) {
@@ -1848,6 +2210,7 @@ class GameScene extends Phaser.Scene {
             return;
         }
         
+        // Radius based on charge percentage
         const chargePercent = this.stormCloudCharge / 100;
         const scaledRadius = this.stormField.radiusTiles * chargePercent;
         const radiusPixels = scaledRadius * this.TILE_SIZE;
@@ -1855,42 +2218,58 @@ class GameScene extends Phaser.Scene {
         this.stormField.circle.radius = radiusPixels;
         this.stormField.border.radius = radiusPixels;
         
+        // ATTACK ENEMIES IN FIELD
         if (time - this.stormFieldLastTick >= this.stormFieldTickInterval) {
             this.stormFieldLastTick = time;
             
             const enemiesInField = [];
             
             for (let enemy of this.enemies) {
-                const dist = Math.abs(enemy.x - this.stormField.tileX) + Math.abs(enemy.y - this.stormField.tileY);
-                if (dist <= scaledRadius) {
+                const enemyPixelX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const enemyPixelY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const fieldPixelX = this.stormField.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const fieldPixelY = this.stormField.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+                
+                const dist = Phaser.Math.Distance.Between(
+                    enemyPixelX, enemyPixelY,
+                    fieldPixelX, fieldPixelY
+                );
+                
+                if (dist <= radiusPixels) {
                     enemiesInField.push(enemy);
                 }
             }
             
             if (enemiesInField.length > 0) {
+                // Pick random enemy to start chain from
                 const randomEnemy = enemiesInField[Math.floor(Math.random() * enemiesInField.length)];
                 
+                const fieldPixelX = this.stormField.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const fieldPixelY = this.stormField.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+                
+                // Draw lightning from field center to enemy
                 this.drawLightningBolt(
-                    { sprite: this.stormField.circle },
+                    { sprite: { x: fieldPixelX, y: fieldPixelY } },
                     randomEnemy
                 );
                 
-                // Group bonus: +20% damage per enemy in field
+                // Chain lightning with group bonus
                 const groupBonus = 1.0 + (enemiesInField.length * 0.2);
                 const fieldDamage = (this.baseLightningDamage * this.damageScaling) * chargePercent * groupBonus;
                 
-                // Start chain with ult falloff
                 const hitEnemies = [];
                 this.performChainLightning(randomEnemy, fieldDamage, hitEnemies, this.lightningUltChainFalloff);
                 const hitCount = hitEnemies.length;
                 
+                // Extend lifespan if hit enemies
                 if (hitCount > 0) {
                     if (time - this.stormField.lastLifeGainTime >= this.stormFieldLifeGainCooldown) {
                         this.stormField.expiresAt += this.stormFieldLifeGainAmount;
                         this.stormField.lastLifeGainTime = time;
-                        console.log(`Lifespan extended! +${this.stormFieldLifeGainAmount / 1000}s`);
+                        console.log(`Storm field lifespan extended! +${this.stormFieldLifeGainAmount / 1000}s`);
                     }
                     
+                    // Grow radius
                     for (let i = 0; i < hitCount; i++) {
                         if (this.stormField.radiusTiles < this.stormFieldMaxRadius) {
                             this.stormField.radiusTiles += this.stormFieldRadiusGrowthPerHit;
@@ -1900,6 +2279,7 @@ class GameScene extends Phaser.Scene {
                 }
             }
             
+            // Decay charge
             this.stormCloudCharge -= this.stormCloudChargeDecayPerAttack;
             
             if (this.stormCloudCharge <= 0) {
@@ -1944,6 +2324,8 @@ class GameScene extends Phaser.Scene {
             this.activateIceBlizzard();
         } else if (this.currentElement === 'lightning') {
             this.activateLightningStorm();
+        } else if (this.currentElement === 'cosmic') {
+            this.activateCosmicBlackHole();
         }
         
         this.lastUltTimes[this.currentElement] = currentTime;
@@ -2017,55 +2399,206 @@ class GameScene extends Phaser.Scene {
         const cloudX = this.player.x;
         const cloudY = this.player.y - 40;
         
-        const cloudBody = this.add.circle(cloudX, cloudY, 20, 0x666666, 0.8);
+        // MASSIVE STORM CLOUD (much bigger)
+        const cloudBody = this.add.circle(cloudX, cloudY, 35, 0x333333, 0.9);
+        cloudBody.setStrokeStyle(3, 0x555555, 1);
         
-        const crackle = this.add.circle(cloudX, cloudY, 22, 0xffff00, 0.4);
+        // INNER DARK CORE
+        const darkCore = this.add.circle(cloudX, cloudY, 25, 0x222222, 1);
+        
+        // ELECTRIC CRACKLE RING (bright yellow)
+        const crackle = this.add.circle(cloudX, cloudY, 38, 0xffff00, 0);
+        crackle.setStrokeStyle(4, 0xffff00, 0.8);
+        
+        // OUTER ELECTRIC RING
+        const outerCrackle = this.add.circle(cloudX, cloudY, 45, 0xffffff, 0);
+        outerCrackle.setStrokeStyle(2, 0xaaffff, 0.5);
+        
+        // LIGHTNING SPARKS (small circles around cloud)
+        const sparks = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * 2 / 6) * i;
+            const distance = 40;
+            const spark = this.add.circle(
+                cloudX + Math.cos(angle) * distance,
+                cloudY + Math.sin(angle) * distance,
+                3,
+                0xffff00,
+                1
+            );
+            sparks.push(spark);
+        }
+        
+        // CHARGE PERCENTAGE TEXT (bigger and brighter)
+        const chargeText = this.add.text(
+            cloudX,
+            cloudY,
+            '100%',
+            {
+                fontSize: '16px',
+                fontFamily: 'monospace',
+                color: '#ffff00',
+                stroke: '#000000',
+                strokeThickness: 4,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        
+        // PULSING ANIMATIONS
+        this.tweens.add({
+            targets: [cloudBody, darkCore],
+            scaleX: 1.15,
+            scaleY: 1.15,
+            duration: 400,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
         
         this.tweens.add({
-            targets: [cloudBody, crackle],
-            scaleX: 1.2,
-            scaleY: 1.2,
+            targets: [crackle],
+            scaleX: 1.3,
+            scaleY: 1.3,
+            alpha: 0.6,
             duration: 300,
             yoyo: true,
             repeat: -1,
             ease: 'Sine.easeInOut'
         });
         
-        const chargeText = this.add.text(
-            cloudX,
-            cloudY,
-            '100%',
-            {
-                fontSize: '12px',
-                fontFamily: 'monospace',
-                color: '#ffffff',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5);
+        this.tweens.add({
+            targets: [outerCrackle],
+            scaleX: 1.4,
+            scaleY: 1.4,
+            alpha: 0.8,
+            duration: 250,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+            delay: 100
+        });
+        
+        // ROTATING SPARKS
+        this.tweens.add({
+            targets: sparks,
+            angle: 360,
+            duration: 2000,
+            repeat: -1,
+            ease: 'Linear'
+        });
+        
+        // SPARK PULSING
+        sparks.forEach((spark, index) => {
+            this.tweens.add({
+                targets: spark,
+                scaleX: 1.5,
+                scaleY: 1.5,
+                alpha: 0.5,
+                duration: 300,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+                delay: index * 50
+            });
+        });
+        
+        // RANDOM LIGHTNING FLASHES from cloud
+        const flashInterval = this.time.addEvent({
+            delay: 200,
+            callback: () => {
+                if (!this.stormCloudActive) {
+                    flashInterval.remove();
+                    return;
+                }
+                
+                // Random lightning flash
+                const flash = this.add.circle(cloudX, cloudY, 50, 0xffffff, 0.4);
+                this.tweens.add({
+                    targets: flash,
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    duration: 100,
+                    onComplete: () => flash.destroy()
+                });
+            },
+            loop: true
+        });
         
         this.stormCloud = {
             body: cloudBody,
+            darkCore: darkCore,
             crackle: crackle,
-            chargeText: chargeText
+            outerCrackle: outerCrackle,
+            sparks: sparks,
+            chargeText: chargeText,
+            flashInterval: flashInterval
         };
+        
+        // INITIAL SCREEN FLASH
+        const screenFlash = this.add.rectangle(
+            this.scale.width / 2,
+            this.scale.height / 2,
+            this.scale.width,
+            this.scale.height,
+            0xffffff,
+            0.6
+        );
+        screenFlash.setScrollFactor(0);
+        
+        this.tweens.add({
+            targets: screenFlash,
+            alpha: 0,
+            duration: 200,
+            onComplete: () => screenFlash.destroy()
+        });
         
         this.player.setTint(0xffff00);
         this.time.delayedCall(300, () => {
             this.player.clearTint();
         });
     }
-
     updateStormCloud(time) {
         if (!this.stormCloudActive || !this.stormCloud) return;
         
-        this.stormCloud.body.x = this.player.x;
-        this.stormCloud.body.y = this.player.y - 40;
-        this.stormCloud.crackle.x = this.player.x;
-        this.stormCloud.crackle.y = this.player.y - 40;
-        this.stormCloud.chargeText.x = this.player.x;
-        this.stormCloud.chargeText.y = this.player.y - 40;
+        const cloudX = this.stormCloud.thrown ? this.stormCloud.thrownX : this.player.x;
+        const cloudY = this.stormCloud.thrown ? this.stormCloud.thrownY : (this.player.y - 40);
         
-        this.stormCloud.chargeText.setText(`${Math.floor(this.stormCloudCharge)}%`);
+        // Only follow player if not thrown
+        if (!this.stormCloud.thrown) {
+            this.stormCloud.body.x = this.player.x;
+            this.stormCloud.body.y = this.player.y - 40;
+            this.stormCloud.darkCore.x = this.player.x;
+            this.stormCloud.darkCore.y = this.player.y - 40;
+            this.stormCloud.crackle.x = this.player.x;
+            this.stormCloud.crackle.y = this.player.y - 40;
+            this.stormCloud.outerCrackle.x = this.player.x;
+            this.stormCloud.outerCrackle.y = this.player.y - 40;
+            this.stormCloud.chargeText.x = this.player.x;
+            this.stormCloud.chargeText.y = this.player.y - 40;
+            
+            // Update spark positions
+            this.stormCloud.sparks.forEach((spark, index) => {
+                const baseAngle = (Math.PI * 2 / 6) * index;
+                const rotationAngle = baseAngle + (time / 2000) * Math.PI * 2;
+                const distance = 40;
+                spark.x = cloudX + Math.cos(rotationAngle) * distance;
+                spark.y = cloudY + Math.sin(rotationAngle) * distance;
+            });
+        }
+        
+        // Update charge text and color
+        const chargePercent = Math.floor(this.stormCloudCharge);
+        this.stormCloud.chargeText.setText(`${chargePercent}%`);
+        
+        // Change color based on charge
+        if (chargePercent > 70) {
+            this.stormCloud.chargeText.setColor('#ffff00');
+        } else if (chargePercent > 30) {
+            this.stormCloud.chargeText.setColor('#ffaa00');
+        } else {
+            this.stormCloud.chargeText.setColor('#ff6600');
+        }
         
         if (time - this.stormCloudLastAttack >= this.stormCloudAutoAttackInterval) {
             this.stormCloudAutoAttack();
@@ -2078,13 +2611,14 @@ class GameScene extends Phaser.Scene {
             }
         }
         
-        const chargePercent = this.stormCloudCharge / 100;
-        this.stormCloud.body.setScale(0.5 + chargePercent * 0.5);
-        this.stormCloud.crackle.setAlpha(0.2 + chargePercent * 0.3);
+        const chargePercent2 = this.stormCloudCharge / 100;
+        this.stormCloud.body.setScale(0.8 + chargePercent2 * 0.4);
+        this.stormCloud.darkCore.setScale(0.8 + chargePercent2 * 0.4);
+        this.stormCloud.crackle.setAlpha(0.4 + chargePercent2 * 0.4);
+        this.stormCloud.outerCrackle.setAlpha(0.3 + chargePercent2 * 0.5);
     }
 
     stormCloudAutoAttack() {
-        // Find ALL enemies within reasonable range
         const nearbyEnemies = [];
         const maxRange = 15;
         
@@ -2097,17 +2631,14 @@ class GameScene extends Phaser.Scene {
         
         if (nearbyEnemies.length === 0) return;
         
-        // Sort by distance
         nearbyEnemies.sort((a, b) => a.dist - b.dist);
         
-        // Hit up to 3 separate targets (must be spread apart)
         const targetsToHit = Math.min(3, nearbyEnemies.length);
         const hitTargets = [];
         
         for (let i = 0; i < targetsToHit; i++) {
             const target = nearbyEnemies[i].enemy;
             
-            // Check if this enemy is too close to already-hit enemies
             let tooClose = false;
             for (let hitTarget of hitTargets) {
                 const distBetween = Math.abs(target.x - hitTarget.x) + Math.abs(target.y - hitTarget.y);
@@ -2122,7 +2653,6 @@ class GameScene extends Phaser.Scene {
             }
         }
         
-        // Attack each spread-out target
         for (let target of hitTargets) {
             console.log('Storm cloud auto-attack on spread enemy!');
             
@@ -2131,7 +2661,6 @@ class GameScene extends Phaser.Scene {
                 target
             );
             
-            // Use ult falloff for cloud attacks
             this.performChainLightning(target, this.baseLightningDamage * this.damageScaling * 0.8, [], this.lightningUltChainFalloff);
         }
     }
@@ -2142,20 +2671,83 @@ class GameScene extends Phaser.Scene {
         this.stormCloudActive = false;
         
         if (this.stormCloud) {
+            // Stop flash interval
+            if (this.stormCloud.flashInterval) {
+                this.stormCloud.flashInterval.remove();
+            }
+            
+            // Kill all tweens
+            this.tweens.killTweensOf(this.stormCloud.body);
+            this.tweens.killTweensOf(this.stormCloud.darkCore);
+            this.tweens.killTweensOf(this.stormCloud.crackle);
+            this.tweens.killTweensOf(this.stormCloud.outerCrackle);
+            this.stormCloud.sparks.forEach(spark => {
+                this.tweens.killTweensOf(spark);
+            });
+            
+            // Fade out all elements
             this.tweens.add({
-                targets: [this.stormCloud.body, this.stormCloud.crackle, this.stormCloud.chargeText],
+                targets: [
+                    this.stormCloud.body, 
+                    this.stormCloud.darkCore,
+                    this.stormCloud.crackle, 
+                    this.stormCloud.outerCrackle,
+                    this.stormCloud.chargeText,
+                    ...this.stormCloud.sparks
+                ],
                 alpha: 0,
                 duration: 300,
                 onComplete: () => {
-                    this.tweens.killTweensOf(this.stormCloud.body);
-                    this.tweens.killTweensOf(this.stormCloud.crackle);
                     this.stormCloud.body.destroy();
+                    this.stormCloud.darkCore.destroy();
                     this.stormCloud.crackle.destroy();
+                    this.stormCloud.outerCrackle.destroy();
                     this.stormCloud.chargeText.destroy();
+                    this.stormCloud.sparks.forEach(spark => spark.destroy());
                     this.stormCloud = null;
                 }
             });
         }
+    }
+
+    throwLightning() {
+        if (!this.stormCloudActive || !this.stormCloud) return;
+        
+        console.log('Throwing lightning storm!');
+        
+        const worldX = this.pointerX + this.cameras.main.scrollX;
+        const worldY = this.pointerY + this.cameras.main.scrollY;
+        
+        const tileX = Math.floor(worldX / this.TILE_SIZE);
+        const tileY = Math.floor(worldY / this.TILE_SIZE);
+        
+        const targetPixelX = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const targetPixelY = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        
+        // Mark cloud as thrown
+        this.stormCloud.thrown = true;
+        this.stormCloud.thrownX = targetPixelX;
+        this.stormCloud.thrownY = targetPixelY;
+        
+        // Animate throw
+        const allElements = [
+            this.stormCloud.body,
+            this.stormCloud.darkCore,
+            this.stormCloud.crackle,
+            this.stormCloud.outerCrackle,
+            this.stormCloud.chargeText,
+            ...this.stormCloud.sparks
+        ];
+        
+        this.tweens.add({
+            targets: allElements,
+            x: targetPixelX,
+            y: targetPixelY,
+            duration: 500,
+            ease: 'Quad.easeOut'
+        });
+        
+        console.log(`Storm cloud thrown to (${tileX}, ${tileY})`);
     }
 
     deactivateIceBlizzard() {
@@ -2341,6 +2933,995 @@ class GameScene extends Phaser.Scene {
         this.damageLevel++;
         this.damageScaling = 1.0 + (this.damageLevel - 1) * 0.2;
         console.log(`Floor ${this.damageLevel}: Damage scaling ${this.damageScaling.toFixed(2)}x`);
+    }
+
+    addCosmicCharge(x, y) {
+        if (this.cosmicBatteryCharges >= this.cosmicMaxCharges) return;
+        
+        this.cosmicBatteryCharges++;
+        this.updateHUD();
+        
+        const chargePickup = this.add.container(x, y);
+        
+        const outerGlow = this.add.circle(0, 0, 20, 0x9966ff, 0.3);
+        
+        const middleRing = this.add.circle(0, 0, 15, 0xcc99ff, 0.5);
+        
+        const innerCore = this.add.circle(0, 0, 10, 0xffffff, 0.8);
+        
+        const sparkles = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * 2 / 6) * i;
+            const dist = 12;
+            const sparkle = this.add.circle(
+                Math.cos(angle) * dist,
+                Math.sin(angle) * dist,
+                2,
+                0xffffff,
+                0.9
+            );
+            sparkles.push(sparkle);
+        }
+        
+        const text = this.add.text(0, -25, '+1', {
+            fontSize: '20px',
+            fontFamily: 'monospace',
+            color: '#ffffff',
+            stroke: '#9966ff',
+            strokeThickness: 4,
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        
+        chargePickup.add([outerGlow, middleRing, innerCore, ...sparkles, text]);
+        
+        this.tweens.add({
+            targets: sparkles,
+            angle: 360,
+            duration: 1000,
+            ease: 'Linear'
+        });
+        
+        this.tweens.add({
+            targets: chargePickup,
+            y: y - 50,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Quad.easeOut',
+            onComplete: () => chargePickup.destroy()
+        });
+        
+        this.tweens.add({
+            targets: [outerGlow, middleRing, innerCore],
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: 300,
+            yoyo: true,
+            ease: 'Quad.easeOut'
+        });
+    }
+
+    updateCosmicPassiveCharge(time) {
+        if (this.currentElement !== 'cosmic') return;
+        
+        if (time - this.lastCosmicPassiveCharge >= this.cosmicPassiveChargeInterval) {
+            this.lastCosmicPassiveCharge = time;
+            
+            if (this.cosmicBatteryCharges < this.cosmicMaxCharges) {
+                this.cosmicBatteryCharges++;
+                this.updateHUD();
+                
+                const notification = this.add.text(
+                    this.scale.width / 2,
+                    80,
+                    'CHARGE GAINED',
+                    {
+                        fontSize: '16px',
+                        fontFamily: 'monospace',
+                        color: '#9966ff',
+                        stroke: '#000000',
+                        strokeThickness: 3
+                    }
+                ).setOrigin(0.5).setScrollFactor(0);
+                
+                this.tweens.add({
+                    targets: notification,
+                    y: 60,
+                    alpha: 0,
+                    duration: 1000,
+                    onComplete: () => notification.destroy()
+                });
+            }
+        }
+    }
+
+    updateCosmicCharge(time) {
+        if (!this.cosmicCharging) return;
+        
+        this.cosmicChargeHoldTime = time - this.cosmicChargeStartTime;
+        
+        // 3x charge rate during black hole
+        const chargeRateMultiplier = this.cosmicBlackHole ? 3 : 1;
+        const adjustedTime = this.cosmicChargeHoldTime * chargeRateMultiplier;
+        
+        const seconds = adjustedTime / 1000;
+        const chargeMultiplier = Math.pow(2, Math.min(seconds, 3));
+        
+        if (!this.cosmicChargeIndicator) {
+            this.cosmicChargeIndicator = this.add.container(this.player.x, this.player.y);
+            
+            const outerRing = this.add.circle(0, 0, 30, 0x9966ff, 0);
+            outerRing.setStrokeStyle(3, 0x9966ff, 0.5);
+            
+            const middleRing = this.add.circle(0, 0, 20, 0xcc99ff, 0);
+            middleRing.setStrokeStyle(2, 0xcc99ff, 0.7);
+            
+            const innerCore = this.add.circle(0, 0, 10, 0xffffff, 0.3);
+            
+            const chargeText = this.add.text(0, 0, '1x', {
+                fontSize: '16px',
+                fontFamily: 'monospace',
+                color: '#ffffff',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+            
+            this.cosmicChargeIndicator.add([outerRing, middleRing, innerCore, chargeText]);
+            this.cosmicChargeIndicator.setData('outerRing', outerRing);
+            this.cosmicChargeIndicator.setData('middleRing', middleRing);
+            this.cosmicChargeIndicator.setData('innerCore', innerCore);
+            this.cosmicChargeIndicator.setData('chargeText', chargeText);
+        }
+        
+        this.cosmicChargeIndicator.x = this.player.x;
+        this.cosmicChargeIndicator.y = this.player.y;
+        
+        const outerRing = this.cosmicChargeIndicator.getData('outerRing');
+        const middleRing = this.cosmicChargeIndicator.getData('middleRing');
+        const innerCore = this.cosmicChargeIndicator.getData('innerCore');
+        const chargeText = this.cosmicChargeIndicator.getData('chargeText');
+        
+        outerRing.setScale(1 + seconds * 0.3);
+        middleRing.setScale(1 + seconds * 0.2);
+        innerCore.setScale(1 + seconds * 0.4);
+        innerCore.setAlpha(0.3 + seconds * 0.2);
+        
+        chargeText.setText(`${chargeMultiplier.toFixed(1)}x`);
+        
+        // During black hole, make it more intense
+        if (this.cosmicBlackHole) {
+            const ultPulse = 1 + Math.sin(time / 30) * 0.2;
+            outerRing.setScale(outerRing.scaleX * ultPulse);
+            middleRing.setScale(middleRing.scaleX * ultPulse);
+            innerCore.setAlpha(innerCore.alpha * ultPulse);
+        } else if (seconds > 2) {
+            const pulse = 1 + Math.sin(time / 50) * 0.1;
+            outerRing.setScale(outerRing.scaleX * pulse);
+            middleRing.setScale(middleRing.scaleX * pulse);
+        }
+    }
+
+    releaseCosmicBeam() {
+        const holdTime = this.time.now - this.cosmicChargeStartTime;
+        const chargeRateMultiplier = this.cosmicBlackHole ? 3 : 1;
+        const adjustedTime = holdTime * chargeRateMultiplier;
+        const seconds = adjustedTime / 1000;
+        const chargeMultiplier = Math.pow(2, Math.min(seconds, 3));
+ 
+        const worldX = this.pointerX + this.cameras.main.scrollX;
+        const worldY = this.pointerY + this.cameras.main.scrollY;
+        
+        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        
+        const dx = worldX - playerPixelX;
+        const dy = worldY - playerPixelY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance === 0) {
+            this.cosmicCharging = false;
+            if (this.cosmicChargeIndicator) {
+                this.cosmicChargeIndicator.destroy();
+                this.cosmicChargeIndicator = null;
+            }
+            return;
+        }
+        
+        const dirX = dx / distance;
+        const dirY = dy / distance;
+        
+        // Black hole: no damage multiplier, just faster charging
+        const beamWidthMultiplier = 1;
+        
+        const damage = this.cosmicBaseBeamDamage * this.damageScaling * chargeMultiplier;
+        this.fireCosmicBeam(playerPixelX, playerPixelY, dirX, dirY, damage, chargeMultiplier, beamWidthMultiplier);
+        
+        this.cosmicCharging = false;
+        if (this.cosmicChargeIndicator) {
+            this.cosmicChargeIndicator.destroy();
+            this.cosmicChargeIndicator = null;
+        }
+    }
+
+    fireCosmicBeam(startX, startY, dirX, dirY, damage, visualMultiplier, beamWidthMultiplier = 1) {
+        let beamEndX = startX;
+        let beamEndY = startY;
+        const maxRange = 100;
+        
+        for (let i = 0; i < maxRange * this.TILE_SIZE; i += this.TILE_SIZE / 4) {
+            const testX = startX + dirX * i;
+            const testY = startY + dirY * i;
+            const tileX = Math.floor(testX / this.TILE_SIZE);
+            const tileY = Math.floor(testY / this.TILE_SIZE);
+            
+            if (tileX < 0 || tileX >= this.WORLD_WIDTH || tileY < 0 || tileY >= this.WORLD_HEIGHT) {
+                break;
+            }
+            
+            if (this.world[tileX][tileY] === this.WALL) {
+                break;
+            }
+            
+            beamEndX = testX;
+            beamEndY = testY;
+        }
+        
+        const graphics = this.add.graphics();
+        
+        const outerWidth = (20 + visualMultiplier * 5) * beamWidthMultiplier;
+        graphics.lineStyle(outerWidth, 0x9966ff, 0.2);
+        graphics.beginPath();
+        graphics.moveTo(startX, startY);
+        graphics.lineTo(beamEndX, beamEndY);
+        graphics.strokePath();
+        
+        const middleWidth = (12 + visualMultiplier * 3) * beamWidthMultiplier;
+        graphics.lineStyle(middleWidth, 0xcc99ff, 0.5);
+        graphics.beginPath();
+        graphics.moveTo(startX, startY);
+        graphics.lineTo(beamEndX, beamEndY);
+        graphics.strokePath();
+        
+        const coreWidth = (6 + visualMultiplier * 2) * beamWidthMultiplier;
+        graphics.lineStyle(coreWidth, 0xffffff, 0.9);
+        graphics.beginPath();
+        graphics.moveTo(startX, startY);
+        graphics.lineTo(beamEndX, beamEndY);
+        graphics.strokePath();
+        
+        graphics.lineStyle(3 * beamWidthMultiplier, 0xffffff, 1);
+        graphics.beginPath();
+        graphics.moveTo(startX, startY);
+        graphics.lineTo(beamEndX, beamEndY);
+        graphics.strokePath();
+        
+        this.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 400,
+            onComplete: () => graphics.destroy()
+        });
+        
+        const hitEnemies = [];
+        const beamWidthPixels = this.cosmicBeamWidth * this.TILE_SIZE * beamWidthMultiplier;
+        
+        // Check if fully charged (8x)
+        const isFullyCharged = visualMultiplier >= 8;
+        
+        for (let enemy of this.enemies) {
+            const enemyPixelX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+            const enemyPixelY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2;
+            
+            const distToLine = this.pointToLineDistance(
+                enemyPixelX, enemyPixelY,
+                startX, startY,
+                beamEndX, beamEndY
+            );
+            
+            if (distToLine <= beamWidthPixels) {
+                hitEnemies.push(enemy);
+                
+                let finalDamage = damage;
+                
+                // CONSUME MARKS if fully charged (8x)
+                if (isFullyCharged && enemy.cosmicMarks > 0) {
+                    const markBonus = enemy.cosmicMarks * this.cosmicMarkDamagePerStack;
+                    finalDamage += markBonus;
+                    
+                    console.log(`Consumed ${enemy.cosmicMarks} marks for +${markBonus} bonus damage!`);
+                    
+                    // LIFESTEAL: Heal based on marks consumed
+                    const healPerMark = 5; // Heal 5 HP per mark consumed
+                    const healAmount = enemy.cosmicMarks * healPerMark;
+                    
+                    if (healAmount > 0 && this.health < this.maxHealth) {
+                        this.health = Math.min(this.maxHealth, this.health + healAmount);
+                        this.updateHUD();
+                        
+                        // Visual: healing sparkle on player
+                        const healSparkle = this.add.text(
+                            this.player.x,
+                            this.player.y - 20,
+                            `+${healAmount} HP`,
+                            {
+                                fontSize: '16px',
+                                fontFamily: 'monospace',
+                                color: '#66ff66',
+                                stroke: '#003300',
+                                strokeThickness: 3,
+                                fontStyle: 'bold'
+                            }
+                        ).setOrigin(0.5);
+                        
+                        this.tweens.add({
+                            targets: healSparkle,
+                            y: this.player.y - 40,
+                            alpha: 0,
+                            duration: 800,
+                            ease: 'Quad.easeOut',
+                            onComplete: () => healSparkle.destroy()
+                        });
+                    }
+                    
+                    // Visual feedback for mark consumption
+                    const consumeText = this.add.text(
+                        enemyPixelX,
+                        enemyPixelY - 30,
+                        `+${markBonus}`,
+                        {
+                            fontSize: '18px',
+                            fontFamily: 'monospace',
+                            color: '#ffff00',
+                            stroke: '#9966ff',
+                            strokeThickness: 3,
+                            fontStyle: 'bold'
+                        }
+                    ).setOrigin(0.5);
+                    
+                    this.tweens.add({
+                        targets: consumeText,
+                        y: enemyPixelY - 50,
+                        alpha: 0,
+                        duration: 800,
+                        onComplete: () => consumeText.destroy()
+                    });
+                    
+                    // Clear marks
+                    enemy.cosmicMarks = 0;
+                    this.updateCosmicMarkVisual(enemy);
+                }
+                
+                const enemyHealthBefore = enemy.health;
+                this.damageEnemy(enemy, finalDamage);
+
+                // During black hole: guaranteed charge drop if enemy died
+                if (this.cosmicBlackHole && enemy.health <= 0 && enemyHealthBefore > 0) {
+                    this.addCosmicCharge(enemyPixelX, enemyPixelY);
+                }
+                
+                const impact = this.add.container(enemyPixelX, enemyPixelY);
+
+                const flash = this.add.circle(0, 0, 15, 0xffffff, 0.9);
+                const ring = this.add.circle(0, 0, 15, 0x9966ff, 0);
+                ring.setStrokeStyle(3, 0x9966ff, 0.8);
+
+                impact.add([flash, ring]);
+
+                this.tweens.add({
+                    targets: [flash, ring],
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    duration: 300,
+                    onComplete: () => impact.destroy()
+                });
+            }
+        }
+        
+        console.log(`Cosmic beam hit ${hitEnemies.length} enemies with ${visualMultiplier.toFixed(1)}x charge`);
+    }
+
+    pointToLineDistance(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lengthSquared = dx * dx + dy * dy;
+        
+        if (lengthSquared === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+        
+        let t = ((px - x1) * dx + (py - y1) * dy) / lengthSquared;
+        t = Math.max(0, Math.min(1, t));
+        
+        const projX = x1 + t * dx;
+        const projY = y1 + t * dy;
+        
+        return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+    }
+
+    activateCosmicBlackHole() {
+        console.log('COSMIC BLACK HOLE ACTIVATED!');
+        
+        // GRANT CHARGES ON ULT ACTIVATION
+        const chargesGranted = 3; // Give 3 charges instantly
+        this.cosmicBatteryCharges = Math.min(this.cosmicMaxCharges, this.cosmicBatteryCharges + chargesGranted);
+        this.updateHUD();
+        
+        // Visual feedback for charge gain
+        const chargeNotif = this.add.text(
+            this.scale.width / 2,
+            80,
+            `+${chargesGranted} CHARGES`,
+            {
+                fontSize: '20px',
+                fontFamily: 'monospace',
+                color: '#9966ff',
+                stroke: '#000000',
+                strokeThickness: 4,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setScrollFactor(0);
+        
+        this.tweens.add({
+            targets: chargeNotif,
+            y: 60,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => chargeNotif.destroy()
+        });
+        
+        // Fire projectile toward mouse
+        const worldX = this.pointerX + this.cameras.main.scrollX;
+        const worldY = this.pointerY + this.cameras.main.scrollY;
+        
+        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        
+        const dx = worldX - playerPixelX;
+        const dy = worldY - playerPixelY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance === 0) return;
+        
+        const dirX = dx / distance;
+        const dirY = dy / distance;
+        
+        // Create projectile
+        const projectile = this.add.circle(playerPixelX, playerPixelY, 12, 0x9966ff, 0.8);
+        projectile.setData('vx', dirX * this.cosmicBlackHoleSpeed);
+        projectile.setData('vy', dirY * this.cosmicBlackHoleSpeed);
+        
+        // Pulsing effect
+        this.tweens.add({
+            targets: projectile,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: 200,
+            yoyo: true,
+            repeat: -1
+        });
+        
+        this.cosmicBlackHoleProjectile = projectile;
+    }
+
+    updateCosmicBlackHoleProjectile(delta) {
+        if (!this.cosmicBlackHoleProjectile) return;
+        
+        const deltaSeconds = delta / 1000;
+        const proj = this.cosmicBlackHoleProjectile;
+        
+        proj.x += proj.getData('vx') * deltaSeconds;
+        proj.y += proj.getData('vy') * deltaSeconds;
+        
+        const tileX = Math.floor(proj.x / this.TILE_SIZE);
+        const tileY = Math.floor(proj.y / this.TILE_SIZE);
+        
+        // Check collision with wall or enemy
+        let shouldDeploy = false;
+        let deployX = proj.x;
+        let deployY = proj.y;
+        
+        // Hit wall
+        if (tileX < 0 || tileX >= this.WORLD_WIDTH || 
+            tileY < 0 || tileY >= this.WORLD_HEIGHT ||
+            this.world[tileX][tileY] === this.WALL) {
+            shouldDeploy = true;
+        }
+        
+        // Hit enemy
+        for (let enemy of this.enemies) {
+            const enemyPixelX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+            const enemyPixelY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2;
+            
+            const dist = Math.sqrt((proj.x - enemyPixelX) ** 2 + (proj.y - enemyPixelY) ** 2);
+            if (dist < this.TILE_SIZE) {
+                shouldDeploy = true;
+                deployX = enemyPixelX;
+                deployY = enemyPixelY;
+                break;
+            }
+        }
+        
+        if (shouldDeploy) {
+            this.deployCosmicBlackHole(deployX, deployY);
+            this.tweens.killTweensOf(proj);
+            proj.destroy();
+            this.cosmicBlackHoleProjectile = null;
+        }
+    }
+
+    deployCosmicBlackHole(x, y) {
+        console.log('Black hole deployed!');
+        
+        // Create vortex visuals
+        const vortex = this.add.container(x, y);
+        
+        // OUTER DISTORTION RING (largest, dark purple)
+        const distortionRing = this.add.circle(0, 0, this.cosmicBlackHoleRadius * this.TILE_SIZE * 1.2, 0x220044, 0.2);
+        distortionRing.setStrokeStyle(2, 0x6633aa, 0.4);
+        
+        // OUTER RING (purple with glow)
+        const outerRing = this.add.circle(0, 0, this.cosmicBlackHoleRadius * this.TILE_SIZE, 0x330066, 0.4);
+        outerRing.setStrokeStyle(5, 0x9966ff, 0.9);
+        
+        // MIDDLE RING (brighter purple)
+        const middleRing = this.add.circle(0, 0, this.cosmicBlackHoleRadius * this.TILE_SIZE * 0.6, 0x660099, 0.6);
+        middleRing.setStrokeStyle(4, 0xaa77ff, 1);
+        
+        // INNER RING (bright purple/pink)
+        const innerRing = this.add.circle(0, 0, this.cosmicBlackHoleRadius * this.TILE_SIZE * 0.3, 0x9933cc, 0.7);
+        innerRing.setStrokeStyle(3, 0xdd99ff, 1);
+        
+        // CORE (bright yellow-white singularity)
+        const core = this.add.circle(0, 0, this.cosmicBlackHoleRadius * this.TILE_SIZE * 0.15, 0xffff00, 1);
+        core.setStrokeStyle(2, 0xffffff, 1);
+        
+        // Add all rings to container
+        vortex.add([distortionRing, outerRing, middleRing, innerRing, core]);
+        
+        // ROTATING SPIRAL ARMS
+        const numArms = 4;
+        const arms = [];
+        for (let i = 0; i < numArms; i++) {
+            const arm = this.add.graphics();
+            const startAngle = (Math.PI * 2 / numArms) * i;
+            
+            arm.lineStyle(3, 0x9966ff, 0.6);
+            arm.beginPath();
+            
+            // Create spiral arm
+            const armLength = this.cosmicBlackHoleRadius * this.TILE_SIZE;
+            for (let r = 5; r < armLength; r += 2) {
+                const spiralAngle = startAngle + (r / armLength) * Math.PI;
+                const sx = Math.cos(spiralAngle) * r;
+                const sy = Math.sin(spiralAngle) * r;
+                
+                if (r === 5) {
+                    arm.moveTo(sx, sy);
+                } else {
+                    arm.lineTo(sx, sy);
+                }
+            }
+            arm.strokePath();
+            
+            arms.push(arm);
+            vortex.add(arm);
+        }
+        
+        // PARTICLE SWIRL (small dots orbiting inward)
+        const particles = [];
+        for (let i = 0; i < 20; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = (Math.random() * 0.8 + 0.2) * this.cosmicBlackHoleRadius * this.TILE_SIZE;
+            const particle = this.add.circle(
+                Math.cos(angle) * distance,
+                Math.sin(angle) * distance,
+                2,
+                0xffffff,
+                0.8
+            );
+            particles.push(particle);
+            vortex.add(particle);
+        }
+        
+        // PULSING ANIMATION - rings expand and contract
+        this.tweens.add({
+            targets: [outerRing],
+            scaleX: 1.15,
+            scaleY: 1.15,
+            alpha: 0.6,
+            duration: 600,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        this.tweens.add({
+            targets: [middleRing],
+            scaleX: 1.2,
+            scaleY: 1.2,
+            alpha: 0.8,
+            duration: 500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+            delay: 100
+        });
+        
+        this.tweens.add({
+            targets: [innerRing],
+            scaleX: 1.3,
+            scaleY: 1.3,
+            alpha: 0.9,
+            duration: 400,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+            delay: 200
+        });
+        
+        // CORE PULSING (bright singularity)
+        this.tweens.add({
+            targets: [core],
+            scaleX: 1.5,
+            scaleY: 1.5,
+            alpha: 0.7,
+            duration: 300,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // DISTORTION RING (slow pulse)
+        this.tweens.add({
+            targets: [distortionRing],
+            scaleX: 1.1,
+            scaleY: 1.1,
+            alpha: 0.3,
+            duration: 800,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // ROTATING SPIRAL ARMS
+        this.tweens.add({
+            targets: vortex,
+            angle: -360, // Counter-clockwise rotation
+            duration: 3000,
+            repeat: -1,
+            ease: 'Linear'
+        });
+        
+        // PARTICLE SWIRL ANIMATION
+        particles.forEach((particle, index) => {
+            this.tweens.add({
+                targets: particle,
+                angle: 360,
+                duration: 2000 + (index * 100),
+                repeat: -1,
+                ease: 'Linear'
+            });
+            
+            // Particles fade as they spiral in
+            this.tweens.add({
+                targets: particle,
+                scaleX: 0.5,
+                scaleY: 0.5,
+                alpha: 0.3,
+                duration: 1500,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+                delay: index * 50
+            });
+        });
+        
+        this.cosmicBlackHole = {
+            container: vortex,
+            x: x,
+            y: y,
+            tileX: Math.floor(x / this.TILE_SIZE),
+            tileY: Math.floor(y / this.TILE_SIZE),
+            createdAt: this.time.now,
+            expiresAt: this.time.now + this.cosmicBlackHoleDuration,
+            lastMarkTime: this.time.now,
+            affectedEnemies: [],
+            spiralArms: arms, // Store for potential shrinking
+            particles: particles
+        };
+        
+        // Enable fast charging
+        this.cosmicInfiniteBeamActive = true;
+        this.cosmicInfiniteBeamEndTime = this.cosmicBlackHole.expiresAt;
+    }
+
+    updateCosmicBlackHole(time) {
+        if (!this.cosmicBlackHole) return;
+        
+        const bh = this.cosmicBlackHole;
+        const elapsed = time - bh.createdAt;
+        const progress = elapsed / this.cosmicBlackHoleDuration; // 0 to 1
+        
+        // Shrinking radius over time (4 tiles → 1 tile)
+        const currentRadius = this.cosmicBlackHoleRadius * (1 - progress * 0.75);
+        
+        // UPDATE VISUALS TO MATCH SHRINKING RADIUS
+        const radiusPixels = currentRadius * this.TILE_SIZE;
+        const container = bh.container;
+        const children = container.list;
+        
+        children[0].setRadius(radiusPixels); // outer ring
+        children[1].setRadius(radiusPixels * 0.6); // middle ring
+        children[2].setRadius(radiusPixels * 0.2); // core
+        
+        // Find enemies in radius
+        for (let enemy of this.enemies) {
+            const dist = Math.abs(enemy.x - bh.tileX) + Math.abs(enemy.y - bh.tileY);
+            
+            if (dist <= currentRadius) {
+                // Add to affected if not already
+                if (!bh.affectedEnemies.includes(enemy)) {
+                    bh.affectedEnemies.push(enemy);
+                }
+                
+                // Orbit enemy around center (clockwise)
+                const angle = (time / 500) + (bh.affectedEnemies.indexOf(enemy) * Math.PI / 3); // stagger
+                const orbitRadius = currentRadius * this.TILE_SIZE * 0.8;
+                
+                const targetX = bh.x + Math.cos(angle) * orbitRadius;
+                const targetY = bh.y + Math.sin(angle) * orbitRadius;
+                
+                // CHECK IF TARGET POSITION IS VALID (not a wall)
+                const targetTileX = Math.floor(targetX / this.TILE_SIZE);
+                const targetTileY = Math.floor((targetY - this.SLIME_Y_OFFSET) / this.TILE_SIZE);
+                
+                // Only move if target tile is floor
+                if (targetTileX >= 0 && targetTileX < this.WORLD_WIDTH &&
+                    targetTileY >= 0 && targetTileY < this.WORLD_HEIGHT &&
+                    this.world[targetTileX][targetTileY] === this.FLOOR) {
+                    
+                    // Smoothly move enemy
+                    enemy.sprite.x = Phaser.Math.Linear(enemy.sprite.x, targetX, 0.1);
+                    enemy.sprite.y = Phaser.Math.Linear(enemy.sprite.y, targetY, 0.1);
+                    
+                    // Update tile position to match sprite
+                    enemy.x = Math.floor(enemy.sprite.x / this.TILE_SIZE);
+                    enemy.y = Math.floor((enemy.sprite.y - this.SLIME_Y_OFFSET) / this.TILE_SIZE);
+                }
+                // If target is a wall, enemy stays where they are (doesn't clip through)
+                
+                // Update health bars
+                this.updateEnemyHealthBar(enemy);
+                
+                // Update cosmic mark visuals
+                if (enemy.cosmicMarkVisuals && enemy.cosmicMarkVisuals.length > 0) {
+                    const markY = enemy.sprite.y - 25;
+                    for (let i = 0; i < enemy.cosmicMarks; i++) {
+                        const offsetX = (i - 1) * 12;
+                        const visualIndex = i * 2;
+                        if (visualIndex < enemy.cosmicMarkVisuals.length) {
+                            enemy.cosmicMarkVisuals[visualIndex].x = enemy.sprite.x + offsetX;
+                            enemy.cosmicMarkVisuals[visualIndex].y = markY;
+                        }
+                        if (visualIndex + 1 < enemy.cosmicMarkVisuals.length) {
+                            enemy.cosmicMarkVisuals[visualIndex + 1].x = enemy.sprite.x + offsetX;
+                            enemy.cosmicMarkVisuals[visualIndex + 1].y = markY;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Apply marks every interval
+        if (time - bh.lastMarkTime >= this.cosmicBlackHoleMarkInterval) {
+            for (let enemy of bh.affectedEnemies) {
+                if (enemy.cosmicMarks < this.cosmicMaxMarks) {
+                    enemy.cosmicMarks++;
+                    this.updateCosmicMarkVisual(enemy);
+                }
+            }
+            bh.lastMarkTime = time;
+        }
+        
+        // Expire
+        if (time >= bh.expiresAt) {
+            // Stun all affected enemies briefly
+            for (let enemy of bh.affectedEnemies) {
+                enemy.isStunned = true;
+                enemy.stunnedUntil = time + 500;
+                this.time.delayedCall(500, () => {
+                    if (enemy.sprite && enemy.sprite.active) {
+                        enemy.isStunned = false;
+                    }
+                });
+            }
+            
+            // Destroy visuals
+            this.tweens.killTweensOf(bh.container);
+            bh.container.destroy();
+            this.cosmicBlackHole = null;
+            
+            // EXTEND FAST CHARGING FOR GRACE PERIOD
+            this.cosmicInfiniteBeamEndTime = time + this.cosmicBlackHoleGracePeriod;
+            // cosmicInfiniteBeamActive stays true for the grace period
+            
+            console.log('Black hole ended! Fast charging continues for 2 more seconds...');
+        }
+    }
+
+    updateCosmicMarkVisual(enemy) {
+        // Destroy old visuals
+        if (enemy.cosmicMarkVisuals) {
+            enemy.cosmicMarkVisuals.forEach(v => {
+                this.tweens.killTweensOf(v);
+                v.destroy();
+            });
+        }
+        enemy.cosmicMarkVisuals = [];
+        
+        if (enemy.cosmicMarks === 0) return;
+        
+        const markY = enemy.sprite.y - 25;
+        
+        // Create black hole visual based on stack count
+        for (let i = 0; i < enemy.cosmicMarks; i++) {
+            const offsetX = (i - 1) * 12; // spread marks horizontally
+            
+            // Outer ring (purple)
+            const outerRing = this.add.circle(enemy.sprite.x + offsetX, markY, 8, 0x9966ff, 0);
+            outerRing.setStrokeStyle(2, 0x9966ff, 0.8);
+            
+            // Inner core (yellow/white)
+            const innerCore = this.add.circle(enemy.sprite.x + offsetX, markY, 4, 0xffff00, 0.9);
+            
+            // Pulsing animation
+            this.tweens.add({
+                targets: [outerRing, innerCore],
+                scaleX: 1.3,
+                scaleY: 1.3,
+                duration: 400,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+            
+            // Rotation
+            this.tweens.add({
+                targets: outerRing,
+                angle: 360,
+                duration: 2000,
+                repeat: -1,
+                ease: 'Linear'
+            });
+            
+            enemy.cosmicMarkVisuals.push(outerRing, innerCore);
+        }
+    }
+
+    cosmicDash(dirX, dirY, oldTileX, oldTileY) {
+        const currentTime = this.time.now;
+        
+        const dashCooldown = this.cosmicBlackHole ? this.cosmicDashCooldownUlt : this.cosmicDashCooldown;
+        if (currentTime - this.lastCosmicDashTime < dashCooldown) {
+            console.log('Dash on cooldown!');
+            return;
+        }
+
+        const chargeCost = this.cosmicBlackHole ? 0.5 : 1;
+        if (this.cosmicBatteryCharges < chargeCost) {
+            console.log(`Need ${chargeCost} charge(s) to dash!`);
+            return;
+        }
+        
+        // Calculate all tiles in dash path (pierce through)
+        const dashPath = [];
+        for (let i = 1; i <= this.cosmicDashDistance; i++) {
+            const checkX = this.playerX + (dirX * i);
+            const checkY = this.playerY + (dirY * i);
+            dashPath.push({ x: checkX, y: checkY });
+        }
+        
+        // Check if final destination is valid
+        const targetX = this.playerX + (dirX * this.cosmicDashDistance);
+        const targetY = this.playerY + (dirY * this.cosmicDashDistance);
+        
+        if (targetX < 0 || targetX >= this.WORLD_WIDTH || 
+            targetY < 0 || targetY >= this.WORLD_HEIGHT ||
+            this.world[targetX][targetY] !== this.FLOOR) {
+            console.log('Cannot dash there!');
+            return;
+        }
+        
+        // Consume charges
+        this.cosmicBatteryCharges -= chargeCost;
+        
+        // Check all enemies in dash path
+        let hitUnmarkedEnemy = false;
+        const hitEnemies = [];
+        
+        for (let enemy of this.enemies) {
+            // Check if enemy is in dash path
+            const inPath = dashPath.some(tile => tile.x === enemy.x && tile.y === enemy.y);
+            
+            if (inPath) {
+                hitEnemies.push(enemy);
+                
+                // Apply mark (max 3)
+                if (enemy.cosmicMarks < this.cosmicMaxMarks) {
+                    if (enemy.cosmicMarks === 0) {
+                        hitUnmarkedEnemy = true; // Fresh enemy!
+                    }
+                    enemy.cosmicMarks++;
+                    this.updateCosmicMarkVisual(enemy);
+                }
+                
+                // Stun enemy
+                enemy.isStunned = true;
+                enemy.stunnedUntil = currentTime + this.cosmicDashStunDuration;
+                
+                // Flash
+                enemy.sprite.setTint(0x9966ff);
+                this.time.delayedCall(this.cosmicDashStunDuration, () => {
+                    if (enemy.sprite && enemy.sprite.active) {
+                        enemy.sprite.clearTint();
+                        enemy.isStunned = false;
+                    }
+                });
+            }
+        }
+        
+        // Refund charge if hit at least one unmarked enemy
+        if (hitUnmarkedEnemy) {
+            this.cosmicBatteryCharges = Math.min(this.cosmicMaxCharges, this.cosmicBatteryCharges + 1);
+            console.log('Charge refunded!');
+        }
+        
+        // Draw trail using graphics API
+        const oldTrailX = oldTileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const oldTrailY = oldTileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const newTrailX = targetX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const newTrailY = targetY * this.TILE_SIZE + this.TILE_SIZE / 2;
+
+        const graphics = this.add.graphics();
+        graphics.lineStyle(8, 0x9966ff, 0.6);
+        graphics.beginPath();
+        graphics.moveTo(oldTrailX, oldTrailY);
+        graphics.lineTo(newTrailX, newTrailY);
+        graphics.strokePath();
+        
+        this.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 300,
+            onComplete: () => graphics.destroy()
+        });
+        
+        // Teleport player
+        this.playerX = targetX;
+        this.playerY = targetY;
+        this.player.x = targetX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        this.player.y = targetY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+        
+        // Visuals
+        const burst = this.add.circle(this.player.x, this.player.y, 5, 0xffffff, 1);
+        this.tweens.add({
+            targets: burst,
+            radius: 25,
+            alpha: 0,
+            duration: 300,
+            onComplete: () => burst.destroy()
+        });
+        
+        this.player.setTint(0x9966ff);
+        this.time.delayedCall(150, () => {
+            if (this.cosmicBlackHole) {
+                this.player.setTint(0x9966ff);
+            } else {
+                this.player.clearTint();
+            }
+        });
+        
+        this.lastCosmicDashTime = currentTime;
+        this.updateHUD();
+        
+        console.log(`Dashed through ${hitEnemies.length} enemies!`);
     }
 }
 
