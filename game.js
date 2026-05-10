@@ -71,11 +71,14 @@ class GameScene extends Phaser.Scene {
         // ICE ULT: tsunami
         this.tsunamiActive = false;
         this.tsunamiTiles = [];
+        this.tsunamiPuddles = [];
         this.tsunamiFrozenEnemies = [];
         this.tsunamiMaxRadius = 18;
         this.tsunamiWaveDuration = 2200;
         this.tsunamiFreezeDuration = 3000;
         this.tsunamiFreezeMultiplier = 1.5;
+        this.tsunamiPuddleDuration = 9000;
+        this.tsunamiPuddleSlowDuration = 900;
 
         // LIGHTNING: Thunderhead ult
         this.thunderheadActive = false;
@@ -155,7 +158,7 @@ class GameScene extends Phaser.Scene {
         // ICE: bouncing shards
         this.iceShards = [];
         this.iceShardSpeed = 150;
-        this.iceShardDamage = 1.5;
+        this.iceShardDamage = 1;
         this.iceShardMaxBounces = 3;
         this.iceShardFreezeChance = 0.02;   // 2% chance per hit to become a freeze block
         this.iceBlockChance = 0.15;          // 15% chance on fire to shoot a big freeze block instead
@@ -188,7 +191,7 @@ class GameScene extends Phaser.Scene {
         this.stormFieldRadiusGrowthPerHit = 0.15;
 
         // COSMIC ELEMENT - BATTERY CHARGE SYSTEM
-        this.cosmicBatteryCharges = 5; // start with 5 charges
+        this.cosmicBatteryCharges = 10; // start with 10 charges
         this.cosmicMaxCharges = 10; // cap at 10
         this.cosmicPassiveChargeInterval = 10000; // gain 1 charge every 10 seconds
         this.lastCosmicPassiveCharge = 0;
@@ -911,6 +914,7 @@ class GameScene extends Phaser.Scene {
             }
         }
         
+        this.updateTsunamiPuddles(time);
         this.moveEnemies();
         
         if (!this.isIdling && time - this.lastMoveTime > this.idleDelay) {
@@ -1052,6 +1056,7 @@ class GameScene extends Phaser.Scene {
             healthBarFill: healthBarFill,
             isFrozen: false,       
             frozenUntil: 0,        
+            frozenByTsunami: false,
             isSlowed: false,     
             slowedUntil: 0,
             lastMoveTime: 0,
@@ -1220,7 +1225,7 @@ class GameScene extends Phaser.Scene {
                     enemy.isFrozen = false;
                     enemy.sprite.clearTint();
                     
-                    if (enemy.freezeVisuals) {
+                        if (enemy.freezeVisuals) {
                         if (enemy.freezeVisuals.iceBlock) {
                             this.tweens.killTweensOf(enemy.freezeVisuals.iceBlock);
                             enemy.freezeVisuals.iceBlock.setVisible(false);
@@ -1238,6 +1243,7 @@ class GameScene extends Phaser.Scene {
                         }
                         enemy.freezeVisuals = null;
                     }
+                    this.createTsunamiPuddle(enemy.x, enemy.y);
                 } else {
                     if (enemy.freezeVisuals) {
                         const blockY = enemy.sprite.y + 10;
@@ -1581,10 +1587,9 @@ class GameScene extends Phaser.Scene {
                 
                 // Check distance from shard's path to enemy
                 const distToPath = this.distancePointToSegment(ex, ey, oldX, oldY, s.sprite.x, s.sprite.y);
-                const hitRadius = s.isBlock ? 16 : 10;
+                const hitRadius = s.isBlock ? 16 : 16;
                 
                 if (distToPath < hitRadius) {
-                    s.hitEnemies.add(enemy);
                     this.damageEnemyIce(enemy, s.damage);
 
                     if (s.isBlock) {
@@ -1599,24 +1604,21 @@ class GameScene extends Phaser.Scene {
                         destroyed = true;
                         break;
                     } else {
-                        // Small shard: chance to freeze
+                        // Small shard
                         if (Math.random() < this.iceShardFreezeChance && !enemy.isFrozen) {
                             this.freezeEnemy(enemy, 1500);
                         }
-                        this.spawnBounceImpact(s.sprite.x, s.sprite.y);
-                        // Bounce off enemy
-                        const nx = (ex - s.sprite.x), ny = (ey - s.sprite.y);
-                        const len = Math.sqrt(nx * nx + ny * ny);
-                        const dot = (s.vx * nx + s.vy * ny) / (len * len);
-                        s.vx -= 2 * dot * nx;
-                        s.vy -= 2 * dot * ny;
-                        s.bounces++;
-                        if (s.bounces > this.iceShardMaxBounces) {
+                        if (this.ultDrainActive) {
+                            // Pierce: damage and continue, can hit multiple
+                            // Don't add to hitEnemies, don't bounce, don't destroy
+                        } else {
+                            // Normal: consumed on hit
+                            this.spawnBounceImpact(s.sprite.x, s.sprite.y);
                             this.destroyIceShard(s);
                             this.iceShards.splice(i, 1);
                             destroyed = true;
+                            break;
                         }
-                        break;
                     }
                 }
             }
@@ -2754,6 +2756,7 @@ class GameScene extends Phaser.Scene {
             for (let enemy of wetEnemies) {
                 if (!enemy.sprite || !enemy.sprite.active) continue;
 
+                enemy.frozenByTsunami = true;
                 this.freezeEnemy(enemy, this.tsunamiFreezeDuration);
                 this.applyBrittle(enemy, 2);
                 this.tsunamiFrozenEnemies.push(enemy);
@@ -3088,6 +3091,63 @@ class GameScene extends Phaser.Scene {
                 enemy._tsunamiMultText.y = enemy.sprite.y - 28;
             }
         }
+    }
+
+    updateTsunamiPuddles(time) {
+        for (let i = this.tsunamiPuddles.length - 1; i >= 0; i--) {
+            const puddle = this.tsunamiPuddles[i];
+            if (time >= puddle.expiresAt) {
+                if (puddle.waterTile) puddle.waterTile.destroy();
+                if (puddle.waterShimmer) puddle.waterShimmer.destroy();
+                if (puddle.ripple) puddle.ripple.destroy();
+                this.tsunamiPuddles.splice(i, 1);
+                continue;
+            }
+
+            for (let enemy of this.enemies) {
+                if (!enemy.sprite || !enemy.sprite.active || enemy.isFrozen) continue;
+                if (enemy.x === puddle.tileX && enemy.y === puddle.tileY) {
+                    enemy.isSlowed = true;
+                    enemy.slowedUntil = time + this.tsunamiPuddleSlowDuration;
+                }
+            }
+        }
+    }
+
+    createTsunamiPuddle(tileX, tileY) {
+        const px = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const py = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const waterTile = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0x0066cc, 0.55).setDepth(0.45);
+        const waterShimmer = this.add.rectangle(px, py, this.TILE_SIZE - 4, this.TILE_SIZE - 4, 0x44aaff, 0.3).setDepth(0.46);
+        const ripple = this.add.rectangle(px, py, this.TILE_SIZE * 0.5, this.TILE_SIZE * 0.2, 0xffffff, 0.12).setDepth(0.47);
+
+        this.tweens.add({
+            targets: waterShimmer,
+            alpha: 0.55,
+            duration: 450,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        this.tweens.add({
+            targets: ripple,
+            scaleX: 1.4,
+            alpha: 0,
+            duration: 700,
+            ease: 'Quad.easeOut',
+            repeat: -1,
+            yoyo: false,
+            onRepeat: () => { ripple.alpha = 0.12; ripple.scaleX = 1; }
+        });
+
+        this.tsunamiPuddles.push({
+            tileX,
+            tileY,
+            expiresAt: this.time.now + this.tsunamiPuddleDuration,
+            waterTile,
+            waterShimmer,
+            ripple
+        });
     }
 
     // ─── FIRE HELPERS ──────────────────────────────────────────────────
@@ -3735,6 +3795,8 @@ class GameScene extends Phaser.Scene {
                 if (this.cosmicBatteryCharges <= 0) {
                     this.cosmicBatteryCharges = 0;
                     this.cosmicContinuousLaserActive = false;
+                    this.cosmicUltActive = false;
+                    this.ultDrainActive = false;
                     this.updateHUD();
                 }
             }
@@ -4066,7 +4128,7 @@ class GameScene extends Phaser.Scene {
         this.cosmicUltActive = true;
         this.ultDrainActive = true;
         this.ultDrainStartTime = this.time.now;
-        this.ultDrainDuration = 10000; // 10 second timeout if player holds space the whole time
+        this.ultDrainDuration = 10000; // fallback timeout if no charge drains
         
         // Visual feedback
         const ultNotif = this.add.text(
@@ -4090,7 +4152,15 @@ class GameScene extends Phaser.Scene {
             duration: 2000,
             onComplete: () => ultNotif.destroy()
         });
-        
+
+        // Deploy the black hole at the current mouse target position
+        const activePointer = this.input.activePointer;
+        const targetX = (this.pointerX || activePointer.x);
+        const targetY = (this.pointerY || activePointer.y);
+        const worldX = targetX + this.cameras.main.scrollX;
+        const worldY = targetY + this.cameras.main.scrollY;
+        this.deployCosmicBlackHole(worldX, worldY);
+
         // Ult ends when charges deplete or after timeout
         this.time.delayedCall(this.ultDrainDuration, () => {
             if (this.cosmicUltActive) {
@@ -4438,6 +4508,7 @@ class GameScene extends Phaser.Scene {
             bh.container.destroy();
             this.cosmicBlackHole = null;
             this.cosmicContinuousLaserActive = false;
+            this.cosmicUltActive = false;
             
             this.cosmicInfiniteBeamEndTime = time + this.cosmicBlackHoleGracePeriod;
         }
