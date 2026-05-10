@@ -67,3 +67,6 @@ Elements:
         - in this state, beams fired by cosmic beam are 5/3/3 tiles wide and deal 1.5x/1.25x/1x damage, but consumes 2/2/1 charges.
         - this skill only ends if charges are not spent up in 10 seconds, or if all charges have been used up.
 
+scrap allat.
+
+fireball revamp: fireballs deal 1.5x1.5 tile splash damage and each attack has a 10% chance to fire a super ball (basically blue counterpart of the fireball) applying a super burn stack
