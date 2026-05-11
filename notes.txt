@@ -70,3 +70,20 @@ Elements:
 scrap allat.
 
 fireball revamp: fireballs deal 1.5x1.5 tile splash damage and each attack has a 10% chance to fire a super ball (basically blue counterpart of the fireball) applying a super burn stack
+
+scrap that too
+
+idea: make lightning bolt projectiles pierce enemies, zapping all enemies in a medium radius around the projectile periodically. superconductor only applied to those directly hit by the bolt.
+upgrade: make nodes be able to have stages of conductance, so the more you hit them the more you charge them
+
+each node should have two faint rings, one fornormal enemies and one for superconducted ones also decrease the projectile speed for the lightning projectile also change the superconduction effect not just a pulsing circle just use a mark for ease
+
+there shouldnt be a circle around the lightning projectiles, and the purple circle around the node shouldnt persist after it deactivates. the pulse should also microstun enemies briefly
+
+also currently the black hole doesnt detonate when pressing E or hitting the enemy, it only detonates at max range or hitting a wall
+
+and make the lightning bolt not ugly. also orb scraps are bugged when i pick them up they dont disappear and the game crashes.the burning trails from fireball ult also shouldnt just be to apply burn stacks, it should deal very fast continuous damage, similar to the laser beam during cosmic ult, as long as enemies are on the lava tile. 
+
+let there also be a bar indicating when the charge of the node will disappear so the player knows how to play around it
+
+enemies that go invisible. fire ult makes it so that enemies explode making a circle of lava tiles around them dealing small dps but very fast dps. shots dont leave lava trails anymore but the fireball splits into two more smaller fireballs every 2 tiles travelled, capping at 4 splits

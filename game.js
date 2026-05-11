@@ -1,4 +1,5 @@
 class GameScene extends Phaser.Scene {
+    constructor() { super({ key: 'Game' }); }
     preload() {
         this.load.spritesheet('slime_blue', 'assets/Slime_Blue_32x32.png', {
             frameWidth: 32,
@@ -12,19 +13,38 @@ class GameScene extends Phaser.Scene {
             frameWidth: 17,
             frameHeight: 17
         });
+        this.load.spritesheet('cloud_storm', 'assets/cloud_storm.png', {
+            frameWidth: 280,
+            frameHeight: 70
+        });
     }
     
-    create() {
+    create(data) {
+        this.currentLevelIndex = data?.levelIndex ?? 0;
         this.TILE_SIZE = 24;
         this.TILE_SCALE = 1.5;
         this.SLIME_SCALE = 1.2;
-        this.WORLD_WIDTH = 200;
-        this.WORLD_HEIGHT = 150;
+        this.WORLD_WIDTH = 120;
+        this.WORLD_HEIGHT = 100;
         this.SLIME_Y_OFFSET = -10;
 
         this.NOTHING = 0;
         this.FLOOR = 1;
         this.WALL = 2;
+
+        // Cloud storm animations
+        this.anims.create({
+            key: 'cloud_active',
+            frames: this.anims.generateFrameNumbers('cloud_storm', { start: 0, end: 1 }),
+            frameRate: 1.5,
+            repeat: -1
+        });
+        this.anims.create({
+            key: 'cloud_dissipate',
+            frames: this.anims.generateFrameNumbers('cloud_storm', { start: 2, end: 4 }),
+            frameRate: 4,
+            repeat: 0
+        });
 
         this.shiftWasDown = false;  
         
@@ -157,25 +177,63 @@ class GameScene extends Phaser.Scene {
 
         // ICE: bouncing shards
         this.iceShards = [];
-        this.iceShardSpeed = 150;
-        this.iceShardDamage = 1;
-        this.iceShardMaxBounces = 3;
+        this.iceShardSpeed = 200;
+        this.iceShardDamage = 0.8;
+        this.iceShardMaxBounces = 5;
         this.iceShardFreezeChance = 0.02;   // 2% chance per hit to become a freeze block
-        this.iceBlockChance = 0.15;          // 15% chance on fire to shoot a big freeze block instead
-        this.iceBlockDamage = 5.0;
+        this.iceBlockChance = 0.05;          // 5% chance on fire to shoot a big freeze block instead
+        this.iceBlockDamage = 10.0;
         this.iceBlockFreezeDuration = 3000;
 
-        this.lightningChainRange = 4; // tiles - range to chain between enemies
-        this.baseLightningDamage = 1; // weak first hit
-        this.lightningChainFalloff = 0.5; // 50% damage per chain (manual attacks)
-        this.lightningUltChainFalloff = 0.95; // 95% damage per chain (ult attacks)
-        this.lightningCooldown = 250;
-        this.lightningMaxRange = 15; // can target enemies up to 15 tiles away
+        this.lightningChainRange = 4;
+        this.baseLightningDamage = 0.7;
+        this.lightningChainFalloff = 0.5;
+        this.lightningUltChainFalloff = 0.95;
+        this.lightningCooldown = 600;
+        this.lightningMaxRange = 20;
+
+        // CONDUCTOR NODE SYSTEM
+        this.lightningNodes = [];
+        this.lightningNodeMax = 3;
+        this.lightningNodeRadius = 5;
+        this.lightningNodeChainRange = 16;
+        this.lightningNodeDamage = 2.5;
+        this.lightningNodeZapInterval = 600;
+        this.lightningNodeDuration = 10000;  // 10s — long enough to be strategic
+
+        // Node battery stages — each bolt hit charges one stage
+        this.lightningNodeMaxStage = 3;
+        this.lightningNodeBaseRadius   = [0, 3, 4, 5];   // normal enemy range per stage (tiles)
+        this.lightningNodeExtendRadius = [0, 0, 6, 8];   // superconducted range per stage
+        this.lightningNodeStageColors  = [0x334455, 0xff2200, 0xff8800, 0xaa44ff];
+
+        this.lightningNodePreview = null;
+        this.lightningProjectiles = [];
+        this.lightningNodesCrafting = [];
+
+        // Orb scraps — currency for nodes
+        this.orbScraps = 0;
+        this.orbNodeCost = 5;
+        this.orbRefundPct = 0.4;
+        this.orbDropChance = 0.08;
+        this.orbPickupRadius = 4;      // tiles
+        this.orbObjects = [];
+
+        // Node channel — 3s still channel to craft or remove
+        this.nodeChannelActive = false;
+        this.nodeChannelType = null;   // 'craft' | 'remove'
+        this.nodeChannelTarget = null; // { tileX, tileY }
+        this.nodeChannelStartTime = 0;
+        this.nodeChannelDuration = 3000;
+        this.nodeChannelVisual = null;
+
+        // Superconductor mechanic
+        this.superConductDuration = 10000;
 
         this.stormCloud = null;
         this.stormCloudRadius = 8;
         this.stormCloudCharge = 100;
-        this.stormCloudAutoAttackInterval = 150; 
+        this.stormCloudAutoAttackInterval = 250; 
         this.stormCloudLastAttack = 0;
         this.stormCloudChargeDecayPerAttack = 3; 
         this.stormCloudActive = false;
@@ -191,10 +249,15 @@ class GameScene extends Phaser.Scene {
         this.stormFieldRadiusGrowthPerHit = 0.15;
 
         // COSMIC ELEMENT - BATTERY CHARGE SYSTEM
-        this.cosmicBatteryCharges = 10; // start with 10 charges
-        this.cosmicMaxCharges = 10; // cap at 10
-        this.cosmicPassiveChargeInterval = 10000; // gain 1 charge every 10 seconds
-        this.lastCosmicPassiveCharge = 0;
+        this.cosmicBatteryCharges = 0; // start empty — must channel to earn
+        this.cosmicMaxCharges = 10;
+
+        // Active channeling (F key)
+        this.cosmicChanneling = false;
+        this.cosmicChannelStartTime = 0;
+        this.cosmicChannelSecondsPerCharge = 2; // seconds of channeling per charge
+        this.cosmicChannelLastCharge = 0;         // last time a charge was earned
+        this.cosmicChannelVisual = null;
         this.cosmicDropChance = 0.5; // 50% chance on enemy death
 
         this.cosmicCharging = false;
@@ -203,11 +266,11 @@ class GameScene extends Phaser.Scene {
         this.cosmicChargeIndicator = null;
 
         // Beam properties
-        this.cosmicBaseBeamDamage = 2.0;
+        this.cosmicBaseBeamDamage = 1.0;
         this.cosmicBeamWidth = 1.5; // tiles
 
         // Cosmic marks system
-        this.cosmicMarkDamagePerStack = 5; // bonus damage per mark consumed
+        this.cosmicMarkDamagePerStack = 12; // bonus damage per mark consumed
         this.cosmicMaxMarks = 3; // max 3 marks per enemy
 
         // Black hole ult
@@ -231,6 +294,11 @@ class GameScene extends Phaser.Scene {
 
         // Visual battery display
         this.cosmicBatteryDisplay = null;
+
+        // ESC — return to level select
+        this.input.keyboard.on('keydown-ESC', () => {
+            this.scene.start('LevelSelect');
+        });
 
         this.input.keyboard.on('keydown-ONE', () => {
             this.switchToElement('fire');
@@ -264,14 +332,14 @@ class GameScene extends Phaser.Scene {
         // Charge rates per source
         this.ultChargePerHit = 3.0;          // fire/ice direct hit
         this.ultChargePerBurnTick = 0.8;     // fire burn tick
-        this.ultChargePerChain = 1.5;        // lightning per click
+        this.ultChargePerChain = 3.5;        // lightning per click
         this.ultChargePerFreeze = 6.0;       // ice freeze proc
         this.ultChargePerCosmicMark = 8.0;   // cosmic mark consumed
 
         // Cosmic continuous laser (during ult)
         this.cosmicContinuousLaserActive = false;
         this.cosmicUltActive = false;         // tracks if ult mode is active
-        this.cosmicLaserDrainInterval = 1000; // drain 1 charge per second
+        this.cosmicLaserDrainInterval = 500; // drain 1 charge per second
         this.cosmicLaserLastDrain = 0;
         this.cosmicLaserTickInterval = 80;    // fire beam visual every 80ms
         this.cosmicLaserLastTick = 0;
@@ -281,6 +349,11 @@ class GameScene extends Phaser.Scene {
 
         // E key to activate ult
         this.input.keyboard.on('keydown-E', () => {
+            // If black hole projectile is in flight, E detonates it
+            if (this.cosmicBlackHoleProjectile) {
+                this.detonateCosmicBomb();
+                return;
+            }
             this.activateUlt();
         });
 
@@ -312,8 +385,16 @@ class GameScene extends Phaser.Scene {
             }
         });
 
-        // camera follows player
-        this.cameras.main.startFollow(this.player);
+        // F key — cosmic charge channeling (hold to earn charges, vulnerable while channeling)
+        this.input.keyboard.on('keydown-F', () => {
+            if (this.currentElement !== 'cosmic') return;
+            if (this.cosmicChanneling) return;
+            if (this.cosmicBatteryCharges >= this.cosmicMaxCharges) return;
+            this.startCosmicChanneling();
+        });
+        this.input.keyboard.on('keyup-F', () => {
+            if (this.cosmicChanneling) this.stopCosmicChanneling(false);
+        });
         this.cameras.main.setBounds(0, 0, this.WORLD_WIDTH * this.TILE_SIZE, this.WORLD_HEIGHT * this.TILE_SIZE);
         
         // create HUD
@@ -326,10 +407,10 @@ class GameScene extends Phaser.Scene {
 
         // fireball projectiles
         this.fireballs = [];
-        this.fireballSpeed = 300;
+        this.fireballSpeed = 350;
         this.lastFireballTime = 0;
         this.fireballCooldown = 500;
-        this.iceballCooldown = 500;
+        this.iceballCooldown = 800;
         this.fireballMaxRange = 30; 
 
         
@@ -338,18 +419,45 @@ class GameScene extends Phaser.Scene {
         this.pointerX = 0;
         this.pointerY = 0;
 
+        // Q toggles lightning node placement mode
+        this.lightningNodeMode = false;
+        this._nodePlacementRing = null; // circle showing placement range around player
+        this.input.keyboard.on('keydown-Q', () => {
+            if (this.currentElement !== 'lightning') return;
+            this.lightningNodeMode = !this.lightningNodeMode;
+            if (this.lightningNodeMode) {
+                this.showNodePlacementRing();
+            } else {
+                this.clearNodeMode();
+            }
+        });
+
         this.input.on('pointerdown', (pointer) => {
-            if (pointer.button !== 0) return; // only left mouse button
+            if (pointer.button !== 0) return;
             
-            // Check if storm cloud is active - click to throw it
             if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
                 this.throwLightning();
                 return;
             }
             
-            // COSMIC: Start charging
+            if (this.currentElement === 'lightning') {
+                if (this.lightningNodeMode) {
+                    const worldX = pointer.x + this.cameras.main.scrollX;
+                    const worldY = pointer.y + this.cameras.main.scrollY;
+                    const tileX = Math.floor(worldX / this.TILE_SIZE);
+                    const tileY = Math.floor(worldY / this.TILE_SIZE);
+                    this.placeLightningNode(tileX, tileY);
+                } else {
+                    // Set isPointerDown so hold-to-spam works via update loop
+                    this.isPointerDown = true;
+                    this.pointerX = pointer.x;
+                    this.pointerY = pointer.y;
+                    this.fireArcProjectile(pointer.x, pointer.y);
+                }
+                return;
+            }
+            
             if (this.currentElement === 'cosmic' && !this.cosmicInfiniteBeamActive) {
-                // Don't start charging, SPACE handles it
                 this.pointerX = pointer.x;
                 this.pointerY = pointer.y;
                 return;
@@ -361,13 +469,43 @@ class GameScene extends Phaser.Scene {
             this.shootAttack(pointer.x, pointer.y);
         });
 
+        this.input.on('pointerup', (pointer) => {
+            this.isPointerDown = false;
+        });
+
         this.input.on('pointermove', (pointer) => {
             this.pointerX = pointer.x;
             this.pointerY = pointer.y;
+            if (this.currentElement === 'lightning' && this.lightningNodeMode) {
+                const worldX = pointer.x + this.cameras.main.scrollX;
+                const worldY = pointer.y + this.cameras.main.scrollY;
+                this.updateNodePreview(
+                    Math.floor(worldX / this.TILE_SIZE),
+                    Math.floor(worldY / this.TILE_SIZE)
+                );
+            } else {
+                this.clearNodePreview();
+            }
         });
 
-        this.input.on('pointerup', () => {
-            this.isPointerDown = false;
+        // R key to remove lightning nodes
+        this.input.keyboard.on('keydown-R', () => {
+            if (this.currentElement === 'lightning' && this.lightningNodeMode) {
+                const worldX = this.pointerX + this.cameras.main.scrollX;
+                const worldY = this.pointerY + this.cameras.main.scrollY;
+                const tileX = Math.floor(worldX / this.TILE_SIZE);
+                const tileY = Math.floor(worldY / this.TILE_SIZE);
+                // Try exact tile first, then find nearest within 2 tiles
+                if (!this.removeLightningNodeAt(tileX, tileY)) {
+                    // Find nearest node/craft within 2 tiles
+                    let best = null, bestDist = 3;
+                    for (const n of [...this.lightningNodes, ...this.lightningNodesCrafting]) {
+                        const d = Math.abs(n.tileX - tileX) + Math.abs(n.tileY - tileY);
+                        if (d < bestDist) { bestDist = d; best = n; }
+                    }
+                    if (best) this.removeLightningNodeAt(best.tileX, best.tileY);
+                }
+            }
         });
         
         this.lastMoveTime = 0;
@@ -422,6 +560,13 @@ class GameScene extends Phaser.Scene {
         this.posText.setOrigin(1, 0);
         this.posText.setScrollFactor(0);
 
+        // Level label + ESC hint
+        this.levelLabel = this.add.text(10, this.scale.height - 14,
+            `WORLD 1 — LEVEL ${(this.currentLevelIndex ?? 0) + 1}  |  ESC: MENU`, {
+            fontSize: '10px', fontFamily: 'monospace', color: '#334455',
+            stroke: '#000000', strokeThickness: 2
+        }).setScrollFactor(0).setDepth(30);
+
         // Cosmic battery bar (purple) — shown above ult bar when on cosmic
         const cBarW = 280;
         const cBarH = 14;
@@ -461,6 +606,30 @@ class GameScene extends Phaser.Scene {
             fontSize: '11px', fontFamily: 'monospace', color: '#aaaaaa',
             stroke: '#000000', strokeThickness: 2
         }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(30);
+
+        // Node counter — shown when on lightning
+        this.nodeCountText = this.add.text(this.scale.width / 2, this.ultBarY - 20, '', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#44ccff',
+            stroke: '#000000', strokeThickness: 2
+        }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(30).setVisible(false);
+
+        // Orb scrap bar — below health bar, visible on lightning
+        const orbW = 160, orbH = 12;
+        const orbX = 10, orbY = 42;
+        this.orbBarBg   = this.add.rectangle(orbX, orbY, orbW, orbH, 0x000000, 0.85).setOrigin(0, 0.5).setScrollFactor(0).setDepth(30).setVisible(false);
+        this.orbBarGfx  = this.add.graphics().setScrollFactor(0).setDepth(31);
+        this.orbBarBorder = this.add.rectangle(orbX, orbY, orbW, orbH).setOrigin(0, 0.5).setScrollFactor(0).setDepth(32).setVisible(false);
+        this.orbBarBorder.setStrokeStyle(1.5, 0x00ffaa, 0.6);
+        this.orbCountText = this.add.text(orbX + orbW + 8, orbY, '', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#aaffcc',
+            stroke: '#000000', strokeThickness: 2, fontStyle: 'bold'
+        }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(32).setVisible(false);
+        // Label
+        this.orbBarLabel = this.add.text(orbX, orbY - orbH / 2 - 2, 'SCRAPS', {
+            fontSize: '9px', fontFamily: 'monospace', color: '#448866',
+            stroke: '#000000', strokeThickness: 2
+        }).setOrigin(0, 1).setScrollFactor(0).setDepth(32).setVisible(false);
+        this._orbBarX = orbX; this._orbBarY = orbY; this._orbBarW = orbW; this._orbBarH = orbH;
         
         this.updateHUD();
     }
@@ -489,6 +658,51 @@ class GameScene extends Phaser.Scene {
         }
         this.elementText.setText(elementText);
         
+        // Node counter — only visible on lightning
+        if (this.nodeCountText) {
+            if (this.currentElement === 'lightning') {
+                const placed = this.lightningNodes.length;
+                const crafting = this.lightningNodesCrafting ? this.lightningNodesCrafting.length : 0;
+                const active = this.lightningNodes.filter(n => n.active).length;
+                const total = placed + crafting;
+                let nodeStr = `NODES  ${total}/${this.lightningNodeMax}`;
+                if (active > 0) nodeStr += `  (${active} active)`;
+                if (crafting > 0) nodeStr += `  [${crafting} building]`;
+                this.nodeCountText.setText(nodeStr).setVisible(true);
+            } else {
+                this.nodeCountText.setVisible(false);
+            }
+        }
+
+        // Orb scrap bar — lightning only
+        if (this.orbBarBg) {
+            const onLightning = this.currentElement === 'lightning';
+            this.orbBarBg.setVisible(onLightning);
+            this.orbBarBorder.setVisible(onLightning);
+            this.orbCountText.setVisible(onLightning);
+            if (this.orbBarLabel) this.orbBarLabel.setVisible(onLightning);
+            this.orbBarGfx.clear();
+            if (onLightning) {
+                const pct = Math.min(this.orbScraps / 10, 1);
+                if (pct > 0) {
+                    // Inline gradient — green to bright cyan
+                    const bx = this._orbBarX, by = this._orbBarY - this._orbBarH / 2;
+                    const bw = this._orbBarW, bh = this._orbBarH;
+                    const fillW = Math.floor(bw * pct);
+                    for (let px2 = 0; px2 < fillW; px2++) {
+                        const t = fillW > 1 ? px2 / (fillW - 1) : 0;
+                        const r = Math.round(0x00 + (0x00 - 0x00) * t);
+                        const g2 = Math.round(0xaa + (0xff - 0xaa) * t);
+                        const b2 = Math.round(0x55 + (0xaa - 0x55) * t);
+                        this.orbBarGfx.fillStyle((r << 16) | (g2 << 8) | b2, 1);
+                        this.orbBarGfx.fillRect(bx + px2, by, 1, bh);
+                    }
+                }
+                const costClr = this.orbScraps >= this.orbNodeCost ? '#aaffcc' : '#ff8866';
+                this.orbCountText.setText(`${this.orbScraps}  (${this.orbNodeCost}/node)`).setStyle({ color: costClr });
+            }
+        }
+
         if (this.playerX !== undefined) {
             this.posText.setText(`Pos: (${this.playerX}, ${this.playerY}) | Enemies: ${this.enemies.length}`);
         }
@@ -581,14 +795,14 @@ class GameScene extends Phaser.Scene {
         }
         
         const rooms = [];
-        const numRooms = 100 + Math.floor(this.rng() * 6);
+        const numRooms = 10 + Math.floor(this.rng() * 5); // 10–14 rooms
         let attempts = 0;
         
-        while (rooms.length < numRooms && attempts < 1000) {
-            const w = 4 + Math.floor(this.rng() * 6);
-            const h = 4 + Math.floor(this.rng() * 6);
-            const x = 1 + Math.floor(this.rng() * (this.WORLD_WIDTH - w - 2));
-            const y = 1 + Math.floor(this.rng() * (this.WORLD_HEIGHT - h - 2));
+        while (rooms.length < numRooms && attempts < 2000) {
+            const w = 8 + Math.floor(this.rng() * 10);  // 8–17 tiles wide
+            const h = 7 + Math.floor(this.rng() * 8);   // 7–14 tiles tall
+            const x = 2 + Math.floor(this.rng() * (this.WORLD_WIDTH - w - 4));
+            const y = 2 + Math.floor(this.rng() * (this.WORLD_HEIGHT - h - 4));
             
             const room = { x, y, w, h };
             
@@ -602,6 +816,7 @@ class GameScene extends Phaser.Scene {
         this.connectRoomsMST(world, rooms);
         this.addExtraConnections(world, rooms);
         this.addWalls(world);
+        this.rooms = rooms; // store for enemy spawning
         
         return world;
     }
@@ -677,16 +892,25 @@ class GameScene extends Phaser.Scene {
         const ay = Math.floor(a.y + a.h / 2);
         const bx = Math.floor(b.x + b.w / 2);
         const by = Math.floor(b.y + b.h / 2);
-        
+        const hw = 1; // half-width — gives 3 tile wide corridor (hw*2+1)
+
+        // Horizontal segment
         const minX = Math.min(ax, bx);
         const maxX = Math.max(ax, bx);
         for (let x = minX; x <= maxX; x++) {
-            world[x][ay] = this.FLOOR;
+            for (let o = -hw; o <= hw; o++) {
+                const ty = ay + o;
+                if (ty >= 0 && ty < this.WORLD_HEIGHT) world[x][ty] = this.FLOOR;
+            }
         }
+        // Vertical segment
         const minY = Math.min(ay, by);
         const maxY = Math.max(ay, by);
         for (let y = minY; y <= maxY; y++) {
-            world[bx][y] = this.FLOOR;
+            for (let o = -hw; o <= hw; o++) {
+                const tx = bx + o;
+                if (tx >= 0 && tx < this.WORLD_WIDTH) world[tx][y] = this.FLOOR;
+            }
         }
     }
     
@@ -857,7 +1081,8 @@ class GameScene extends Phaser.Scene {
 
                 if (newX >= 0 && newX < this.WORLD_WIDTH &&
                     newY >= 0 && newY < this.WORLD_HEIGHT &&
-                    this.world[newX][newY] === this.FLOOR) {
+                    this.world[newX][newY] === this.FLOOR &&
+                    !this.isNodeAt(newX, newY)) {
                     
                     this.playerX = newX;
                     this.playerY = newY;
@@ -867,7 +1092,7 @@ class GameScene extends Phaser.Scene {
                     this.player.stop();
                     this.player.setFrame(0);
                     this.isIdling = false;
-                    
+                    if (this.nodeChannelActive) this.cancelNodeChannel();
                     this.updateHUD();
                 }
             }
@@ -923,25 +1148,40 @@ class GameScene extends Phaser.Scene {
         }
 
         if (this.isPointerDown && this.currentElement !== 'cosmic') {
-            this.shootAttack(this.pointerX, this.pointerY);
+            if (this.currentElement === 'lightning' && !this.lightningNodeMode) {
+                this.fireArcProjectile(this.pointerX, this.pointerY);
+            } else {
+                this.shootAttack(this.pointerX, this.pointerY);
+            }
         }
         this.updateFireballs(delta);
         this.updateBurnEffects(time);
         this.updateIgnitionTrails(time);
         this.updateIceShards(delta);
         this.updateBrittleDecay(time);
+        this.updateLightningNodes(time);
+        this.updateArcProjectiles(delta);
+        this.updateSuperConductors(time);
+        this.updateNodeCrafting(time);
+        this.updateNodeChannel(time);
+        this.updateOrbScraps();
+
+        // Keep placement ring following player every frame
+        if (this.lightningNodeMode && this._nodePlacementRing) {
+            this._redrawPlacementRing();
+        }
         this.updateTsunami(time);
         this.updateStormCloud(time); 
         this.updateStormField(time);
         this.updateThunderhead(time, delta);
-        this.updateCosmicPassiveCharge(time);
+        this.updateCosmicChanneling(time);
         this.updateCosmicCharge(time);
         // Black hole projectile removed - using laser ult instead
-        // this.updateCosmicBlackHoleProjectile(delta);
+        this.updateCosmicBlackHoleProjectile(delta);
         this.updateCosmicBlackHole(time);
 
-        // Update HUD every frame for smooth ult drain bar
-        if (this.ultDrainActive || this.currentElement === 'cosmic') {
+        // Update HUD every frame for smooth ult drain bar and node count
+        if (this.ultDrainActive || this.currentElement === 'cosmic' || this.currentElement === 'lightning') {
             this.updateHUD();
         }
 
@@ -998,27 +1238,38 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnEnemies() {
-        const numEnemies = 15 + Math.floor(this.rng() * 10);
-        let spawned = 0;
-        let attempts = 0;
-        
-        while (spawned < numEnemies && attempts < 1000) {
-            const x = Math.floor(this.rng() * this.WORLD_WIDTH);
-            const y = Math.floor(this.rng() * this.WORLD_HEIGHT);
-            
-            if (this.world[x][y] === this.FLOOR) {
-                const distToPlayer = Math.abs(x - this.playerX) + Math.abs(y - this.playerY);
-                if (distToPlayer > 5 && distToPlayer < 50) {
+        // Fixed enemy range per run: 3–5 enemies per room, skip player's starting room
+        const minPerRoom = 3;
+        const maxPerRoom = 5;
+        const rooms = this.rooms || [];
+
+        for (let i = 0; i < rooms.length; i++) {
+            const room = rooms[i];
+            const cx = Math.floor(room.x + room.w / 2);
+            const cy = Math.floor(room.y + room.h / 2);
+
+            // Skip the room the player starts in
+            const distToPlayer = Math.abs(cx - this.playerX) + Math.abs(cy - this.playerY);
+            if (distToPlayer < 8) continue;
+
+            const count = minPerRoom + Math.floor(this.rng() * (maxPerRoom - minPerRoom + 1));
+            let spawned = 0;
+            let attempts = 0;
+
+            while (spawned < count && attempts < 100) {
+                attempts++;
+                const x = room.x + 1 + Math.floor(this.rng() * (room.w - 2));
+                const y = room.y + 1 + Math.floor(this.rng() * (room.h - 2));
+
+                if (this.world[x][y] === this.FLOOR && !this.getEnemyAt(x, y)) {
                     this.createEnemy(x, y);
                     spawned++;
                 }
             }
-            attempts++;
         }
-        
-        console.log(`Spawned ${this.enemies.length} enemies`);
-    }
 
+        console.log(`Spawned ${this.enemies.length} enemies across ${rooms.length} rooms`);
+    }
     createEnemy(x, y) {
         const sprite = this.add.sprite(
             x * this.TILE_SIZE + this.TILE_SIZE / 2,
@@ -1073,6 +1324,11 @@ class GameScene extends Phaser.Scene {
             lastBurnTick: 0,
             burnVisual: null,
 
+            // LIGHTNING: superconductor
+            isSuperConducted: false,
+            superConductUntil: 0,
+            superConductVisual: null,
+
             // FIRE: combustion
             combustionTriggered: false,
 
@@ -1116,6 +1372,11 @@ class GameScene extends Phaser.Scene {
         const actualDamage = amount * this.damageReductionMultiplier;
         const blockedDamage = amount - actualDamage;
         
+        // Cancel cosmic channeling — getting hit interrupts it
+        if (this.cosmicChanneling) {
+            this.stopCosmicChanneling(true); // true = interrupted
+        }
+
         this.health -= actualDamage;
         
         if (blockedDamage > 0) {
@@ -1141,58 +1402,67 @@ class GameScene extends Phaser.Scene {
 
     getEnemyAt(x, y) {
         for (let enemy of this.enemies) {
-            if (enemy.x === x && enemy.y === y) {
-                return enemy;
-            }
+            if (enemy.x === x && enemy.y === y) return enemy;
         }
         return null;
     }
 
+    isNodeAt(x, y) {
+        return this.lightningNodes.some(n => n.tileX === x && n.tileY === y);
+    }
+
     findPathBFS(startX, startY, targetX, targetY) {
-        if (startX === targetX && startY === targetY) {
-            return null;
-        }
-        
+        const path = this._bfsRun(startX, startY, targetX, targetY, true);
+        // Fall back to ignoring enemies if they're blocking the only route
+        return path || this._bfsRun(startX, startY, targetX, targetY, false);
+    }
+
+    _bfsRun(startX, startY, targetX, targetY, avoidEnemies) {
+        if (startX === targetX && startY === targetY) return null;
+
         const queue = [];
         const visited = new Set();
         const parent = new Map();
-        
+
         const startKey = `${startX},${startY}`;
         queue.push({ x: startX, y: startY });
         visited.add(startKey);
         parent.set(startKey, null);
-        
+
         while (queue.length > 0) {
             const current = queue.shift();
-            
+
             if (current.x === targetX && current.y === targetY) {
                 return this.reconstructPath(parent, startX, startY, targetX, targetY);
             }
-            
+
             const neighbors = [
                 { x: current.x, y: current.y - 1 },
                 { x: current.x, y: current.y + 1 },
                 { x: current.x - 1, y: current.y },
                 { x: current.x + 1, y: current.y }
             ];
-            
+
             for (let neighbor of neighbors) {
                 const nx = neighbor.x;
                 const ny = neighbor.y;
                 const nKey = `${nx},${ny}`;
-                
+
                 if (visited.has(nKey)) continue;
-                
                 if (nx < 0 || nx >= this.WORLD_WIDTH || ny < 0 || ny >= this.WORLD_HEIGHT) continue;
-                
                 if (this.world[nx][ny] !== this.FLOOR) continue;
-                
+                if (this.isNodeAt(nx, ny)) continue;
+
+                // On first pass treat enemies as obstacles; player tile always passable
+                const isPlayerTile = nx === targetX && ny === targetY;
+                if (avoidEnemies && !isPlayerTile && this.getEnemyAt(nx, ny)) continue;
+
                 visited.add(nKey);
                 parent.set(nKey, current);
                 queue.push({ x: nx, y: ny });
             }
         }
-        
+
         return null;
     }
 
@@ -1275,11 +1545,6 @@ class GameScene extends Phaser.Scene {
                 
                 if (path && path.length > 1) {
                     const nextStep = path[1];
-                    
-                    const blockingEnemy = this.getEnemyAt(nextStep.x, nextStep.y);
-                    if (blockingEnemy && !(nextStep.x === this.playerX && nextStep.y === this.playerY)) {
-                        continue;
-                    }
                     
                     if (nextStep.x === this.playerX && nextStep.y === this.playerY) {
                         if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
@@ -1405,6 +1670,9 @@ class GameScene extends Phaser.Scene {
     }
 
     shootAttack(targetX, targetY) {
+        if (this.currentElement === 'lightning') return;
+        if (this.nodeChannelActive) this.cancelNodeChannel();
+
         const currentTime = this.time.now;
         
         const worldX = targetX + this.cameras.main.scrollX;
@@ -1417,31 +1685,22 @@ class GameScene extends Phaser.Scene {
         const distanceInTiles = Math.sqrt(dx * dx + dy * dy) / this.TILE_SIZE;
         
         const maxRange = this.currentElement === 'fire' ? this.fireballMaxRange : 30;
-        if (distanceInTiles > maxRange) {
-            return;
-        }
+        if (distanceInTiles > maxRange) return;
         
         let baseCooldown;
         if (this.currentElement === 'fire') {
             baseCooldown = this.fireballCooldown;
         } else if (this.currentElement === 'ice') {
             baseCooldown = this.iceballCooldown;
-        } else if (this.currentElement === 'lightning') {
-            baseCooldown = this.lightningCooldown;
         }
 
         const effectiveCooldown = baseCooldown / this.attackSpeedMultiplier;
-
-        if (currentTime - this.lastFireballTime < effectiveCooldown) {
-            return;
-        }
+        if (currentTime - this.lastFireballTime < effectiveCooldown) return;
         
         if (this.currentElement === 'fire') {
             this.shootFireball(targetX, targetY);
         } else if (this.currentElement === 'ice') {
             this.shootIceShard(targetX, targetY);
-        } else if (this.currentElement === 'lightning') {
-            this.shootChainLightning(targetX, targetY);
         }
         
         this.lastFireballTime = currentTime;
@@ -1463,15 +1722,49 @@ class GameScene extends Phaser.Scene {
         const dirX = dx / distance;
         const dirY = dy / distance;
 
-        const fireball = this.add.sprite(playerPixelX, playerPixelY, 'fireball');
-        fireball.setScale(1.5);
+        // Create container for fireball
+        const container = this.add.container(playerPixelX, playerPixelY);
+        
+        // Graphics for the entire fireball (core + streaming particles)
+        const fireGraphics = this.add.graphics();
+        fireGraphics.setDepth(1.5);
+        container.add(fireGraphics);
+        container.setDepth(2);
+        
+        const fireball = container;
         
         this.fireballs.push({
             sprite: fireball,
+            fireGraphics,
             vx: dirX * this.fireballSpeed,
             vy: dirY * this.fireballSpeed,
             damage: this.baseFireballDamage * this.damageScaling,
-            piercedEnemies: new Set()
+            piercedEnemies: new Set(),
+            dirX, dirY,
+            startX: playerPixelX,
+            startY: playerPixelY,
+            splitCount: 0,
+            createdAt: this.time.now,
+            lastFlameTime: this.time.now
+        });
+    }
+
+    spawnFireball(x, y, dirX, dirY, damage, splitCount) {
+        const container = this.add.container(x, y);
+        const fireGraphics = this.add.graphics().setDepth(1.5);
+        container.add(fireGraphics);
+        container.setDepth(2);
+        this.fireballs.push({
+            sprite: container,
+            fireGraphics,
+            vx: dirX * this.fireballSpeed,
+            vy: dirY * this.fireballSpeed,
+            damage, dirX, dirY,
+            startX: x, startY: y,
+            splitCount: splitCount || 0,
+            piercedEnemies: new Set(),
+            createdAt: this.time.now,
+            lastFlameTime: this.time.now
         });
     }
 
@@ -1488,29 +1781,84 @@ class GameScene extends Phaser.Scene {
 
         const vx = (dx / dist) * this.iceShardSpeed;
         const vy = (dy / dist) * this.iceShardSpeed;
+        const angle = Math.atan2(vy, vx);
 
         const isBlock = Math.random() < this.iceBlockChance;
 
-        // Visual: sharp rotated diamond (shard) or bigger chunky square (block)
         let sprite;
         if (isBlock) {
-            // Large ice block — bright cyan square with white border
-            sprite = this.add.rectangle(playerPixelX, playerPixelY, 14, 14, 0x88eeff, 1);
-            sprite.setStrokeStyle(2, 0xffffff, 1);
-            sprite.setRotation(Math.PI / 4);
-            sprite.setDepth(1);
-            // Pulsing glow
-            const glow = this.add.rectangle(playerPixelX, playerPixelY, 20, 20, 0x00ccff, 0.3);
-            glow.setRotation(Math.PI / 4);
-            glow.setDepth(1);
-            this.tweens.add({ targets: glow, scaleX: 1.4, scaleY: 1.4, alpha: 0.1, duration: 200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            sprite._glow = glow;
+            // Ice block - crystalline chunky shape using graphics
+            const g = this.add.graphics().setDepth(1);
+            g.x = playerPixelX;
+            g.y = playerPixelY;
+            
+            // Draw crystalline ice block
+            g.clear();
+            g.fillStyle(0x88eeff, 0.9);
+            g.beginPath();
+            g.moveTo(-10, -10);
+            g.lineTo(0, -12);
+            g.lineTo(10, -10);
+            g.lineTo(12, 0);
+            g.lineTo(10, 10);
+            g.lineTo(0, 12);
+            g.lineTo(-10, 10);
+            g.lineTo(-12, 0);
+            g.closePath();
+            g.fillPath();
+            
+            g.lineStyle(2, 0xffffff, 1);
+            g.strokePath();
+            
+            // Inner crystalline details
+            g.lineStyle(1, 0xddffff, 0.6);
+            g.beginPath();
+            g.moveTo(-4, -4);
+            g.lineTo(4, 4);
+            g.strokePath();
+            g.beginPath();
+            g.moveTo(4, -4);
+            g.lineTo(-4, 4);
+            g.strokePath();
+            
+            // Pulsing glow animation
+            const glow = this.add.circle(playerPixelX, playerPixelY, 16, 0x00ccff, 0.4);
+            glow.setDepth(0.9);
+            this.tweens.add({ targets: glow, scaleX: 1.5, scaleY: 1.5, alpha: 0.1, duration: 250, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            g._glow = glow;
+            
+            sprite = g;
         } else {
-            // Small shard — narrow elongated diamond
-            sprite = this.add.rectangle(playerPixelX, playerPixelY, 5, 12, 0xccffff, 0.95);
-            sprite.setStrokeStyle(1, 0xffffff, 0.8);
-            sprite.setRotation(Math.atan2(vy, vx) + Math.PI / 2);
-            sprite.setDepth(1);
+            // Small ice shard - crystalline pointed shape
+            const g = this.add.graphics().setDepth(1);
+            g.x = playerPixelX;
+            g.y = playerPixelY;
+            g.rotation = angle + Math.PI / 2;
+            
+            g.clear();
+            g.fillStyle(0xccffff, 0.95);
+            g.beginPath();
+            g.moveTo(0, -8);
+            g.lineTo(3, -2);
+            g.lineTo(3, 4);
+            g.lineTo(0, 8);
+            g.lineTo(-3, 4);
+            g.lineTo(-3, -2);
+            g.closePath();
+            g.fillPath();
+            
+            g.lineStyle(1, 0xffffff, 0.9);
+            g.strokePath();
+            
+            // Frost shimmer
+            g.lineStyle(0.5, 0xeeffff, 0.5);
+            g.beginPath();
+            g.moveTo(0, -4);
+            g.lineTo(1.5, 0);
+            g.lineTo(0, 4);
+            g.strokePath();
+            
+            sprite = g;
         }
 
         // Frost trail: tiny particles left behind
@@ -1608,9 +1956,15 @@ class GameScene extends Phaser.Scene {
                         if (Math.random() < this.iceShardFreezeChance && !enemy.isFrozen) {
                             this.freezeEnemy(enemy, 1500);
                         }
+                        s.hitEnemies.add(enemy);
                         if (this.ultDrainActive) {
-                            // Pierce: damage and continue, can hit multiple
-                            // Don't add to hitEnemies, don't bounce, don't destroy
+                            // Pierce: can hit up to 3 enemies
+                            if (s.hitEnemies.size >= 3) {
+                                this.destroyIceShard(s);
+                                this.iceShards.splice(i, 1);
+                                destroyed = true;
+                                break;
+                            }
                         } else {
                             // Normal: consumed on hit
                             this.spawnBounceImpact(s.sprite.x, s.sprite.y);
@@ -1669,25 +2023,109 @@ class GameScene extends Phaser.Scene {
             fireball.sprite.x += fireball.vx * deltaSeconds;
             fireball.sprite.y += fireball.vy * deltaSeconds;
             
+            // Draw fireball with gradient core and streaming particles
+            if (this.time.now - fireball.lastFlameTime > 30) {
+                fireball.lastFlameTime = this.time.now;
+                
+                const g = fireball.fireGraphics;
+                g.clear();
+
+                // rotation 
+                const angle = Math.atan2(fireball.dirY, fireball.dirX);
+                fireball.fireGraphics.setRotation(angle);
+
+                // === HEAD ===
+
+                // outer glow
+                g.fillStyle(0xffcc66, 0.25);
+                g.fillCircle(6, 0, 11.5);
+
+                // main body
+                g.fillStyle(0xff6600, 0.9);
+                g.fillCircle(6, 0, 10);
+
+                // inner core
+                g.fillStyle(0xaa2200, 0.95);
+                g.fillCircle(6, 0, 7);
+
+                g.fillStyle(0xf04900, 0.25);
+                g.fillCircle(6, 0, 8);
+
+                g.fillStyle(0xff6710, 0.25);
+                g.fillCircle(6, 0, 9);
+
+                // bright front
+                g.fillStyle(0xffffaa, 0.8);
+                g.fillCircle(10, 0, 2);
+
+                // === TAIL ===
+                const tailLength = 20;
+
+                for (let j = 0; j < 16; j++) {
+                    const t = j / 16;
+
+                    const spread = (1 - t) * 6;
+                    const x = -t * tailLength + (Math.random() - 0.5) * 2;
+                    const y = (Math.random() - 0.5) * spread;
+
+                    let color, alpha, size;
+
+                    if (t < 0.2) {
+                        color = 0xffaa33; alpha = 0.9; size = 3.5;
+                    } else if (t < 0.5) {
+                        color = 0xff8833; alpha = 0.7; size = 2.5;
+                    } else if (t < 0.8) {
+                        color = 0xffaa66; alpha = 0.5; size = 2;
+                    } else {
+                        color = 0xffdd99; alpha = 0.25; size = 1.2;
+                    }
+
+                    g.fillStyle(color, alpha);
+                    g.fillCircle(x, y, size);
+                }
+            }
+            
             const tileX = Math.floor(fireball.sprite.x / this.TILE_SIZE);
             const tileY = Math.floor(fireball.sprite.y / this.TILE_SIZE);
-            
-            if (tileX < 0 || tileX >= this.WORLD_WIDTH || 
+
+            // Wall check
+            if (tileX < 0 || tileX >= this.WORLD_WIDTH ||
                 tileY < 0 || tileY >= this.WORLD_HEIGHT ||
                 this.world[tileX][tileY] === this.WALL) {
                 fireball.sprite.destroy();
+                if (fireball.fireGraphics) fireball.fireGraphics.destroy();
                 this.fireballs.splice(i, 1);
                 continue;
             }
-            
-            // During ignition, leave lava trail on every new tile the fireball crosses
+
+            // Fireball splitting — only during ignition ult, every 2 tiles, cap at 4 splits
             if (this.ignitionActive) {
-                this.spawnIgnitionTrail(fireball.sprite.x, fireball.sprite.y);
+                const travelDist = Math.sqrt(
+                    (fireball.sprite.x - fireball.startX) ** 2 +
+                    (fireball.sprite.y - fireball.startY) ** 2
+                );
+                const splitThreshold = this.TILE_SIZE * 2;
+                const splitsDone = fireball.splitCount || 0;
+                const splitCheckPassed = Math.floor(travelDist / splitThreshold) > splitsDone;
+                if (splitCheckPassed && splitsDone < 4) {
+                    fireball.splitCount = splitsDone + 1;
+                    const baseAngle = Math.atan2(fireball.vy, fireball.vx);
+                    [-0.35, 0.35].forEach(offset => {
+                        const a = baseAngle + offset;
+                        const spd = Math.sqrt(fireball.vx ** 2 + fireball.vy ** 2) * 0.85;
+                        this.spawnFireball(
+                            fireball.sprite.x, fireball.sprite.y,
+                            Math.cos(a), Math.sin(a),
+                            fireball.damage * 0.6,
+                            splitsDone + 1
+                        );
+                    });
+                }
             }
 
             let hitEnemy = false;
-            const fireballTileX = Math.floor(fireball.sprite.x / this.TILE_SIZE);
-            const fireballTileY = Math.floor(fireball.sprite.y / this.TILE_SIZE);
+            const fireballTileX = tileX;
+            const fireballTileY = tileY;
 
             for (let enemy of this.enemies) {
                 // Check both logical tile pos and sprite pixel pos (handles mid-tween knockback)
@@ -1710,13 +2148,63 @@ class GameScene extends Phaser.Scene {
             }
 
             if (hitEnemy) {
-                if (!this.ignitionActive) {
-                    fireball.sprite.destroy();
-                    this.fireballs.splice(i, 1);
+                // During ignition, explode in a lava ring on hit
+                if (this.ignitionActive) {
+                    this.ignitionExplodeEnemy({ sprite: { x: fireball.sprite.x, y: fireball.sprite.y }, x: fireballTileX, y: fireballTileY });
                 }
+                fireball.sprite.destroy();
+                if (fireball.fireGraphics) fireball.fireGraphics.destroy();
+                this.fireballs.splice(i, 1);
                 continue;
             }
         }
+    }
+
+    showCannotSwitchText(reason) {
+        // Dedupe — don't spam if already showing
+        if (this._cannotSwitchText && this._cannotSwitchText.active) return;
+
+        const txt = this.add.text(
+            this.scale.width / 2,
+            this.scale.height / 2 - 60,
+            `✕ CANNOT SWITCH\n${reason}`,
+            {
+                fontSize: '14px', fontFamily: 'monospace',
+                color: '#ff4444', stroke: '#000000', strokeThickness: 3,
+                fontStyle: 'bold', align: 'center'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+
+        this._cannotSwitchText = txt;
+        this.tweens.add({
+            targets: txt, y: txt.y - 20, alpha: 0,
+            duration: 1000, ease: 'Quad.easeOut',
+            onComplete: () => { txt.destroy(); this._cannotSwitchText = null; }
+        });
+    }
+
+    showStatusText(x, y, text, color = '#ffffff') {
+        const txt = this.add.text(
+            x + (Math.random() - 0.5) * 14,
+            y - 22,
+            text,
+            {
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                color,
+                stroke: '#000000',
+                strokeThickness: 3,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setDepth(10);
+        this.tweens.add({
+            targets: txt,
+            y: txt.y - 18,
+            alpha: 0,
+            duration: 900,
+            ease: 'Quad.easeOut',
+            onComplete: () => txt.destroy()
+        });
     }
 
     showDamageNumber(x, y, amount, color = '#ffffff') {
@@ -1745,8 +2233,8 @@ class GameScene extends Phaser.Scene {
     }
 
     damageEnemy(enemy, damage) {
-        // Apply brittle damage bonus
-        const brittleBonus = enemy.brittleStacks ? (1 + enemy.brittleStacks * this.brittlePerStack) : 1;
+        // Apply brittle damage bonus: fixed 1.5x if any brittle stacks
+        const brittleBonus = enemy.brittleStacks > 0 ? 1.5 : 1;
         const tsunamiBonus = this.tsunamiFrozenEnemies.includes(enemy) ? this.tsunamiFreezeMultiplier : 1;
         const actualDamage = damage * brittleBonus * tsunamiBonus;
         enemy.health -= actualDamage;
@@ -1766,16 +2254,23 @@ class GameScene extends Phaser.Scene {
         }
         
         if (this.currentElement === 'fire') {
+            const wasAlreadyBurning = enemy.isBurning;
             enemy.isBurning = true;
             enemy.burnUntil = this.time.now + this.burnDuration;
             if (!enemy.burnVisualActive) this.showBurnVisual(enemy);
+            if (!wasAlreadyBurning && enemy.sprite && enemy.sprite.active) {
+                this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'BURNING', '#ff8800');
+            }
         }
         
         if (this.currentElement === 'ice') {
-            // Apply brittle stacks on ice hit
             this.applyBrittle(enemy, 1);
+            const wasAlreadySlowed = enemy.isSlowed;
             enemy.isSlowed = true;
             enemy.slowedUntil = this.time.now + this.slowDuration;
+            if (!wasAlreadySlowed && enemy.sprite && enemy.sprite.active) {
+                this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'SLOWED', '#44ccff');
+            }
             
             if (Math.random() < 0.15 && !enemy.isFrozen) {
                 this.freezeEnemy(enemy, 2000);
@@ -1814,6 +2309,10 @@ class GameScene extends Phaser.Scene {
         if (this.currentElement === 'cosmic' && Math.random() < this.cosmicDropChance) {
             this.addCosmicCharge(enemy.sprite.x, enemy.sprite.y);
         }
+        // 10% chance to drop an orb scrap
+        if (Math.random() < this.orbDropChance && enemy.sprite) {
+            this.spawnOrbScrap(enemy.sprite.x, enemy.sprite.y);
+        }
 
         if (enemy.sprite) enemy.sprite.destroy();
         if (enemy.healthBarBg) enemy.healthBarBg.destroy();
@@ -1840,13 +2339,18 @@ class GameScene extends Phaser.Scene {
         }
 
         if (enemy.brittleVisual) {
+            this.tweens.killTweensOf(enemy.brittleVisual);
             enemy.brittleVisual.destroy();
             enemy.brittleVisual = null;
         }
+        enemy.brittleStacks = 0;
 
         if (enemy._tsunamiMultText) { enemy._tsunamiMultText.destroy(); enemy._tsunamiMultText = null; }
         const tfi = this.tsunamiFrozenEnemies.indexOf(enemy);
         if (tfi > -1) this.tsunamiFrozenEnemies.splice(tfi, 1);
+        delete enemy._bhOrbitAngle;
+        delete enemy._bhOrbitRadius;
+        if (enemy.isSuperConducted) this.clearSuperConduct(enemy);
 
         // Remove from all active projectile hit sets so they can hit the tile again
         for (const fb of this.fireballs) {
@@ -1886,29 +2390,60 @@ class GameScene extends Phaser.Scene {
     switchToElement(targetElement) {
         const currentTime = this.time.now;
         
-        // Can't switch to same element
-        if (this.currentElement === targetElement) {
+        if (this.currentElement === targetElement) return;
+
+        // Block switching during active abilities
+        const blockingState =
+            this.thunderheadActive ? 'THUNDERHEAD ACTIVE' :
+            this.tsunamiActive     ? 'TSUNAMI ACTIVE' :
+            this.ignitionActive    ? 'IGNITION ACTIVE' :
+            this.cosmicUltActive   ? 'BLACK HOLE ACTIVE' :
+            this.cosmicCharging    ? 'CHARGING BEAM' :
+            this.cosmicContinuousLaserActive ? 'LASER ACTIVE' :
+            null;
+
+        if (blockingState) {
+            this.showCannotSwitchText(blockingState);
             return;
         }
-        
-        // Check cooldown
+
         if (currentTime - this.lastElementSwitchTime < this.elementSwitchCooldown) {
             return;
         }
         
         this.isPointerDown = false;
+        this.clearNodeMode();
+        this.clearNodePreview();
+        if (this.cosmicChanneling) this.stopCosmicChanneling(false);
+
+        // Clean up cosmic charge indicator if mid-charge somehow
+        if (this.cosmicChargeIndicator) {
+            this.tweens.killTweensOf(this.cosmicChargeIndicator);
+            this.cosmicChargeIndicator.destroy();
+            this.cosmicChargeIndicator = null;
+        }
+        this.cosmicCharging = false;
+        this.cosmicContinuousLaserActive = false;
         
         // Clear projectiles
         for (let fireball of this.fireballs) {
-            if (fireball.sprite) {
-                fireball.sprite.destroy();
-            }
+            if (fireball.sprite) fireball.sprite.destroy();
         }
         this.fireballs = [];
         
         // Clear ice shards
         for (let s of this.iceShards) this.destroyIceShard(s);
         this.iceShards = [];
+
+        // Clear lightning arc projectiles and crafting nodes
+        for (let p of this.lightningProjectiles) { if (p.g.active) p.g.destroy(); }
+        this.lightningProjectiles = [];
+        for (let c of this.lightningNodesCrafting) {
+            this.tweens.killTweensOf(c.barFill);
+            this.tweens.killTweensOf(c.ghostDot);
+            c.ghost.destroy(); c.barBg.destroy(); c.barFill.destroy(); c.ghostDot.destroy();
+        }
+        this.lightningNodesCrafting = [];
         
         // Switch to new element — apply charge penalty
         this.currentElement = targetElement;
@@ -2084,6 +2619,954 @@ class GameScene extends Phaser.Scene {
         enemy.burnVisualActive = false;
     }
 
+    // ─── LIGHTNING NODE SYSTEM ─────────────────────────────────────────
+
+    applySuperConduct(enemy) {
+        if (!enemy.sprite || !enemy.sprite.active) return;
+        enemy.isSuperConducted = true;
+        enemy.superConductUntil = this.time.now + this.superConductDuration;
+
+        if (enemy.superConductVisual) {
+            this.tweens.killTweensOf(enemy.superConductVisual.container);
+            enemy.superConductVisual.container.destroy();
+            enemy.superConductVisual = null;
+        }
+
+        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+
+        // Detailed electric sigil — concentric rings + angled crackle lines + bright core dot
+        const container = this.add.container(ex, ey - 18).setDepth(2.2);
+
+        const g = this.add.graphics();
+
+        // Outer ring
+        g.lineStyle(1, 0xffff44, 0.55);
+        g.strokeCircle(0, 0, 9);
+
+        // Inner ring
+        g.lineStyle(1, 0xffffff, 0.35);
+        g.strokeCircle(0, 0, 5);
+
+        // Four angled crackle lines radiating outward (like a compass rose, slightly jagged)
+        const crackleAngles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+        crackleAngles.forEach(a => {
+            const midX = Math.cos(a + 0.25) * 6, midY = Math.sin(a + 0.25) * 6;
+            const endX = Math.cos(a) * 11, endY = Math.sin(a) * 11;
+            g.lineStyle(1.5, 0xffff88, 0.75);
+            g.beginPath(); g.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
+            g.lineTo(midX, midY); g.lineTo(endX, endY); g.strokePath();
+        });
+
+        // Bright core dot
+        g.fillStyle(0xffffff, 0.9);
+        g.fillCircle(0, 0, 2);
+
+        container.add(g);
+
+        // Slow rotation — subtle, not distracting
+        this.tweens.add({
+            targets: container,
+            angle: 360,
+            duration: 3000,
+            repeat: -1,
+            ease: 'Linear'
+        });
+
+        enemy.superConductVisual = { container, g };
+        enemy.sprite.setTint(0xffffaa);
+
+        this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'CONDUCTOR', '#ffff44');
+    }
+
+    clearSuperConduct(enemy) {
+        enemy.isSuperConducted = false;
+        enemy.superConductUntil = 0;
+        if (enemy.superConductVisual) {
+            this.tweens.killTweensOf(enemy.superConductVisual.container);
+            enemy.superConductVisual.container.destroy();
+            enemy.superConductVisual = null;
+        }
+        if (enemy.sprite && enemy.sprite.active && !enemy.isFrozen && !enemy.isBurning) {
+            enemy.sprite.clearTint();
+        }
+    }
+
+    updateSuperConductors(time) {
+        for (let enemy of this.enemies) {
+            if (!enemy.isSuperConducted) continue;
+            if (!enemy.sprite || !enemy.sprite.active) { this.clearSuperConduct(enemy); continue; }
+            if (time >= enemy.superConductUntil) {
+                this.clearSuperConduct(enemy);
+                continue;
+            }
+            if (enemy.superConductVisual?.container?.active) {
+                enemy.superConductVisual.container.x = enemy.sprite.x;
+                enemy.superConductVisual.container.y = enemy.sprite.y - 18;
+            }
+        }
+    }
+
+    placeLightningNode(tileX, tileY) {
+        if (tileX < 0 || tileX >= this.WORLD_WIDTH || tileY < 0 || tileY >= this.WORLD_HEIGHT) return;
+        if (this.world[tileX][tileY] !== this.FLOOR) return;
+
+        const dist = Math.abs(tileX - this.playerX) + Math.abs(tileY - this.playerY);
+        if (dist > 3) { this.showStatusText(this.player.x, this.player.y - 20, 'TOO FAR', '#ffff44'); return; }
+
+        if (this.lightningNodes.find(n => n.tileX === tileX && n.tileY === tileY)) return;
+        if (this.lightningNodesCrafting.find(c => c.tileX === tileX && c.tileY === tileY)) return;
+
+        if (this.lightningNodes.length + this.lightningNodesCrafting.length >= this.lightningNodeMax) {
+            this.showStatusText(this.player.x, this.player.y - 20, 'MAX NODES', '#ffff44'); return;
+        }
+        if (this.orbScraps < this.orbNodeCost) {
+            this.showStatusText(this.player.x, this.player.y - 20, `NEED ${this.orbNodeCost} SCRAPS`, '#ff6644'); return;
+        }
+
+        if (this.nodeChannelActive) this.cancelNodeChannel();
+
+        this.nodeChannelActive = true;
+        this.nodeChannelType = 'craft';
+        this.nodeChannelTarget = { tileX, tileY };
+        this.nodeChannelStartTime = this.time.now;
+
+        const ts = this.TILE_SIZE;
+        const ghost = this.add.graphics().setDepth(1.6);
+        ghost.fillStyle(0x1a2a3a, 0.5);
+        ghost.fillRect(tileX * ts, tileY * ts, ts, ts);
+        ghost.lineStyle(1.5, 0x335566, 0.7);
+        ghost.strokeRect(tileX * ts, tileY * ts, ts, ts);
+
+        const barW = ts + 12;
+        const barBg   = this.add.rectangle(0, 0, barW, 6, 0x000000, 0.85).setDepth(5);
+        const barFill = this.add.rectangle(0, 0, 0, 6, 0x00ccff, 1).setOrigin(0, 0.5).setDepth(5.1);
+        const barLabel = this.add.text(0, 0, 'CRAFTING', {
+            fontSize: '10px', fontFamily: 'monospace', color: '#00ccff', stroke: '#000', strokeThickness: 2
+        }).setOrigin(0.5, 1).setDepth(5.2);
+
+        this.nodeChannelVisual = { ghost, barBg, barFill, barLabel };
+    }
+
+    removeLightningNodeAt(tileX, tileY) {
+        const ci = this.lightningNodesCrafting.findIndex(c => c.tileX === tileX && c.tileY === tileY);
+        if (ci !== -1) {
+            const c = this.lightningNodesCrafting[ci];
+            this.tweens.killTweensOf(c.barFill); this.tweens.killTweensOf(c.ghostDot);
+            c.ghost.destroy(); c.barBg.destroy(); c.barFill.destroy(); c.ghostDot.destroy();
+            this.lightningNodesCrafting.splice(ci, 1);
+            return true;
+        }
+        const ni = this.lightningNodes.findIndex(n => n.tileX === tileX && n.tileY === tileY);
+        if (ni !== -1) {
+            const d = Math.abs(tileX - this.playerX) + Math.abs(tileY - this.playerY);
+            if (d > 3) { this.showStatusText(this.player.x, this.player.y - 20, 'TOO FAR', '#ffff44'); return false; }
+
+            if (this.nodeChannelActive) this.cancelNodeChannel();
+
+            this.nodeChannelActive = true;
+            this.nodeChannelType = 'remove';
+            this.nodeChannelTarget = { tileX, tileY };
+            this.nodeChannelStartTime = this.time.now;
+
+            const ts = this.TILE_SIZE;
+            const ghost = this.add.graphics().setDepth(5);
+            ghost.lineStyle(2, 0xff4444, 0.8);
+            ghost.strokeRect(tileX * ts, tileY * ts, ts, ts);
+
+            const barW = ts + 12;
+            const barBg   = this.add.rectangle(0, 0, barW, 6, 0x000000, 0.85).setDepth(5);
+            const barFill = this.add.rectangle(0, 0, 0, 6, 0xff4444, 1).setOrigin(0, 0.5).setDepth(5.1);
+            const barLabel = this.add.text(0, 0, 'REMOVING', {
+                fontSize: '10px', fontFamily: 'monospace', color: '#ff8888', stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5, 1).setDepth(5.2);
+
+            this.nodeChannelVisual = { ghost, barBg, barFill, barLabel };
+            return true;
+        }
+        return false;
+    }
+
+    cancelNodeChannel() {
+        if (!this.nodeChannelActive) return;
+        this.nodeChannelActive = false;
+        this.nodeChannelType = null;
+        this.nodeChannelTarget = null;
+        if (this.nodeChannelVisual) {
+            const v = this.nodeChannelVisual;
+            [v.ghost, v.barBg, v.barFill, v.barLabel].forEach(o => { if (o && o.active) o.destroy(); });
+            this.nodeChannelVisual = null;
+        }
+    }
+
+    updateNodeChannel(time) {
+        if (!this.nodeChannelActive || !this.nodeChannelVisual) return;
+
+        const v = this.nodeChannelVisual;
+        const elapsed = time - this.nodeChannelStartTime;
+        const pct = Math.min(elapsed / this.nodeChannelDuration, 1);
+        const ts = this.TILE_SIZE;
+        const barW = ts + 12;
+        const bx = this.player.x - barW / 2;
+        const by = this.player.y - 36;
+
+        v.barBg.x = bx + barW / 2; v.barBg.y = by + 3;
+        v.barFill.x = bx; v.barFill.y = by + 3;
+        v.barFill.width = barW * pct;
+        v.barLabel.x = bx + barW / 2; v.barLabel.y = by;
+
+        if (pct < 1) return;
+
+        const { tileX, tileY } = this.nodeChannelTarget;
+        const type = this.nodeChannelType;
+        this.cancelNodeChannel();
+
+        if (type === 'craft') {
+            this.orbScraps -= this.orbNodeCost;
+            this.updateHUD();
+            this.finishPlacingNode(tileX, tileY);
+        } else if (type === 'remove') {
+            const ni = this.lightningNodes.findIndex(n => n.tileX === tileX && n.tileY === tileY);
+            if (ni !== -1) {
+                this.destroyLightningNode(this.lightningNodes[ni]);
+                this.lightningNodes.splice(ni, 1);
+                const refund = Math.floor(this.orbNodeCost * this.orbRefundPct);
+                if (refund > 0) {
+                    this.orbScraps += refund;
+                    this.showStatusText(this.player.x, this.player.y - 20, `+${refund} SCRAPS`, '#aaffcc');
+                    this.updateHUD();
+                }
+            }
+        }
+    }
+
+    spawnOrbScrap(x, y) {
+        const g = this.add.graphics().setDepth(3.5);
+        g.fillStyle(0x00cc88, 1); g.fillCircle(0, 0, 5);
+        g.fillStyle(0x00ffaa, 0.8); g.fillCircle(0, 0, 3.5);
+        g.fillStyle(0xffffff, 0.7); g.fillCircle(-1.5, -1.5, 1.5);
+        g.lineStyle(1.5, 0x00ffcc, 0.9); g.strokeCircle(0, 0, 5);
+        g.x = x; g.y = y;
+
+        const landX = x + (Math.random() - 0.5) * 20;
+        const landY = y + 6 + Math.random() * 8;
+
+        const orb = { g, landX, landY, attracting: false, tweensKilled: false };
+        this.orbObjects.push(orb);
+
+        // Pop up then drop to landing pos
+        this.tweens.add({
+            targets: g, x: landX, y: y - 18, duration: 180, ease: 'Quad.easeOut',
+            onComplete: () => {
+                if (!g.active) return;
+                this.tweens.add({
+                    targets: g, y: landY, duration: 240, ease: 'Bounce.easeOut',
+                    onComplete: () => {
+                        if (!g.active || orb.attracting) return;
+                        // Gentle bob after landing
+                        this.tweens.add({ targets: g, y: landY - 2, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                    }
+                });
+            }
+        });
+    }
+
+    updateOrbScraps() {
+        const px = this.player.x, py = this.player.y;
+        const attractDist = this.orbPickupRadius * this.TILE_SIZE;
+        const now = this.time.now;
+
+        for (let i = this.orbObjects.length - 1; i >= 0; i--) {
+            const orb = this.orbObjects[i];
+            if (orb.collected || !orb.g || !orb.g.active) {
+                this.orbObjects.splice(i, 1);
+                continue;
+            }
+
+            const dx = px - orb.g.x, dy = py - orb.g.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < attractDist || orb.attracting) {
+                if (!orb.attracting) {
+                    orb.attracting = true;
+                    this.tweens.killTweensOf(orb.g);
+                }
+
+                if (dist < 14) {
+                    // Collect — mark immediately to prevent double-collect
+                    orb.collected = true;
+                    this.tweens.killTweensOf(orb.g);
+                    orb.g.destroy();
+                    this.orbObjects.splice(i, 1);
+                    this.orbScraps++;
+                    this.updateHUD();
+                    const flash = this.add.circle(px, py, 8, 0x00ffaa, 0.5).setDepth(4);
+                    this.tweens.add({ targets: flash, radius: 18, alpha: 0, duration: 180, onComplete: () => flash.destroy() });
+                    continue;
+                }
+
+                // Move toward player
+                const spd = 4 + (attractDist - Math.max(dist, 1)) * 0.1;
+                orb.g.x += (dx / dist) * spd;
+                orb.g.y += (dy / dist) * spd;
+            } else {
+                // Bob gently — only if not attracting
+                orb.g.y = orb.landY + Math.sin(now / 500 + i) * 2;
+            }
+        }
+    }
+
+    updateNodeCrafting(time) {
+        // Legacy no-op — channel system handles crafting now
+    }
+
+
+    finishPlacingNode(tileX, tileY) {
+        if (tileX < 0 || tileX >= this.WORLD_WIDTH || tileY < 0 || tileY >= this.WORLD_HEIGHT) return;
+        if (this.world[tileX][tileY] !== this.FLOOR) return;
+
+        const px = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const py = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const ts = this.TILE_SIZE;
+
+        const g = this.add.graphics().setDepth(1.6);
+        g.fillStyle(0x1a2a3a, 0.88);
+        g.fillRect(tileX * ts, tileY * ts, ts, ts);
+        g.lineStyle(1.5, 0x335566, 0.9);
+        g.strokeRect(tileX * ts, tileY * ts, ts, ts);
+        g.lineStyle(0.5, 0x224455, 0.45);
+        g.beginPath(); g.moveTo(tileX * ts, tileY * ts); g.lineTo(tileX * ts + ts, tileY * ts + ts); g.strokePath();
+        g.beginPath(); g.moveTo(tileX * ts + ts, tileY * ts); g.lineTo(tileX * ts, tileY * ts + ts); g.strokePath();
+        g.beginPath(); g.moveTo(tileX * ts + ts / 2, tileY * ts); g.lineTo(tileX * ts + ts / 2, tileY * ts + ts); g.strokePath();
+        g.beginPath(); g.moveTo(tileX * ts, tileY * ts + ts / 2); g.lineTo(tileX * ts + ts, tileY * ts + ts / 2); g.strokePath();
+
+        const pulse = this.add.circle(px, py, 4, 0x226688, 0.5).setDepth(1.8);
+        this.tweens.add({ targets: pulse, alpha: 0.15, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+        // Inner ring — normal enemy radius (dormant, faint)
+        const radiusRing = this.add.circle(px, py, this.lightningNodeRadius * ts, 0, 0).setDepth(1.5);
+        radiusRing.setStrokeStyle(1, 0x4488aa, 0.18);
+
+        // Outer ring — superconducted enemy radius (extended, even fainter)
+        const extRadius = this.lightningNodeRadius * ts * 1.6; // ~60% larger
+        const extRing = this.add.circle(px, py, extRadius, 0, 0).setDepth(1.4);
+        extRing.setStrokeStyle(1, 0x226644, 0.10);
+
+        // Charge timer bar — tiny bar below tile showing remaining active time
+        const timerBarBg = this.add.rectangle(px, tileY * ts + ts + 4, ts - 4, 3, 0x000000, 0.6).setDepth(2);
+        const timerBarFill = this.add.rectangle(px - (ts - 4) / 2, tileY * ts + ts + 4, 0, 3, 0x00ccff, 0.8).setOrigin(0, 0.5).setDepth(2.1);
+        timerBarBg.setVisible(false);
+        timerBarFill.setVisible(false);
+
+        // Placement flash
+        const flash = this.add.circle(px, py, ts * 0.8, 0x00ccff, 0.4).setDepth(3);
+        this.tweens.add({ targets: flash, radius: ts * 1.5, alpha: 0, duration: 250, onComplete: () => flash.destroy() });
+
+        this.lightningNodes.push({
+            tileX, tileY, px, py,
+            active: false,
+            stage: 0,
+            lastPulseTime: 0,
+            g, pulse,
+            radiusRing,    // inner — normal range
+            extRing,       // outer — superconducted range
+            timerBarBg, timerBarFill,
+            activeVisuals: null,
+            lastZapTime: 0,
+            expiresAt: 0,
+            arcGraphics: null
+        });
+    }
+
+    activateLightningNode(node) {
+        // Each hit charges one stage (up to max), refreshes duration
+        node.stage = Math.min(this.lightningNodeMaxStage, (node.stage || 0) + 1);
+        node.active = true;
+        node.expiresAt = this.time.now + this.lightningNodeDuration;
+        node.lastZapTime = this.time.now;
+        node.lastPulseTime = node.lastPulseTime || 0;
+        const ts = this.TILE_SIZE;
+
+        const stageCol = this.lightningNodeStageColors[node.stage];
+        const baseR    = this.lightningNodeBaseRadius[node.stage] || 3;
+        const extR     = this.lightningNodeExtendRadius[node.stage] || 0;
+
+        // Kill existing active visuals
+        this.tweens.killTweensOf(node.pulse);
+        this.tweens.killTweensOf(node.radiusRing);
+        if (node.activeVisuals?.sparkContainer) {
+            this.tweens.killTweensOf(node.activeVisuals.sparkContainer);
+            node.activeVisuals.sparkContainer.destroy();
+        }
+        if (node.activeVisuals?.batteryBars) {
+            node.activeVisuals.batteryBars.forEach(b => { this.tweens.killTweensOf(b); b.destroy(); });
+        }
+
+        // Redraw tile with stage colour
+        node.g.clear();
+        node.g.fillStyle(0x0a1520, 0.95);
+        node.g.fillRect(node.tileX * ts, node.tileY * ts, ts, ts);
+        node.g.lineStyle(2, stageCol, 1);
+        node.g.strokeRect(node.tileX * ts, node.tileY * ts, ts, ts);
+        node.g.lineStyle(0.8, stageCol, 0.45);
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts, node.tileY * ts); node.g.lineTo(node.tileX * ts + ts, node.tileY * ts + ts); node.g.strokePath();
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts + ts, node.tileY * ts); node.g.lineTo(node.tileX * ts, node.tileY * ts + ts); node.g.strokePath();
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts + ts / 2, node.tileY * ts); node.g.lineTo(node.tileX * ts + ts / 2, node.tileY * ts + ts); node.g.strokePath();
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts, node.tileY * ts + ts / 2); node.g.lineTo(node.tileX * ts + ts, node.tileY * ts + ts / 2); node.g.strokePath();
+        const cx = node.tileX * ts, cy = node.tileY * ts;
+        node.g.lineStyle(3, stageCol, 0.95);
+        [[cx, cy], [cx + ts, cy], [cx, cy + ts], [cx + ts, cy + ts]].forEach(([x, y]) => {
+            const sx = x === cx ? 1 : -1, sy = y === cy ? 1 : -1;
+            node.g.beginPath(); node.g.moveTo(x, y + sy * 5); node.g.lineTo(x, y); node.g.lineTo(x + sx * 5, y); node.g.strokePath();
+        });
+
+        // Center pulse
+        node.pulse.setRadius(5);
+        node.pulse.setFillStyle(stageCol, 1);
+        this.tweens.add({ targets: node.pulse, scaleX: 1.6, scaleY: 1.6, alpha: 0.4, duration: 220, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+        // Inner ring sized to stage base radius
+        node.radiusRing.setRadius(baseR * ts);
+        node.radiusRing.setStrokeStyle(1.5, stageCol, 0.38);
+        node.radiusRing.setAlpha(1);
+
+        // Outer ring (superconducted range) — only stage 2+
+        if (node.extRing) {
+            if (extR > 0) {
+                node.extRing.setRadius(extR * ts);
+                node.extRing.setStrokeStyle(1, stageCol, 0.18);
+                node.extRing.setAlpha(1);
+            } else {
+                node.extRing.setAlpha(0);
+            }
+        }
+
+        // Battery bars — 3 small bars above tile showing stage
+        const batteryBars = [];
+        const barW = 5, barH = 8, gap = 3;
+        const totalW = this.lightningNodeMaxStage * (barW + gap) - gap;
+        const startX = node.px - totalW / 2;
+        const barY = node.tileY * ts - 6;
+        for (let s = 1; s <= this.lightningNodeMaxStage; s++) {
+            const bx = startX + (s - 1) * (barW + gap);
+            const filled = s <= node.stage;
+            const col = filled ? this.lightningNodeStageColors[s] : 0x222233;
+            const bar = this.add.rectangle(bx, barY, barW, barH, col, filled ? 0.9 : 0.4).setOrigin(0, 0.5).setDepth(3);
+            if (filled) this.tweens.add({ targets: bar, alpha: 0.6, duration: 250 + s * 80, yoyo: true, repeat: -1 });
+            batteryBars.push(bar);
+        }
+
+        // Rotating sparks — faster at higher stage
+        const sparks = [];
+        for (let s = 0; s < 4; s++) {
+            const angle = (Math.PI * 2 / 4) * s;
+            const sp = this.add.circle(0, 0, 2, stageCol, 1).setDepth(2.5);
+            sp.x = Math.cos(angle) * 10; sp.y = Math.sin(angle) * 10;
+            sparks.push(sp);
+        }
+        const sparkContainer = this.add.container(node.px, node.py, sparks).setDepth(2.5);
+        this.tweens.add({ targets: sparkContainer, angle: 360, duration: node.stage >= 3 ? 600 : 1000, repeat: -1, ease: 'Linear' });
+
+        // Stage 3: extra purple outer glow
+        let purpleGlow = null;
+        if (node.stage >= 3) {
+            purpleGlow = this.add.circle(node.px, node.py, baseR * ts + 4, 0xaa44ff, 0).setDepth(1.3);
+            purpleGlow.setStrokeStyle(2, 0xaa44ff, 0.4);
+        }
+
+        // Timer bar visible
+        if (node.timerBarBg) {
+            node.timerBarBg.setVisible(true);
+            node.timerBarFill.setVisible(true);
+            node.timerBarFill.width = ts - 4;
+        }
+
+        // Activation flash
+        const flash = this.add.rectangle(node.tileX * ts, node.tileY * ts, ts, ts, stageCol, 0.55).setOrigin(0).setDepth(3);
+        this.tweens.add({ targets: flash, alpha: 0, duration: 250, onComplete: () => flash.destroy() });
+
+        node.activeVisuals = { sparkContainer, batteryBars, purpleGlow, purpleGlowRef: purpleGlow };
+    }
+
+    destroyLightningNode(node) {
+        this.tweens.killTweensOf(node.pulse);
+        this.tweens.killTweensOf(node.radiusRing);
+        if (node.g && node.g.active) node.g.destroy();
+        if (node.pulse && node.pulse.active) node.pulse.destroy();
+        if (node.radiusRing && node.radiusRing.active) node.radiusRing.destroy();
+        if (node.extRing && node.extRing.active) node.extRing.destroy();
+        if (node.timerBarBg && node.timerBarBg.active) node.timerBarBg.destroy();
+        if (node.timerBarFill && node.timerBarFill.active) node.timerBarFill.destroy();
+        if (node.arcGraphics && node.arcGraphics.active) node.arcGraphics.destroy();
+        if (node.activeVisuals) {
+            if (node.activeVisuals.sparkContainer) {
+                this.tweens.killTweensOf(node.activeVisuals.sparkContainer);
+                if (node.activeVisuals.sparkContainer.active) node.activeVisuals.sparkContainer.destroy();
+            }
+            if (node.activeVisuals.batteryBars) {
+                node.activeVisuals.batteryBars.forEach(b => { this.tweens.killTweensOf(b); if (b && b.active) b.destroy(); });
+            }
+            if (node.activeVisuals.purpleGlow) {
+                this.tweens.killTweensOf(node.activeVisuals.purpleGlow);
+                if (node.activeVisuals.purpleGlow && node.activeVisuals.purpleGlow.active) node.activeVisuals.purpleGlow.destroy();
+            }
+        }
+    }
+
+    updateLightningNodes(time) {
+        for (let i = this.lightningNodes.length - 1; i >= 0; i--) {
+            const node = this.lightningNodes[i];
+
+            // Deactivate (not destroy) when timer runs out
+            if (node.active && time >= node.expiresAt) {
+                this.deactivateLightningNode(node);
+                continue;
+            }
+
+            if (!node.active) continue;
+
+            const stageBaseR = this.lightningNodeBaseRadius ? (this.lightningNodeBaseRadius[node.stage] || 3) : 3;
+            const stageExtR  = this.lightningNodeExtendRadius ? (this.lightningNodeExtendRadius[node.stage] || 0) : 0;
+
+            // Update charge timer bar
+            if (node.timerBarBg && node.timerBarBg.active) {
+                const remaining = Math.max(0, node.expiresAt - time);
+                const pct = remaining / this.lightningNodeDuration;
+                node.timerBarFill.width = (this.TILE_SIZE - 4) * pct;
+                const timerCol = pct > 0.5 ? 0x00ccff : pct > 0.25 ? 0xff8800 : 0xff2200;
+                node.timerBarFill.setFillStyle(timerCol, 0.85);
+            }
+
+            // Stage 3: superconduct pulse every 3s
+            if (node.stage >= 3 && time - (node.lastPulseTime || 0) >= 3000) {
+                node.lastPulseTime = time;
+                const maxPx = stageExtR * this.TILE_SIZE;
+                const pRing = this.add.circle(node.px, node.py, 8, 0xaa44ff, 0).setDepth(2.5);
+                pRing.setStrokeStyle(3, 0xaa44ff, 0.9);
+                this.tweens.add({ targets: pRing, radius: maxPx, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => pRing.destroy() });
+                for (let enemy of this.enemies) {
+                    const pd = Math.abs(enemy.x - node.tileX) + Math.abs(enemy.y - node.tileY);
+                    if (pd <= stageExtR) {
+                        this.applySuperConduct(enemy);
+                        this.drawLightningBolt({ sprite: { x: node.px, y: node.py } }, enemy);
+                    }
+                }
+            }
+
+            if (time - node.lastZapTime < this.lightningNodeZapInterval) {
+                // not yet time to zap — fall through to arc drawing
+            } else {
+                node.lastZapTime = time;
+                const globalHit = [];
+
+                // Superconducted enemies in base or extended radius — use stage radii
+                for (let enemy of this.enemies) {
+                    if (globalHit.includes(enemy)) continue;
+                    const d = Math.abs(enemy.x - node.tileX) + Math.abs(enemy.y - node.tileY);
+                    const inBase = d <= stageBaseR;
+                    const inExt  = stageExtR > 0 && enemy.isSuperConducted && d <= stageExtR;
+                    if (!inBase && !inExt) continue;
+
+                    const circuitNodes = this.lightningNodes.filter(n => {
+                        if (!n.active) return false;
+                        const nr = this.lightningNodeBaseRadius ? (this.lightningNodeBaseRadius[n.stage] || 3) : 3;
+                        const ne = this.lightningNodeExtendRadius ? (this.lightningNodeExtendRadius[n.stage] || 0) : 0;
+                        const nd = Math.abs(enemy.x - n.tileX) + Math.abs(enemy.y - n.tileY);
+                        return nd <= nr || (enemy.isSuperConducted && nd <= ne);
+                    }).length;
+
+                    const circuitMultiplier = Math.pow(2, circuitNodes - 1);
+                    const dmg = this.lightningNodeDamage * this.damageScaling * circuitMultiplier;
+
+                    this.drawLightningBolt({ sprite: { x: node.px, y: node.py } }, enemy);
+                    this.performChainLightningShared(enemy, dmg, globalHit, this.lightningChainFalloff);
+                    enemy.isStunned = true;
+                    enemy.stunnedUntil = time + 120;
+                    this.gainUltCharge(this.ultChargePerChain * (0.5 * circuitNodes));
+
+                    if (circuitNodes > 1 && enemy.sprite && enemy.sprite.active) {
+                        this.showStatusText(enemy.sprite.x, enemy.sprite.y,
+                            `${circuitNodes}-NODE x${circuitMultiplier}`, '#ffff88');
+                    }
+                }
+            }
+            // Draw arcs between active nodes
+            if (node.arcGraphics) { node.arcGraphics.destroy(); node.arcGraphics = null; }
+
+            // Always show radius ring when active (so player can see coverage)
+            // (handled by radiusRing tween in activateLightningNode — just keep it visible)
+
+            for (let other of this.lightningNodes) {
+                if (other === node || !other.active) continue;
+                const dx = other.tileX - node.tileX;
+                const dy = other.tileY - node.tileY;
+                const nodeDist = Math.sqrt(dx * dx + dy * dy);
+                if (nodeDist > this.lightningNodeChainRange) continue;
+
+                // Check if a superconducted enemy bridges them
+                let bridgeEnemy = null;
+                for (let e of this.enemies) {
+                    if (!e.isSuperConducted || !e.sprite || !e.sprite.active) continue;
+                    const inRangeOfThis = Math.abs(e.x - node.tileX) + Math.abs(e.y - node.tileY) <= this.lightningNodeRadius;
+                    const inRangeOfOther = Math.abs(e.x - other.tileX) + Math.abs(e.y - other.tileY) <= this.lightningNodeRadius;
+                    if (inRangeOfThis && inRangeOfOther) { bridgeEnemy = e; break; }
+                    // Also accept enemy near the line between nodes
+                    const d = this.pointToLineDistance(e.sprite.x, e.sprite.y, node.px, node.py, other.px, other.py);
+                    if (d <= this.TILE_SIZE * 2 && (inRangeOfThis || inRangeOfOther)) { bridgeEnemy = e; break; }
+                }
+
+                const directConnect = nodeDist <= this.lightningNodeRadius * 2;
+
+                if (!node.arcGraphics) node.arcGraphics = this.add.graphics().setDepth(2);
+
+                if (bridgeEnemy) {
+                    // Arc routes through the enemy: node → enemy → other node
+                    const ex = bridgeEnemy.sprite.x, ey = bridgeEnemy.sprite.y;
+                    this.drawNodeArc(node.arcGraphics, node.px, node.py, ex, ey);
+                    this.drawNodeArc(node.arcGraphics, ex, ey, other.px, other.py);
+                } else if (directConnect) {
+                    // Nodes overlap directly — straight arc
+                    this.drawNodeArc(node.arcGraphics, node.px, node.py, other.px, other.py);
+                } else {
+                    // Dim dashed potential line
+                    node.arcGraphics.lineStyle(1, 0x004466, 0.2);
+                    const steps = 12;
+                    for (let s = 0; s < steps; s += 2) {
+                        const t1 = s / steps, t2 = (s + 1) / steps;
+                        node.arcGraphics.beginPath();
+                        node.arcGraphics.moveTo(node.px + (other.px - node.px) * t1, node.py + (other.py - node.py) * t1);
+                        node.arcGraphics.lineTo(node.px + (other.px - node.px) * t2, node.py + (other.py - node.py) * t2);
+                        node.arcGraphics.strokePath();
+                    }
+                }
+            }
+        }
+    }
+
+    deactivateLightningNode(node) {
+        node.active = false;
+        node.expiresAt = 0;
+        const ts = this.TILE_SIZE;
+
+        // Kill active tweens
+        this.tweens.killTweensOf(node.pulse);
+        this.tweens.killTweensOf(node.radiusRing);
+        if (node.arcGraphics) { node.arcGraphics.destroy(); node.arcGraphics = null; }
+        if (node.activeVisuals?.sparkContainer) {
+            this.tweens.killTweensOf(node.activeVisuals.sparkContainer);
+            if (node.activeVisuals.sparkContainer.active) node.activeVisuals.sparkContainer.destroy();
+        }
+        if (node.activeVisuals?.batteryBars) {
+            node.activeVisuals.batteryBars.forEach(b => { this.tweens.killTweensOf(b); if (b && b.active) b.destroy(); });
+        }
+        if (node.activeVisuals?.purpleGlow && node.activeVisuals.purpleGlow) {
+            this.tweens.killTweensOf(node.activeVisuals.purpleGlow);
+            if (node.activeVisuals.purpleGlow.active) node.activeVisuals.purpleGlow.destroy();
+        }
+        node.activeVisuals = null;
+
+        // Revert tile to dormant look
+        node.g.clear();
+        node.g.fillStyle(0x1a2a3a, 0.88);
+        node.g.fillRect(node.tileX * ts, node.tileY * ts, ts, ts);
+        node.g.lineStyle(1.5, 0x335566, 0.9);
+        node.g.strokeRect(node.tileX * ts, node.tileY * ts, ts, ts);
+        node.g.lineStyle(0.5, 0x224455, 0.45);
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts, node.tileY * ts); node.g.lineTo(node.tileX * ts + ts, node.tileY * ts + ts); node.g.strokePath();
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts + ts, node.tileY * ts); node.g.lineTo(node.tileX * ts, node.tileY * ts + ts); node.g.strokePath();
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts + ts / 2, node.tileY * ts); node.g.lineTo(node.tileX * ts + ts / 2, node.tileY * ts + ts); node.g.strokePath();
+        node.g.beginPath(); node.g.moveTo(node.tileX * ts, node.tileY * ts + ts / 2); node.g.lineTo(node.tileX * ts + ts, node.tileY * ts + ts / 2); node.g.strokePath();
+
+        // Revert pulse to dim dormant state
+        node.pulse.setRadius(4);
+        node.pulse.setFillStyle(0x226688, 0.5);
+        this.tweens.add({ targets: node.pulse, alpha: 0.15, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+        // Dim both rings back to dormant
+        this.tweens.killTweensOf(node.radiusRing);
+        node.radiusRing.setStrokeStyle(1, 0x4488aa, 0.14);
+        node.radiusRing.setAlpha(1);
+
+        if (node.extRing) {
+            node.extRing.setStrokeStyle(1, 0x226644, 0.07);
+            node.extRing.setAlpha(1);
+        }
+
+        // Hide timer bar
+        if (node.timerBarBg) { node.timerBarBg.setVisible(false); node.timerBarFill.setVisible(false); }
+
+        node.stage = 0;
+
+        // Small deactivation flash
+        const flash = this.add.circle(node.px, node.py, 12, 0x004466, 0.5).setDepth(3);
+        this.tweens.add({ targets: flash, radius: 22, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
+    }
+
+    drawNodeArc(gfx, x1, y1, x2, y2) {
+        const segments = 10;
+        const points = [];
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const x = x1 + (x2 - x1) * t;
+            const y = y1 + (y2 - y1) * t;
+            const dx = x2 - x1, dy = y2 - y1;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const px2 = -dy / len, py2 = dx / len;
+            const offset = i > 0 && i < segments ? (Math.random() - 0.5) * 12 : 0;
+            points.push({ x: x + px2 * offset, y: y + py2 * offset });
+        }
+        gfx.lineStyle(6, 0x00aaff, 0.18);
+        gfx.beginPath(); gfx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) gfx.lineTo(points[i].x, points[i].y);
+        gfx.strokePath();
+        gfx.lineStyle(3, 0x88eeff, 0.5);
+        gfx.beginPath(); gfx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) gfx.lineTo(points[i].x, points[i].y);
+        gfx.strokePath();
+        gfx.lineStyle(1.5, 0xffffff, 0.9);
+        gfx.beginPath(); gfx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) gfx.lineTo(points[i].x, points[i].y);
+        gfx.strokePath();
+    }
+
+    showNodePlacementRing() {
+        this.clearNodePlacementRing();
+        const g = this.add.graphics().setDepth(4);
+        this._nodePlacementRing = { g };
+        this._redrawPlacementRing();
+
+        // Label
+        const lbl = this.add.text(this.scale.width / 2, 55, 'Q  NODE MODE  [CLICK TO PLACE]', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#00ccff',
+            stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+        this.tweens.add({ targets: lbl, alpha: 0.6, duration: 400, yoyo: true, repeat: -1 });
+        this._nodeModeLabel = lbl;
+    }
+
+    clearNodePlacementRing() {
+        if (this._nodePlacementRing) {
+            if (this._nodePlacementRing.g.active) this._nodePlacementRing.g.destroy();
+            this._nodePlacementRing = null;
+        }
+    }
+
+    clearNodeMode() {
+        this.lightningNodeMode = false;
+        this.clearNodePreview();
+        this.clearNodePlacementRing();
+        if (this._nodeModeLabel) {
+            this.tweens.killTweensOf(this._nodeModeLabel);
+            this._nodeModeLabel.destroy();
+            this._nodeModeLabel = null;
+        }
+    }
+
+    updateNodePreview(tileX, tileY) {
+        const onFloor = tileX >= 0 && tileX < this.WORLD_WIDTH && tileY >= 0 && tileY < this.WORLD_HEIGHT && this.world[tileX][tileY] === this.FLOOR;
+        const inRange = Math.abs(tileX - this.playerX) + Math.abs(tileY - this.playerY) <= 3;
+        const valid = onFloor && inRange;
+
+        const px = tileX * this.TILE_SIZE;
+        const py = tileY * this.TILE_SIZE;
+        const ts = this.TILE_SIZE;
+
+        if (!this.lightningNodePreview) {
+            const g = this.add.graphics().setDepth(4);
+            const radiusRing = this.add.circle(
+                px + ts / 2, py + ts / 2,
+                this.lightningNodeRadius * ts, 0x0088cc, 0
+            ).setDepth(3.5);
+            radiusRing.setStrokeStyle(1, 0x00ccff, 0.35);
+            this.lightningNodePreview = { g, radiusRing, lastTileX: tileX, lastTileY: tileY };
+        }
+
+        const p = this.lightningNodePreview;
+        p.g.clear();
+
+        // Ghost tile — full tile rectangle with crosshatch detail
+        const col = valid ? 0x0088cc : 0x884400;
+        const strokeCol = valid ? 0x00ccff : 0xff6600;
+        const alpha = valid ? 0.25 : 0.15;
+
+        p.g.fillStyle(col, alpha);
+        p.g.fillRect(px, py, ts, ts);
+        p.g.lineStyle(1, strokeCol, 0.7);
+        p.g.strokeRect(px, py, ts, ts);
+        // Crosshatch lines
+        p.g.lineStyle(1, strokeCol, 0.2);
+        p.g.beginPath(); p.g.moveTo(px, py); p.g.lineTo(px + ts, py + ts); p.g.strokePath();
+        p.g.beginPath(); p.g.moveTo(px + ts, py); p.g.lineTo(px, py + ts); p.g.strokePath();
+        // Center pulse dot
+        p.g.fillStyle(strokeCol, valid ? 0.7 : 0.3);
+        p.g.fillCircle(px + ts / 2, py + ts / 2, 3);
+
+        // Move radius ring
+        p.radiusRing.x = px + ts / 2;
+        p.radiusRing.y = py + ts / 2;
+        p.radiusRing.setStrokeStyle(1, strokeCol, valid ? 0.35 : 0.15);
+    }
+
+    _redrawPlacementRing() {
+        if (!this._nodePlacementRing) return;
+        const g = this._nodePlacementRing.g;
+        if (!g.active) return;
+        const radiusPx = 3 * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const cx = this.player.x, cy = this.player.y;
+        g.clear();
+        for (let i = 0; i < 24; i += 2) {
+            const a1 = (Math.PI * 2 / 24) * i;
+            const a2 = (Math.PI * 2 / 24) * (i + 1);
+            g.lineStyle(2, 0x00ccff, 0.5);
+            g.beginPath(); g.arc(cx, cy, radiusPx, a1, a2, false); g.strokePath();
+        }
+    }
+
+    clearNodePreview() {
+        if (this.lightningNodePreview) {
+            if (this.lightningNodePreview.g.active) this.lightningNodePreview.g.destroy();
+            if (this.lightningNodePreview.radiusRing.active) this.lightningNodePreview.radiusRing.destroy();
+            this.lightningNodePreview = null;
+        }
+    }
+
+    // ─── ARC PROJECTILE (right click) ──────────────────────────────────
+
+    fireArcProjectile(screenX, screenY) {
+        const currentTime = this.time.now;
+        if (currentTime - this.lastFireballTime < this.lightningCooldown) return;
+        // Firing cancels node channel
+        if (this.nodeChannelActive) this.cancelNodeChannel();
+        this.lastFireballTime = currentTime;
+
+        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const worldX = screenX + this.cameras.main.scrollX;
+        const worldY = screenY + this.cameras.main.scrollY;
+        const dx = worldX - playerPixelX;
+        const dy = worldY - playerPixelY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+
+        const speed = 140;
+        const vx = (dx / dist) * speed;
+        const vy = (dy / dist) * speed;
+
+        // Three stacked segments: outer glow, mid, bright core
+        const g = this.add.graphics().setDepth(3);
+        const len = 18;
+        const angle = Math.atan2(vy, vx);
+        this.drawArcProjectileShape(g, 0, 0, angle, len);
+
+        g.x = playerPixelX;
+        g.y = playerPixelY;
+
+        this.lightningProjectiles.push({ g, vx, vy, angle, createdAt: this.time.now, lastCrackleTime: this.time.now, lastZapTime: this.time.now, zapInterval: 300, zapRadius: 7, piercedEnemies: new Set() });
+    }
+
+    drawArcProjectileShape(g, x, y, angle, len) {
+        g.clear();
+        // Outer electric glow with flicker
+        const flicker = Math.random() * 0.2 + 0.1;
+        g.lineStyle(8, 0x0088cc, 0.3 + flicker);
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len); g.strokePath();
+        
+        // Mid crackle with randomized jags for more dynamic feel
+        const jag1Offset = Math.random() * 6 - 3;
+        const jag2Offset = Math.random() * 5 - 2.5;
+        g.lineStyle(4, 0x44ccff, 0.7);
+        const jag1x = x + Math.cos(angle) * len * 0.35 + Math.sin(angle) * (4 + jag1Offset);
+        const jag1y = y + Math.sin(angle) * len * 0.35 - Math.cos(angle) * (4 + jag1Offset);
+        const jag2x = x + Math.cos(angle) * len * 0.7 - Math.sin(angle) * (3 + jag2Offset);
+        const jag2y = y + Math.sin(angle) * len * 0.7 + Math.cos(angle) * (3 + jag2Offset);
+        g.beginPath(); g.moveTo(x, y); g.lineTo(jag1x, jag1y); g.lineTo(jag2x, jag2y); g.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len); g.strokePath();
+        
+        // Bright white core with intensity pulse
+        const coreIntensity = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
+        g.lineStyle(2 + Math.random() * 1.5, 0xffffff, coreIntensity);
+        g.beginPath(); g.moveTo(x, y); g.lineTo(jag1x, jag1y); g.lineTo(jag2x, jag2y); g.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len); g.strokePath();
+        
+        // Leading spark
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(x + Math.cos(angle) * len, y + Math.sin(angle) * len, 3);
+    }
+
+    updateArcProjectiles(delta) {
+        const ds = delta / 1000;
+        const time = this.time.now;
+        for (let i = this.lightningProjectiles.length - 1; i >= 0; i--) {
+            const p = this.lightningProjectiles[i];
+            p.g.x += p.vx * ds;
+            p.g.y += p.vy * ds;
+
+            const tileX = Math.floor(p.g.x / this.TILE_SIZE);
+            const tileY = Math.floor(p.g.y / this.TILE_SIZE);
+
+            // Wall/out of bounds
+            if (tileX < 0 || tileX >= this.WORLD_WIDTH || tileY < 0 || tileY >= this.WORLD_HEIGHT || this.world[tileX][tileY] === this.WALL) {
+                p.g.destroy();
+                this.lightningProjectiles.splice(i, 1);
+                continue;
+            }
+
+            // Crackle trail
+            if (time - p.lastCrackleTime > 45) {
+                p.lastCrackleTime = time;
+                const tr = this.add.circle(p.g.x+(Math.random()-0.5)*6, p.g.y+(Math.random()-0.5)*6, 2+Math.random()*2, 0x44ccff, 0.6).setDepth(2.5);
+                this.tweens.add({ targets: tr, alpha: 0, scale: 0.2, duration: 180, onComplete: () => tr.destroy() });
+            }
+
+            this.drawArcProjectileShape(p.g, 0, 0, p.angle, 20);
+
+            // Direct hit — superconduct + chain (pierce, don't destroy)
+            for (let enemy of this.enemies) {
+                if (p.piercedEnemies.has(enemy)) continue;
+                const ex = enemy.sprite.x, ey = enemy.sprite.y;
+                if (Math.abs(ex - p.g.x) < this.TILE_SIZE * 0.9 && Math.abs(ey - p.g.y) < this.TILE_SIZE * 0.9) {
+                    p.piercedEnemies.add(enemy);
+                    this.applySuperConduct(enemy);
+                    this.drawLightningBolt({ sprite: { x: p.g.x, y: p.g.y } }, enemy);
+                    this.performChainLightning(enemy, this.baseLightningDamage * this.damageScaling, [], this.lightningChainFalloff);
+                    this.gainUltCharge(this.ultChargePerChain * 0.2);
+                }
+            }
+
+            // Node hit — charge it, destroy projectile
+            let hitNode = false;
+            for (let node of this.lightningNodes) {
+                if (Math.abs(node.px - p.g.x) < this.TILE_SIZE * 1.2 && Math.abs(node.py - p.g.y) < this.TILE_SIZE * 1.2) {
+                    this.activateLightningNode(node);
+                    for (let other of this.lightningNodes) {
+                        if (other === node || !other.active) continue;
+                        const d = Math.sqrt((other.tileX-node.tileX)**2 + (other.tileY-node.tileY)**2);
+                        if (d <= this.lightningNodeChainRange) {
+                            const g2 = this.add.graphics().setDepth(3);
+                            this.drawNodeArc(g2, node.px, node.py, other.px, other.py);
+                            this.tweens.add({ targets: g2, alpha: 0, duration: 400, onComplete: () => g2.destroy() });
+                        }
+                    }
+                    p.g.destroy();
+                    this.lightningProjectiles.splice(i, 1);
+                    hitNode = true;
+                    break;
+                }
+            }
+            if (hitNode) continue;
+
+            // Periodic area zap
+            if (!p.lastZapTime) p.lastZapTime = time;
+            if (time - p.lastZapTime >= (p.zapInterval || 300)) {
+                p.lastZapTime = time;
+                for (let enemy of this.enemies) {
+                    const d = Math.abs(enemy.x - tileX) + Math.abs(enemy.y - tileY);
+                    if (d <= (p.zapRadius || 7)) {
+                        this.drawLightningBolt({ sprite: { x: p.g.x, y: p.g.y } }, enemy);
+                        this.damageEnemy(enemy, this.baseLightningDamage * this.damageScaling * 0.4);
+                    }
+                }
+            }
+        }
+    }
+
     shootChainLightning(targetX, targetY) {
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -2115,6 +3598,9 @@ class GameScene extends Phaser.Scene {
     performChainLightning(sourceEnemy, damage, hitEnemies, falloff) {
         hitEnemies.push(sourceEnemy);
         this.damageEnemy(sourceEnemy, damage);
+        if (Math.random() < this.orbDropChance && sourceEnemy.sprite && sourceEnemy.sprite.active) {
+            this.spawnOrbScrap(sourceEnemy.sprite.x, sourceEnemy.sprite.y);
+        }
         
         sourceEnemy.sprite.setTint(0xffff00);
         this.time.delayedCall(100, () => {
@@ -2223,41 +3709,33 @@ class GameScene extends Phaser.Scene {
         }
         graphics.strokePath();
         
-        // SECONDARY FORKS (more and better)
+        // SECONDARY FORKS — travel visibly fast (60ms) instead of instant
         for (let i = 1; i < points.length - 1; i++) {
-            if (Math.random() < 0.5) { // 50% chance for forks
+            if (Math.random() < 0.5) {
                 const forkLength = 15 + Math.random() * 25;
                 const angle = Math.random() * Math.PI * 2;
-                
                 const forkMidX = points[i].x + Math.cos(angle) * (forkLength * 0.6);
                 const forkMidY = points[i].y + Math.sin(angle) * (forkLength * 0.6);
-                
                 const forkEndX = points[i].x + Math.cos(angle + (Math.random() - 0.5) * 0.5) * forkLength;
                 const forkEndY = points[i].y + Math.sin(angle + (Math.random() - 0.5) * 0.5) * forkLength;
-                
-                // Fork outer glow
-                graphics.lineStyle(6, 0xaaffff, 0.3);
-                graphics.beginPath();
-                graphics.moveTo(points[i].x, points[i].y);
-                graphics.lineTo(forkMidX, forkMidY);
-                graphics.lineTo(forkEndX, forkEndY);
-                graphics.strokePath();
-                
-                // Fork core
-                graphics.lineStyle(2, 0xffff00, 0.9);
-                graphics.beginPath();
-                graphics.moveTo(points[i].x, points[i].y);
-                graphics.lineTo(forkMidX, forkMidY);
-                graphics.lineTo(forkEndX, forkEndY);
-                graphics.strokePath();
-                
-                // Fork bright line
-                graphics.lineStyle(1, 0xffffff, 1);
-                graphics.beginPath();
-                graphics.moveTo(points[i].x, points[i].y);
-                graphics.lineTo(forkMidX, forkMidY);
-                graphics.lineTo(forkEndX, forkEndY);
-                graphics.strokePath();
+
+                // Draw fork as a separate graphics that fades slightly slower than main bolt
+                // giving a visible "travel" effect — appears just after main bolt, fades after
+                const forkGfx = this.add.graphics().setAlpha(0);
+                forkGfx.lineStyle(6, 0xaaffff, 0.3);
+                forkGfx.beginPath(); forkGfx.moveTo(points[i].x, points[i].y); forkGfx.lineTo(forkMidX, forkMidY); forkGfx.lineTo(forkEndX, forkEndY); forkGfx.strokePath();
+                forkGfx.lineStyle(2, 0xffff00, 0.9);
+                forkGfx.beginPath(); forkGfx.moveTo(points[i].x, points[i].y); forkGfx.lineTo(forkMidX, forkMidY); forkGfx.lineTo(forkEndX, forkEndY); forkGfx.strokePath();
+                forkGfx.lineStyle(1, 0xffffff, 1);
+                forkGfx.beginPath(); forkGfx.moveTo(points[i].x, points[i].y); forkGfx.lineTo(forkMidX, forkMidY); forkGfx.lineTo(forkEndX, forkEndY); forkGfx.strokePath();
+
+                // Flash in quickly then fade — fast enough to look like travel, slow enough to see
+                this.tweens.add({
+                    targets: forkGfx, alpha: 0.9, duration: 25,
+                    onComplete: () => {
+                        this.tweens.add({ targets: forkGfx, alpha: 0, duration: 140, onComplete: () => forkGfx.destroy() });
+                    }
+                });
             }
         }
         
@@ -2558,7 +4036,6 @@ class GameScene extends Phaser.Scene {
     }
 
     activateFireScorch() {
-        console.log('IGNITION ACTIVATED!');
         this.ultDrainActive = true;
         this.ultDrainStartTime = this.time.now;
         this.ultDrainDuration = this.ignitionDuration;
@@ -2566,28 +4043,25 @@ class GameScene extends Phaser.Scene {
         this.ignitionActive = true;
         this.ignitionEndTime = this.time.now + this.ignitionDuration;
 
-        // Trigger combustion burst on ALL burning enemies immediately
-        // and lay lava tiles under all enemies in range
+        // Combustion burst — burning enemies explode in a lava ring
         let burstCount = 0;
         for (let enemy of [...this.enemies]) {
             if (enemy.isBurning) {
-                this.spawnIgnitionTrail(enemy.sprite.x, enemy.sprite.y);
+                this.ignitionExplodeEnemy(enemy);
                 this.triggerCombustion(enemy, true);
                 burstCount++;
             }
         }
 
-        // Dramatic screen flash — deep orange/red
+        // Dramatic screen flash
         const screenFlash = this.add.rectangle(
             this.scale.width / 2, this.scale.height / 2,
-            this.scale.width, this.scale.height,
-            0xff3300, 0.55
+            this.scale.width, this.scale.height, 0xff3300, 0.55
         ).setScrollFactor(0);
         this.tweens.add({ targets: screenFlash, alpha: 0, duration: 350, onComplete: () => screenFlash.destroy() });
 
         this.player.setTint(0xff6600);
 
-        // Pulsing fire aura around player for duration
         const aura = this.add.circle(this.player.x, this.player.y, 40, 0xff4400, 0.35);
         this.tweens.add({ targets: aura, scaleX: 1.5, scaleY: 1.5, alpha: 0.15, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         this._ignitionAura = aura;
@@ -2598,15 +4072,40 @@ class GameScene extends Phaser.Scene {
             this.player.clearTint();
             if (this._ignitionAura) { this._ignitionAura.destroy(); this._ignitionAura = null; }
         });
+    }
 
-        console.log(`Ignition burst ${burstCount} burning enemies!`);
+    ignitionExplodeEnemy(enemy) {
+        if (!enemy.sprite || !enemy.sprite.active) return;
+        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+        const radius = 2; // tiles
+
+        // Spawn lava tiles in a circle around the enemy
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                if (dx * dx + dy * dy > radius * radius) continue;
+                const tx = enemy.x + dx, ty = enemy.y + dy;
+                if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT) continue;
+                if (this.world[tx][ty] !== this.FLOOR) continue;
+                this.spawnIgnitionTrail(
+                    tx * this.TILE_SIZE + this.TILE_SIZE / 2,
+                    ty * this.TILE_SIZE + this.TILE_SIZE / 2
+                );
+            }
+        }
+
+        // Explosion visual
+        const explode = this.add.circle(ex, ey, 8, 0xff4400, 0.9).setDepth(3);
+        this.tweens.add({ targets: explode, radius: radius * this.TILE_SIZE, alpha: 0, duration: 350, ease: 'Quad.easeOut', onComplete: () => explode.destroy() });
+        const ring = this.add.circle(ex, ey, 12, 0xff8800, 0);
+        ring.setStrokeStyle(3, 0xffcc00, 0.9).setDepth(3);
+        this.tweens.add({ targets: ring, radius: radius * this.TILE_SIZE + 8, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
     }
 
     activateIceBlizzard() {
         console.log('TSUNAMI ACTIVATED!');
         this.ultDrainActive = true;
         this.ultDrainStartTime = this.time.now;
-        this.ultDrainDuration = this.tsunamiWaveDuration + 600 + 900 + this.tsunamiFreezeDuration;
+        this.ultDrainDuration = 4000;
 
         this.tsunamiActive = true;
         this.tsunamiTiles = [];
@@ -2666,9 +4165,9 @@ class GameScene extends Phaser.Scene {
                     const eDist = Math.sqrt(edx * edx + edy * edy);
                     if (eDist <= r + 0.5) {
                         wetEnemies.add(enemy);
-                        // Tint enemy blue to show they're wet
                         if (enemy.sprite && enemy.sprite.active) {
                             enemy.sprite.setTint(0x4499ff);
+                            this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'WET', '#44aaff');
                         }
                     }
                 }
@@ -2792,31 +4291,35 @@ class GameScene extends Phaser.Scene {
         this.thunderheadActive = true;
         this.thunderheadEndTime = this.time.now + this.thunderheadDuration;
         this.thunderheadGlideX = this.player.x;
-        this.thunderheadGlideY = this.player.y - this.SLIME_Y_OFFSET; // pixel center
+        this.thunderheadGlideY = this.player.y - this.SLIME_Y_OFFSET;
 
-        // Visual: player becomes a crackling storm cloud
-        this.player.setTint(0xccffff);
-        this.player.setAlpha(0.6);
+        // Hide player sprite, show cloud sprite instead
+        this.player.setVisible(false);
+        this._cloudSprite = this.add.sprite(this.player.x, this.player.y, 'cloud_storm', 0);
+        this._cloudSprite.setScale(0.55);
+        this._cloudSprite.setDepth(2);
+        this._cloudSprite.play('cloud_active');
+        this._cloudSprite.setAlpha(0.92);
 
-        // Big electric aura
-        const aura = this.add.circle(this.player.x, this.player.y, 35, 0xffff88, 0.25);
-        aura.setStrokeStyle(4, 0xffff00, 0.7);
+        // Subtle electric glow under the cloud
+        const aura = this.add.circle(this.player.x, this.player.y, 30, 0xffff88, 0.12);
+        aura.setStrokeStyle(2, 0xffff00, 0.35);
         this._thunderheadAura = aura;
 
-        // Outer crackling ring
-        const outerRing = this.add.circle(this.player.x, this.player.y, 50, 0xffffff, 0);
-        outerRing.setStrokeStyle(2, 0xaaffff, 0.4);
+        // Faint outer ring
+        const outerRing = this.add.circle(this.player.x, this.player.y, 44, 0xffffff, 0);
+        outerRing.setStrokeStyle(1, 0xaaffff, 0.25);
         this._thunderheadOuterRing = outerRing;
 
         this.tweens.add({
             targets: aura,
-            scaleX: 1.4, scaleY: 1.4, alpha: 0.1,
-            duration: 300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            alpha: 0.06,
+            duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
         });
         this.tweens.add({
             targets: outerRing,
-            scaleX: 1.6, scaleY: 1.6, alpha: 0.6,
-            duration: 250, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 80
+            alpha: 0.18,
+            duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 120
         });
 
         // Screen flash yellow
@@ -3097,9 +4600,8 @@ class GameScene extends Phaser.Scene {
         for (let i = this.tsunamiPuddles.length - 1; i >= 0; i--) {
             const puddle = this.tsunamiPuddles[i];
             if (time >= puddle.expiresAt) {
-                if (puddle.waterTile) puddle.waterTile.destroy();
-                if (puddle.waterShimmer) puddle.waterShimmer.destroy();
-                if (puddle.ripple) puddle.ripple.destroy();
+                if (puddle.waterTile && puddle.waterTile.active) puddle.waterTile.destroy();
+                if (puddle.waterShimmer && puddle.waterShimmer.active) puddle.waterShimmer.destroy();
                 this.tsunamiPuddles.splice(i, 1);
                 continue;
             }
@@ -3107,6 +4609,9 @@ class GameScene extends Phaser.Scene {
             for (let enemy of this.enemies) {
                 if (!enemy.sprite || !enemy.sprite.active || enemy.isFrozen) continue;
                 if (enemy.x === puddle.tileX && enemy.y === puddle.tileY) {
+                    if (!enemy.isSlowed) {
+                        this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'WET', '#44aaff');
+                    }
                     enemy.isSlowed = true;
                     enemy.slowedUntil = time + this.tsunamiPuddleSlowDuration;
                 }
@@ -3117,36 +4622,48 @@ class GameScene extends Phaser.Scene {
     createTsunamiPuddle(tileX, tileY) {
         const px = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const waterTile = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0x0066cc, 0.55).setDepth(0.45);
-        const waterShimmer = this.add.rectangle(px, py, this.TILE_SIZE - 4, this.TILE_SIZE - 4, 0x44aaff, 0.3).setDepth(0.46);
-        const ripple = this.add.rectangle(px, py, this.TILE_SIZE * 0.5, this.TILE_SIZE * 0.2, 0xffffff, 0.12).setDepth(0.47);
+
+        // Exact same layered construction as tsunami tiles
+        const waterTile = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0x0066cc, 0.55).setDepth(0.5);
+        const waterShimmer = this.add.rectangle(px, py, this.TILE_SIZE - 4, this.TILE_SIZE - 4, 0x44aaff, 0.3).setDepth(0.5);
 
         this.tweens.add({
             targets: waterShimmer,
+            alpha: 0.6,
+            duration: 150 + Math.random() * 100,
+            yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+        });
+
+        // Fade in from nothing so it looks like the ice melted
+        waterTile.setAlpha(0);
+        waterShimmer.setAlpha(0);
+        this.tweens.add({
+            targets: [waterTile],
             alpha: 0.55,
-            duration: 450,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
+            duration: 350,
+            ease: 'Quad.easeOut'
         });
         this.tweens.add({
-            targets: ripple,
-            scaleX: 1.4,
-            alpha: 0,
-            duration: 700,
-            ease: 'Quad.easeOut',
-            repeat: -1,
-            yoyo: false,
-            onRepeat: () => { ripple.alpha = 0.12; ripple.scaleX = 1; }
+            targets: [waterShimmer],
+            alpha: 0.3,
+            duration: 350,
+            ease: 'Quad.easeOut'
+        });
+
+        // Fade out at end of life
+        const fadeDelay = this.tsunamiPuddleDuration - 500;
+        this.time.delayedCall(fadeDelay, () => {
+            if (waterTile.active) {
+                this.tweens.add({ targets: [waterTile, waterShimmer], alpha: 0, duration: 500 });
+            }
         });
 
         this.tsunamiPuddles.push({
-            tileX,
-            tileY,
+            tileX, tileY,
             expiresAt: this.time.now + this.tsunamiPuddleDuration,
             waterTile,
             waterShimmer,
-            ripple
+            ripple: null
         });
     }
 
@@ -3278,14 +4795,14 @@ class GameScene extends Phaser.Scene {
                 for (const v of t.visuals) v.setAlpha(v.alpha * fadeAlpha);
             }
 
-            // Small flat damage tick every 500ms — just a light burn, not stack-based
-            if (time - t.lastDamageTick >= 500) {
+            // Fast continuous lava damage — every 80ms, similar intensity to cosmic laser
+            if (time - t.lastDamageTick >= 80) {
                 t.lastDamageTick = time;
                 for (let enemy of this.enemies) {
                     if (enemy.x === t.tileX && enemy.y === t.tileY) {
-                        enemy.health -= 0.8 * this.damageScaling;
-                        enemy.isBurning = true;
-                        enemy.burnUntil = Math.max(enemy.burnUntil, time + this.burnDuration);
+                        const dmg = 1.2 * this.damageScaling;
+                        enemy.health -= dmg;
+                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, '#ff6600');
                         this.updateEnemyHealthBar(enemy);
                         if (enemy.health <= 0) this.killEnemy(enemy);
                     }
@@ -3300,6 +4817,9 @@ class GameScene extends Phaser.Scene {
         enemy.brittleStacks = Math.min(this.brittleMaxStacks, (enemy.brittleStacks || 0) + stacks);
         enemy.lastBrittleHitTime = this.time.now;
         this.updateBrittleVisual(enemy);
+        if (enemy.sprite && enemy.sprite.active) {
+            this.showStatusText(enemy.sprite.x, enemy.sprite.y, `BRITTLE x${enemy.brittleStacks}`, '#aaddff');
+        }
     }
 
     updateBrittleVisual(enemy) {
@@ -3310,7 +4830,7 @@ class GameScene extends Phaser.Scene {
         const alpha = 0.3 + pct * 0.5;
         const bv = this.add.text(enemy.sprite.x, enemy.sprite.y + 14, '❄'.repeat(enemy.brittleStacks), {
             fontSize: '8px', color: '#88ddff', stroke: '#000', strokeThickness: 2
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(10);
         bv.setAlpha(alpha);
         enemy.brittleVisual = bv;
     }
@@ -3318,6 +4838,15 @@ class GameScene extends Phaser.Scene {
     updateBrittleDecay(time) {
         for (let enemy of this.enemies) {
             if (!enemy.brittleStacks || enemy.brittleStacks === 0) continue;
+            if (!enemy.sprite || !enemy.sprite.active) {
+                if (enemy.brittleVisual) {
+                    this.tweens.killTweensOf(enemy.brittleVisual);
+                    enemy.brittleVisual.destroy();
+                    enemy.brittleVisual = null;
+                }
+                enemy.brittleStacks = 0;
+                continue;
+            }
             if (time - enemy.lastBrittleHitTime > this.brittleDecayTime) {
                 enemy.brittleStacks = 0;
                 this.updateBrittleVisual(enemy);
@@ -3331,6 +4860,28 @@ class GameScene extends Phaser.Scene {
     }
 
     freezeEnemy(enemy, duration) {
+        if (enemy.health <= 0) {
+            // Clear any existing freeze visuals on dead enemies
+            if (enemy.freezeVisuals) {
+                if (enemy.freezeVisuals.iceBlock) {
+                    this.tweens.killTweensOf(enemy.freezeVisuals.iceBlock);
+                    enemy.freezeVisuals.iceBlock.setVisible(false);
+                    enemy.freezeVisuals.iceBlock.destroy();
+                }
+                if (enemy.freezeVisuals.iceBorder) {
+                    this.tweens.killTweensOf(enemy.freezeVisuals.iceBorder);
+                    enemy.freezeVisuals.iceBorder.setVisible(false);
+                    enemy.freezeVisuals.iceBorder.destroy();
+                }
+                if (enemy.freezeVisuals.multiplierText) {
+                    this.tweens.killTweensOf(enemy.freezeVisuals.multiplierText);
+                    enemy.freezeVisuals.multiplierText.setVisible(false);
+                    enemy.freezeVisuals.multiplierText.destroy();
+                }
+                enemy.freezeVisuals = null;
+            }
+            return;
+        }
         // Clear existing freeze visuals if already frozen
         if (enemy.isFrozen && enemy.freezeVisuals) {
             if (enemy.freezeVisuals.iceBlock) {
@@ -3353,6 +4904,9 @@ class GameScene extends Phaser.Scene {
         enemy.isFrozen = true;
         enemy.frozenUntil = this.time.now + duration;
         this.createFreezeVisual(enemy);
+        if (enemy.sprite && enemy.sprite.active) {
+            this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'FROZEN', '#88eeff');
+        }
     }
 
     updateSlowEffect(enemy) {
@@ -3390,7 +4944,11 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        // Update aura to follow player
+        // Update aura and cloud sprite to follow player
+        if (this._cloudSprite) {
+            this._cloudSprite.x = this.player.x;
+            this._cloudSprite.y = this.player.y;
+        }
         if (this._thunderheadAura) {
             this._thunderheadAura.x = this.player.x;
             this._thunderheadAura.y = this.player.y;
@@ -3406,10 +4964,86 @@ class GameScene extends Phaser.Scene {
             this.spawnThunderheadTrail(this.player.x, this.player.y, time);
         }
 
-        // Zap nearby enemies from current position (reduced falloff)
+        // THUNDERHEAD: player IS the superconductor — superconduct all nodes + self every tick
         if (time - this.stormCloudLastAttack >= this.stormCloudAutoAttackInterval) {
             this.stormCloudLastAttack = time;
-            this.thunderheadZap(time);
+
+            // Activate all placed nodes instantly
+            for (let node of this.lightningNodes) {
+                if (!node.active) this.activateLightningNode(node);
+                else node.expiresAt = Math.max(node.expiresAt, time + this.lightningNodeDuration);
+            }
+
+            // Shared hit list for the whole tick — prevents double-hitting
+            const globalHit = [];
+
+            // Draw arcs from player to every active node — deal damage to enemies along the path
+            const arcGfx = this.add.graphics().setDepth(3);
+            for (let node of this.lightningNodes) {
+                if (!node.active) continue;
+                this.drawNodeArc(arcGfx, this.player.x, this.player.y, node.px, node.py);
+
+                // Damage enemies that cross this arc path
+                for (let enemy of this.enemies) {
+                    if (globalHit && globalHit.includes(enemy)) continue;
+                    const dist = this.pointToLineDistance(
+                        enemy.sprite.x, enemy.sprite.y,
+                        this.player.x, this.player.y,
+                        node.px, node.py
+                    );
+                    if (dist <= this.TILE_SIZE * 1.2) {
+                        this.applySuperConduct(enemy);
+                        this.drawLightningBolt({ sprite: this.player }, enemy);
+                        this.performChainLightningShared(
+                            enemy,
+                            this.lightningNodeDamage * this.damageScaling * 1.5,
+                            globalHit,
+                            this.thunderheadChainFalloff
+                        );
+                        if (enemy.sprite && enemy.sprite.active) {
+                            this.showStatusText(enemy.sprite.x, enemy.sprite.y, '⚡ ARC PATH', '#ffff44');
+                        }
+                    }
+                }
+            }
+            this.tweens.add({ targets: arcGfx, alpha: 0, duration: 300, onComplete: () => arcGfx.destroy() });
+
+            // Superconduct all enemies within each node's radius using circuit damage
+            // Player counts as a node in every circuit
+            for (let enemy of this.enemies) {
+                if (globalHit.includes(enemy)) continue;
+
+                // Count active nodes that cover this enemy
+                const coveringNodes = this.lightningNodes.filter(n =>
+                    n.active && Math.abs(enemy.x - n.tileX) + Math.abs(enemy.y - n.tileY) <= this.lightningNodeRadius
+                ).length;
+
+                // Player also counts if in range
+                const playerCovers = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY) <= this.thunderheadTrailDamageRadius;
+                const totalNodes = coveringNodes + (playerCovers ? 1 : 0);
+
+                if (totalNodes === 0) continue;
+
+                // Apply superconductor status and circuit damage
+                this.applySuperConduct(enemy);
+                const circuitMultiplier = Math.pow(2, totalNodes - 1);
+                const dmg = this.lightningNodeDamage * this.damageScaling * circuitMultiplier;
+
+                if (playerCovers) {
+                    this.drawLightningBolt({ sprite: this.player }, enemy);
+                } else {
+                    // Zap from nearest covering node
+                    const src = this.lightningNodes.find(n => n.active && Math.abs(enemy.x - n.tileX) + Math.abs(enemy.y - n.tileY) <= this.lightningNodeRadius);
+                    if (src) this.drawLightningBolt({ sprite: { x: src.px, y: src.py } }, enemy);
+                }
+
+                this.performChainLightningShared(enemy, dmg, globalHit, this.thunderheadChainFalloff);
+                this.gainUltCharge(this.ultChargePerChain * 0.3);
+
+                if (totalNodes > 1 && enemy.sprite && enemy.sprite.active) {
+                    this.showStatusText(enemy.sprite.x, enemy.sprite.y, `⚡ ${totalNodes}-NODE ×${circuitMultiplier}`, '#ffff44');
+                }
+            }
         }
 
         // HUD timer
@@ -3452,42 +5086,15 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    thunderheadZap(time) {
-        const maxRange = 12;
-        const playerTileX = this.playerX;
-        const playerTileY = this.playerY;
-
-        const nearby = this.enemies.filter(e => {
-            const d = Math.abs(e.x - playerTileX) + Math.abs(e.y - playerTileY);
-            return d <= maxRange;
-        });
-
-        if (nearby.length === 0) return;
-
-        const globalHit = [];
-        for (let enemy of nearby) {
-            if (globalHit.includes(enemy)) continue;
-            this.drawLightningBolt({ sprite: this.player }, enemy);
-            this.performChainLightningShared(
-                enemy,
-                this.baseLightningDamage * this.damageScaling * 1.2,
-                globalHit,
-                this.thunderheadChainFalloff  // better falloff than normal
-            );
-        }
-    }
-
     deactivateThunderhead() {
         this.thunderheadActive = false;
         this.ultDrainActive = false;
-        this.player.setAlpha(1);
-        this.player.clearTint();
 
         if (this._thunderheadAura) { this.tweens.killTweensOf(this._thunderheadAura); this._thunderheadAura.destroy(); this._thunderheadAura = null; }
         if (this._thunderheadOuterRing) { this.tweens.killTweensOf(this._thunderheadOuterRing); this._thunderheadOuterRing.destroy(); this._thunderheadOuterRing = null; }
         if (this._thunderheadTimerText) { this._thunderheadTimerText.destroy(); this._thunderheadTimerText = null; }
 
-        // Snap to nearest valid floor tile from current glide position
+        // Snap to nearest valid floor tile
         const snap = this.snapToNearestFloor(this.thunderheadGlideX, this.thunderheadGlideY);
         if (snap) {
             this.playerX = snap.tx;
@@ -3499,7 +5106,29 @@ class GameScene extends Phaser.Scene {
             this.player.y = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
         }
 
-        console.log('Thunderhead ended');
+        // Play dissipate animation then restore player sprite
+        if (this._cloudSprite) {
+            this._cloudSprite.play('cloud_dissipate');
+            this._cloudSprite.once('animationcomplete', () => {
+                if (this._cloudSprite) {
+                    this.tweens.add({
+                        targets: this._cloudSprite,
+                        alpha: 0,
+                        duration: 200,
+                        onComplete: () => {
+                            if (this._cloudSprite) { this._cloudSprite.destroy(); this._cloudSprite = null; }
+                        }
+                    });
+                }
+                this.player.setVisible(true);
+                this.player.setAlpha(1);
+                this.player.clearTint();
+            });
+        } else {
+            this.player.setVisible(true);
+            this.player.setAlpha(1);
+            this.player.clearTint();
+        }
     }
 
     snapToNearestFloor(pixelX, pixelY) {
@@ -3750,44 +5379,132 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    updateCosmicPassiveCharge(time) {
-        if (this.currentElement !== 'cosmic') return;
-        
-        if (time - this.lastCosmicPassiveCharge >= this.cosmicPassiveChargeInterval) {
-            this.lastCosmicPassiveCharge = time;
-            
+    startCosmicChanneling() {
+        this.cosmicChanneling = true;
+        this.cosmicChannelStartTime = this.time.now;
+        this.cosmicChannelLastCharge = this.time.now;
+
+        // Slow movement during channeling
+        this._preChanelMoveCooldown = this.moveCooldown;
+        this.moveCooldown = 600;
+
+        // Visual: dark void vortex around player
+        const cx = this.player.x, cy = this.player.y;
+        const g = this.add.graphics().setDepth(3);
+        const progressRing = this.add.graphics().setDepth(3.1);
+        const label = this.add.text(cx, cy - 40, 'CHANNELING', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#9966ff',
+            stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(4);
+
+        // Orbiting void particles
+        const particles = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * 2 / 6) * i;
+            const p = this.add.circle(
+                cx + Math.cos(angle) * 28,
+                cy + Math.sin(angle) * 28,
+                3, 0x9966ff, 0.8
+            ).setDepth(3.5);
+            particles.push(p);
+        }
+        const orbitContainer = this.add.container(cx, cy, particles.map((p, i) => {
+            const angle = (Math.PI * 2 / 6) * i;
+            p.x = Math.cos(angle) * 28; p.y = Math.sin(angle) * 28;
+            return p;
+        })).setDepth(3.5);
+        this.tweens.add({ targets: orbitContainer, angle: -360, duration: 1800, repeat: -1, ease: 'Linear' });
+
+        this.cosmicChannelVisual = { g, progressRing, label, orbitContainer };
+        this.player.setTint(0x9966ff);
+    }
+
+    stopCosmicChanneling(interrupted) {
+        this.cosmicChanneling = false;
+        if (this._preChanelMoveCooldown !== undefined) {
+            this.moveCooldown = this._preChanelMoveCooldown;
+        }
+        this.player.clearTint();
+
+        if (this.cosmicChannelVisual) {
+            const { g, progressRing, label, orbitContainer } = this.cosmicChannelVisual;
+            this.tweens.killTweensOf(orbitContainer);
+            g.destroy(); progressRing.destroy(); label.destroy(); orbitContainer.destroy();
+            this.cosmicChannelVisual = null;
+        }
+
+        if (interrupted) {
+            // Show interruption text
+            const ix = this.player.x - this.cameras.main.scrollX;
+            const iy = this.player.y - this.cameras.main.scrollY;
+            const txt = this.add.text(ix, iy - 30, 'INTERRUPTED!', {
+                fontSize: '13px', fontFamily: 'monospace', color: '#ff4444',
+                stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+            this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 700, onComplete: () => txt.destroy() });
+        }
+    }
+
+    updateCosmicChanneling(time) {
+        if (!this.cosmicChanneling) return;
+        if (this.currentElement !== 'cosmic') { this.stopCosmicChanneling(false); return; }
+
+        const v = this.cosmicChannelVisual;
+        if (!v) return;
+
+        // Keep visuals anchored to player
+        v.g.clear();
+        v.progressRing.clear();
+        v.label.x = this.player.x;
+        v.label.y = this.player.y - 42;
+        v.orbitContainer.x = this.player.x;
+        v.orbitContainer.y = this.player.y;
+
+        // Void aura background
+        v.g.fillStyle(0x110022, 0.35);
+        v.g.fillCircle(this.player.x, this.player.y, 32);
+        v.g.lineStyle(2, 0x6633aa, 0.6);
+        v.g.strokeCircle(this.player.x, this.player.y, 32);
+
+        // Progress arc toward next charge
+        const timeSinceLastCharge = time - this.cosmicChannelLastCharge;
+        const progress = Math.min(timeSinceLastCharge / (this.cosmicChannelSecondsPerCharge * 1000), 1);
+        const startAngle = -Math.PI / 2;
+        const endAngle = startAngle + Math.PI * 2 * progress;
+
+        v.progressRing.lineStyle(3, 0x9966ff, 0.9);
+        v.progressRing.beginPath();
+        v.progressRing.arc(this.player.x, this.player.y, 35, startAngle, endAngle, false);
+        v.progressRing.strokePath();
+
+        // Earn a charge
+        if (timeSinceLastCharge >= this.cosmicChannelSecondsPerCharge * 1000) {
+            this.cosmicChannelLastCharge = time;
             if (this.cosmicBatteryCharges < this.cosmicMaxCharges) {
-                this.cosmicBatteryCharges++;
-                this.updateHUD();
-                
-                const notification = this.add.text(
-                    this.scale.width / 2,
-                    80,
-                    'CHARGE GAINED',
-                    {
-                        fontSize: '16px',
-                        fontFamily: 'monospace',
-                        color: '#9966ff',
-                        stroke: '#000000',
-                        strokeThickness: 3
-                    }
-                ).setOrigin(0.5).setScrollFactor(0);
-                
-                this.tweens.add({
-                    targets: notification,
-                    y: 60,
-                    alpha: 0,
-                    duration: 1000,
-                    onComplete: () => notification.destroy()
-                });
+                this.addCosmicCharge(this.player.x, this.player.y);
+            }
+            if (this.cosmicBatteryCharges >= this.cosmicMaxCharges) {
+                this.stopCosmicChanneling(false);
+                const fullTxt = this.add.text(
+                    this.scale.width / 2, 70, '⚡ FULLY CHARGED ⚡',
+                    { fontSize: '16px', fontFamily: 'monospace', color: '#ddaaff', stroke: '#000', strokeThickness: 3, fontStyle: 'bold' }
+                ).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+                this.tweens.add({ targets: fullTxt, y: 50, alpha: 0, duration: 1500, onComplete: () => fullTxt.destroy() });
+                return;
             }
         }
+
+        // Update label with charges
+        v.label.setText(`CHANNELING  ${this.cosmicBatteryCharges}/${this.cosmicMaxCharges}`);
+    }
+
+    updateCosmicPassiveCharge(time) {
+        // Replaced by active channeling — no-op kept for safety
     }
 
     updateCosmicCharge(time) {
         // ── CONTINUOUS LASER (SPACE held, any time with charges) ──────
         if (this.cosmicContinuousLaserActive) {
-            // Drain 1 charge per second
             if (time - this.cosmicLaserLastDrain >= this.cosmicLaserDrainInterval) {
                 this.cosmicLaserLastDrain = time;
                 this.cosmicBatteryCharges--;
@@ -3813,7 +5530,7 @@ class GameScene extends Phaser.Scene {
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 0) {
                     this.fireCosmicBeam(playerPixelX, playerPixelY, dx / dist, dy / dist,
-                        this.cosmicBaseBeamDamage * this.damageScaling * 1.5, 4, 1);
+                        this.cosmicBaseBeamDamage * this.damageScaling * 0.1, 4, 1);
                 }
             }
             return;
@@ -3823,63 +5540,145 @@ class GameScene extends Phaser.Scene {
         
         this.cosmicChargeHoldTime = time - this.cosmicChargeStartTime;
         
-        // Faster base charge rate (3x), even faster during black hole (6x)
         const chargeRateMultiplier = this.cosmicBlackHole ? 6 : 3;
         const adjustedTime = this.cosmicChargeHoldTime * chargeRateMultiplier;
-        
         const seconds = adjustedTime / 1000;
+        // Clamped 0–1 progress, maxes at full charge (3 seconds)
+        const pct = Math.min(seconds / 3, 1);
         const chargeMultiplier = Math.pow(2, Math.min(seconds, 3));
-        
+
         if (!this.cosmicChargeIndicator) {
             this.cosmicChargeIndicator = this.add.container(this.player.x, this.player.y);
-            
-            const outerRing = this.add.circle(0, 0, 30, 0x9966ff, 0);
-            outerRing.setStrokeStyle(3, 0x9966ff, 0.5);
-            
-            const middleRing = this.add.circle(0, 0, 20, 0xcc99ff, 0);
-            middleRing.setStrokeStyle(2, 0xcc99ff, 0.7);
-            
-            const innerCore = this.add.circle(0, 0, 10, 0xffffff, 0.3);
-            
-            const chargeText = this.add.text(0, 0, '1x', {
-                fontSize: '16px',
-                fontFamily: 'monospace',
-                color: '#ffffff',
-                fontStyle: 'bold'
-            }).setOrigin(0.5);
-            
-            this.cosmicChargeIndicator.add([outerRing, middleRing, innerCore, chargeText]);
-            this.cosmicChargeIndicator.setData('outerRing', outerRing);
-            this.cosmicChargeIndicator.setData('middleRing', middleRing);
-            this.cosmicChargeIndicator.setData('innerCore', innerCore);
+
+            // Layer 1: void core
+            const voidCore = this.add.circle(0, 0, 6, 0x000000, 1);
+
+            // Layer 2: inner energy fill (graphics, redrawn each frame)
+            const innerGfx = this.add.graphics();
+
+            // Layer 3: arc graphics — jagged arcs appear as charge builds
+            const arcGfx = this.add.graphics();
+
+            // Layer 4: outer burst ring (only at full charge)
+            const burstRing = this.add.circle(0, 0, 38, 0x9966ff, 0);
+            burstRing.setStrokeStyle(3, 0xcc88ff, 0);
+
+            // Layer 5: orbiting void particles — start invisible
+            const orbitGfx = this.add.graphics();
+
+            // Label
+            const chargeText = this.add.text(0, -44, '', {
+                fontSize: '13px', fontFamily: 'monospace',
+                color: '#ffffff', stroke: '#330044', strokeThickness: 4, fontStyle: 'bold'
+            }).setOrigin(0.5).setAlpha(0);
+
+            this.cosmicChargeIndicator.add([innerGfx, arcGfx, burstRing, orbitGfx, voidCore, chargeText]);
+            this.cosmicChargeIndicator.setData('voidCore', voidCore);
+            this.cosmicChargeIndicator.setData('innerGfx', innerGfx);
+            this.cosmicChargeIndicator.setData('arcGfx', arcGfx);
+            this.cosmicChargeIndicator.setData('burstRing', burstRing);
+            this.cosmicChargeIndicator.setData('orbitGfx', orbitGfx);
             this.cosmicChargeIndicator.setData('chargeText', chargeText);
         }
-        
+
         this.cosmicChargeIndicator.x = this.player.x;
         this.cosmicChargeIndicator.y = this.player.y;
-        
-        const outerRing = this.cosmicChargeIndicator.getData('outerRing');
-        const middleRing = this.cosmicChargeIndicator.getData('middleRing');
-        const innerCore = this.cosmicChargeIndicator.getData('innerCore');
-        const chargeText = this.cosmicChargeIndicator.getData('chargeText');
-        
-        outerRing.setScale(1 + seconds * 0.3);
-        middleRing.setScale(1 + seconds * 0.2);
-        innerCore.setScale(1 + seconds * 0.4);
-        innerCore.setAlpha(0.3 + seconds * 0.2);
-        
-        chargeText.setText(`${chargeMultiplier.toFixed(1)}x`);
-        
-        // During black hole, make it more intense
-        if (this.cosmicBlackHole) {
-            const ultPulse = 1 + Math.sin(time / 30) * 0.2;
-            outerRing.setScale(outerRing.scaleX * ultPulse);
-            middleRing.setScale(middleRing.scaleX * ultPulse);
-            innerCore.setAlpha(innerCore.alpha * ultPulse);
-        } else if (seconds > 2) {
-            const pulse = 1 + Math.sin(time / 50) * 0.1;
-            outerRing.setScale(outerRing.scaleX * pulse);
-            middleRing.setScale(middleRing.scaleX * pulse);
+
+        const voidCore    = this.cosmicChargeIndicator.getData('voidCore');
+        const innerGfx    = this.cosmicChargeIndicator.getData('innerGfx');
+        const arcGfx      = this.cosmicChargeIndicator.getData('arcGfx');
+        const burstRing   = this.cosmicChargeIndicator.getData('burstRing');
+        const orbitGfx    = this.cosmicChargeIndicator.getData('orbitGfx');
+        const chargeText  = this.cosmicChargeIndicator.getData('chargeText');
+
+        innerGfx.clear();
+        arcGfx.clear();
+        orbitGfx.clear();
+
+        // ── VOID CORE — grows and brightens with charge ──────────────
+        const coreRadius = 5 + pct * 9; // 5 → 14px
+        voidCore.setRadius(coreRadius);
+        // Colour: black → deep purple → vivid violet
+        const cr = Math.floor(pct * pct * 200);
+        const cg = 0;
+        const cb = Math.floor(pct * 255);
+        voidCore.setFillStyle(Phaser.Display.Color.GetColor(cr, cg, cb), 1);
+
+        // ── INNER ENERGY HALO — layered glow rings ──────────────────
+        const haloAlpha = pct * 0.8;
+        innerGfx.fillStyle(0x9966ff, haloAlpha * 0.15);
+        innerGfx.fillCircle(0, 0, coreRadius + 10);
+        innerGfx.lineStyle(2, 0xcc88ff, haloAlpha * 0.6);
+        innerGfx.strokeCircle(0, 0, coreRadius + 10);
+        if (pct > 0.4) {
+            innerGfx.lineStyle(1.5, 0xffffff, (pct - 0.4) * 0.5);
+            innerGfx.strokeCircle(0, 0, coreRadius + 18);
+        }
+
+        // ── CRACKLING ARCS — appear from 25% charge ──────────────────
+        if (pct > 0.25) {
+            const numArcs = Math.floor(pct * 6); // 1–6 arcs
+            const arcAlpha = Math.min(1, (pct - 0.25) * 1.3);
+            for (let i = 0; i < numArcs; i++) {
+                const baseAngle = (Math.PI * 2 / numArcs) * i + (time / 600);
+                const r1 = coreRadius + 4;
+                const r2 = coreRadius + 14 + pct * 10;
+                const x1 = Math.cos(baseAngle) * r1;
+                const y1 = Math.sin(baseAngle) * r1;
+                // Jagged mid-point
+                const midAngle = baseAngle + (Math.random() - 0.5) * 0.8;
+                const midR = (r1 + r2) / 2 + (Math.random() - 0.5) * 6;
+                const xm = Math.cos(midAngle) * midR;
+                const ym = Math.sin(midAngle) * midR;
+                const x2 = Math.cos(baseAngle + (Math.random() - 0.5) * 0.4) * r2;
+                const y2 = Math.sin(baseAngle + (Math.random() - 0.5) * 0.4) * r2;
+
+                arcGfx.lineStyle(3, 0x9966ff, arcAlpha * 0.4);
+                arcGfx.beginPath(); arcGfx.moveTo(x1, y1); arcGfx.lineTo(xm, ym); arcGfx.lineTo(x2, y2); arcGfx.strokePath();
+                arcGfx.lineStyle(1.5, 0xffffff, arcAlpha * 0.9);
+                arcGfx.beginPath(); arcGfx.moveTo(x1, y1); arcGfx.lineTo(xm, ym); arcGfx.lineTo(x2, y2); arcGfx.strokePath();
+            }
+        }
+
+        // ── ORBITING PARTICLES — appear from 50% ──────────────────
+        if (pct > 0.5) {
+            const orbitAlpha = (pct - 0.5) * 2;
+            const orbitR = 28 + pct * 8;
+            const numP = 6;
+            for (let i = 0; i < numP; i++) {
+                const angle = (Math.PI * 2 / numP) * i - (time / 400);
+                const ox = Math.cos(angle) * orbitR;
+                const oy = Math.sin(angle) * orbitR;
+                const pr = 1.5 + pct * 2;
+                orbitGfx.fillStyle(0xffffff, orbitAlpha);
+                orbitGfx.fillCircle(ox, oy, pr);
+                // Trailing tail
+                for (let t = 1; t <= 3; t++) {
+                    const ta = angle + t * 0.15;
+                    orbitGfx.fillStyle(0xcc88ff, orbitAlpha * (1 - t * 0.3));
+                    orbitGfx.fillCircle(Math.cos(ta) * orbitR, Math.sin(ta) * orbitR, pr * (1 - t * 0.25));
+                }
+            }
+        }
+
+        // ── BURST RING at full charge ──────────────────────────────
+        if (pct >= 1) {
+            const pulse = 0.5 + Math.sin(time / 60) * 0.5;
+            burstRing.setStrokeStyle(3, 0xffffff, 0.4 + pulse * 0.5);
+            burstRing.setAlpha(0.5 + pulse * 0.5);
+        } else {
+            burstRing.setAlpha(0);
+        }
+
+        // ── LABEL ─────────────────────────────────────────────────
+        if (pct > 0.3) {
+            chargeText.setAlpha(Math.min(1, (pct - 0.3) * 2));
+            chargeText.setText(`${chargeMultiplier.toFixed(1)}×`);
+            const hue = pct >= 1 ? '#ffffff' : (pct > 0.7 ? '#ffaaff' : '#cc99ff');
+            chargeText.setColor(hue);
+            if (pct >= 1) chargeText.setAlpha(0.7 + Math.sin(time / 70) * 0.3);
+        } else {
+            chargeText.setAlpha(0);
         }
     }
 
@@ -4005,12 +5804,16 @@ class GameScene extends Phaser.Scene {
                 
                 let finalDamage = damage;
                 
-                // CONSUME MARKS if fully charged (8x)
-                if (isFullyCharged && enemy.cosmicMarks > 0) {
-                    const markBonus = enemy.cosmicMarks * this.cosmicMarkDamagePerStack;
+                // CONSUME MARKS if fully charged OR continuous laser
+                const isLaser = this.cosmicContinuousLaserActive;
+                if ((isFullyCharged || isLaser) && enemy.cosmicMarks > 0) {
+                    // Frozen enemies take 2× mark damage (ice → cosmic synergy)
+                    const frozenMult = enemy.isFrozen ? 2.0 : 1.0;
+                    const markBonus = enemy.cosmicMarks * this.cosmicMarkDamagePerStack * frozenMult;
                     finalDamage += markBonus;
-                    
-                    console.log(`Consumed ${enemy.cosmicMarks} marks for +${markBonus} bonus damage!`);
+                    if (enemy.isFrozen && enemy.sprite && enemy.sprite.active) {
+                        this.showStatusText(enemy.sprite.x, enemy.sprite.y, `❄⚡ ×2`, '#aaeeff');
+                    }
                     
                     // LIFESTEAL: Heal based on marks consumed
                     const healPerMark = 5; // Heal 5 HP per mark consumed
@@ -4122,54 +5925,150 @@ class GameScene extends Phaser.Scene {
     }
 
     activateCosmicBlackHole() {
-        console.log('COSMIC ULT ACTIVATED - CONTINUOUS LASER MODE');
-        
-        // Activate ult mode - player can now hold SPACE to fire laser
+        // If projectile already in flight — detonate it
+        if (this.cosmicBlackHoleProjectile) {
+            this.detonateCosmicBomb();
+            return;
+        }
+
         this.cosmicUltActive = true;
-        this.ultDrainActive = true;
-        this.ultDrainStartTime = this.time.now;
-        this.ultDrainDuration = 10000; // fallback timeout if no charge drains
-        
-        // Visual feedback
-        const ultNotif = this.add.text(
-            this.scale.width / 2,
-            80,
-            'LASER ULT ACTIVE - HOLD SPACE TO FIRE',
-            {
-                fontSize: '16px',
-                fontFamily: 'monospace',
-                color: '#9966ff',
-                stroke: '#000000',
-                strokeThickness: 3,
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5).setScrollFactor(0);
-        
-        this.tweens.add({
-            targets: ultNotif,
-            y: 60,
-            alpha: 0,
-            duration: 2000,
-            onComplete: () => ultNotif.destroy()
-        });
 
-        // Deploy the black hole at the current mouse target position
         const activePointer = this.input.activePointer;
-        const targetX = (this.pointerX || activePointer.x);
-        const targetY = (this.pointerY || activePointer.y);
-        const worldX = targetX + this.cameras.main.scrollX;
-        const worldY = targetY + this.cameras.main.scrollY;
-        this.deployCosmicBlackHole(worldX, worldY);
+        const targetX = (this.pointerX || activePointer.x) + this.cameras.main.scrollX;
+        const targetY = (this.pointerY || activePointer.y) + this.cameras.main.scrollY;
 
-        // Ult ends when charges deplete or after timeout
-        this.time.delayedCall(this.ultDrainDuration, () => {
-            if (this.cosmicUltActive) {
-                this.cosmicUltActive = false;
-                this.cosmicContinuousLaserActive = false;
-                this.ultDrainActive = false;
-                this.updateHUD();
+        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+
+        const dx = targetX - playerPixelX;
+        const dy = targetY - playerPixelY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+
+        const speed = 80; // slow — gives time to aim detonation
+        const vx = (dx / dist) * speed;
+        const vy = (dy / dist) * speed;
+
+        // ── VOID BOMB VISUAL ─────────────────────────────────────────
+        // Layered concentric circles + rotating arms + crackling outline
+        const container = this.add.container(playerPixelX, playerPixelY).setDepth(6);
+
+        // Outer distortion ring
+        const outerRing = this.add.circle(0, 0, 22, 0x000000, 0);
+        outerRing.setStrokeStyle(3, 0x440088, 0.7);
+
+        // Mid energy ring
+        const midRing = this.add.circle(0, 0, 15, 0x220044, 0.85);
+        midRing.setStrokeStyle(2, 0x9966ff, 0.9);
+
+        // Dark core
+        const core = this.add.circle(0, 0, 8, 0x000000, 1);
+
+        // Bright singularity point
+        const singularity = this.add.circle(0, 0, 3, 0xffffff, 0.9);
+
+        // Spiral arms — 3 graphics lines that rotate
+        const armsGfx = this.add.graphics();
+        const drawArms = (g, angle) => {
+            g.clear();
+            for (let i = 0; i < 3; i++) {
+                const a = angle + (Math.PI * 2 / 3) * i;
+                g.lineStyle(2, 0x9966ff, 0.6);
+                g.beginPath();
+                g.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
+                // Curved arm — 4 segments each offset
+                for (let s = 1; s <= 4; s++) {
+                    const t = s / 4;
+                    const r = 4 + t * 14;
+                    const sweep = a + t * 0.9;
+                    g.lineTo(Math.cos(sweep) * r, Math.sin(sweep) * r);
+                }
+                g.strokePath();
             }
+        };
+        drawArms(armsGfx, 0);
+        container.add([outerRing, armsGfx, midRing, core, singularity]);
+
+        // Rotation tween for arms
+        let armAngle = 0;
+        const armTimer = this.time.addEvent({
+            delay: 30,
+            callback: () => {
+                if (!container.active) { armTimer.remove(); return; }
+                armAngle -= 0.07;
+                drawArms(armsGfx, armAngle);
+                // Pulse outer ring
+                outerRing.setStrokeStyle(3, 0x440088, 0.4 + Math.sin(armAngle * 3) * 0.3);
+                singularity.setAlpha(0.6 + Math.sin(armAngle * 5) * 0.4);
+            },
+            loop: true
         });
+
+        // Purple void trail
+        const trailTimer = this.time.addEvent({
+            delay: 35,
+            callback: () => {
+                if (!container.active) { trailTimer.remove(); return; }
+                const t1 = this.add.circle(container.x, container.y, 10, 0x220044, 0.55).setDepth(5);
+                const t2 = this.add.circle(container.x, container.y, 5, 0x9966ff, 0.35).setDepth(5);
+                this.tweens.add({ targets: [t1, t2], alpha: 0, scaleX: 1.8, scaleY: 1.8, duration: 350, onComplete: () => { t1.destroy(); t2.destroy(); } });
+            },
+            loop: true
+        });
+
+        container.setData('vx', vx);
+        container.setData('vy', vy);
+        container.setData('launchX', playerPixelX);
+        container.setData('launchY', playerPixelY);
+        container.setData('maxRange', 12 * this.TILE_SIZE); // 12 tiles max
+        container.setData('armTimer', armTimer);
+        container.setData('trailTimer', trailTimer);
+
+        if (this.cosmicBlackHoleProjectile) {
+            const old = this.cosmicBlackHoleProjectile;
+            if (old.getData('armTimer')) old.getData('armTimer').remove();
+            if (old.getData('trailTimer')) old.getData('trailTimer').remove();
+            this.tweens.killTweensOf(old);
+            old.destroy();
+        }
+        this.cosmicBlackHoleProjectile = container;
+
+        // Range ring at launch point — shows max travel distance
+        const rangeRing = this.add.circle(playerPixelX, playerPixelY, 12 * this.TILE_SIZE, 0x9966ff, 0).setDepth(4);
+        rangeRing.setStrokeStyle(1, 0x9966ff, 0.3);
+        this.tweens.add({ targets: rangeRing, alpha: 0, duration: 1200, onComplete: () => rangeRing.destroy() });
+
+        // HUD hint
+        const hint = this.add.text(this.scale.width / 2, 80, 'E  TO DETONATE', {
+            fontSize: '14px', fontFamily: 'monospace', color: '#cc88ff',
+            stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+        this.tweens.add({ targets: hint, y: 60, alpha: 0, duration: 2000, onComplete: () => hint.destroy() });
+    }
+
+    detonateCosmicBomb() {
+        const proj = this.cosmicBlackHoleProjectile;
+        if (!proj) return;
+
+        const deployX = proj.x;
+        const deployY = proj.y;
+
+        if (proj.getData('armTimer')) proj.getData('armTimer').remove();
+        if (proj.getData('trailTimer')) proj.getData('trailTimer').remove();
+        this.tweens.killTweensOf(proj);
+
+        // Detonation flash burst before deploying
+        const flash = this.add.circle(deployX, deployY, 8, 0xffffff, 1).setDepth(7);
+        this.tweens.add({ targets: flash, radius: 40, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 / 8) * i;
+            const shard = this.add.circle(deployX, deployY, 3, 0xcc88ff, 1).setDepth(7);
+            this.tweens.add({ targets: shard, x: deployX + Math.cos(angle) * 30, y: deployY + Math.sin(angle) * 30, alpha: 0, duration: 300, onComplete: () => shard.destroy() });
+        }
+
+        proj.destroy();
+        this.cosmicBlackHoleProjectile = null;
+        this.deployCosmicBlackHole(deployX, deployY);
     }
 
     updateCosmicBlackHoleProjectile(delta) {
@@ -4184,37 +6083,28 @@ class GameScene extends Phaser.Scene {
         const tileX = Math.floor(proj.x / this.TILE_SIZE);
         const tileY = Math.floor(proj.y / this.TILE_SIZE);
         
-        // Check collision with wall or enemy
-        let shouldDeploy = false;
-        let deployX = proj.x;
-        let deployY = proj.y;
-        
-        // Hit wall
+        // Auto-detonate on wall hit or max range reached
+        const travelledX = proj.x - proj.getData('launchX');
+        const travelledY = proj.y - proj.getData('launchY');
+        const travelled = Math.sqrt(travelledX * travelledX + travelledY * travelledY);
+        const maxRange = proj.getData('maxRange');
+
         if (tileX < 0 || tileX >= this.WORLD_WIDTH || 
             tileY < 0 || tileY >= this.WORLD_HEIGHT ||
-            this.world[tileX][tileY] === this.WALL) {
-            shouldDeploy = true;
+            this.world[tileX][tileY] === this.WALL ||
+            travelled >= maxRange) {
+            this.detonateCosmicBomb();
+            return;
         }
-        
-        // Hit enemy
-        for (let enemy of this.enemies) {
-            const enemyPixelX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const enemyPixelY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2;
-            
-            const dist = Math.sqrt((proj.x - enemyPixelX) ** 2 + (proj.y - enemyPixelY) ** 2);
-            if (dist < this.TILE_SIZE) {
-                shouldDeploy = true;
-                deployX = enemyPixelX;
-                deployY = enemyPixelY;
-                break;
+
+        // Detonate on enemy contact
+        for (const enemy of this.enemies) {
+            if (!enemy.sprite || !enemy.sprite.active) continue;
+            const ex = enemy.sprite.x, ey = enemy.sprite.y;
+            if (Math.abs(ex - proj.x) < this.TILE_SIZE * 1.1 && Math.abs(ey - proj.y) < this.TILE_SIZE * 1.1) {
+                this.detonateCosmicBomb();
+                return;
             }
-        }
-        
-        if (shouldDeploy) {
-            this.deployCosmicBlackHole(deployX, deployY);
-            this.tweens.killTweensOf(proj);
-            proj.destroy();
-            this.cosmicBlackHoleProjectile = null;
         }
     }
 
@@ -4424,40 +6314,43 @@ class GameScene extends Phaser.Scene {
         // Prune dead enemies from affectedEnemies
         bh.affectedEnemies = bh.affectedEnemies.filter(e => e.sprite && e.sprite.active);
 
-        // Find enemies in radius — pull them smoothly toward the center
+        // Find enemies in radius — spiral orbit that tightens toward center
         for (let enemy of this.enemies) {
             const dist = Math.abs(enemy.x - bh.tileX) + Math.abs(enemy.y - bh.tileY);
 
             if (dist <= currentRadius) {
                 if (!bh.affectedEnemies.includes(enemy)) {
                     bh.affectedEnemies.push(enemy);
-                }
-
-                // Smooth pull toward black hole center pixel by pixel
-                const ex = enemy.sprite.x;
-                const ey = enemy.sprite.y;
-                const dx = bh.x - ex;
-                const dy = bh.y - ey;
-                const pixelDist = Math.sqrt(dx * dx + dy * dy);
-
-                if (pixelDist > 4) {
-                    // Pull speed increases as enemy gets closer (gravity feel)
-                    const pullStrength = Phaser.Math.Clamp(0.06 + (1 - pixelDist / (currentRadius * this.TILE_SIZE)) * 0.1, 0.04, 0.16);
-                    const newX = Phaser.Math.Linear(ex, bh.x, pullStrength);
-                    const newY = Phaser.Math.Linear(ey, bh.y, pullStrength);
-
-                    const targetTileX = Math.floor(newX / this.TILE_SIZE);
-                    const targetTileY = Math.floor((newY - this.SLIME_Y_OFFSET) / this.TILE_SIZE);
-
-                    if (targetTileX >= 0 && targetTileX < this.WORLD_WIDTH &&
-                        targetTileY >= 0 && targetTileY < this.WORLD_HEIGHT &&
-                        this.world[targetTileX][targetTileY] === this.FLOOR) {
-                        enemy.sprite.x = newX;
-                        enemy.sprite.y = newY;
-                        enemy.x = targetTileX;
-                        enemy.y = targetTileY;
+                    // Assign a unique orbit angle offset per enemy
+                    if (enemy._bhOrbitAngle === undefined) {
+                        const idx = bh.affectedEnemies.length;
+                        enemy._bhOrbitAngle = (idx * Math.PI * 0.7);
+                    }
+                    if (enemy._bhOrbitRadius === undefined) {
+                        // Cap entry radius to 1.5 tiles so enemy is always safely inside
+                        const ex = enemy.sprite.x - bh.x;
+                        const ey = enemy.sprite.y - bh.y;
+                        const entryDist = Math.sqrt(ex * ex + ey * ey);
+                        enemy._bhOrbitRadius = Math.min(entryDist, this.TILE_SIZE * 1.5);
                     }
                 }
+
+                // Spin angle forward each frame
+                enemy._bhOrbitAngle = (enemy._bhOrbitAngle || 0) + 0.022;
+
+                // Very gradual decay — enemies spiral in slowly over the black hole duration
+                const safeMaxRadius = currentRadius * this.TILE_SIZE * 0.55;
+                const minRadius = 6;
+                enemy._bhOrbitRadius = Math.max(minRadius, Math.min(safeMaxRadius, (enemy._bhOrbitRadius || this.TILE_SIZE) * 0.9975));
+
+                const targetX = bh.x + Math.cos(enemy._bhOrbitAngle) * enemy._bhOrbitRadius;
+                const targetY = bh.y + Math.sin(enemy._bhOrbitAngle) * enemy._bhOrbitRadius;
+
+                // Set directly — no lerp, no jitter, free pixel movement during black hole
+                enemy.sprite.x = targetX;
+                enemy.sprite.y = targetY;
+                enemy.x = Math.floor(targetX / this.TILE_SIZE);
+                enemy.y = Math.floor((targetY - this.SLIME_Y_OFFSET) / this.TILE_SIZE);
 
                 this.updateEnemyHealthBar(enemy);
 
@@ -4486,6 +6379,9 @@ class GameScene extends Phaser.Scene {
                 if (enemy.cosmicMarks < this.cosmicMaxMarks) {
                     enemy.cosmicMarks++;
                     this.updateCosmicMarkVisual(enemy);
+                    if (enemy.sprite && enemy.sprite.active) {
+                        this.showStatusText(enemy.sprite.x, enemy.sprite.y, `MARKED x${enemy.cosmicMarks}`, '#cc99ff');
+                    }
                 }
             }
             bh.lastMarkTime = time;
@@ -4495,21 +6391,36 @@ class GameScene extends Phaser.Scene {
         if (time >= bh.expiresAt) {
             for (let enemy of bh.affectedEnemies) {
                 if (!enemy.sprite || !enemy.sprite.active) continue;
+                this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'STUNNED', '#9966ff');
+                // Snap to nearest valid floor tile from current glide position
+                const snap = this.snapToNearestFloor(enemy.sprite.x, enemy.sprite.y - this.SLIME_Y_OFFSET);
+                if (snap) {
+                    enemy.x = snap.tx; enemy.y = snap.ty;
+                    enemy.sprite.x = snap.px;
+                    enemy.sprite.y = snap.py + this.SLIME_Y_OFFSET;
+                    // Sync healthbars immediately after snap
+                    if (enemy.healthBarBg) { enemy.healthBarBg.x = enemy.sprite.x; enemy.healthBarBg.y = enemy.sprite.y; }
+                    if (enemy.healthBarFill) { enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y; }
+                    if (enemy.brittleVisual) { enemy.brittleVisual.x = enemy.sprite.x; enemy.brittleVisual.y = enemy.sprite.y + 14; }
+                    if (enemy.burnVisual) { enemy.burnVisual.x = enemy.sprite.x; enemy.burnVisual.y = enemy.sprite.y - 18; }
+                    if (enemy._tsunamiMultText) { enemy._tsunamiMultText.x = enemy.sprite.x; enemy._tsunamiMultText.y = enemy.sprite.y - 28; }
+                    if (enemy.cosmicMarkVisuals) this.updateCosmicMarkVisual(enemy);
+                }
+                delete enemy._bhOrbitAngle;
+                delete enemy._bhOrbitRadius;
                 enemy.isStunned = true;
                 enemy.stunnedUntil = time + 500;
                 this.time.delayedCall(500, () => {
-                    if (enemy.sprite && enemy.sprite.active) {
-                        enemy.isStunned = false;
-                    }
+                    if (enemy.sprite && enemy.sprite.active) enemy.isStunned = false;
                 });
             }
-            
+
             this.tweens.killTweensOf(bh.container);
             bh.container.destroy();
             this.cosmicBlackHole = null;
             this.cosmicContinuousLaserActive = false;
             this.cosmicUltActive = false;
-            
+
             this.cosmicInfiniteBeamEndTime = time + this.cosmicBlackHoleGracePeriod;
         }
     }
@@ -4614,15 +6525,17 @@ class GameScene extends Phaser.Scene {
                 // Apply mark (max 3)
                 if (enemy.cosmicMarks < this.cosmicMaxMarks) {
                     if (enemy.cosmicMarks === 0) {
-                        hitUnmarkedEnemy = true; // Fresh enemy!
+                        hitUnmarkedEnemy = true;
                     }
                     enemy.cosmicMarks++;
                     this.updateCosmicMarkVisual(enemy);
+                    this.showStatusText(enemy.sprite.x, enemy.sprite.y, `MARKED x${enemy.cosmicMarks}`, '#cc99ff');
                 }
                 
                 // Stun enemy
                 enemy.isStunned = true;
                 enemy.stunnedUntil = currentTime + this.cosmicDashStunDuration;
+                this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'DAZED', '#9966ff');
                 
                 // Flash
                 enemy.sprite.setTint(0x9966ff);
@@ -4693,11 +6606,122 @@ class GameScene extends Phaser.Scene {
     }
 }
 
+// ─── LEVEL SELECT SCENE ────────────────────────────────────────────────────
+
+class LevelSelectScene extends Phaser.Scene {
+    constructor() { super({ key: 'LevelSelect' }); }
+
+    create() {
+        const W = this.scale.width, H = this.scale.height;
+
+        // Background
+        this.add.rectangle(0, 0, W, H, 0x050a10, 1).setOrigin(0);
+
+        // Title
+        this.add.text(W / 2, 48, 'WORLD 1  —  SELECT LEVEL', {
+            fontSize: '22px', fontFamily: 'monospace', color: '#aaccff',
+            stroke: '#000000', strokeThickness: 4, fontStyle: 'bold'
+        }).setOrigin(0.5);
+
+        this.add.text(W / 2, 82, 'work in progress', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#445566'
+        }).setOrigin(0.5);
+
+        // Level grid — 10 levels, 5 per row
+        const levels = 10;
+        const cols = 5;
+        const btnW = 120, btnH = 80, padX = 24, padY = 24;
+        const totalW = cols * btnW + (cols - 1) * padX;
+        const startX = (W - totalW) / 2;
+        const startY = 150;
+
+        const levelNames = [
+            'Tutorial Room', 'The Corridor',  'Split Paths',
+            'Node Trap',     'The Gauntlet',   'Frozen Vault',
+            'Storm Chamber', 'Void Gate',      'Circuit Maze',
+            'Final Stand'
+        ];
+
+        for (let i = 0; i < levels; i++) {
+            const col = i % cols, row = Math.floor(i / cols);
+            const bx = startX + col * (btnW + padX);
+            const by = startY + row * (btnH + padY);
+
+            // For now only level 0 (Room 1) is truly playable — rest are locked placeholders
+            const unlocked = true; // unlock all for dev purposes
+
+            const bg = this.add.rectangle(bx, by, btnW, btnH, unlocked ? 0x0a1f2e : 0x0d0d0d, 1).setOrigin(0).setInteractive();
+            bg.setStrokeStyle(1.5, unlocked ? 0x2244aa : 0x222222, 1);
+
+            // Level number
+            this.add.text(bx + 10, by + 8, `${i + 1}`, {
+                fontSize: '28px', fontFamily: 'monospace',
+                color: unlocked ? '#3366cc' : '#333333', fontStyle: 'bold'
+            });
+
+            // Level name
+            this.add.text(bx + btnW / 2, by + btnH - 18, levelNames[i] || `Level ${i + 1}`, {
+                fontSize: '9px', fontFamily: 'monospace',
+                color: unlocked ? '#6688aa' : '#333333'
+            }).setOrigin(0.5, 1);
+
+            // DEV badge
+            const devBadge = this.add.text(bx + btnW - 6, by + 6, 'DEV', {
+                fontSize: '8px', fontFamily: 'monospace', color: '#ffaa00'
+            }).setOrigin(1, 0);
+
+            if (unlocked) {
+                // Hover effect
+                bg.on('pointerover', () => {
+                    bg.setFillStyle(0x112233);
+                    bg.setStrokeStyle(2, 0x4488ff, 1);
+                });
+                bg.on('pointerout', () => {
+                    bg.setFillStyle(0x0a1f2e);
+                    bg.setStrokeStyle(1.5, 0x2244aa, 1);
+                });
+                bg.on('pointerdown', () => {
+                    this.launchLevel(i);
+                });
+            }
+        }
+
+        // Divider
+        this.add.line(W / 2, startY + 2 * (btnH + padY) + btnH + 20, 0, 0, totalW, 0, 0x223344, 0.6).setOrigin(0.5);
+
+        // Dev shortcut hint
+        this.add.text(W / 2, H - 32, 'Click any level to start  •  DEV MODE: all levels unlocked', {
+            fontSize: '10px', fontFamily: 'monospace', color: '#334455'
+        }).setOrigin(0.5);
+
+        // Keyboard shortcut: press 1-9,0 to jump straight to a level
+        this.input.keyboard.on('keydown', (e) => {
+            const n = parseInt(e.key);
+            if (!isNaN(n)) {
+                const idx = n === 0 ? 9 : n - 1;
+                if (idx < levels) this.launchLevel(idx);
+            }
+        });
+    }
+
+    launchLevel(index) {
+        // Flash transition
+        const W = this.scale.width, H = this.scale.height;
+        const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0).setOrigin(0.5);
+        this.tweens.add({
+            targets: flash, alpha: 1, duration: 120,
+            onComplete: () => {
+                this.scene.start('Game', { levelIndex: index });
+            }
+        });
+    }
+}
+
 const config = {
     type: Phaser.AUTO,
     width: window.innerWidth,
     height: window.innerHeight,
-    scene: GameScene,
+    scene: [LevelSelectScene, GameScene],
     pixelArt: true,
     backgroundColor: '#000000'
 };

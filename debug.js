@@ -113,7 +113,7 @@ class GameScene extends Phaser.Scene {
         // Element system
         this.currentElement = 'fire'; // start with fire
         this.elements = ['fire', 'ice', 'lightning', 'cosmic'];
-        this.elementSwitchCooldown = 1000; // 1 second cooldown
+        this.elementSwitchCooldown = 2000; // 1 second cooldown
         this.lastElementSwitchTime = 0;
 
         // hailstorms (ice AOE attacks)
@@ -127,7 +127,7 @@ class GameScene extends Phaser.Scene {
         this.baseLightningDamage = 1; // weak first hit
         this.lightningChainFalloff = 0.5; // 50% damage per chain (manual attacks)
         this.lightningUltChainFalloff = 0.95; // 95% damage per chain (ult attacks)
-        this.lightningCooldown = 250;
+        this.lightningCooldown = 1000;
         this.lightningMaxRange = 20; // can target enemies up to 20 tiles away
 
         this.stormCloud = null;
@@ -2558,6 +2558,7 @@ class GameScene extends Phaser.Scene {
             this.player.clearTint();
         });
     }
+    
     updateStormCloud(time) {
         if (!this.stormCloudActive || !this.stormCloud) return;
         
