@@ -1,39 +1,55 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Dungeon Game</title>
-    
-    <!-- prevent caching so updates show immediately -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    
-    <!-- mobile viewport, prevents zoom and resize quirks -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    
-    <!-- phaser library -->
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
-    
-    <!-- styling -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Roguelike</title>
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      
-      body {
-        background: black;
-        overflow: hidden;
-        touch-action: none; /* prevents mobile pull-to-refresh and other touch gestures */
-      }
-      
-      canvas {
-        display: block;
-      }
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
     </style>
-  </head>
-  <body>
-    <script src="game.js"></script>
-  </body>
+</head>
+<body>
+    <!-- Phaser 3 -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    
+    <!-- Load utility files first -->
+    <script src="Utils.js"></script>
+    
+    <!-- Load modules (must come before GameScene.js) -->
+    <script src="WorldGen.js"></script>
+    <script src="TutorialManager.js"></script>
+    <script src="EnemyManager.js"></script>
+    <script src="WeaponSystem.js"></script>
+    <script src="CombatSystem.js"></script>
+    <script src="ElementSystem.js"></script>
+    <script src="HUD.js"></script>
+
+    <!-- Load scene files -->
+    <script src="BootScene.js"></script>
+    <script src="LevelSelectScene.js"></script>
+    <script src="ShopScene.js"></script>
+    <script src="GameScene.js"></script>
+    
+    <!-- Initialize game -->
+    <script>
+        const config = {
+            type: Phaser.AUTO,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scene: [BootScene, LevelSelectScene, ShopScene, GameScene],
+            pixelArt: true,
+            backgroundColor: '#000000'
+        };
+        
+        const game = new Phaser.Game(config);
+    </script>
+</body>
 </html>

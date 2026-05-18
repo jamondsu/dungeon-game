@@ -87,3 +87,41 @@ and make the lightning bolt not ugly. also orb scraps are bugged when i pick the
 let there also be a bar indicating when the charge of the node will disappear so the player knows how to play around it
 
 enemies that go invisible. fire ult makes it so that enemies explode making a circle of lava tiles around them dealing small dps but very fast dps. shots dont leave lava trails anymore but the fireball splits into two more smaller fireballs every 2 tiles travelled, capping at 4 splits
+
+═══════════════════════════════════════════════════════════
+ENGINEERING DEGREE (advanced purchaseable lightning weapon)
+═══════════════════════════════════════════════════════════
+- scroll through 3 building modes, place towers using scraps
+- tower cap: 6 total across all types, max 3 of any single type
+- superconductored enemies grant towers +2 tiles detection range against them specifically
+
+Tower types & scrap costs:
+  Tesla Coil (8 scraps)
+    - attacks all enemies in range, chains lightning between them
+    - most versatile, highest cost
+  Sniper Tower (6 scraps)
+    - devastating single-target damage at very long range
+    - does not alert nearby enemies (undetected shots)
+  Machine Gun (5 scraps)
+    - single target, highest sustained DPS of the three
+    - cheapest since it rewards superconductor setup to shine
+
+All towers can be destroyed. Superconductor range bonus applies to all three types.
+
+═══════════════════════════════════════════════════════════
+LIGHTNING FISTS (starting lightning weapon)
+═══════════════════════════════════════════════════════════
+- same 1-tile melee range as flame fists and ice fists
+- yellow tint visual on hit (fire = orange, ice = blue, lightning = yellow)
+- hitting an enemy directly applies superconductor mark to them
+- passive arc attack: any superconductored enemy within a 2-wide x 3-deep tile 
+  rectangle directly in front of the player is automatically zapped each attack
+  - this arc cannot stack/combine with the main fist hit on the same enemy
+  - arc is multi-target: all superconducted enemies in that zone get zapped simultaneously
+  - arc range is longer than the fist itself, rewarding the player for marking enemies first
+
+LIGHTNING ULT (fork) — revised
+- player goes invulnerable for the duration (~4-5s)
+- auto-zaps all enemies within a 4-tile radius every ~0.4s
+- no new sprite or aura, just raw yellow zap visuals and damage numbers
+- ult drain bar depletes over duration as usual
