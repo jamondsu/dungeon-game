@@ -219,12 +219,17 @@ class CombatSystem {
             this.tweens.killTweensOf(enemy._rangedMark);
             enemy._rangedMark.destroy();
         }
+        // Clean up electrical enemy aura
+        if (enemy._electricalAuraTimer) { enemy._electricalAuraTimer.remove(); enemy._electricalAuraTimer = null; }
+        if (enemy._electricalAura?.active) { enemy._electricalAura.destroy(); }
         // COSMIC: 50% chance to drop charge
         if (this.currentElement === 'cosmic' && Math.random() < this.cosmicDropChance) {
             this.addCosmicCharge(enemy.sprite.x, enemy.sprite.y);
         }
-        // 10% chance to drop an orb scrap
-        if (this.currentElement === 'lightning' && Math.random() < this.orbDropChance && enemy.sprite) {
+        // 10% chance to drop an orb scrap — only for node-based lightning weapons, not fists
+        const lightningWeapon = this.equippedWeapons?.lightning || 'lightning_fists';
+        if (this.currentElement === 'lightning' && lightningWeapon !== 'lightning_fists' &&
+            Math.random() < this.orbDropChance && enemy.sprite) {
             this.spawnOrbScrap(enemy.sprite.x, enemy.sprite.y);
         }
         // Small chance to drop glorps or health pot

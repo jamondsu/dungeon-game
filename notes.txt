@@ -125,3 +125,5 @@ LIGHTNING ULT (fork) — revised
 - auto-zaps all enemies within a 4-tile radius every ~0.4s
 - no new sprite or aura, just raw yellow zap visuals and damage numbers
 - ult drain bar depletes over duration as usual
+
+it still says ice element unlocked in level 2 just like the ice tutorial, and the fire visuals arent updating and stay behind, and the hallway to the chest room should also have a barrier while combat is in place, and the third room in level 2 is still bugged and enemies cant move and after killing them all the chest doesnt spawn so ur stuck

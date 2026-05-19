@@ -233,84 +233,171 @@ class EnemyManager {
             }
 
             const isActuallySlowed = enemy.isSlowed || enemy.isWet;
-            const moveCooldown = isActuallySlowed ? this.enemyMoveCooldown * 2 : this.enemyMoveCooldown;
+            let moveCooldown = isActuallySlowed ? this.enemyMoveCooldown * 2 : this.enemyMoveCooldown;
+            if (enemy.isElectrical) moveCooldown = Math.round(moveCooldown * 0.33); // 3× faster
 
             if (currentTime - enemy.lastMoveTime < moveCooldown) {
                 continue;
             }
 
-            // Ranged enemies freeze in place while aiming or shooting
-            if (enemy.isRanged && (enemy.rangedState === 'prefire' || enemy.rangedState === 'firing')) {
-                continue;
-            }
-
-            // Ranged enemies have their own movement in updateRangedEnemies — skip here entirely
+            // Ranged enemies are handled entirely by updateRangedEnemies — skip here
             if (enemy.isRanged) continue;
 
             const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
 
-            // In tutorial or level 2, enemies only aggro if player is in the same room
+            // Room gating for tutorial and level 2
             if (this.isTutorial || this.isLevel2) {
                 const enemyRoom = enemy.tutorialRoomIndex ?? -1;
-                const playerRoom = this.getCurrentPlayerRoom();
-                if (enemyRoom !== playerRoom) continue;
+                if (enemyRoom !== this.getCurrentPlayerRoom()) continue;
             }
 
             if (dist < 20) {
-                const path = this.findPathBFS(enemy.x, enemy.y, this.playerX, this.playerY);
+                let nextStep = null;
 
-                if (path && path.length > 1) {
-                    const nextStep = path[1];
+                // --- COMMITTED PATH LOGIC ---
+                // Peek at the next step WITHOUT advancing the index yet.
+                // Only advance once we know the tile is actually passable.
+                // This avoids the rollback problem entirely.
+                const pathStillValid =
+                    enemy._committedPath &&
+                    enemy._pathStepsLeft > 0 &&
+                    enemy._pathIndex !== undefined &&
+                    enemy._pathIndex + 1 < enemy._committedPath.length;
 
-                    if (nextStep.x === this.playerX && nextStep.y === this.playerY) {
-                        if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
-                            this.enemyAttackAnimation(enemy, this.playerX, this.playerY);
-                            this.takeDamage(1);
-                            this.lastPlayerDamageTime = currentTime;
-                        }
+                if (pathStillValid) {
+                    const candidate = enemy._committedPath[enemy._pathIndex + 1];
+                    const isPlayerTile = candidate.x === this.playerX && candidate.y === this.playerY;
+                    const wallBlocked = !isPlayerTile &&
+                        (this.world[candidate.x]?.[candidate.y] !== this.FLOOR ||
+                         this.isNodeAt(candidate.x, candidate.y));
+
+                    if (wallBlocked) {
+                        // Hard obstacle — replan immediately
+                        enemy._committedPath = null;
+                        enemy._pathIndex = undefined;
+                        enemy._pathStepsLeft = 0;
+                    } else if (!isPlayerTile && this.getEnemyAt(candidate.x, candidate.y)) {
+                        // Tile occupied by another enemy — hold position this tick,
+                        // keep path intact so we retry the same step next tick
+                        enemy.lastMoveTime = currentTime;
                         continue;
-                    }
-
-                    enemy.x = nextStep.x;
-                    enemy.y = nextStep.y;
-                    enemy.lastMoveTime = currentTime;
-
-                    // Check if enemy stepped onto an active water tile
-                    if (this.activeWaterTiles?.length) {
-                        const waterHere = this.activeWaterTiles.find(w => w.tileX === enemy.x && w.tileY === enemy.y);
-                        if (waterHere && !enemy.isWet) {
-                            const wetDur = 4500; // full wet duration regardless of tile timing
-                            enemy.isWet = true;
-                            enemy.wetUntil = this.time.now + wetDur;
-                            if (enemy.sprite?.active) {
-                                enemy.sprite.setTint(0x4499ff);
-                                this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'WET', '#44aaff');
-                                this.time.delayedCall(wetDur, () => {
-                                    enemy.isWet = false;
-                                    if (enemy.sprite?.active && !enemy.isFrozen) enemy.sprite.clearTint();
-                                });
-                            }
+                    } else {
+                        // Tile is clear — commit the advance now
+                        nextStep = candidate;
+                        enemy._pathIndex++;
+                        enemy._pathStepsLeft--;
+                        if (enemy._pathStepsLeft <= 0) {
+                            enemy._committedPath = null;
+                            enemy._pathIndex = undefined;
                         }
                     }
+                }
 
-                    // Don't start a move tween if the enemy is frozen or mid-shatter
-                    if (enemy.isFrozen || enemy._shatterTriggered) {
-                        enemy.sprite.x = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
-                        enemy.sprite.y = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
-                    } else {
-                    const targetX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
-                    const targetY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+                if (!nextStep) {
+                    // Commit only 2 steps — prevents shadow-chasing while still resisting trivial jukes
+                    const path = this.findPathBFS(enemy.x, enemy.y, this.playerX, this.playerY);
+                    if (path && path.length > 1) {
+                        const commitSteps = Math.min(2, path.length - 1);
+                        enemy._committedPath = path;
+                        enemy._pathStepsLeft = commitSteps - 1; // consuming step 1 right now
+                        enemy._pathIndex = 1;                   // step 1 is being taken this tick
+                        nextStep = path[1];
+                        if (enemy._pathStepsLeft <= 0) {
+                            enemy._committedPath = null;
+                            enemy._pathIndex = undefined;
+                        }
+                    }
+                }
+
+                // No valid step — skip this enemy for now
+                if (!nextStep) continue;
+
+                // Player collision — attack instead of moving
+                if (nextStep.x === this.playerX && nextStep.y === this.playerY) {
+                    if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
+                        this.enemyAttackAnimation(enemy, this.playerX, this.playerY);
+                        this.takeDamage(1);
+                        this.lastPlayerDamageTime = currentTime;
+                    }
+                    enemy.lastMoveTime = currentTime;
+                    enemy._committedPath = null;
+                    enemy._pathIndex = undefined;
+                    continue;
+                }
+
+                // Final occupied check for the fresh-BFS case (pathStillValid already handles its own)
+                if (this.getEnemyAt(nextStep.x, nextStep.y)) {
+                    enemy.lastMoveTime = currentTime;
+                    continue;
+                }
+
+                // Move the enemy
+                enemy.x = nextStep.x;
+                enemy.y = nextStep.y;
+                enemy.lastMoveTime = currentTime;
+
+                const targetX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const targetY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+
+                // Don't start a move tween if the enemy is frozen or mid-shatter
+                if (enemy.isFrozen || enemy._shatterTriggered) {
+                    enemy.sprite.x = targetX;
+                    enemy.sprite.y = targetY;
+                } else {
+                    // 160ms matches the sniper tween — snappy but not instant
+                    const tweenDur = isActuallySlowed ? 280 : 160;
                     this.tweens.add({
                         targets: enemy.sprite,
                         x: targetX,
                         y: targetY,
-                        duration: 120,
-                        ease: 'Power2',
+                        duration: tweenDur,
+                        ease: 'Linear',
                         onUpdate: () => {
-                            enemy.healthBarBg.x = enemy.sprite.x;
-                            enemy.healthBarBg.y = enemy.sprite.y;
-                            enemy.healthBarFill.x = enemy.sprite.x;
-                            enemy.healthBarFill.y = enemy.sprite.y;
+                            // Sync health bars and marks
+                            if (enemy.healthBarBg) {
+                                enemy.healthBarBg.x = enemy.sprite.x;
+                                enemy.healthBarBg.y = enemy.sprite.y;
+                            }
+                            if (enemy.healthBarFill) {
+                                enemy.healthBarFill.x = enemy.sprite.x;
+                                enemy.healthBarFill.y = enemy.sprite.y;
+                            }
+                            if (enemy.burnVisual) {
+                                enemy.burnVisual.x = enemy.sprite.x;
+                                enemy.burnVisual.y = enemy.sprite.y - 18;
+                            }
+                            if (enemy.brittleVisual) {
+                                enemy.brittleVisual.x = enemy.sprite.x;
+                                enemy.brittleVisual.y = enemy.sprite.y + 14;
+                            }
+                            if (enemy._tsunamiMultText) {
+                                enemy._tsunamiMultText.x = enemy.sprite.x;
+                                enemy._tsunamiMultText.y = enemy.sprite.y - 28;
+                            }
+                            if (enemy._shieldMark && enemy._shieldMark.active) {
+                                enemy._shieldMark.x = enemy.sprite.x;
+                                enemy._shieldMark.y = enemy.sprite.y - 22;
+                            }
+                            if (enemy._inhibitRing && enemy._inhibitRing.active) {
+                                enemy._inhibitRing.x = enemy.sprite.x;
+                                enemy._inhibitRing.y = enemy.sprite.y;
+                            }
+                            if (enemy._inhibitMark && enemy._inhibitMark.active) {
+                                enemy._inhibitMark.x = enemy.sprite.x;
+                                enemy._inhibitMark.y = enemy.sprite.y - 22;
+                            }
+                            if (enemy._fireMark && enemy._fireMark.active) {
+                                enemy._fireMark.x = enemy.sprite.x;
+                                enemy._fireMark.y = enemy.sprite.y - 22;
+                            }
+                            if (enemy._iceMark && enemy._iceMark.active) {
+                                enemy._iceMark.x = enemy.sprite.x;
+                                enemy._iceMark.y = enemy.sprite.y - 22;
+                            }
+                            if (enemy._rangedMark && enemy._rangedMark.active) {
+                                enemy._rangedMark.x = enemy.sprite.x;
+                                enemy._rangedMark.y = enemy.sprite.y - 22;
+                            }
                             if (enemy.cosmicMarkVisuals && enemy.cosmicMarkVisuals.length > 0) {
                                 const markY = enemy.sprite.y - 25;
                                 for (let i = 0; i < enemy.cosmicMarks; i++) {
@@ -326,23 +413,10 @@ class EnemyManager {
                                     }
                                 }
                             }
-                            if (enemy._shieldMark && enemy._shieldMark.active) {
-                                enemy._shieldMark.x = enemy.sprite.x;
-                                enemy._shieldMark.y = enemy.sprite.y - 22;
-                            }
-                            if (enemy._inhibitRing && enemy._inhibitRing.active) {
-                                enemy._inhibitRing.x = enemy.sprite.x;
-                                enemy._inhibitRing.y = enemy.sprite.y;
-                            }
-                            if (enemy._inhibitMark && enemy._inhibitMark.active) {
-                                enemy._inhibitMark.x = enemy.sprite.x;
-                                enemy._inhibitMark.y = enemy.sprite.y - 22;
-                            }
                         }
-                    }); // end tween
-                    } // end else (not frozen/shattering)
-                } // end if path
-            } // end if dist < 20
+                    });
+                }
+            } // end if (dist < 20)
         } // end for enemies
 
         // SAFEGUARD: Teleport any enemies that ended up in walls back to nearest floor
@@ -449,76 +523,183 @@ class EnemyManager {
         });
     }
 
+    // ─── RANGED ENEMY CREATION ────────────────────────────────────────────────
+    // Moved here from TutorialManager — this is generic enemy infrastructure
+    // used by both the tutorial and Level 2, so it lives in EnemyManager.
+
+    createRangedEnemy(x, y, tutorialRoomIndex) {
+        const enemy = this.createEnemy(x, y, 30);
+        enemy.tutorialRoomIndex = tutorialRoomIndex;
+        enemy.isRanged = true;
+        enemy.rangedState = 'idle';
+
+        // Yellow crosshair mark to distinguish from melee
+        const mark = this.add.graphics().setDepth(2);
+        mark.lineStyle(2, 0xffee00, 0.9);
+        mark.strokeCircle(0, 0, 7);
+        mark.beginPath(); mark.moveTo(-10, 0); mark.lineTo(10, 0); mark.strokePath();
+        mark.beginPath(); mark.moveTo(0, -10); mark.lineTo(0, 10); mark.strokePath();
+        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
+        this.tweens.add({ targets: mark, scaleX: 1.2, scaleY: 1.2, duration: 500, yoyo: true, repeat: -1 });
+        enemy._rangedMark = mark;
+
+        return enemy;
+    }
+
     // ─── RANGED ENEMY SYSTEM ──────────────────────────────────────────────────
+
+    // Bresenham tile LOS — returns true if no WALL between two tile coords
+    _hasLineOfSight(x0, y0, x1, y1) {
+        let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+        let x = x0, y = y0;
+        const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        let err = dx - dy;
+        while (true) {
+            if (x === x1 && y === y1) return true;
+            if (this.world[x]?.[y] === this.WALL) return false;
+            const e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 <  dx) { err += dx; y += sy; }
+        }
+    }
+
+    // Find the furthest floor tile in [minRange, attackMax] from player with LOS, reachable from sniper
+    _findSniperRepositionTile(enemy, minRange, attackMax) {
+        const px = this.playerX, py = this.playerY;
+        let best = null, bestDist = -1;
+        for (let tx = px - attackMax; tx <= px + attackMax; tx++) {
+            for (let ty = py - attackMax; ty <= py + attackMax; ty++) {
+                if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT) continue;
+                if (this.world[tx][ty] !== this.FLOOR) continue;
+                const d = Math.abs(tx - px) + Math.abs(ty - py);
+                if (d < minRange || d > attackMax) continue;
+                if (!this._hasLineOfSight(tx, ty, px, py)) continue;
+                if (d > bestDist) {
+                    const path = this.findPathBFS(enemy.x, enemy.y, tx, ty);
+                    if (path && path.length > 0) { bestDist = d; best = { x: tx, y: ty }; }
+                }
+            }
+        }
+        return best;
+    }
+
+    _moveSniperStep(enemy, path, time) {
+        // path[0] is the sniper's current tile — the next step is path[1]
+        if (!path || path.length < 2) return;
+        if (time - (enemy.lastMoveTime || 0) < (enemy.moveDelay || 1000)) return;
+        const next = path[1];
+        if (this.world[next.x]?.[next.y] !== this.FLOOR) return;
+        if (this.getEnemyAt(next.x, next.y)) return;
+        enemy.x = next.x; enemy.y = next.y;
+        enemy.lastMoveTime = time;
+        const wx = next.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const wy = next.y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+        this.tweens.add({
+            targets: enemy.sprite, x: wx, y: wy, duration: 160, ease: 'Linear',
+            onUpdate: () => {
+                if (enemy.healthBarBg)  { enemy.healthBarBg.x  = enemy.sprite.x; enemy.healthBarBg.y  = enemy.sprite.y; }
+                if (enemy.healthBarFill){ enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y; }
+                if (enemy._rangedMark?.active) { enemy._rangedMark.x = enemy.sprite.x; enemy._rangedMark.y = enemy.sprite.y - 22; }
+            }
+        });
+    }
 
     updateRangedEnemies(time) {
         for (const enemy of this.enemies) {
             if (!enemy.isRanged || !enemy.sprite || !enemy.sprite.active) continue;
             if (enemy.isFrozen || enemy.isStunned) continue;
 
-            // Only aggro if in same room (tutorial) or within aggro range
+            // Room gating
             if (this.isTutorial || this.isLevel2) {
-                const enemyRoom = enemy.tutorialRoomIndex ?? -1;
-                if (enemyRoom !== this.getCurrentPlayerRoom()) continue;
+                if ((enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) continue;
             }
 
-            const distTiles = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
-            const AGGRO_RANGE = 12; // tiles — enter prefire state
-            const TOO_CLOSE   = 2;  // tiles — back away instead
+            const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
+            const AGGRO_RANGE = 12, ATTACK_MAX = 10, MIN_RANGE = 4;
 
-            // ── State machine ─────────────────────────────────────────────
             if (!enemy.rangedState) enemy.rangedState = 'idle';
 
+            // Electrical ranged enemies are 3× faster
+            const prefireDur = enemy.isElectrical ? 4000 / 3 : 4000;
+            const cooldownDur = enemy.isElectrical ? 3000 / 3 : 3000;
+            const shotGap = enemy.isElectrical ? 220 / 3 : 220;
+
+            // ── MOVEMENT during idle/cooldown only ────────────────────────
+            const canMove = enemy.rangedState === 'idle' || enemy.rangedState === 'cooldown';
+            if (canMove && dist <= AGGRO_RANGE) {
+                const hasLOS = this._hasLineOfSight(enemy.x, enemy.y, this.playerX, this.playerY);
+                const needsRepo = dist < MIN_RANGE || dist > ATTACK_MAX || !hasLOS;
+                if (needsRepo) {
+                    if (!enemy._sniperTarget ||
+                        (enemy._sniperTarget.x === enemy.x && enemy._sniperTarget.y === enemy.y)) {
+                        enemy._sniperTarget = this._findSniperRepositionTile(enemy, MIN_RANGE, ATTACK_MAX);
+                    }
+                    if (enemy._sniperTarget) {
+                        const path = this.findPathBFS(enemy.x, enemy.y, enemy._sniperTarget.x, enemy._sniperTarget.y);
+                        if (path && path.length > 0) this._moveSniperStep(enemy, path, time);
+                        else enemy._sniperTarget = null;
+                    }
+                }
+            }
+
+            // ── STATE MACHINE ─────────────────────────────────────────────
             if (enemy.rangedState === 'idle') {
-                if (distTiles <= AGGRO_RANGE && distTiles > TOO_CLOSE) {
-                    enemy.rangedState   = 'prefire';
-                    enemy.prefireStart  = time;
-                    enemy.prefireEnd    = time + 4000; // 4 s telegraph
+                const hasLOS = this._hasLineOfSight(enemy.x, enemy.y, this.playerX, this.playerY);
+                if (dist >= MIN_RANGE && dist <= ATTACK_MAX && hasLOS) {
+                    enemy.rangedState = 'prefire';
+                    enemy.prefireStart = time;
+                    enemy.prefireEnd   = time + prefireDur;
                     this._spawnPrefireBeam(enemy);
                 }
 
             } else if (enemy.rangedState === 'prefire') {
-                const timeLeft = enemy.prefireEnd - time;
-
-                if (timeLeft <= 1000 && !enemy.lockedDir) {
-                    // Lock onto current player position — beam stops tracking
-                    const ex = enemy.sprite.x, ey = enemy.sprite.y;
-                    const px = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-                    const py = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-                    const dx = px - ex, dy = py - ey;
-                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                    enemy.lockedDir = { x: dx / len, y: dy / len };
-                    this._drawLockedBeam(enemy);
-                } else if (enemy.lockedDir) {
-                    // Already locked — redraw each frame to track enemy sprite pos
-                    this._drawLockedBeam(enemy);
-                } else {
-                    // Still tracking player
-                    this._updatePrefireBeam(enemy);
-                }
-
-                if (time >= enemy.prefireEnd) {
-                    enemy.rangedState = 'firing';
-                    enemy.shotsLeft   = 3;
-                    enemy.nextShotAt  = time;
+                const hasLOS = this._hasLineOfSight(enemy.x, enemy.y, this.playerX, this.playerY);
+                if (!hasLOS) {
+                    // Only break off prefire if LOS is fully lost — walking closer doesn't cancel it
+                    enemy.rangedState = 'cooldown';
+                    enemy.cooldownEnd = time + cooldownDur / 2;
+                    enemy.lockedDir   = null;
                     this._destroyPrefireBeam(enemy);
+                } else {
+                    const timeLeft = enemy.prefireEnd - time;
+                    if (timeLeft <= Math.min(1000, prefireDur * 0.25) && !enemy.lockedDir) {
+                        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+                        const ppx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const ppy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const dx = ppx - ex, dy = ppy - ey;
+                        const len = Math.sqrt(dx*dx + dy*dy) || 1;
+                        enemy.lockedDir = { x: dx/len, y: dy/len };
+                        this._drawLockedBeam(enemy);
+                    } else if (enemy.lockedDir) {
+                        this._drawLockedBeam(enemy);
+                    } else {
+                        this._updatePrefireBeam(enemy);
+                    }
+                    if (time >= enemy.prefireEnd) {
+                        enemy.rangedState = 'firing';
+                        enemy.shotsLeft   = 3;
+                        enemy.nextShotAt  = time;
+                        this._destroyPrefireBeam(enemy);
+                    }
                 }
 
             } else if (enemy.rangedState === 'firing') {
+                // Once firing has started it always completes — player can't dodge by rushing in
                 if (enemy.shotsLeft > 0 && time >= enemy.nextShotAt) {
                     this._fireEnemyProjectile(enemy);
                     enemy.shotsLeft--;
-                    enemy.nextShotAt = time + 220; // 220 ms between shots
+                    enemy.nextShotAt = time + shotGap;
                 }
                 if (enemy.shotsLeft <= 0 && time >= enemy.nextShotAt) {
-                    enemy.rangedState  = 'cooldown';
-                    enemy.cooldownEnd  = time + 3000; // 3 s before can aggro again
+                    enemy.rangedState = 'cooldown';
+                    enemy.cooldownEnd = time + cooldownDur;
                 }
 
             } else if (enemy.rangedState === 'cooldown') {
                 if (time >= enemy.cooldownEnd) {
-                    enemy.rangedState = 'idle';
-                    enemy.lockedDir = null;
+                    enemy.rangedState   = 'idle';
+                    enemy.lockedDir     = null;
+                    enemy._sniperTarget = null;
                 }
             }
         }

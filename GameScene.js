@@ -41,7 +41,7 @@ class GameScene extends Phaser.Scene {
         this.currentLevelIndex = data?.levelIndex ?? 0;
         this.tutorialStage = data?.tutorialStage ?? 0;
 
-        // ── MANDATORY STATE RESET ────────────────────────────────────────────
+        // ── MANDATORY STATE RESET — must run before anything else ────────────
         if (this.input?.keyboard) this.input.keyboard.enabled = true;
         this.lockedDoorTiles         = [];
         this.lockedDoorSprites       = [];
@@ -252,7 +252,7 @@ class GameScene extends Phaser.Scene {
             lightning: localStorage.getItem('equip_lightning') || 'lightning_fists',
             cosmic: localStorage.getItem('equip_cosmic') || 'cosmic_fists',
         };
-        // Force flame_fists ONLY in the actual fire tutorial
+        // Force flame_fists ONLY in actual fire tutorial
         if (this.currentLevelIndex === 0 && this.tutorialStage === 0) {
             this.equippedWeapons.fire = 'flame_fists';
         }
@@ -507,6 +507,16 @@ class GameScene extends Phaser.Scene {
         // create HUD
         this.createHUD();
 
+        // ── DEV MODE ──────────────────────────────────────────────────────
+        // Enable via: localStorage.setItem('devMode', 'true')
+        // Disable via: localStorage.removeItem('devMode')
+        this._devMode = localStorage.getItem('devMode') === 'true';
+        this._devGodMode       = false;
+        this._devOneShot       = false;
+        this._devFreezeEnemies = false;
+        this._devTeleportMode  = false;
+        if (this._devMode) this._createDevPanel();
+
         // for mobile
         this.createTouchControls();
 
@@ -544,6 +554,7 @@ class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', (pointer) => {
             if (this._pauseMenuOpen || this._deathScreenActive) return;
             if (pointer.button !== 0) return;
+            if (this._devTeleportMode) return; // teleport mode consumes left-click
 
             if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
                 this.throwLightning();
@@ -557,8 +568,12 @@ class GameScene extends Phaser.Scene {
                     const tileX = Math.floor(worldX / this.TILE_SIZE);
                     const tileY = Math.floor(worldY / this.TILE_SIZE);
                     this.placeLightningNode(tileX, tileY);
+                } else if ((this.equippedWeapons?.lightning || 'lightning_fists') === 'lightning_fists') {
+                    this.isPointerDown = true;
+                    this.pointerX = pointer.x;
+                    this.pointerY = pointer.y;
+                    this.fireEquippedWeapon(pointer.x, pointer.y);
                 } else {
-                    // Set isPointerDown so hold-to-spam works via update loop
                     this.isPointerDown = true;
                     this.pointerX = pointer.x;
                     this.pointerY = pointer.y;
@@ -596,6 +611,20 @@ class GameScene extends Phaser.Scene {
                 );
             } else {
                 this.clearNodePreview();
+            }
+        });
+
+        // Backtick — toggle dev panel (only works if devMode is enabled in localStorage)
+        this.input.keyboard.on('keydown-BACKTICK', () => {
+            if (!this._devMode) return;
+            if (this._devPanel) {
+                const vis = !this._devPanel.visible;
+                this._devPanel.setVisible(vis);
+                // Turn off teleport mode when panel is hidden
+                if (!vis) {
+                    this._devTeleportMode = false;
+                    if (this._devTeleportCursor) this._devTeleportCursor.setVisible(false);
+                }
             }
         });
 
@@ -639,13 +668,11 @@ class GameScene extends Phaser.Scene {
                 this.checkTutorialPitCollision();
             } catch (e) { console.error('Tutorial error:', e); }
         }
-
-        // Level 2
+        // Level 2+
         if (this.isLevel2) {
             try { this.updateLevel2(time); }
             catch (e) { console.error('Level 2 error:', e); }
         }
-
         // Voltslime boss
         if (this.voltslimeBoss?.active) {
             this.updateVoltslimeBoss(time, delta);
@@ -799,7 +826,7 @@ class GameScene extends Phaser.Scene {
         }
 
         this.updateTsunamiPuddles(time);
-        this.moveEnemies();
+        if (!this._devFreezeEnemies) this.moveEnemies();
 
         if (!this.isIdling && time - this.lastMoveTime > this.idleDelay) {
             this.player.play('idle');
@@ -807,7 +834,8 @@ class GameScene extends Phaser.Scene {
         }
 
         if (this.isPointerDown && this.currentElement !== 'cosmic') {
-            if (this.currentElement === 'lightning' && !this.lightningNodeMode) {
+            if (this.currentElement === 'lightning' && !this.lightningNodeMode &&
+                (this.equippedWeapons?.lightning || 'lightning_fists') !== 'lightning_fists') {
                 this.fireArcProjectile(this.pointerX, this.pointerY);
             } else {
                 this.fireEquippedWeapon(this.pointerX, this.pointerY);
@@ -829,6 +857,7 @@ class GameScene extends Phaser.Scene {
         this.updateNodeCrafting(time);
         this.updateNodeChannel(time);
         this.updateOrbScraps();
+        
 
         // Keep placement ring following player every frame
         if (this.lightningNodeMode && this._nodePlacementRing) {
@@ -932,8 +961,26 @@ class GameScene extends Phaser.Scene {
 
     // TutorialManager
     updateTutorial(...a) { return TutorialManager.prototype.updateTutorial.call(this, ...a); }
-    updateLevel2(...a)     { return TutorialManager.prototype.updateLevel2.call(this, ...a); }
-    _level2RoomClear(...a) { return TutorialManager.prototype._level2RoomClear.call(this, ...a); }
+    // LevelManager proxies
+    updateLevel2(...a)          { return LevelManager.prototype.updateLevel2.call(this, ...a); }
+    _level2RoomClear(...a)      { return LevelManager.prototype._level2RoomClear.call(this, ...a); }
+    spawnLevel2Enemies(...a)    { return LevelManager.prototype.spawnLevel2Enemies.call(this, ...a); }
+    _spawnLevel2ChestRooms(...a){ return LevelManager.prototype._spawnLevel2ChestRooms.call(this, ...a); }
+    spawnVoltslimeBoss(...a)    { return LevelManager.prototype.spawnVoltslimeBoss.call(this, ...a); }
+    _voltslimeNextPhase(...a)   { return LevelManager.prototype._voltslimeNextPhase.call(this, ...a); }
+    _voltslimeSlam(...a)        { return LevelManager.prototype._voltslimeSlam.call(this, ...a); }
+    _voltslimeScatter(...a)     { return LevelManager.prototype._voltslimeScatter.call(this, ...a); }
+    _voltslimeHoming(...a)      { return LevelManager.prototype._voltslimeHoming.call(this, ...a); }
+    _voltslimeSpawner(...a)     { return LevelManager.prototype._voltslimeSpawner.call(this, ...a); }
+    _voltslimeSpiral(...a)      { return LevelManager.prototype._voltslimeSpiral.call(this, ...a); }
+    updateVoltslimeBoss(...a)   { return LevelManager.prototype.updateVoltslimeBoss.call(this, ...a); }
+    damageVoltslimeBoss(...a)   { return LevelManager.prototype.damageVoltslimeBoss.call(this, ...a); }
+    damageBossAtTile(...a)      { return LevelManager.prototype.damageBossAtTile.call(this, ...a); }
+    _killVoltslimeBoss(...a)    { return LevelManager.prototype._killVoltslimeBoss.call(this, ...a); }
+    _voltslimeRicochet(...a)    { return LevelManager.prototype._voltslimeRicochet.call(this, ...a); }
+    spawnFinalLevelChest(...a)  { return LevelManager.prototype.spawnFinalLevelChest.call(this, ...a); }
+    openFinalLevelChest(...a)   { return LevelManager.prototype.openFinalLevelChest.call(this, ...a); }
+    _showElementUnlockCinematic(...a) { return LevelManager.prototype._showElementUnlockCinematic.call(this, ...a); }
     onGlorpsCollected(...a) { return TutorialManager.prototype.onGlorpsCollected.call(this, ...a); }
     isInLockedRoom(...a) { return TutorialManager.prototype.isInLockedRoom.call(this, ...a); }
     getCurrentPlayerRoom(...a) { return TutorialManager.prototype.getCurrentPlayerRoom.call(this, ...a); }
@@ -971,22 +1018,6 @@ class GameScene extends Phaser.Scene {
     damagePortal(...a) { return TutorialManager.prototype.damagePortal.call(this, ...a); }
     _destroyPortal(...a) { return TutorialManager.prototype._destroyPortal.call(this, ...a); }
     spawnLevel1Enemies(...a) { return TutorialManager.prototype.spawnLevel1Enemies.call(this, ...a); }
-    spawnLevel2Enemies(...a) { return TutorialManager.prototype.spawnLevel2Enemies.call(this, ...a); }
-    _onLightningTutorialRoomEnter(...a) { return TutorialManager.prototype._onLightningTutorialRoomEnter.call(this, ...a); }
-    _spawnLevel2SecretChest(...a) { return TutorialManager.prototype._spawnLevel2SecretChest.call(this, ...a); }
-    spawnVoltslimeBoss(...a) { return TutorialManager.prototype.spawnVoltslimeBoss.call(this, ...a); }
-    _voltslimeNextPhase(...a) { return TutorialManager.prototype._voltslimeNextPhase.call(this, ...a); }
-    _voltslimeSlam(...a) { return TutorialManager.prototype._voltslimeSlam.call(this, ...a); }
-    _voltslimeScatter(...a) { return TutorialManager.prototype._voltslimeScatter.call(this, ...a); }
-    _voltslimeHoming(...a) { return TutorialManager.prototype._voltslimeHoming.call(this, ...a); }
-    _voltslimeSpawner(...a) { return TutorialManager.prototype._voltslimeSpawner.call(this, ...a); }
-    _voltslimeSpiral(...a) { return TutorialManager.prototype._voltslimeSpiral.call(this, ...a); }
-    updateVoltslimeBoss(...a) { return TutorialManager.prototype.updateVoltslimeBoss.call(this, ...a); }
-    damageVoltslimeBoss(...a) { return TutorialManager.prototype.damageVoltslimeBoss.call(this, ...a); }
-    _killVoltslimeBoss(...a) { return TutorialManager.prototype._killVoltslimeBoss.call(this, ...a); }
-    spawnFinalLevelChest(...a) { return TutorialManager.prototype.spawnFinalLevelChest.call(this, ...a); }
-    openFinalLevelChest(...a) { return TutorialManager.prototype.openFinalLevelChest.call(this, ...a); }
-    _showElementUnlockCinematic(...a) { return TutorialManager.prototype._showElementUnlockCinematic.call(this, ...a); }
 
     // EnemyManager
     createEnemy(...a) { return EnemyManager.prototype.createEnemy.call(this, ...a); }
@@ -999,6 +1030,9 @@ class GameScene extends Phaser.Scene {
     moveEnemies(...a) { return EnemyManager.prototype.moveEnemies.call(this, ...a); }
     enemyAttackAnimation(...a) { return EnemyManager.prototype.enemyAttackAnimation.call(this, ...a); }
     updateRangedEnemies(...a) { return EnemyManager.prototype.updateRangedEnemies.call(this, ...a); }
+    _hasLineOfSight(...a)     { return EnemyManager.prototype._hasLineOfSight.call(this, ...a); }
+    _findSniperRepositionTile(...a) { return EnemyManager.prototype._findSniperRepositionTile.call(this, ...a); }
+    _moveSniperStep(...a)     { return EnemyManager.prototype._moveSniperStep.call(this, ...a); }
     _spawnPrefireBeam(...a) { return EnemyManager.prototype._spawnPrefireBeam.call(this, ...a); }
     _drawLockedBeam(...a) { return EnemyManager.prototype._drawLockedBeam.call(this, ...a); }
     _updatePrefireBeam(...a) { return EnemyManager.prototype._updatePrefireBeam.call(this, ...a); }
@@ -1012,9 +1046,11 @@ class GameScene extends Phaser.Scene {
     tryDropFromEnemy(...a) { return EnemyManager.prototype.tryDropFromEnemy.call(this, ...a); }
     spawnGroundGlorp(...a) { return EnemyManager.prototype.spawnGroundGlorp.call(this, ...a); }
     spawnHealthPot(...a) { return EnemyManager.prototype.spawnHealthPot.call(this, ...a); }
+    spawnUltPot(...a)    { return EnemyManager.prototype.spawnUltPot.call(this, ...a); }
     updateGroundDrops(...a) { return EnemyManager.prototype.updateGroundDrops.call(this, ...a); }
     _collectGroundGlorp(...a) { return EnemyManager.prototype._collectGroundGlorp.call(this, ...a); }
     _collectHealthPot(...a) { return EnemyManager.prototype._collectHealthPot.call(this, ...a); }
+    _collectUltPot(...a)    { return EnemyManager.prototype._collectUltPot.call(this, ...a); }
 
     // WeaponSystem
     shootAttack(...a) { return WeaponSystem.prototype.shootAttack.call(this, ...a); }
@@ -1047,7 +1083,7 @@ class GameScene extends Phaser.Scene {
     showDamageNumber(...a) { return CombatSystem.prototype.showDamageNumber.call(this, ...a); }
     damageEnemy(...a) { return CombatSystem.prototype.damageEnemy.call(this, ...a); }
     killEnemy(...a) { return CombatSystem.prototype.killEnemy.call(this, ...a); }
-    takeDamage(...a) { return CombatSystem.prototype.takeDamage.call(this, ...a); }
+    takeDamage(...a) { if (this._devGodMode) return; return CombatSystem.prototype.takeDamage.call(this, ...a); }
     damageBossAtTile(...a) { return CombatSystem.prototype.damageBossAtTile.call(this, ...a); }
     gainUltCharge(...a) { return CombatSystem.prototype.gainUltCharge.call(this, ...a); }
     switchToElement(...a) { return CombatSystem.prototype.switchToElement.call(this, ...a); }
@@ -1145,6 +1181,149 @@ class GameScene extends Phaser.Scene {
     showDeathScreen(...a) { return HUD.prototype.showDeathScreen.call(this, ...a); }
     _showDeathContent(...a) { return HUD.prototype._showDeathContent.call(this, ...a); }
 
+    // ── DEV PANEL ────────────────────────────────────────────────────────
+    _createDevPanel() {
+        const W = this.scale.width;
+        const PANEL_W = 210, ROW_H = 32, PAD = 10;
+        const toggles = [
+            { label: 'God Mode',       key: '_devGodMode',       desc: 'No damage taken' },
+            { label: 'One-Shot',       key: '_devOneShot',       desc: 'Enemies die in 1 hit' },
+            { label: 'Freeze Enemies', key: '_devFreezeEnemies', desc: 'All enemies stop moving' },
+            { label: 'Fill Ult',       key: null,                desc: 'Instantly max ult charge', action: () => { this.ultCharge = this.ultChargeMax; this.updateHUD(); } },
+            { label: 'Kill All',       key: null,                desc: 'Kill enemies in room',      action: () => { for (const e of [...this.enemies]) { if (this.isInCurrentRoom(e.x, e.y)) this.killEnemy(e); } } },
+            { label: 'Max Health',     key: null,                desc: 'Restore full HP',            action: () => { this.health = this.maxHealth; this.updateHUD(); } },
+            { label: 'Teleport Mode',  key: '_devTeleportMode',  desc: 'Left-click to warp' },
+        ];
+
+        const panelH = PAD * 2 + toggles.length * ROW_H + 28;
+        const px = W - PANEL_W - 8, py = 60;
+
+        const panel = this.add.container(0, 0).setScrollFactor(0).setDepth(200);
+        this._devPanel = panel;
+
+        // Background
+        const bg = this.add.graphics().setScrollFactor(0);
+        bg.fillStyle(0x000000, 0.82);
+        bg.fillRoundedRect(px, py, PANEL_W, panelH, 6);
+        bg.lineStyle(1, 0x44ff44, 0.6);
+        bg.strokeRoundedRect(px, py, PANEL_W, panelH, 6);
+        panel.add(bg);
+
+        const title = this.add.text(px + PAD, py + PAD, '🛠 DEV MODE', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#44ff44', fontStyle: 'bold'
+        }).setScrollFactor(0);
+        panel.add(title);
+
+        const rows = [];
+        toggles.forEach((t, i) => {
+            const ry = py + PAD + 24 + i * ROW_H;
+
+            // Hit area
+            const hit = this.add.rectangle(px + PAD, ry, PANEL_W - PAD * 2, ROW_H - 4, 0xffffff, 0)
+                .setOrigin(0, 0).setScrollFactor(0).setInteractive({ useHandCursor: true });
+
+            // Indicator dot
+            const dot = this.add.graphics().setScrollFactor(0);
+            const drawDot = (active) => {
+                dot.clear();
+                dot.fillStyle(active ? 0x44ff44 : 0x334433, 1);
+                dot.fillCircle(px + PAD + 6, ry + ROW_H / 2 - 2, 5);
+            };
+            drawDot(t.key ? this[t.key] : false);
+
+            // Label
+            const lbl = this.add.text(px + PAD + 16, ry + 2, t.label, {
+                fontSize: '11px', fontFamily: 'monospace', color: '#ccffcc'
+            }).setScrollFactor(0);
+
+            // Desc
+            const desc = this.add.text(px + PAD + 16, ry + 14, t.desc, {
+                fontSize: '9px', fontFamily: 'monospace', color: '#557755'
+            }).setScrollFactor(0);
+
+            hit.on('pointerover',  () => lbl.setStyle({ color: '#ffffff' }));
+            hit.on('pointerout',   () => lbl.setStyle({ color: '#ccffcc' }));
+            hit.on('pointerdown',  () => {
+                if (t.action) {
+                    t.action();
+                    // Flash the dot green briefly for one-shot actions
+                    dot.clear();
+                    dot.fillStyle(0xffff44, 1);
+                    dot.fillCircle(px + PAD + 6, ry + ROW_H / 2 - 2, 5);
+                    this.time.delayedCall(300, () => drawDot(false));
+                } else {
+                    this[t.key] = !this[t.key];
+                    drawDot(this[t.key]);
+                }
+            });
+
+            panel.add([dot, lbl, desc, hit]);
+            rows.push({ dot, drawDot, toggle: t });
+        });
+
+        // Teleport mode — left-click warps player when _devTeleportMode is on
+        // Show a crosshair that follows the cursor when active
+        const teleportCursor = this.add.graphics().setScrollFactor(0).setDepth(201).setVisible(false);
+        this._devTeleportCursor = teleportCursor;
+
+        const drawCrosshair = (x, y, canPlace) => {
+            teleportCursor.clear();
+            const col = canPlace ? 0x44ff44 : 0xff4444;
+            teleportCursor.lineStyle(1.5, col, 0.9);
+            const R = 10, G = 4;
+            teleportCursor.beginPath(); teleportCursor.moveTo(x - R, y); teleportCursor.lineTo(x - G, y); teleportCursor.strokePath();
+            teleportCursor.beginPath(); teleportCursor.moveTo(x + G, y); teleportCursor.lineTo(x + R, y); teleportCursor.strokePath();
+            teleportCursor.beginPath(); teleportCursor.moveTo(x, y - R); teleportCursor.lineTo(x, y - G); teleportCursor.strokePath();
+            teleportCursor.beginPath(); teleportCursor.moveTo(x, y + G); teleportCursor.lineTo(x, y + R); teleportCursor.strokePath();
+            teleportCursor.strokeCircle(x, y, G - 1);
+        };
+
+        this.input.on('pointermove', (p) => {
+            if (!this._devTeleportMode) { teleportCursor.setVisible(false); return; }
+            const wx = p.x + this.cameras.main.scrollX;
+            const wy = p.y + this.cameras.main.scrollY;
+            const tx = Math.floor(wx / this.TILE_SIZE);
+            const ty = Math.floor(wy / this.TILE_SIZE);
+            const canPlace = this.world[tx]?.[ty] === this.FLOOR;
+            teleportCursor.setVisible(true);
+            drawCrosshair(p.x, p.y, canPlace);
+        });
+
+        this.input.on('pointerdown', (p) => {
+            if (!this._devTeleportMode || p.button !== 0) return;
+            const wx = p.x + this.cameras.main.scrollX;
+            const wy = p.y + this.cameras.main.scrollY;
+            const tx = Math.floor(wx / this.TILE_SIZE);
+            const ty = Math.floor(wy / this.TILE_SIZE);
+            if (this.world[tx]?.[ty] === this.FLOOR) {
+                this.playerX = tx; this.playerY = ty;
+                const ppx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const ppy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
+                this.player.x = ppx; this.player.y = ppy;
+                this.cameras.main.centerOn(ppx, ppy);
+            }
+        });
+
+        // Hint text at bottom
+        const hint = this.add.text(px + PAD, py + panelH - PAD - 10,
+            '` to toggle panel', {
+            fontSize: '8px', fontFamily: 'monospace', color: '#335533'
+        }).setScrollFactor(0);
+        panel.add(hint);
+
+        // Start hidden — show with backtick
+        panel.setVisible(false);
+    }
+
+    // Override damageEnemy to support one-shot dev toggle
+    damageEnemy(enemy, damage) {
+        if (this._devOneShot) {
+            return EnemyManager.prototype.damageEnemy
+                ? CombatSystem.prototype.damageEnemy.call(this, enemy, enemy.health + 1)
+                : CombatSystem.prototype.damageEnemy.call(this, enemy, 99999);
+        }
+        return CombatSystem.prototype.damageEnemy.call(this, enemy, damage);
+    }
 }
 
 

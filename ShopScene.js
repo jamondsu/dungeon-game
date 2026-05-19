@@ -132,7 +132,7 @@ class ShopScene extends Phaser.Scene {
 
             // LIGHTNING
             { id:'lightning_fists', name:'Storm Fists',    element:'lightning', cost:0,
-              desc:'Arc projectiles\nthat chain between\nnearby enemies.\nDefault weapon.',
+              desc:'1-tile punch that\nchains lightning to\nnearby enemies.\nDefault weapon.',
               color:0xffff44, defaultWeapon:true },
             { id:'lightning_rod',   name:'Lightning Rod',  element:'lightning', cost:0,
               desc:'Coming soon...',   color:0xffdd00, comingSoon:true },

@@ -129,6 +129,7 @@ class WeaponSystem {
                     enemy.health -= damage;
                     this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, damage, '#ff6600');
                     this.updateEnemyHealthBar(enemy);
+                    this.gainUltCharge(this.ultChargePerHit);
                     if (enemy.health <= 0) this.killEnemy(enemy);
                 }
             }
@@ -202,84 +203,74 @@ class WeaponSystem {
         if (Math.abs(dx) > Math.abs(dy)) facingX = dx > 0 ? 1 : -1;
         else facingY = dy > 0 ? 1 : -1;
 
-        // ── Direct fist hit (1 tile) ──────────────────────────────────────
+        // ── Direct fist hit — 1 tile in front ────────────────────────────
         const tile = { x: this.playerX + facingX, y: this.playerY + facingY };
         const tileValid = tile.x >= 0 && tile.x < this.WORLD_WIDTH &&
                           tile.y >= 0 && tile.y < this.WORLD_HEIGHT &&
                           this.world[tile.x][tile.y] === this.FLOOR &&
                           this.isInCurrentRoom(tile.x, tile.y);
 
-        if (tileValid) {
-            const px = tile.x * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const py = tile.y * this.TILE_SIZE + this.TILE_SIZE / 2;
+        if (!tileValid) return;
 
-            // Yellow flash
-            const flash = this.add.graphics().setDepth(1.5);
-            flash.fillStyle(0xffff00, 0.55);
-            flash.fillRect(tile.x * this.TILE_SIZE, tile.y * this.TILE_SIZE, this.TILE_SIZE, this.TILE_SIZE);
-            this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
+        const hitPx = tile.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const hitPy = tile.y * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-            // Spark burst
-            for (let i = 0; i < 4; i++) {
-                const a = (Math.PI * 2 / 4) * i;
-                const spark = this.add.graphics().setDepth(2);
-                spark.lineStyle(1.5, 0xffff88, 0.9);
-                spark.beginPath();
-                spark.moveTo(px, py);
-                spark.lineTo(px + Math.cos(a) * (6 + Math.random() * 4), py + Math.sin(a) * (6 + Math.random() * 4));
-                spark.strokePath();
-                this.tweens.add({ targets: spark, alpha: 0, duration: 150, onComplete: () => spark.destroy() });
-            }
+        // Yellow tile flash
+        const flash = this.add.graphics().setDepth(1.5);
+        flash.fillStyle(0xffff00, 0.55);
+        flash.fillRect(tile.x * this.TILE_SIZE, tile.y * this.TILE_SIZE, this.TILE_SIZE, this.TILE_SIZE);
+        this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
 
-            const dmg = 14 * this.damageScaling;
-            for (const enemy of [...this.enemies]) {
-                if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
-                if (enemy.lightningImmune || enemy.elementImmune) {
-                    this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#ffff44');
-                    continue;
-                }
-                enemy.health -= dmg;
-                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, dmg, '#ffff44');
-                this.updateEnemyHealthBar(enemy);
-                this.applySuperConduct(enemy);
-                this.gainUltCharge(this.ultChargePerHit);
-                if (enemy.health <= 0) this.killEnemy(enemy);
-                else { enemy.sprite.setTint(0xffff44); this.time.delayedCall(100, () => { if (enemy.sprite?.active) enemy.sprite.clearTint(); }); }
-            }
-            const portal = this.getPortalAt(tile.x, tile.y);
-            if (portal) this.damagePortal(portal, dmg);
-            this.damageBossAtTile(tile.x, tile.y, dmg);
+        // Spark burst
+        for (let i = 0; i < 4; i++) {
+            const a = (Math.PI * 2 / 4) * i;
+            const spark = this.add.graphics().setDepth(2);
+            spark.lineStyle(1.5, 0xffff88, 0.9);
+            spark.beginPath();
+            spark.moveTo(hitPx, hitPy);
+            spark.lineTo(hitPx + Math.cos(a) * (6 + Math.random() * 4), hitPy + Math.sin(a) * (6 + Math.random() * 4));
+            spark.strokePath();
+            this.tweens.add({ targets: spark, alpha: 0, duration: 150, onComplete: () => spark.destroy() });
         }
 
-        // ── Passive arc: zap superconducted enemies in 2×3 zone ──────────
-        const arcHit = new Set();
-        for (let depth = 1; depth <= 3; depth++) {
-            for (let side = -1; side <= 1; side++) {
-                let zx, zy;
-                if (facingX !== 0) { zx = this.playerX + facingX * depth; zy = this.playerY + side; }
-                else               { zx = this.playerX + side; zy = this.playerY + facingY * depth; }
-                if (zx === tile.x && zy === tile.y) continue;
-                if (zx < 0 || zx >= this.WORLD_WIDTH || zy < 0 || zy >= this.WORLD_HEIGHT) continue;
-                if (this.world[zx][zy] !== this.FLOOR) continue;
-                if (!this.isInCurrentRoom(zx, zy)) continue;
+        // Direct hit — routes through damageEnemy for immunity/room-gating/ult-charge
+        const dmg = 14 * this.damageScaling;
+        let hitEnemy = null;
+        for (const enemy of [...this.enemies]) {
+            if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
+            this.damageEnemy(enemy, dmg);
+            hitEnemy = enemy;
+            break;
+        }
+        const portal = this.getPortalAt(tile.x, tile.y);
+        if (portal) this.damagePortal(portal, dmg);
+        this.damageBossAtTile(tile.x, tile.y, dmg);
 
-                for (const enemy of [...this.enemies]) {
-                    if (enemy.x !== zx || enemy.y !== zy) continue;
-                    if (!enemy.isSuperConducted) continue;
-                    if (arcHit.has(enemy)) continue;
-                    if (enemy.lightningImmune || enemy.elementImmune) continue;
-                    arcHit.add(enemy);
-                    this.drawLightningBolt({ sprite: this.player }, enemy);
-                    const arcDmg = 10 * this.damageScaling;
-                    enemy.health -= arcDmg;
-                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 14, arcDmg, '#ffffaa');
-                    this.updateEnemyHealthBar(enemy);
-                    this.gainUltCharge(this.ultChargePerHit * 0.5);
-                    if (enemy.health <= 0) this.killEnemy(enemy);
-                    else { enemy.sprite.setTint(0xffff88); this.time.delayedCall(80, () => { if (enemy.sprite?.active) enemy.sprite.clearTint(); }); }
-                }
-                this.damageBossAtTile(zx, zy, 10 * this.damageScaling);
-            }
+        // ── Chain lightning — only fires if fist connected with an enemy ─
+        // Finds up to 2 nearest enemies within 3 tiles of the hit tile (excluding
+        // the struck enemy), bolts originate from the hit tile, damage falls off
+        // 40% per hop.
+        if (!hitEnemy) { this.cameras.main.shake(30, 0.001); return; }
+
+        const CHAIN_RANGE = 3;   // tiles
+        const CHAIN_FALLOFF = 0.6;
+        const MAX_CHAINS = 2;
+        const chainDmg = dmg * CHAIN_FALLOFF;
+
+        // Collect candidates sorted by distance from hit tile
+        const candidates = this.enemies
+            .filter(e => e !== hitEnemy && e.sprite?.active)
+            .map(e => ({
+                enemy: e,
+                dist: Math.abs(e.x - tile.x) + Math.abs(e.y - tile.y)
+            }))
+            .filter(c => c.dist <= CHAIN_RANGE)
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, MAX_CHAINS);
+
+        for (const { enemy: chainEnemy } of candidates) {
+            this.drawLightningBolt({ sprite: { x: hitPx, y: hitPy } }, chainEnemy);
+            this.damageEnemy(chainEnemy, chainDmg);
         }
 
         this.cameras.main.shake(30, 0.001);
@@ -304,6 +295,7 @@ class WeaponSystem {
         enemy.health -= chipDmg;
         this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, chipDmg, '#88eeff');
         this.updateEnemyHealthBar(enemy);
+        this.gainUltCharge(this.ultChargePerHit);
         if (enemy.health <= 0) { this._destroyChillIndicator(enemy); this.killEnemy(enemy); return; }
 
         // Tint flash
@@ -866,6 +858,7 @@ class WeaponSystem {
                             enemy.health -= rippleDmg;
                             this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, rippleDmg, '#ff6600');
                             this.updateEnemyHealthBar(enemy);
+                            this.gainUltCharge(this.ultChargePerHit);
                             if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
 
                             // Knockback: push 1 tile away from player if within 3 tiles
@@ -1527,6 +1520,18 @@ class WeaponSystem {
                         this.ignitionExplodeEnemy(enemy);
                         this.spawnFireballLavaPool(tileX, tileY);
                         if (fireball.piercedEnemies) fireball.piercedEnemies.add(enemy);
+                    }
+                }
+                // Also damage portals (Queen Slimes) in proximity
+                if (this.portals) {
+                    for (const portal of this.portals) {
+                        if (!portal.active) continue;
+                        const ppx = portal.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const ppy = portal.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        if (Math.abs(ppx - fireball.sprite.x) < this.TILE_SIZE * 2 &&
+                            Math.abs(ppy - fireball.sprite.y) < this.TILE_SIZE * 2) {
+                            this.damagePortal(portal, fireball.damage);
+                        }
                     }
                 }
                 continue; // pierce — never destroy on enemy hit

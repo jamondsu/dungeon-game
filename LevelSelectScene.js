@@ -108,10 +108,12 @@ class LevelSelectScene extends Phaser.Scene {
 
         // Read equipped weapon per element — ShopScene writes to 'equip_<element>'
         const WEAPON_LABELS = {
-            'flame_fists':  'Flame Fists',
-            'flame_sword':  'Flame Sword',
-            'magma_hammer': 'Magma Hammer',
-            'ice_fists':    'Ice Fists',
+            'flame_fists':      'Flame Fists',
+            'flame_sword':      'Flame Sword',
+            'magma_hammer':     'Magma Hammer',
+            'ice_fists':        'Ice Fists',
+            'icicle_staff':     'Icicle Staff',
+            'lightning_fists':  'Storm Fists',
         };
         const getWeaponName = (element, defaultKey) => {
             const equipped = localStorage.getItem('equip_' + element) || defaultKey;

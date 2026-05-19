@@ -221,6 +221,18 @@ class ElementSystem {
                         }
                     }
                 }
+                // Wave also damages portals (Queen Slimes) it passes over
+                if (this.portals) {
+                    for (const portal of this.portals) {
+                        if (!portal.active) continue;
+                        const pdx = portal.tileX - originX;
+                        const pdy = portal.tileY - originY;
+                        const pDist = Math.sqrt(pdx * pdx + pdy * pdy);
+                        if (pDist >= r - 0.5 && pDist <= r + 0.5) {
+                            this.damagePortal(portal, 15 * this.damageScaling);
+                        }
+                    }
+                }
             });
         }
 
@@ -567,6 +579,16 @@ class ElementSystem {
                     const bd = Math.abs(this.voltslimeBoss.tileX - this.playerX) + Math.abs(this.voltslimeBoss.tileY - this.playerY);
                     if (bd <= ZAP_RADIUS) {
                         this.damageBossAtTile(this.voltslimeBoss.tileX, this.voltslimeBoss.tileY, this.baseLightningDamage * this.damageScaling * 1.5);
+                    }
+                }
+                // Also zap portals (Queen Slimes) in range
+                if (this.portals) {
+                    for (const portal of this.portals) {
+                        if (!portal.active) continue;
+                        const pd = Math.abs(portal.tileX - this.playerX) + Math.abs(portal.tileY - this.playerY);
+                        if (pd <= ZAP_RADIUS) {
+                            this.damagePortal(portal, this.baseLightningDamage * this.damageScaling * 1.2);
+                        }
                     }
                 }
             }
@@ -1067,8 +1089,7 @@ class ElementSystem {
                 continue;
             }
             if (enemy.superConductVisual?.container?.active) {
-                enemy.superConductVisual.container.x = enemy.sprite.x;
-                enemy.superConductVisual.container.y = enemy.sprite.y - 18;
+                enemy.superConductVisual.container.setPosition(enemy.sprite.x, enemy.sprite.y - 18);
             }
         }
     }

@@ -354,53 +354,6 @@ class WorldGen {
         world[57][54] = this.WALL; world[58][54] = this.WALL; world[58][55] = this.WALL;
         this.rooms.push(r2); // rooms[2]
 
-        // ── RANDOM CHEST BRANCH ROOMS (1 or 2) ────────────────────────────
-        // Pick 1-2 random candidate rooms to sprout a small chest branch off of.
-        // Candidates and their branch directions/coords are predefined to guarantee
-        // they don't overlap other rooms. Each has a 65% chance to spawn.
-        // rooms[3..] will be the chest rooms (variable count).
-
-        const chestCandidates = [
-            // { parentRoom, branchDir, corridorTiles, room definition }
-            {
-                // North off R2
-                corridor: () => { for (let y = 32; y <= 40; y++) for (let dx = -1; dx <= 1; dx++) world[51+dx][y] = this.FLOOR; },
-                room: { x: 46, y: 24, w: 12, h: 9 },
-            },
-            {
-                // South off R1 (pillar corridor)
-                corridor: () => { for (let y = 54; y <= 57; y++) for (let dx = -1; dx <= 1; dx++) world[28+dx][y] = this.FLOOR; },
-                room: { x: 23, y: 58, w: 10, h: 8 },
-            },
-            {
-                // South off R3 (L-shape) — hangs below the horizontal arm
-                corridor: () => { for (let y = 56; y <= 59; y++) for (let dx = -1; dx <= 1; dx++) world[68+dx][y] = this.FLOOR; },
-                room: { x: 64, y: 60, w: 10, h: 8 },
-            },
-        ];
-
-        // Pick 1 or 2 randomly (each independently has 65% chance, min 1)
-        const shuffled = chestCandidates.sort(() => Math.random() - 0.5);
-        let chestCount = 0;
-        for (const candidate of shuffled) {
-            if (chestCount >= 2) break;
-            if (chestCount === 0 || Math.random() < 0.65) {
-                candidate.corridor();
-                const r = { ...candidate.room, doorPositions: [], isChestRoom: true };
-                this.carveRoom(world, r);
-                this.rooms.push(r); // rooms[3], maybe rooms[4]
-                chestCount++;
-            }
-        }
-        // Guarantee at least 1
-        if (chestCount === 0) {
-            const c = chestCandidates[0];
-            c.corridor();
-            const r = { ...c.room, doorPositions: [], isChestRoom: true };
-            this.carveRoom(world, r);
-            this.rooms.push(r);
-        }
-
         // Corridor east from R2 → R3
         for (let x = 60; x <= 63; x++)
             for (let dy = -1; dy <= 1; dy++) world[x][48 + dy] = this.FLOOR;
@@ -416,7 +369,7 @@ class WorldGen {
             if (y === 47 || y === 48) continue; // gap
             world[72][y] = this.WALL;
         }
-        this.rooms.push(r3); // rooms[4]
+        this.rooms.push(r3); // rooms[3]
 
         // Corridor south from R3 → R4
         for (let y = 56; y <= 59; y++)
@@ -438,7 +391,7 @@ class WorldGen {
             if (x === 77 || x === 78) continue;
             world[x][67] = this.WALL;
         }
-        this.rooms.push(r4); // rooms[5]
+        this.rooms.push(r4); // rooms[4]
 
         // Corridor west from R4 → R5
         for (let y = 67; y <= 67; y++)
@@ -455,7 +408,7 @@ class WorldGen {
             world[px][py] = this.WALL; world[px+1][py] = this.WALL;
             world[px][py+1] = this.WALL; world[px+1][py+1] = this.WALL;
         });
-        this.rooms.push(r5); // rooms[6]
+        this.rooms.push(r5); // rooms[5]
 
         // Corridor west from R5 → Boss
         for (let x = 18; x <= 36; x++)
@@ -476,10 +429,59 @@ class WorldGen {
         world[15][75] = this.WALL; world[16][75] = this.WALL;
         world[6][67]  = this.WALL; world[6][68]  = this.WALL;
         world[25][67] = this.WALL; world[25][68] = this.WALL;
-        this.rooms.push(rBoss); // rooms[7]
+        this.rooms.push(rBoss); // rooms[6]
+
+        // ── CHEST BRANCH ROOMS — placed AFTER all main rooms are carved ───────
+        // This ensures canPlaceRoom correctly rejects anything overlapping main rooms.
+        const chestCandidates = [
+            {
+                room:         { x: 46, y: 24, w: 12, h: 9 },
+                corridor:     (w) => { for (let y = 33; y <= 40; y++) for (let dx = -1; dx <= 1; dx++) w[51+dx][y] = this.FLOOR; },
+                entranceTiles: [{ x:50,y:40 },{ x:51,y:40 },{ x:52,y:40 }],
+                parentTag:    'r2',
+            },
+            {
+                room:         { x: 23, y: 55, w: 10, h: 8 },
+                corridor:     (w) => { for (let dx = -1; dx <= 1; dx++) w[28+dx][54] = this.FLOOR; },
+                entranceTiles: [{ x:27,y:54 },{ x:28,y:54 },{ x:29,y:54 }],
+                parentTag:    'r1',
+            },
+            {
+                // East of R3 — corridor goes right from R3's east wall at mid-height
+                room:         { x: 86, y: 43, w: 10, h: 8 },
+                corridor:     (w) => { for (let x = 84; x <= 85; x++) for (let dy = -1; dy <= 1; dy++) w[x][47+dy] = this.FLOOR; },
+                entranceTiles: [{ x:84,y:46 },{ x:84,y:47 },{ x:84,y:48 }],
+                parentTag:    'r3',
+            },
+        ];
+
+        const shuffled = [...chestCandidates].sort(() => Math.random() - 0.5);
+        let placed = 0;
+        for (const c of shuffled) {
+            if (placed >= 2) break;
+            if (this.canPlaceRoom(world, c.room)) {
+                c.corridor(world);
+                const r = { ...c.room, doorPositions: [], isChestRoom: true, entranceTiles: c.entranceTiles, parentTag: c.parentTag };
+                this.carveRoom(world, r);
+                this.rooms.push(r);
+                placed++;
+            }
+        }
+        if (placed === 0) {
+            for (const c of chestCandidates) {
+                if (this.canPlaceRoom(world, c.room)) {
+                    c.corridor(world);
+                    const r = { ...c.room, doorPositions: [], isChestRoom: true, entranceTiles: c.entranceTiles, parentTag: c.parentTag };
+                    this.carveRoom(world, r);
+                    this.rooms.push(r);
+                    break;
+                }
+            }
+        }
 
         this.addWalls(world);
 
+        // Level 2 is a real dungeon — NOT isTutorial
         this.isTutorial          = false;
         this.isIceTutorial       = false;
         this.isLightningTutorial = false;
@@ -487,11 +489,11 @@ class WorldGen {
         this.currentTutorialRoom = -1;
         this.tutorialWeaponLocked = false;
 
-        // Dynamic door/clear arrays — chest rooms (isChestRoom) and room 0 never locked
+        // Dynamic arrays — chest rooms and room 0 never locked
         this.tutorialRoomCleared = this.rooms.map(() => false);
         this.tutorialDoorsLocked = this.rooms.map((r, i) => {
-            if (i === 0) return false;
-            if (r.isChestRoom) return false;
+            if (i === 0) return false;       // safe start
+            if (r.isChestRoom) return false; // free explore
             return true;
         });
         this.tutorialRoomCleared[0] = true;

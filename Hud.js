@@ -178,10 +178,11 @@ class HUD {
         // Orb scrap bar — lightning only
         if (this.orbBarBg) {
             const onLightning = this.currentElement === 'lightning';
-            this.orbBarBg.setVisible(onLightning);
-            this.orbBarBorder.setVisible(onLightning);
-            this.orbCountText.setVisible(onLightning);
-            if (this.orbBarLabel) this.orbBarLabel.setVisible(onLightning);
+            const usesNodes   = onLightning && (this.equippedWeapons?.lightning || 'lightning_fists') !== 'lightning_fists';
+            this.orbBarBg.setVisible(usesNodes);
+            this.orbBarBorder.setVisible(usesNodes);
+            this.orbCountText.setVisible(usesNodes);
+            if (this.orbBarLabel) this.orbBarLabel.setVisible(usesNodes);
             this.orbBarGfx.clear();
             if (onLightning) {
                 const pct = Math.min(this.orbScraps / 10, 1);
@@ -501,5 +502,4 @@ class HUD {
             fadeIn(txt, 820 + i * 80, 300);
         });
     }
-
 }

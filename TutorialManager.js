@@ -135,12 +135,6 @@ class TutorialManager {
                     this._ultNagShown = true;
                     this.showTutorialDialogue("Enemies down! Switch to Ice (press 2) and press E to unleash the Blizzard of Courage!\nYou must use your ice ult to leave.", "Glerp");
                 }
-            } else if (this.isLightningTutorial && playerRoom === 6 && !this._lightningUltUsed) {
-                // Lightning tutorial boss room requires lightning ult to clear
-                if (!hasEnemies && !this._ultNagShown) {
-                    this._ultNagShown = true;
-                    this.showTutorialDialogue("All enemies down! But the boss is still alive.\nSwitch to Lightning (press 3) and press E to unleash the Fork!\nYou MUST use it to finish the boss.", "Glerp");
-                }
             } else if (!hasEnemies && (this.tutorialDoorsLocked[playerRoom] || this._roomHadEnemies?.[playerRoom])) {
                 // Room 6 also requires all portals destroyed
                 if (playerRoom === 6) {
@@ -178,31 +172,14 @@ class TutorialManager {
         // ── Per-frame mark sync — keep all marks glued to their enemy sprites ──
         for (let enemy of this.enemies) {
             if (!enemy.sprite || !enemy.sprite.active) continue;
+            const mx = enemy.sprite.x, my = enemy.sprite.y;
 
-            if (enemy._fireMark && enemy._fireMark.active) {
-                enemy._fireMark.x = enemy.sprite.x;
-                enemy._fireMark.y = enemy.sprite.y - 22;
-            }
-            if (enemy._inhibitRing && enemy._inhibitRing.active) {
-                enemy._inhibitRing.x = enemy.sprite.x;
-                enemy._inhibitRing.y = enemy.sprite.y;
-            }
-            if (enemy._inhibitMark && enemy._inhibitMark.active) {
-                enemy._inhibitMark.x = enemy.sprite.x;
-                enemy._inhibitMark.y = enemy.sprite.y - 22;
-            }
-            if (enemy._shieldMark && enemy._shieldMark.active) {
-                enemy._shieldMark.x = enemy.sprite.x;
-                enemy._shieldMark.y = enemy.sprite.y - 22;
-            }
-            if (enemy._iceMark && enemy._iceMark.active) {
-                enemy._iceMark.x = enemy.sprite.x;
-                enemy._iceMark.y = enemy.sprite.y - 22;
-            }
-            if (enemy._rangedMark && enemy._rangedMark.active) {
-                enemy._rangedMark.x = enemy.sprite.x;
-                enemy._rangedMark.y = enemy.sprite.y - 22;
-            }
+            if (enemy._fireMark?.active)   enemy._fireMark.setPosition(mx, my - 22);
+            if (enemy._inhibitRing?.active) enemy._inhibitRing.setPosition(mx, my);
+            if (enemy._inhibitMark?.active) enemy._inhibitMark.setPosition(mx, my - 22);
+            if (enemy._shieldMark?.active)  enemy._shieldMark.setPosition(mx, my - 22);
+            if (enemy._iceMark?.active)     enemy._iceMark.setPosition(mx, my - 22);
+            if (enemy._rangedMark?.active)  enemy._rangedMark.setPosition(mx, my - 22);
             // Chill stack dots
             if (enemy._chillBar) {
                 for (let i = 0; i < enemy._chillBar.length; i++) {
@@ -268,12 +245,6 @@ class TutorialManager {
         // Ice tutorial has its own message set
         if (this.isIceTutorial) {
             this._onIceTutorialRoomEnter(roomIndex);
-            return;
-        }
-
-        // Lightning tutorial (level 2)
-        if (this.isLightningTutorial) {
-            this._onLightningTutorialRoomEnter(roomIndex);
             return;
         }
 
@@ -369,9 +340,18 @@ class TutorialManager {
     }
 
     showNameInput() {
-        // IMPORTANT: clear any active dialogue click handler first
-        // so the OK button click doesn't also trigger the phaser listener
         this.clearTutorialDialogue();
+
+        // On replay, reuse the saved name — avoids re-showing the input
+        // which would set keyboard.enabled = false and freeze movement
+        const savedName = localStorage.getItem('playerName');
+        if (savedName) {
+            this.playerName = savedName;
+            this.tutorialNameEntered = true;
+            this.input.keyboard.enabled = true;
+            this.time.delayedCall(100, () => this.continueAfterName());
+            return;
+        }
 
         const inputDiv = document.createElement('div');
         inputDiv.style.cssText = `
@@ -410,7 +390,7 @@ class TutorialManager {
             const name = input.value.trim() || "Hero";
             this.playerName = name;
             this.tutorialNameEntered = true;
-            // Re-enable Phaser keyboard
+            localStorage.setItem('playerName', name);
             this.input.keyboard.enabled = true;
             inputDiv.remove();
             this.time.delayedCall(100, () => this.continueAfterName());
@@ -503,29 +483,6 @@ class TutorialManager {
             return;
         }
 
-        // Lightning tutorial boss room (rooms[7]) — open the final chest, no regular chest
-        if (this.isLightningTutorial && roomIndex === 7) {
-            this.time.delayedCall(800, () => {
-                const chest = (this.tutorialChests || []).find(c => c.isFinalChest);
-                if (chest) this.openFinalLevelChest(chest);
-            });
-            return;
-        }
-
-        // Level 2 boss room (roomIndex of boss arena = last non-chest room)
-        if (this.isLevel2 && !this.rooms[roomIndex]?.isChestRoom) {
-            const bossRoomIndex = this.rooms.findIndex((r, i) =>
-                !r.isChestRoom && i === this.rooms.length - 1
-            );
-            if (roomIndex === bossRoomIndex || roomIndex === this.rooms.length - 1) {
-                this.time.delayedCall(800, () => {
-                    const chest = (this.tutorialChests || []).find(c => c.isFinalChest && !c.opened);
-                    if (chest) this.openFinalLevelChest(chest);
-                });
-                return;
-            }
-        }
-
         this.spawnTutorialChest(roomIndex);
         this.time.delayedCall(1000, () => {
             this.showTutorialDialogue("Room cleared! Open the chest to continue.", "Glerp");
@@ -589,7 +546,6 @@ class TutorialManager {
                 if (door.direction === 'south') ny = -2;
                 const tx2 = this.playerX + nx;
                 const ty2 = this.playerY + ny;
-                // Use the room's interior bounds as fallback if target is somehow a wall
                 const clampedX = Math.max(room.x + 1, Math.min(room.x + room.w - 2, tx2));
                 const clampedY = Math.max(room.y + 1, Math.min(room.y + room.h - 2, ty2));
                 this.playerX = clampedX;
@@ -598,6 +554,30 @@ class TutorialManager {
                 const wy = clampedY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
                 this.tweens.killTweensOf(this.player);
                 this.tweens.add({ targets: this.player, x: wx, y: wy, duration: 120, ease: 'Power2' });
+            }
+        }
+
+        // Also seal corridor entrances to chest rooms branching off this combat room
+        if (this.isLevel2 && this.rooms) {
+            const combatRooms = this.rooms.filter(r => !r.isChestRoom);
+            const combatIdx = combatRooms.indexOf(room);
+            const tagMap = ['r0','r1','r2','r3','r4','r5','boss'];
+            const tag = tagMap[combatIdx] || null;
+            if (tag) {
+                for (const cr of this.rooms) {
+                    if (!cr.isChestRoom || cr.parentTag !== tag) continue;
+                    if (!cr.entranceTiles) continue;
+                    for (const { x: tx, y: ty } of cr.entranceTiles) {
+                        if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
+                        this.world[tx][ty] = this.WALL;
+                        this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
+                        const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const bar = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
+                        this.tweens.add({ targets: bar, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+                        this.lockedDoorSprites.push({ sprite: bar, roomIndex });
+                    }
+                }
             }
         }
     }
@@ -687,8 +667,8 @@ class TutorialManager {
 
     openTutorialChest(roomIndex, container, _unused) {
         // Level 2 chest branch rooms — mimic or loot (identified by isChestRoom flag on room)
-        if ((this.isLightningTutorial || this.isLevel2) && this.rooms[roomIndex]?.isChestRoom) {
-            const chest = (this.tutorialChests || []).find(c => c.roomIndex === 3 && !c.opened);
+        if (this.isLevel2 && this.rooms[roomIndex]?.isChestRoom) {
+            const chest = (this.tutorialChests || []).find(c => c.roomIndex === roomIndex && !c.opened);
             if (!chest) return;
             chest.opened = true;
             this.tweens.killTweensOf(chest.container);
@@ -703,7 +683,7 @@ class TutorialManager {
                         const ex = chest.tileX + off.x, ey = chest.tileY + off.y;
                         if (this.world[ex]?.[ey] === this.FLOOR) {
                             const e = this.createEnemy(ex, ey, 40);
-                            e.tutorialRoomIndex = 3;
+                            e.tutorialRoomIndex = chest.roomIndex;
                             e.sprite.setTint(0xff4444);
                         }
                     }
@@ -786,9 +766,11 @@ class TutorialManager {
         }
         this.cameras.main.shake(60, 0.004);
 
-        // Rewards — separate sets for fire vs ice tutorial
+        // Rewards — level 2 just gives glorps, no tutorial reward system
         let reward;
-        if (this.isIceTutorial) {
+        if (this.isLevel2) {
+            reward = { type: 'glorps', amount: 20, message: null };
+        } else if (this.isIceTutorial) {
             const iceRewards = [
                 null, // room 0: no chest
                 { type: 'glorps', amount: 15, message: "15 Glorps! Keep pushing forward." },
@@ -837,8 +819,10 @@ class TutorialManager {
             this.cameras.main.flash(300, 100, 180, 255);
         }
 
-        // Fire tutorial room 3 → pit sequence; all others → show reward message
-        if (!this.isIceTutorial && roomIndex === 3) {
+        // Fire tutorial room 3 → pit sequence; level 2 → no dialogue; others → show reward message
+        if (this.isLevel2) {
+            // No Glerp dialogue in real dungeon levels
+        } else if (!this.isIceTutorial && roomIndex === 3) {
             this.time.delayedCall(600, () => {
                 this.showTutorialDialogue(
                     `Incredible, ${this.playerName || 'Hero'}! You've mastered the basics!\nNow... see that pit? Jump in. Trust me.`,
@@ -1022,17 +1006,17 @@ class TutorialManager {
         if (speakerName) {
             const leftX = W / 2 - (W - 100) / 2;
             // Name label - shifted right
-            const speakerText = this.add.text(leftX + 70, H - 152, speakerName, {
+            const speakerText = this.add.text(leftX + 40, H - 145, speakerName, {
                 fontSize: '15px', fontFamily: 'monospace',
                 color: '#ffff00', stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
             }).setDepth(1002).setScrollFactor(0);
             this._dialogueObjects.push(speakerText);
 
             // Portrait - shifted right, vertically centered in box
-            const portrait = this.add.sprite(leftX + 36, H - 100, 'slime_orange', 0)
-                .setScale(3).setDepth(1002).setScrollFactor(0);
+            const portrait = this.add.sprite(leftX + 65, H - 114, 'slime_orange', 0)
+                .setScale(3.5).setDepth(1002).setScrollFactor(0);
             portrait.play('orange_idle');
-            this.tweens.add({ targets: portrait, y: H - 106, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            this.tweens.add({ targets: portrait, y: H - 120, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             this._dialogueObjects.push(portrait);
         }
 
@@ -1500,7 +1484,7 @@ class TutorialManager {
 
         const portal = {
             tileX, tileY,
-            hp: 60, maxHp: 60,
+            hp: 250, maxHp: 250,
             tutorialRoomIndex,
             container, sprite, hpBar, ammoSegs,
             gfxObjs: [container],
@@ -1711,759 +1695,5 @@ class TutorialManager {
     }
 
     // ─── LIGHTNING TUTORIAL (LEVEL 2) ────────────────────────────────────────
-
-    _onLightningTutorialRoomEnter(roomIndex) {
-        const name = this.playerName || 'Hero';
-
-        if (roomIndex === 0) {
-            // Safe start — no enemies, unlock immediately
-            this.tutorialDoorsLocked[0] = false;
-            this.unlockTutorialDoors(0);
-            this.time.delayedCall(500, () => {
-                this.showTutorialDialogue(
-                    `Welcome to Level 2, ${name}!\nThe dungeon gets real from here.\nYou have Fire and Ice — use them both. A new power awaits at the end.`,
-                    "Glerp"
-                );
-            });
-            return;
-        }
-
-        const messages = [
-            null, // room 0 handled above
-            { text: `Pillars ahead! Enemies will try to pin you in the lanes.\nUse Ice to freeze and shatter, or Fire to burn them down.`, speaker: 'Glerp' },
-            { text: `Big open room — corners will betray you.\nWatch for fire-immune enemies. You know what to do!`, speaker: 'Glerp' },
-            null, // secret room — no message
-            { text: `L-shaped room. Enemies are hiding around the corner.\nPeek in carefully — rushing gets you mobbed.`, speaker: 'Glerp' },
-            { text: `SPIKE TRAPS! Grey tiles = instant pain. Watch your step.\nPoison clouds slow you too. Kill fast and move carefully.`, speaker: 'Glerp' },
-            { text: `Those pillars are not your friends — enemies use them too.\nClear out fast before they surround you!`, speaker: 'Glerp' },
-            { text: `THE VOLTSLIME! A stationary boss but don't get comfortable.\nDodge the scatter shots — next wave fills the gaps of the last!\nDestroy it and claim the Lightning element. Press 3 once unlocked!`, speaker: 'Glerp' },
-        ];
-
-        const msg = messages[roomIndex];
-        if (msg) {
-            this.time.delayedCall(400, () => this.showTutorialDialogue(msg.text, msg.speaker));
-        }
-    }
-
-    spawnLevel2Enemies() {
-        // rooms[0] = safe start          (x=4,  y=44, w=12, h=9)
-        // rooms[1] = pillar corridor     (x=20, y=43, w=18, h=11)
-        // rooms[2] = wide brawl          (x=42, y=40, w=18, h=16)
-        // rooms[3] = secret room         (x=46, y=24, w=12, h=9)  — loot chest, no enemies
-        // rooms[4] = L-shape chokepoint  (x=64, y=40, w=20, h=16)
-        // rooms[5] = spike trap maze     (x=65, y=60, w=20, h=14)
-        // rooms[6] = ambush              (x=36, y=60, w=22, h=16)
-        // rooms[7] = boss arena          (x=4,  y=57, w=24, h=22)
-
-        // ── ROOM 0: no enemies ─────────────────────────────────────────────
-
-        // ── ROOM 1: pillar corridor ────────────────────────────────────────
-        // 4 basic enemies — 2 per lane, forcing lane engagement
-        const r1 = [
-            { x: 23, y: 45 }, { x: 23, y: 50 }, // left lane
-            { x: 29, y: 47 },                    // centre gap (ranged)
-            { x: 34, y: 45 }, { x: 34, y: 50 }, // right lane
-        ];
-        for (const p of r1) {
-            const e = this.createEnemy(p.x, p.y, 30);
-            e.tutorialRoomIndex = 1;
-        }
-        // One ranged in the middle gap — makes the gap dangerous
-        this.createRangedEnemy(29, 47, 1);
-
-        // ── ROOM 2: wide brawl ─────────────────────────────────────────────
-        // 3 normal + 2 fire-immune + 1 ranged in far corner
-        const r2Normal = [{ x: 45, y: 43 }, { x: 50, y: 54 }, { x: 55, y: 43 }];
-        const r2FireImmune = [{ x: 47, y: 50 }, { x: 54, y: 50 }];
-        const r2Ranged = [{ x: 57, y: 43 }];
-        for (const p of r2Normal) {
-            const e = this.createEnemy(p.x, p.y, 35); e.tutorialRoomIndex = 2;
-        }
-        for (const p of r2FireImmune) {
-            const e = this.createEnemy(p.x, p.y, 35); e.tutorialRoomIndex = 2;
-            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
-        }
-        for (const p of r2Ranged) this.createRangedEnemy(p.x, p.y, 2);
-
-        // ── ROOM 3: secret chest — no enemies, loot chest spawned here ─────
-        this._spawnLevel2SecretChest();
-
-        // ── ROOM 4: L-shape chokepoint ─────────────────────────────────────
-        // Enemies cluster on far side of the dividing wall (east arm)
-        // Player can't see them until they round the gap — ambush feel
-        const r4Normal = [{ x: 76, y: 42 }, { x: 79, y: 42 }, { x: 82, y: 43 }];
-        const r4FireImmune = [{ x: 77, y: 51 }, { x: 80, y: 52 }];
-        const r4Inhibitor = [{ x: 74, y: 47 }]; // blocks ult near the gap
-        for (const p of r4Normal) {
-            const e = this.createEnemy(p.x, p.y, 38); e.tutorialRoomIndex = 4;
-        }
-        for (const p of r4FireImmune) {
-            const e = this.createEnemy(p.x, p.y, 38); e.tutorialRoomIndex = 4;
-            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
-        }
-        for (const p of r4Inhibitor) {
-            const e = this.createEnemy(p.x, p.y, 45); e.tutorialRoomIndex = 4;
-            e.ultInhibitor = true; e.ultInhibitRadius = 3;
-            const ring = this.add.graphics().setDepth(0.8);
-            ring.x = e.sprite.x; ring.y = e.sprite.y;
-            ring.lineStyle(2, 0xff2200, 0.7); ring.strokeCircle(0, 0, 3 * this.TILE_SIZE);
-            this.tweens.add({ targets: ring, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-            const redMark = this.add.graphics().setDepth(2);
-            redMark.fillStyle(0xff2200, 0.9); redMark.fillCircle(0, 0, 5);
-            redMark.lineStyle(2, 0xff6600, 1); redMark.strokeCircle(0, 0, 7);
-            redMark.x = e.sprite.x; redMark.y = e.sprite.y - 22;
-            this.tweens.add({ targets: redMark, scaleX: 1.2, scaleY: 1.2, duration: 600, yoyo: true, repeat: -1 });
-            e._inhibitRing = ring; e._inhibitMark = redMark;
-        }
-
-        // ── ROOM 5: spike trap maze ─────────────────────────────────────────
-        // Traps in the lanes + enemies guarding the far side
-        // Spike rows match the wall gaps in WorldGen (gap at x=70,71 and x=77,78)
-        const spikeRow1 = [
-            { x: 67, y: 62 }, { x: 68, y: 62 }, { x: 69, y: 62 },
-            { x: 72, y: 62 }, { x: 73, y: 62 }, { x: 74, y: 62 },
-        ];
-        const spikeRow2 = [
-            { x: 67, y: 65 }, { x: 68, y: 65 }, { x: 69, y: 65 },
-            { x: 71, y: 65 }, { x: 72, y: 65 }, { x: 73, y: 65 },
-            { x: 74, y: 65 }, { x: 75, y: 65 },
-        ];
-        for (const s of spikeRow1) this.spawnSpikeTrap(s.x, s.y);
-        for (const s of spikeRow2) this.spawnSpikeTrap(s.x, s.y);
-        this.spawnPoisonTrap(79, 61);
-        this.spawnPoisonTrap(79, 68);
-
-        const r5Enemies = [
-            { x: 70, y: 62, ranged: false }, // centre gap guard
-            { x: 78, y: 62, ranged: true  }, // far side sniper
-            { x: 75, y: 69, ranged: false }, // back of room
-            { x: 82, y: 65, ranged: false },
-        ];
-        for (const p of r5Enemies) {
-            if (p.ranged) { this.createRangedEnemy(p.x, p.y, 5); continue; }
-            const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 5;
-        }
-
-        // ── ROOM 6: ambush room ─────────────────────────────────────────────
-        // Enemies tucked behind pillars — ranged at back wall
-        const r6Normal = [
-            { x: 40, y: 63 }, { x: 40, y: 70 },
-            { x: 46, y: 67 },
-            { x: 51, y: 63 }, { x: 51, y: 71 },
-        ];
-        const r6FireImmune = [{ x: 45, y: 62 }, { x: 53, y: 70 }];
-        const r6Ranged = [{ x: 55, y: 63 }, { x: 55, y: 70 }];
-        for (const p of r6Normal) {
-            const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 6;
-        }
-        for (const p of r6FireImmune) {
-            const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 6;
-            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
-        }
-        for (const p of r6Ranged) this.createRangedEnemy(p.x, p.y, 6);
-
-        // ── ROOM 7: boss arena ──────────────────────────────────────────────
-        // Voltslime boss at centre + 4 guardian enemies spread around arena
-        // Boss itself is not in this.enemies — it has its own update loop
-        const bossArenaGuards = [
-            { x: 8,  y: 61 }, { x: 24, y: 61 },
-            { x: 8,  y: 73 }, { x: 24, y: 73 },
-        ];
-        for (const p of bossArenaGuards) {
-            const e = this.createEnemy(p.x, p.y, 45); e.tutorialRoomIndex = 7;
-        }
-        this.spawnVoltslimeBoss(16, 67);
-
-        // Final crackling chest — back wall of boss arena
-        this.spawnFinalLevelChest(16, 59, 'lightning');
-    }
-
-    _spawnLevel2SecretChest() {
-        // Spawn a chest in every chest branch room (isChestRoom flag)
-        if (!this.tutorialChests) this.tutorialChests = [];
-        for (let i = 0; i < this.rooms.length; i++) {
-            const room = this.rooms[i];
-            if (!room.isChestRoom) continue;
-
-            // Find a valid floor tile near room centre
-            let cx = Math.floor(room.x + room.w / 2);
-            let cy = Math.floor(room.y + room.h / 2);
-            if (this.world[cx]?.[cy] !== this.FLOOR) {
-                outer: for (let r = 1; r < Math.max(room.w, room.h); r++) {
-                    for (let dx = -r; dx <= r; dx++) {
-                        for (let dy = -r; dy <= r; dy++) {
-                            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-                            const tx = cx + dx, ty = cy + dy;
-                            if (this.world[tx]?.[ty] === this.FLOOR) { cx = tx; cy = ty; break outer; }
-                        }
-                    }
-                }
-            }
-
-            const wx = cx * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const wy = cy * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const isMimic = Math.random() < 0.12;
-
-            const container = this.add.container(wx, wy).setDepth(2);
-            const body = this.add.graphics();
-            body.fillStyle(0x884400, 1); body.fillRect(-10, 0, 20, 7);
-            body.fillStyle(0xffcc44, 1); body.fillRect(-3, 1, 6, 5);
-            body.lineStyle(1, 0x553300, 1); body.strokeRect(-10, 0, 20, 7);
-            const lid = this.add.graphics();
-            lid.fillStyle(0xaa6600, 1); lid.fillRect(-10, -7, 20, 7);
-            lid.lineStyle(1, 0x553300, 1); lid.strokeRect(-10, -7, 20, 7);
-            const glowCol = isMimic ? 0xff2200 : 0xffaa00;
-            const glow = this.add.rectangle(0, 0, 24, 16, glowCol, 0.15);
-            container.add([glow, body, lid]);
-            this.tweens.add({ targets: container, y: wy - 5, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            if (!isMimic) this.tweens.add({ targets: glow, alpha: 0.45, duration: 400, yoyo: true, repeat: -1 });
-
-            this.tutorialChests.push({
-                tileX: cx, tileY: cy,
-                roomIndex: i,
-                container, lid, glow,
-                opened: false,
-                isMimic,
-                _mimicTriggered: false,
-            });
-        }
-    }
-
-    // Walk-on for the secret chest — called from updateTutorial chest loop
-    // The chest is in rooms[3] which has roomIndex=3 in tutorialChests.
-    // We override openTutorialChest for roomIndex=3 to handle mimic vs loot.
-    // NOTE: openTutorialChest is called by updateTutorial when player walks on chest tile.
-    // We intercept roomIndex === 3 there.
-
-    // Hook into updateTutorial chest detection — override handled in openTutorialChest below
-
-    // ─── LEVEL 2 UPDATE LOOP ─────────────────────────────────────────────────
-
-    updateLevel2(time) {
-        const playerRoom = this.getCurrentPlayerRoom();
-        if (playerRoom === -1) return;
-
-        if (playerRoom !== this.currentTutorialRoom) {
-            this.currentTutorialRoom = playerRoom;
-            if (this.tutorialDoorsLocked[playerRoom]) this.lockTutorialDoors(playerRoom);
-            if (playerRoom === 0) {
-                this.tutorialRoomCleared[0] = true;
-                this.tutorialDoorsLocked[0] = false;
-                this.unlockTutorialDoors(0);
-            }
-            // Boss room — activate Voltslime
-            const bossRoomIndex = this.rooms.length - 1;
-            if (playerRoom === bossRoomIndex && this.voltslimeBoss && !this.voltslimeBoss._activated) {
-                this.voltslimeBoss._activated = true;
-                this.voltslimeBoss.phase = 'idle';
-                this.time.delayedCall(1500, () => this._voltslimeNextPhase());
-            }
-        }
-
-        if (!this._roomHadEnemies) this._roomHadEnemies = {};
-        if (!this.tutorialRoomCleared[playerRoom]) {
-            const roomEnemies = this.enemies.filter(e => e.tutorialRoomIndex === playerRoom);
-            if (roomEnemies.length > 0) this._roomHadEnemies[playerRoom] = true;
-            if (roomEnemies.length === 0 && this._roomHadEnemies[playerRoom]) {
-                const bossRoomIndex = this.rooms.length - 1;
-                if (playerRoom === bossRoomIndex) {
-                    if (!this.voltslimeBoss?.active) this._level2RoomClear(playerRoom);
-                } else {
-                    this._level2RoomClear(playerRoom);
-                }
-            }
-        }
-
-        // Walk-on chest detection
-        if (this.tutorialChests) {
-            for (const chest of this.tutorialChests) {
-                if (chest.opened) continue;
-                if (this.playerX !== chest.tileX || this.playerY !== chest.tileY) continue;
-                if (chest.isFinalChest) {
-                    if (!this.voltslimeBoss?.active) this.openFinalLevelChest(chest);
-                } else {
-                    this.openTutorialChest(chest.roomIndex, chest.container, null);
-                }
-            }
-        }
-    }
-
-    _level2RoomClear(roomIndex) {
-        this.tutorialRoomCleared[roomIndex] = true;
-        this.unlockTutorialDoors(roomIndex);
-        const bossRoomIndex = this.rooms.length - 1;
-        if (roomIndex === bossRoomIndex) {
-            this.time.delayedCall(800, () => {
-                const chest = (this.tutorialChests || []).find(c => c.isFinalChest && !c.opened);
-                if (chest) this.openFinalLevelChest(chest);
-            });
-            return;
-        }
-        this.spawnTutorialChest(roomIndex);
-    }
-
-    // ─── VOLTSLIME BOSS ───────────────────────────────────────────────────────
-
-    spawnVoltslimeBoss(tileX, tileY) {
-        const px = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const py = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const offsetY = this.SLIME_Y_OFFSET || -10;
-
-        const container = this.add.container(px, py + offsetY).setDepth(3);
-        const body = this.add.sprite(0, -65, 'slime_red', 0).setScale(4.5);
-        body.setTint(0x88ffff);
-        if (this.anims.exists('red_idle')) body.play('red_idle');
-
-        // Crown
-        const crown = this.add.graphics();
-        crown.fillStyle(0xffff00, 1); crown.fillRect(-16, -46, 32, 9);
-        crown.fillTriangle(-16,-46,-12,-62,-7,-46);
-        crown.fillTriangle(-3,-46,0,-64,3,-46);
-        crown.fillTriangle(7,-46,12,-62,16,-46);
-        crown.fillStyle(0x44ffff,1); crown.fillCircle(-12,-42,4);
-        crown.fillStyle(0xffff44,1); crown.fillCircle(0,-42,4);
-        crown.fillStyle(0x44ffff,1); crown.fillCircle(12,-42,4);
-        crown.lineStyle(1.5,0xaaaa00,1); crown.strokeRect(-16,-46,32,9);
-
-        const shadow = this.add.ellipse(0, 10, 64, 16, 0x000000, 0.3);
-        const hpBg = this.add.rectangle(0, -66, 72, 8, 0x330033, 1);
-        hpBg.setStrokeStyle(1, 0x000000, 1);
-        const hpBar = this.add.rectangle(-36, -66, 72, 8, 0x44ffff, 1).setOrigin(0, 0.5);
-        const hpLabel = this.add.text(0, -78, 'VOLTSLIME', {
-            fontSize: '9px', fontFamily: 'monospace', color: '#88ffff',
-            stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
-        }).setOrigin(0.5);
-        const aura = this.add.graphics().setDepth(3.5);
-
-        container.add([shadow, hpBg, hpBar, hpLabel, body, crown]);
-
-        const baseY = py + offsetY;
-        this.tweens.add({ targets: container, y: baseY - 8, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-
-        this.voltslimeBoss = {
-            tileX, tileY,
-            hp: 350, maxHp: 350,
-            container, body, hpBar, aura,
-            active: true,
-            phase: 'waiting',
-            phaseIndex: -1,
-            projectiles: [],
-            homingProjectiles: [],
-            _lastAuraTime: 0,
-            _baseY: baseY,
-            _activated: false,
-        };
-    }
-
-    _voltslimeNextPhase() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        this._voltslimeSlam(() => {
-            const phases = ['scatter', 'homing', 'spawner', 'spiral'];
-            boss.phaseIndex = (boss.phaseIndex + 1) % phases.length;
-            boss.phase = phases[boss.phaseIndex];
-            if      (boss.phase === 'scatter')  this._voltslimeScatter();
-            else if (boss.phase === 'homing')   this._voltslimeHoming();
-            else if (boss.phase === 'spawner')  this._voltslimeSpawner();
-            else if (boss.phase === 'spiral')   this._voltslimeSpiral();
-        });
-    }
-
-    _voltslimeSlam(onDone) {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) { if (onDone) onDone(); return; }
-        boss.phase = 'slam';
-
-        const bpx = boss.container.x, bpy = boss.container.y;
-        const warn = this.add.circle(bpx, bpy, 8, 0xffff44, 0).setDepth(2.5);
-        warn.setStrokeStyle(3, 0xffff44, 0.9);
-        this.tweens.add({ targets: warn, radius: 3 * this.TILE_SIZE, alpha: 0, duration: 800, ease: 'Quad.easeOut', onComplete: () => warn.destroy() });
-
-        this.tweens.killTweensOf(boss.body);
-        this.tweens.add({ targets: boss.body, scaleX: 5.5, scaleY: 3.2, duration: 600, ease: 'Power2' });
-
-        this.time.delayedCall(800, () => {
-            if (!boss.active) { if (onDone) onDone(); return; }
-            this.tweens.killTweensOf(boss.body);
-            this.tweens.add({ targets: boss.body, scaleX: 4.5, scaleY: 4.5, duration: 120, ease: 'Bounce.easeOut' });
-            this.cameras.main.shake(120, 0.008);
-
-            const playerDist = Math.abs(this.playerX - boss.tileX) + Math.abs(this.playerY - boss.tileY);
-            if (playerDist <= 3) {
-                this.takeDamage(20);
-                this.showStatusText(this.player.x, this.player.y - 20, 'SLAM!', '#ffff44');
-            }
-
-            const burst = this.add.circle(boss.container.x, boss.container.y, 12, 0xffff44, 0.8).setDepth(4);
-            this.tweens.add({ targets: burst, radius: 3 * this.TILE_SIZE, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
-
-            this.time.delayedCall(1200, () => { if (onDone) onDone(); });
-        });
-    }
-
-    _voltslimeScatter() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        boss.phase = 'scatter';
-        const SHOTS = 8, SPEED = 110;
-        let wave = 0;
-        const fireWave = (offset) => {
-            if (!boss.active) return;
-            this.cameras.main.shake(35, 0.003);
-            boss.body.setTint(0xffff44);
-            this.time.delayedCall(80, () => { if (boss.body?.active) boss.body.setTint(0x88ffff); });
-            for (let i = 0; i < SHOTS; i++) {
-                const angle = (Math.PI * 2 / SHOTS) * i + offset;
-                const g = this.add.graphics().setDepth(3);
-                g.x = boss.container.x; g.y = boss.container.y;
-                boss.projectiles.push({ g, vx: Math.cos(angle) * SPEED, vy: Math.sin(angle) * SPEED, startX: g.x, startY: g.y, createdAt: this.time.now, type: 'scatter' });
-            }
-            wave++;
-            if (wave < 3) this.time.delayedCall(700, () => fireWave((Math.PI / SHOTS) * wave));
-            else this.time.delayedCall(600, () => this._voltslimeNextPhase());
-        };
-        fireWave(0);
-    }
-
-    _voltslimeHoming() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        boss.phase = 'homing';
-        let fired = 0;
-        const fireOne = () => {
-            if (!boss.active) return;
-            const g = this.add.graphics().setDepth(3);
-            g.x = boss.container.x; g.y = boss.container.y;
-            boss.homingProjectiles.push({ g, vx: 0, vy: 0, speed: 55, createdAt: this.time.now, damage: 25 });
-            fired++;
-            if (fired < 3) this.time.delayedCall(1000, fireOne);
-            else this.time.delayedCall(3500, () => this._voltslimeNextPhase());
-        };
-        fireOne();
-    }
-
-    _voltslimeSpawner() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        boss.phase = 'spawner';
-        const bossRoom = this.rooms?.[7];
-        if (!bossRoom) { this.time.delayedCall(500, () => this._voltslimeNextPhase()); return; }
-        let spawned = 0, attempts = 0;
-        while (spawned < 3 && attempts < 80) {
-            attempts++;
-            const rx = bossRoom.x + 1 + Math.floor(Math.random() * (bossRoom.w - 2));
-            const ry = bossRoom.y + 1 + Math.floor(Math.random() * (bossRoom.h - 2));
-            if (this.world[rx]?.[ry] !== this.FLOOR) continue;
-            if (this.getEnemyAt(rx, ry)) continue;
-            if (Math.abs(rx - this.playerX) < 2 && Math.abs(ry - this.playerY) < 2) continue;
-            const wpx = rx * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const wpy = ry * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const flash = this.add.circle(wpx, wpy, 10, 0x44ffff, 0.8).setDepth(4);
-            this.tweens.add({ targets: flash, radius: 20, alpha: 0, duration: 300, onComplete: () => flash.destroy() });
-            this.time.delayedCall(300, () => {
-                if (!boss.active) return;
-                if (this.world[rx]?.[ry] === this.FLOOR && !this.getEnemyAt(rx, ry)) {
-                    const e = this.createEnemy(rx, ry, 30);
-                    e.tutorialRoomIndex = 7;
-                    e.sprite.setTint(0x88ffff);
-                }
-            });
-            spawned++;
-        }
-        boss.body.setTint(0xffffff);
-        this.time.delayedCall(100, () => { if (boss.body?.active) boss.body.setTint(0x88ffff); });
-        this.time.delayedCall(2500, () => this._voltslimeNextPhase());
-    }
-
-    _voltslimeSpiral() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        boss.phase = 'spiral';
-        const TOTAL = 36, SPEED = 100;
-        const STEP = (Math.PI * 2) / 12;
-        let shot = 0;
-        const t = this.time.addEvent({
-            delay: 120, repeat: TOTAL - 1,
-            callback: () => {
-                if (!boss.active) { t.remove(); return; }
-                const angle = STEP * shot;
-                const g = this.add.graphics().setDepth(3);
-                g.x = boss.container.x; g.y = boss.container.y;
-                boss.projectiles.push({ g, vx: Math.cos(angle) * SPEED, vy: Math.sin(angle) * SPEED, startX: g.x, startY: g.y, createdAt: this.time.now, type: 'spiral' });
-                shot++;
-                if (shot >= TOTAL) this.time.delayedCall(1000, () => this._voltslimeNextPhase());
-            }
-        });
-    }
-
-    updateVoltslimeBoss(time, delta) {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        if (boss.phase === 'waiting') return;
-        const ds = delta / 1000;
-        const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-        // Electric crackling aura
-        if (time - boss._lastAuraTime > 80) {
-            boss._lastAuraTime = time;
-            boss.aura.clear();
-            const bx = boss.container.x, by = boss.container.y;
-            boss.aura.x = 0; boss.aura.y = 0;
-            for (let i = 0; i < 6; i++) {
-                const a = Math.random() * Math.PI * 2;
-                const r1 = 28, r2 = 38 + Math.random() * 12;
-                const ma = a + (Math.random() - 0.5) * 0.9;
-                boss.aura.lineStyle(1.5, 0x44ffff, 0.5 + Math.random() * 0.5);
-                boss.aura.beginPath();
-                boss.aura.moveTo(bx + Math.cos(a) * r1, by + Math.sin(a) * r1);
-                boss.aura.lineTo(bx + Math.cos(ma) * ((r1+r2)/2), by + Math.sin(ma) * ((r1+r2)/2));
-                boss.aura.lineTo(bx + Math.cos(a) * r2, by + Math.sin(a) * r2);
-                boss.aura.strokePath();
-            }
-        }
-
-        // Scatter / spiral projectiles
-        for (let i = boss.projectiles.length - 1; i >= 0; i--) {
-            const p = boss.projectiles[i];
-            p.g.x += p.vx * ds; p.g.y += p.vy * ds;
-            p.g.clear();
-            p.g.fillStyle(0x44ffff, 0.9); p.g.fillCircle(0, 0, 5);
-            p.g.fillStyle(0xffffff, 0.7); p.g.fillCircle(0, 0, 2.5);
-            if (Math.hypot(p.g.x - p.startX, p.g.y - p.startY) > 18 * this.TILE_SIZE) {
-                p.g.destroy(); boss.projectiles.splice(i, 1); continue;
-            }
-            const tx = Math.floor(p.g.x / this.TILE_SIZE), ty = Math.floor(p.g.y / this.TILE_SIZE);
-            if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT || this.world[tx][ty] === this.WALL) {
-                p.g.destroy(); boss.projectiles.splice(i, 1); continue;
-            }
-            if (Math.abs(p.g.x - playerPx) < this.TILE_SIZE * 0.7 && Math.abs(p.g.y - playerPy) < this.TILE_SIZE * 0.7) {
-                this.takeDamage(12); p.g.destroy(); boss.projectiles.splice(i, 1);
-            }
-        }
-
-        // Homing projectiles
-        for (let i = boss.homingProjectiles.length - 1; i >= 0; i--) {
-            const p = boss.homingProjectiles[i];
-            const dx = playerPx - p.g.x, dy = playerPy - p.g.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist > 0) {
-                const TURN = 1.8, target = Math.atan2(dy, dx);
-                const cur = Math.atan2(p.vy, p.vx) || target;
-                let diff = target - cur;
-                while (diff > Math.PI) diff -= Math.PI * 2;
-                while (diff < -Math.PI) diff += Math.PI * 2;
-                const newAngle = cur + Math.sign(diff) * Math.min(Math.abs(diff), TURN * ds);
-                p.vx = Math.cos(newAngle) * p.speed; p.vy = Math.sin(newAngle) * p.speed;
-            }
-            p.g.x += p.vx * ds; p.g.y += p.vy * ds;
-            p.g.clear();
-            const pulse = 0.7 + Math.sin(time / 150) * 0.3;
-            p.g.fillStyle(0xaa44ff, 0.85 * pulse); p.g.fillCircle(0, 0, 9);
-            p.g.fillStyle(0xffffff, 0.6); p.g.fillCircle(0, 0, 4);
-            p.g.lineStyle(1, 0xaa44ff, 0.3); p.g.strokeCircle(0, 0, 14);
-            if (time - p.createdAt > 6000) { p.g.destroy(); boss.homingProjectiles.splice(i, 1); continue; }
-            const tx = Math.floor(p.g.x / this.TILE_SIZE), ty = Math.floor(p.g.y / this.TILE_SIZE);
-            if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT || this.world[tx][ty] === this.WALL) {
-                p.g.destroy(); boss.homingProjectiles.splice(i, 1); continue;
-            }
-            if (Math.abs(p.g.x - playerPx) < this.TILE_SIZE * 0.9 && Math.abs(p.g.y - playerPy) < this.TILE_SIZE * 0.9) {
-                this.takeDamage(p.damage);
-                this.showStatusText(this.player.x, this.player.y - 20, 'HOMING HIT!', '#aa44ff');
-                p.g.destroy(); boss.homingProjectiles.splice(i, 1);
-            }
-        }
-
-        boss.tileX = Math.floor(boss.container.x / this.TILE_SIZE);
-        boss.tileY = Math.floor(boss.container.y / this.TILE_SIZE);
-        boss.hpBar.width = 72 * Math.max(0, boss.hp / boss.maxHp);
-        if (boss.hp <= 0) this._killVoltslimeBoss();
-    }
-
-    damageVoltslimeBoss(damage) {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        boss.hp -= damage;
-        boss.hpBar.width = 72 * Math.max(0, boss.hp / boss.maxHp);
-        boss.body.setTint(0xffffff);
-        this.time.delayedCall(80, () => { if (boss.body?.active) boss.body.setTint(0x88ffff); });
-        if (boss.hp <= 0) this._killVoltslimeBoss();
-    }
-
-    _killVoltslimeBoss() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        boss.active = false;
-        for (const p of [...boss.projectiles, ...boss.homingProjectiles]) {
-            if (p.g?.active) p.g.destroy();
-        }
-        boss.projectiles = []; boss.homingProjectiles = [];
-        if (boss.aura?.active) boss.aura.destroy();
-
-        const bpx = boss.container.x, bpy = boss.container.y;
-        const flash = this.add.circle(bpx, bpy, 20, 0xffffff, 1).setDepth(6);
-        this.tweens.add({ targets: flash, radius: 80, alpha: 0, duration: 500, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
-        for (let i = 0; i < 20; i++) {
-            const a = (i / 20) * Math.PI * 2;
-            const blob = this.add.circle(bpx, bpy, 5 + Math.random() * 7, 0x44ffff, 1).setDepth(5);
-            this.tweens.add({ targets: blob, x: bpx + Math.cos(a) * (40 + Math.random() * 40), y: bpy + Math.sin(a) * (40 + Math.random() * 40), alpha: 0, scaleX: 0.1, scaleY: 0.1, duration: 500 + Math.random() * 200, ease: 'Quad.easeOut', onComplete: () => blob.destroy() });
-        }
-        this.cameras.main.shake(200, 0.012);
-        this.showStatusText(bpx, bpy - 50, 'VOLTSLIME DEFEATED!', '#44ffff');
-        this.tweens.killTweensOf(boss.container);
-        this.tweens.add({ targets: boss.container, alpha: 0, duration: 400, onComplete: () => boss.container.destroy() });
-
-        this.totalGlorps = (this.totalGlorps || 0) + 80;
-        localStorage.setItem('glorps', this.totalGlorps);
-        if (this.glorpText) this.glorpText.setText(`✦ ${this.totalGlorps} Glorps`);
-
-        // Trigger boss arena room clear (roomIndex 7)
-        this.onTutorialRoomClear(7);
-    }
-
-    // ─── FINAL LEVEL CHEST (crackling lightning) ──────────────────────────────
-
-    spawnFinalLevelChest(tileX, tileY, elementToUnlock) {
-        const cx = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const cy = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const container = this.add.container(cx, cy).setDepth(3);
-
-        const shadow = this.add.ellipse(0, 6, 22, 8, 0x000000, 0.3);
-        const body = this.add.graphics();
-        body.fillStyle(0x884400, 1); body.fillRect(-10, 0, 20, 7);
-        body.fillStyle(0xffcc44, 1); body.fillRect(-3, 1, 6, 5);
-        body.lineStyle(1, 0x553300, 1); body.strokeRect(-10, 0, 20, 7);
-        const lid = this.add.graphics();
-        lid.fillStyle(0xaa6600, 1); lid.fillRect(-10, -7, 20, 7);
-        lid.lineStyle(1, 0x553300, 1); lid.strokeRect(-10, -7, 20, 7);
-        const crackleGfx = this.add.graphics().setDepth(3.5);
-        const glow = this.add.rectangle(0, 0, 28, 18, 0xffff00, 0.25);
-        container.add([shadow, glow, body, lid]);
-
-        const baseY = cy;
-        const hoverY = cy - 28;
-        this.tweens.add({ targets: container, y: hoverY, duration: 900, ease: 'Sine.easeOut', onComplete: () => {
-            this.tweens.add({ targets: container, y: hoverY - 6, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        }});
-        this.tweens.add({ targets: glow, alpha: 0.55, duration: 350, yoyo: true, repeat: -1 });
-
-        const crackleTimer = this.time.addEvent({
-            delay: 80, loop: true,
-            callback: () => {
-                if (!crackleGfx.active) return;
-                crackleGfx.clear();
-                const bx = container.x, by = container.y;
-                for (let i = 0; i < 5; i++) {
-                    const a = Math.random() * Math.PI * 2;
-                    const r1 = 14 + Math.random() * 4, r2 = 22 + Math.random() * 10;
-                    const ma = a + (Math.random() - 0.5) * 0.8;
-                    crackleGfx.lineStyle(1.5, 0xffff44, 0.6 + Math.random() * 0.4);
-                    crackleGfx.beginPath();
-                    crackleGfx.moveTo(bx + Math.cos(a) * r1, by + Math.sin(a) * r1);
-                    crackleGfx.lineTo(bx + Math.cos(ma) * ((r1+r2)/2), by + Math.sin(ma) * ((r1+r2)/2));
-                    crackleGfx.lineTo(bx + Math.cos(a) * r2, by + Math.sin(a) * r2);
-                    crackleGfx.strokePath();
-                }
-            }
-        });
-
-        if (!this.tutorialChests) this.tutorialChests = [];
-        this.tutorialChests.push({
-            tileX, tileY,
-            roomIndex: -1,
-            container, lid, body, glow, shadow, crackleGfx, crackleTimer,
-            bobTween: null, opened: false,
-            isFinalChest: true, elementToUnlock,
-        });
-    }
-
-    openFinalLevelChest(chest) {
-        if (!chest || chest.opened) return;
-        chest.opened = true;
-        if (chest.crackleTimer) chest.crackleTimer.remove();
-        if (chest.crackleGfx) {
-            this.tweens.add({ targets: chest.crackleGfx, alpha: 0, duration: 200, onComplete: () => chest.crackleGfx.destroy() });
-        }
-        this.tweens.add({ targets: chest.lid, y: -40, angle: -25, alpha: 0, duration: 350, ease: 'Quad.easeOut', onComplete: () => chest.lid.destroy() });
-        for (let i = 0; i < 14; i++) {
-            const a = (i / 14) * Math.PI * 2;
-            const spark = this.add.rectangle(chest.container.x, chest.container.y, 4, 4, 0xffff44, 1).setDepth(5);
-            this.tweens.add({ targets: spark, x: spark.x + Math.cos(a) * 40, y: spark.y + Math.sin(a) * 40, alpha: 0, scaleX: 0.1, scaleY: 0.1, duration: 500, ease: 'Quad.easeOut', onComplete: () => spark.destroy() });
-        }
-        this.time.delayedCall(300, () => {
-            this.tweens.add({ targets: chest.container, alpha: 0, duration: 300, onComplete: () => chest.container.destroy() });
-        });
-        this.cameras.main.shake(80, 0.006);
-
-        const element = chest.elementToUnlock;
-        const alreadyHad = localStorage.getItem(`unlocked_${element}`) === 'true';
-        localStorage.setItem(`unlocked_${element}`, 'true');
-        if (!this.unlockedElements) this.unlockedElements = new Set(['fire', 'ice']);
-        this.unlockedElements.add(element);
-
-        this.time.delayedCall(600, () => this._showElementUnlockCinematic(element, alreadyHad));
-    }
-
-    _showElementUnlockCinematic(element, alreadyUnlocked) {
-        const W = this.scale.width, H = this.scale.height;
-        const blackBg = this.add.rectangle(W/2, H/2, W, H, 0x000000, 0).setScrollFactor(0).setDepth(500);
-        this.tweens.add({ targets: blackBg, alpha: 1, duration: 600, ease: 'Quad.easeIn', onComplete: () => {
-            const colors   = { lightning: 0xffff44, cosmic: 0xcc88ff, fire: 0xff6600, ice: 0x44ccff };
-            const names    = { lightning: 'LIGHTNING', cosmic: 'COSMIC', fire: 'FIRE', ice: 'ICE' };
-            const keyNums  = { lightning: '3', cosmic: '4', fire: '1', ice: '2' };
-            const col      = colors[element] || 0xffffff;
-            const colHex   = '#' + col.toString(16).padStart(6, '0');
-            const elName   = names[element] || element.toUpperCase();
-            const keyNum   = keyNums[element] || '?';
-            const sx = W/2, sy = H/2 - 60;
-
-            const sigil = this.add.graphics().setScrollFactor(0).setDepth(501).setAlpha(0);
-            if (element === 'lightning') {
-                sigil.fillStyle(col, 0.15); sigil.fillCircle(sx, sy, 52);
-                sigil.lineStyle(3, col, 0.8); sigil.strokeCircle(sx, sy, 52);
-                sigil.fillStyle(col, 1);
-                sigil.fillTriangle(sx-8, sy-30, sx+14, sy-30, sx+2, sy+2);
-                sigil.fillTriangle(sx-14, sy+2, sx+8, sy+2, sx-2, sy+30);
-                sigil.fillStyle(0xffffff, 0.7);
-                sigil.fillTriangle(sx-4, sy-26, sx+8, sy-26, sx+1, sy-4);
-            }
-            this.tweens.add({ targets: sigil, alpha: 1, duration: 500, ease: 'Quad.easeOut' });
-
-            const ring = this.add.circle(sx, sy, 10, 0x000000, 0).setScrollFactor(0).setDepth(501).setStrokeStyle(2, col, 0.9).setAlpha(0);
-            this.tweens.add({ targets: ring, alpha: 1, duration: 300, onComplete: () => {
-                this.tweens.add({ targets: ring, radius: 70, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-            }});
-
-            const unlockLabel = alreadyUnlocked
-                ? this.add.text(W/2, H/2+20, `${elName} MASTERED`, { fontSize: '28px', fontFamily: 'monospace', color: colHex, stroke: '#000000', strokeThickness: 5, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0)
-                : this.add.text(W/2, H/2+10, 'YOU UNLOCKED', { fontSize: '18px', fontFamily: 'monospace', color: '#aaaaaa', stroke: '#000000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
-            const elLabel = alreadyUnlocked ? null : this.add.text(W/2, H/2+44, elName, { fontSize: '38px', fontFamily: 'monospace', color: colHex, stroke: '#000000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
-            const subLabel = this.add.text(W/2, H/2+90, `Press ${keyNum} to switch`, { fontSize: '14px', fontFamily: 'monospace', color: '#666666', stroke: '#000000', strokeThickness: 2 }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
-            const continueLabel = this.add.text(W/2, H-80, '▼ Click to continue', { fontSize: '13px', fontFamily: 'monospace', color: '#444444' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
-
-            this.time.delayedCall(200, () => {
-                this.tweens.add({ targets: unlockLabel, alpha: 1, y: unlockLabel.y - 8, duration: 500, ease: 'Quad.easeOut' });
-                if (elLabel) this.tweens.add({ targets: elLabel, alpha: 1, y: elLabel.y - 8, duration: 500, ease: 'Quad.easeOut', delay: 150 });
-                this.tweens.add({ targets: subLabel, alpha: 0.7, duration: 400, delay: 400 });
-                this.tweens.add({ targets: continueLabel, alpha: 0.6, duration: 400, delay: 700, onComplete: () => {
-                    this.tweens.add({ targets: continueLabel, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-                }});
-            });
-
-            const handler = () => {
-                this.input.off('pointerdown', handler);
-                [blackBg, sigil, unlockLabel, elLabel, subLabel, continueLabel].forEach(o => {
-                    if (o?.active) { this.tweens.killTweensOf(o); this.tweens.add({ targets: o, alpha: 0, duration: 400 }); }
-                });
-                this.time.delayedCall(450, () => {
-                    this.cameras.main.fadeOut(400, 0, 0, 0);
-                    this.time.delayedCall(400, () => this.scene.start('LevelSelect'));
-                });
-            };
-            this.time.delayedCall(800, () => this.input.on('pointerdown', handler));
-        }});
-    }
-
-    // ─── TUTORIAL SYSTEM ───────────────────────────────────────────────────
 
 }
