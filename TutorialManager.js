@@ -7,6 +7,7 @@
 class TutorialManager {
 
     updateTutorial(time) {
+        if (this.isLevel3) return;
         // Collect glorps
         if (this.glorps && this.glorps.length > 0) {
             const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -210,7 +211,7 @@ class TutorialManager {
     }
 
     isInLockedRoom(tileX, tileY) {
-        if ((!this.isTutorial && !this.isLevel2) || !this.tutorialDoorsLocked) return false;
+        if ((!this.isTutorial && !this.isLevel2 && !this.isLevel3 && !this.isLevel4) || !this.tutorialDoorsLocked) return false;
         for (let i = 0; i < this.rooms.length; i++) {
             if (!this.tutorialDoorsLocked[i]) continue;
             const room = this.rooms[i];
@@ -236,6 +237,7 @@ class TutorialManager {
     }
 
     onTutorialRoomEnter(roomIndex) {
+        if (this.isLevel3) return;
 
         // Always lock doors immediately on entering any room
         if (this.tutorialDoorsLocked[roomIndex]) {
@@ -497,10 +499,8 @@ class TutorialManager {
         return tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h;
     }
 
-    getPortalAt(tileX, tileY) {
-        if (!this.portals) return null;
-        return this.portals.find(p => p.active && p.tileX === tileX && p.tileY === tileY) || null;
-    }
+    // getPortalAt, spawnPortal, updatePortals, damagePortal, _destroyPortal
+    // moved to LevelManager — queen slime is a general enemy, not tutorial-exclusive
 
     lockTutorialDoors(roomIndex) {
         const room = this.rooms[roomIndex];
@@ -668,7 +668,7 @@ class TutorialManager {
     openTutorialChest(roomIndex, container, _unused) {
         // Level 2 chest branch rooms — mimic or loot (identified by isChestRoom flag on room)
         if (this.isLevel2 && this.rooms[roomIndex]?.isChestRoom) {
-            const chest = (this.tutorialChests || []).find(c => c.roomIndex === roomIndex && !c.opened);
+            const chest = (this.tutorialChests || []).find(c => c.roomIndex === 3 && !c.opened);
             if (!chest) return;
             chest.opened = true;
             this.tweens.killTweensOf(chest.container);
@@ -683,7 +683,7 @@ class TutorialManager {
                         const ex = chest.tileX + off.x, ey = chest.tileY + off.y;
                         if (this.world[ex]?.[ey] === this.FLOOR) {
                             const e = this.createEnemy(ex, ey, 40);
-                            e.tutorialRoomIndex = chest.roomIndex;
+                            e.tutorialRoomIndex = 3;
                             e.sprite.setTint(0xff4444);
                         }
                     }
@@ -785,7 +785,7 @@ class TutorialManager {
             const fireRewards = [
                 { type: 'glorps', amount: 10, message: "10 Glorps! Keep collecting!" },
                 { type: 'glorps', amount: 20, message: "20 Glorps! You're getting the hang of it." },
-                { type: 'ice_unlock', message: "Ice element unlocked!\nPress 2 to switch. Freeze those immune enemies!" },
+                { type: 'glorps', amount: 20, message: "20 Glorps! The lava tiles deal damage over time — use them!" },
                 { type: 'glorps', amount: 25, message: "25 Glorps! Almost there!" },
                 { type: 'glorps', amount: 25, message: "25 Glorps! That's 100 total — enough to buy your first weapon!" },
             ];
@@ -1092,6 +1092,12 @@ class TutorialManager {
             return;
         } else if (this.currentLevelIndex === 2) {
             this.spawnLevel2Enemies();
+            return;
+        } else if (this.currentLevelIndex === 3) {
+            this.spawnLevel3Enemies();
+            return;
+        } else if (this.currentLevelIndex === 4) {
+            this.spawnLevel4Enemies();
             return;
         }
 
@@ -1429,219 +1435,6 @@ class TutorialManager {
     }
 
     // ─── QUEEN SLIME SPAWNERS ────────────────────────────────────────────────
-
-    spawnPortal(tileX, tileY, tutorialRoomIndex) {
-        if (!this.portals) this.portals = [];
-        const px = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const py = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-        const container = this.add.container(px, py + (this.SLIME_Y_OFFSET || -10)).setDepth(1.5);
-
-        const shadow = this.add.ellipse(0, 10, 52, 14, 0x000000, 0.25);
-        const hpBg = this.add.rectangle(0, -50, 48, 6, 0x330000, 1);
-        hpBg.setStrokeStyle(1, 0x000000, 1);
-        const hpBar = this.add.rectangle(-24, -50, 48, 6, 0xee2222, 1).setOrigin(0, 0.5);
-        const hpLabel = this.add.text(0, -60, 'QUEEN', {
-            fontSize: '7px', fontFamily: 'monospace', color: '#ffaaaa',
-            stroke: '#000', strokeThickness: 2
-        }).setOrigin(0.5);
-
-        // Sprite added AFTER hp bar so it renders above bar but below crown
-        const sprite = this.add.sprite(0, -40, 'slime_red', 0).setScale(3.2);
-        if (this.anims.exists('red_idle')) sprite.play('red_idle');
-
-        // Crown added LAST so it renders on top of sprite
-        const crown = this.add.graphics();
-        crown.fillStyle(0xffcc00, 1); crown.fillRect(-13, -38, 26, 8);
-        crown.fillTriangle(-13, -38, -10, -52, -6, -38);
-        crown.fillTriangle(-3, -38, 0, -54, 3, -38);
-        crown.fillTriangle(6, -38, 10, -52, 13, -38);
-        crown.fillStyle(0xff2222, 1); crown.fillCircle(-10, -34, 3);
-        crown.fillStyle(0x22ffff, 1); crown.fillCircle(0, -34, 3);
-        crown.fillStyle(0xff2222, 1); crown.fillCircle(10, -34, 3);
-        crown.lineStyle(1.5, 0xaa8800, 1); crown.strokeRect(-13, -38, 26, 8);
-
-        const glow = this.add.rectangle(0, 0, 24, 16, 0xffaa00, 0.2);
-
-        // Ammo bar segments
-        const AMMO_MAX = 6;
-        const ammoSegs = [];
-        for (let i = 0; i < AMMO_MAX; i++) {
-            const sx = -20 + i * 10;
-            const bg   = this.add.rectangle(sx, -42, 8, 4, 0x220000, 1).setOrigin(0, 0.5);
-            const fill = this.add.rectangle(sx, -42, 8, 4, 0xff4444, 1).setOrigin(0, 0.5);
-            ammoSegs.push({ bg, fill, full: true });
-            container.add([bg, fill]);
-        }
-
-        // Correct add order: shadow → hp → sprite → crown → glow
-        container.add([shadow, hpBg, hpBar, hpLabel, sprite, crown, glow]);
-        this.tweens.add({ targets: glow, alpha: 0.45, duration: 400, yoyo: true, repeat: -1 });
-
-        // Absolute y bob using the offset-corrected base — avoids compound drift on restart
-        const bobBaseY = py + (this.SLIME_Y_OFFSET || -10);
-        this.tweens.add({ targets: container, y: bobBaseY - 6, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-
-        const portal = {
-            tileX, tileY,
-            hp: 250, maxHp: 250,
-            tutorialRoomIndex,
-            container, sprite, hpBar, ammoSegs,
-            gfxObjs: [container],
-            spawnedEnemies: [],
-            ammo: AMMO_MAX, ammoMax: AMMO_MAX,
-            lastAmmoTime: 0,
-            ammoRecharge: 4000,
-            spawnRadius: 14,
-            spawnCap: 5,
-            _spawning: false,
-            active: true,
-            _baseScale: 3.2,
-        };
-        this.portals.push(portal);
-    }
-
-    updatePortals(time) {
-        if (!this.portals || !this.portals.length) return;
-        for (let pi = this.portals.length - 1; pi >= 0; pi--) {
-            const queen = this.portals[pi];
-            if (!queen.active) continue;
-            if (this.isTutorial && this.getCurrentPlayerRoom() !== queen.tutorialRoomIndex) continue;
-
-            queen.spawnedEnemies = queen.spawnedEnemies.filter(e => this.enemies.includes(e));
-
-            // Recharge one ammo at a time
-            if (queen.ammo < queen.ammoMax && time - queen.lastAmmoTime >= queen.ammoRecharge) {
-                queen.ammo = Math.min(queen.ammoMax, queen.ammo + 1);
-                queen.lastAmmoTime = time;
-            }
-
-            // Sync ammo bar
-            for (let i = 0; i < queen.ammoMax; i++) {
-                const seg = queen.ammoSegs[i];
-                if (!seg) continue;
-                const filled = i < queen.ammo;
-                if (filled !== seg.full) { seg.full = filled; seg.fill.setVisible(filled); }
-            }
-
-            // Spawn one at a time: ammo > 0, under cap, player in radius, not mid-warning
-            if (!queen._spawning && queen.ammo > 0 && queen.spawnedEnemies.length < queen.spawnCap) {
-                const dx = this.playerX - queen.tileX, dy = this.playerY - queen.tileY;
-                if (Math.sqrt(dx * dx + dy * dy) <= queen.spawnRadius) {
-                    const offsets = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0},
-                                     {x:1,y:-1},{x:1,y:1},{x:-1,y:1},{x:-1,y:-1}];
-                    for (const off of offsets) {
-                        const sx = queen.tileX + off.x, sy = queen.tileY + off.y;
-                        if (!this.world[sx] || this.world[sx][sy] !== this.FLOOR) continue;
-                        if (this.getEnemyAt(sx, sy)) continue;
-
-                        queen.ammo--;
-                        queen.lastAmmoTime = time;
-                        queen._spawning = true;
-
-                        const wpx = sx * this.TILE_SIZE + this.TILE_SIZE / 2;
-                        const wpy = sy * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-                        // Warning !
-                        const warn = this.add.text(wpx, wpy - 20, '!', {
-                            fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold',
-                            color: '#ff4400', stroke: '#000', strokeThickness: 3
-                        }).setOrigin(0.5).setDepth(5);
-                        const warnTween = this.tweens.add({
-                            targets: warn, scaleX: 1.3, scaleY: 1.3,
-                            duration: 200, yoyo: true, repeat: -1
-                        });
-
-                        // Wind-up — queen squishes
-                        this.tweens.killTweensOf(queen.sprite);
-                        this.tweens.add({
-                            targets: queen.sprite, scaleX: 2.6, scaleY: 3.8,
-                            duration: 350, ease: 'Power2'
-                        });
-
-                        this.time.delayedCall(800, () => {
-                            warnTween.stop(); warn.destroy();
-                            queen._spawning = false;
-                            if (!queen.active) return;
-                            if (this.world[sx]?.[sy] !== this.FLOOR || this.getEnemyAt(sx, sy)) return;
-
-                            const e = this.createEnemy(sx, sy, 25);
-                            e.tutorialRoomIndex = queen.tutorialRoomIndex;
-                            e.sprite.setTint(0xff8888);
-                            queen.spawnedEnemies.push(e);
-
-                            const bs = queen._baseScale || 3.2;
-                            this.tweens.killTweensOf(queen.sprite);
-                            this.tweens.add({
-                                targets: queen.sprite,
-                                scaleX: bs * 1.2, scaleY: bs * 0.85,
-                                duration: 80, ease: 'Power2',
-                                onComplete: () => {
-                                    this.tweens.add({
-                                        targets: queen.sprite,
-                                        scaleX: bs, scaleY: bs,
-                                        duration: 120, ease: 'Bounce.easeOut'
-                                    });
-                                }
-                            });
-                            const pop = this.add.circle(wpx, wpy, 6, 0xff4444, 0.8).setDepth(3);
-                            this.tweens.add({
-                                targets: pop, scaleX: 2.5, scaleY: 2.5,
-                                alpha: 0, duration: 260,
-                                onComplete: () => pop.destroy()
-                            });
-                        });
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    damagePortal(portal, damage) {
-        if (!portal.active) return;
-        portal.hp -= damage;
-        portal.hpBar.width = 48 * Math.max(0, portal.hp / portal.maxHp);
-        // Flash white
-        portal.sprite.setTint(0xffffff);
-        this.time.delayedCall(80, () => { if (portal.sprite?.active) portal.sprite.clearTint(); });
-        if (portal.hp <= 0) this._destroyPortal(portal);
-    }
-
-    _destroyPortal(portal) {
-        portal.active = false;
-        const px = portal.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const py = portal.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-        for (let i = 0; i < 14; i++) {
-            const angle = (i / 14) * Math.PI * 2;
-            const blob = this.add.circle(px, py, 4 + Math.random() * 6, 0xff2222, 1).setDepth(4);
-            this.tweens.add({
-                targets: blob,
-                x: px + Math.cos(angle) * (22 + Math.random() * 22),
-                y: py + Math.sin(angle) * (22 + Math.random() * 22),
-                alpha: 0, scaleX: 0.1, scaleY: 0.1,
-                duration: 400 + Math.random() * 150, ease: 'Quad.easeOut',
-                onComplete: () => blob.destroy()
-            });
-        }
-        const burst = this.add.circle(px, py, 12, 0xffffff, 0.9).setDepth(4);
-        this.tweens.add({ targets: burst, scaleX: 3.5, scaleY: 3.5, alpha: 0, duration: 300, onComplete: () => burst.destroy() });
-        this.cameras.main.shake(80, 0.006);
-        this.showStatusText(px, py - 40, 'QUEEN SLAIN!', '#ff8888');
-
-        for (const g of portal.gfxObjs) {
-            if (g?.active) { this.tweens.killTweensOf(g); g.destroy(); }
-        }
-        portal.gfxObjs = [];
-        const idx = this.portals.indexOf(portal);
-        if (idx !== -1) this.portals.splice(idx, 1);
-
-        const remaining = this.portals.filter(p => p.tutorialRoomIndex === portal.tutorialRoomIndex);
-        if (remaining.length === 0 && this.isTutorial)
-            this.showTutorialDialogue("All Queen Slimes defeated! Clear the remaining enemies to finish!", "Glerp");
-    }
-
     spawnLevel1Enemies() {
         // Starting room: No enemies
 
@@ -1695,5 +1488,150 @@ class TutorialManager {
     }
 
     // ─── LIGHTNING TUTORIAL (LEVEL 2) ────────────────────────────────────────
+
+    spawnLevel2Enemies() {
+        // Room 0 (start): no enemies
+
+        // Room 1: pillar corridor — 4 normal slimes weaving between pillars
+        const r1 = [
+            { x: 22, y: 45 }, { x: 28, y: 46 }, { x: 34, y: 45 }, { x: 28, y: 51 }
+        ];
+        for (const pos of r1) {
+            const e = this.createEnemy(pos.x, pos.y, 80);
+            e.tutorialRoomIndex = 1;
+        }
+
+        // Room 2: wide brawl — mixed fire-immune and ice elementals + normals
+        // Normal
+        const r2Normal = [ { x: 45, y: 43 }, { x: 55, y: 43 }, { x: 50, y: 50 }, { x: 45, y: 53 } ];
+        // Fire-immune (orange mark)
+        const r2Fire = [ { x: 53, y: 47 }, { x: 47, y: 47 } ];
+        // Ice elemental (blue mark — only ice weapons can hurt)
+        const r2Ice = [ { x: 56, y: 53 }, { x: 44, y: 53 } ];
+
+        for (const pos of r2Normal) {
+            const e = this.createEnemy(pos.x, pos.y, 80); e.tutorialRoomIndex = 2;
+        }
+        for (const pos of r2Fire) {
+            const e = this.createEnemy(pos.x, pos.y, 100); e.tutorialRoomIndex = 2;
+            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
+        }
+        for (const pos of r2Ice) {
+            const e = this.createEnemy(pos.x, pos.y, 120); e.tutorialRoomIndex = 2;
+            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
+        }
+
+        // Room 3: L-shape chokepoint — ranged snipers on far side of dividing wall + normals near entrance
+        const r3Normal = [ { x: 66, y: 44 }, { x: 69, y: 52 }, { x: 66, y: 50 } ];
+        const r3Ranged = [ { x: 76, y: 43 }, { x: 79, y: 47 }, { x: 76, y: 52 } ];
+        const r3Ice = [ { x: 74, y: 44 }, { x: 74, y: 51 } ];
+
+        for (const pos of r3Normal) {
+            const e = this.createEnemy(pos.x, pos.y, 80); e.tutorialRoomIndex = 3;
+        }
+        for (const pos of r3Ranged) {
+            this.createRangedEnemy(pos.x, pos.y, 3);
+        }
+        for (const pos of r3Ice) {
+            const e = this.createEnemy(pos.x, pos.y, 120); e.tutorialRoomIndex = 3;
+            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
+        }
+
+        // Room 4: trap maze — ult absorbers to punish ult-spamming through traps
+        const r4Normal = [ { x: 68, y: 62 }, { x: 80, y: 62 }, { x: 74, y: 70 } ];
+        const r4Absorbers = [ { x: 72, y: 65 }, { x: 78, y: 69 } ];
+
+        for (const pos of r4Normal) {
+            const e = this.createEnemy(pos.x, pos.y, 80); e.tutorialRoomIndex = 4;
+        }
+        for (const pos of r4Absorbers) {
+            const e = this.createEnemy(pos.x, pos.y, 120); e.tutorialRoomIndex = 4;
+            e.isUltAbsorber = true;
+            this._applyUltAbsorberVisual(e);
+        }
+
+        // Room 5: ambush — mixed types hiding behind pillars
+        const r5Normal = [ { x: 41, y: 64 }, { x: 54, y: 64 }, { x: 48, y: 67 }, { x: 41, y: 72 }, { x: 54, y: 72 } ];
+        const r5Fire = [ { x: 44, y: 64 }, { x: 52, y: 72 } ];
+        const r5Ice = [ { x: 52, y: 64 }, { x: 44, y: 72 } ];
+        const r5Absorbers = [ { x: 48, y: 62 } ];
+
+        for (const pos of r5Normal) {
+            const e = this.createEnemy(pos.x, pos.y, 100); e.tutorialRoomIndex = 5;
+        }
+        for (const pos of r5Fire) {
+            const e = this.createEnemy(pos.x, pos.y, 100); e.tutorialRoomIndex = 5;
+            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
+        }
+        for (const pos of r5Ice) {
+            const e = this.createEnemy(pos.x, pos.y, 130); e.tutorialRoomIndex = 5;
+            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
+        }
+        for (const pos of r5Absorbers) {
+            const e = this.createEnemy(pos.x, pos.y, 150); e.tutorialRoomIndex = 5;
+            e.isUltAbsorber = true;
+            this._applyUltAbsorberVisual(e);
+        }
+
+        // Room 6: boss arena — no pre-spawned enemies (voltslime spawns separately)
+    }
+
+    _applyUltAbsorberVisual(enemy) {
+        // Absorbers are tankier — boost health
+        enemy.health    = Math.round(enemy.health * 1.8);
+        enemy.maxHealth = enemy.health;
+        this.updateEnemyHealthBar(enemy);
+
+        // Deep magenta tint on sprite to stand out from red goons
+        if (enemy.sprite?.active) enemy.sprite.setTint(0xdd88ff);
+
+        const sx = enemy.sprite.x, sy = enemy.sprite.y;
+
+        // ── Rotating hex rune ring ────────────────────────────────────
+        const aura = this.add.graphics().setDepth(1.2);
+        aura.x = sx; aura.y = sy;
+        aura._rotAngle = 0;
+
+        const drawAura = (g) => {
+            g.clear();
+            const R = 26, rot = g._rotAngle;
+            g.lineStyle(1.5, 0xcc44ff, 0.55); g.strokeCircle(0, 0, R);
+            g.fillStyle(0xff88ff, 0.90);
+            for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2 + rot;
+                const nx = Math.cos(a) * R, ny = Math.sin(a) * R;
+                g.beginPath(); g.moveTo(nx, ny-4); g.lineTo(nx+3, ny); g.lineTo(nx, ny+4); g.lineTo(nx-3, ny); g.closePath(); g.fillPath();
+            }
+            g.lineStyle(0.8, 0xdd66ff, 0.35);
+            for (let i = 0; i < 3; i++) {
+                const a = (i / 3) * Math.PI * 2 + rot;
+                g.beginPath(); g.moveTo(Math.cos(a)*R*0.85, Math.sin(a)*R*0.85); g.lineTo(Math.cos(a+Math.PI)*R*0.85, Math.sin(a+Math.PI)*R*0.85); g.strokePath();
+            }
+        };
+        drawAura(aura);
+        enemy._ultAbsorberAura = aura;
+
+        const rotTimer = this.time.addEvent({
+            delay: 50, loop: true,
+            callback: () => {
+                if (!aura.active) { rotTimer.remove(); return; }
+                aura._rotAngle += 0.04;
+                drawAura(aura);
+            }
+        });
+        enemy._ultAbsorberRotTimer = rotTimer;
+
+        // ── Crown drain mark above head ───────────────────────────────
+        const mark = this.add.graphics().setDepth(3.0);
+        mark.x = sx; mark.y = sy - 22;
+        mark.fillStyle(0xdd44ff, 0.95);
+        mark.fillRect(-7, -2, 14, 4);
+        mark.fillTriangle(-6, -2, -3, -2, -4.5, -8);
+        mark.fillTriangle(-1, -2,  1, -2,  0,   -9);
+        mark.fillTriangle( 3, -2,  6, -2,  4.5, -8);
+        mark.lineStyle(1.0, 0xff99ff, 0.85); mark.strokeRect(-7, -2, 14, 4);
+        enemy._ultAbsorberMark = mark;
+        this.tweens.add({ targets: mark, alpha: 0.55, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
 
 }

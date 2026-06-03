@@ -42,8 +42,8 @@ class LevelSelectScene extends Phaser.Scene {
         const startY = 150;
 
         const levelNames = [
-            'Tutorial',      'The Gauntlet',  'Split Paths',
-            'Node Trap',     'Frozen Vault',  'Storm Chamber',
+            'Tutorial',      'The Gauntlet',  'The Void Rift',
+            'The Fracture',  'Frozen Vault',  'Storm Chamber',
             'Void Gate',     'Circuit Maze',  'Final Stand',
             'THE END'
         ];
@@ -79,7 +79,11 @@ class LevelSelectScene extends Phaser.Scene {
                     if (i === 0) {
                         this.openTutorialSelect();
                     } else if (i === 1) {
-                        this.launchLevel(2); // levelIndex 2 = The Gauntlet (lightning level)
+                        this.launchLevel(2); // levelIndex 2 = The Gauntlet
+                    } else if (i === 2) {
+                        this.launchLevel(3); // levelIndex 3 = The Void Rift
+                    } else if (i === 3) {
+                        this.launchLevel(4); // levelIndex 4 = The Fracture
                     } else {
                         this.launchLevel(i);
                     }
@@ -110,9 +114,10 @@ class LevelSelectScene extends Phaser.Scene {
         const WEAPON_LABELS = {
             'flame_fists':      'Flame Fists',
             'flame_sword':      'Flame Sword',
-            'magma_hammer':     'Magma Hammer',
+            'magma_staff':      'Magma Staff',
             'ice_fists':        'Ice Fists',
-            'icicle_staff':     'Icicle Staff',
+            'icicle_cannon':    'Icicle Cannon',
+            'fractal_shard':    'Fractal Shard',
             'lightning_fists':  'Storm Fists',
         };
         const getWeaponName = (element, defaultKey) => {

@@ -57,6 +57,12 @@ class HUD {
             stroke: '#000000', strokeThickness: 2
         }).setScrollFactor(0).setDepth(30);
 
+        // Key counter for level 3 — hidden by default
+        this.keyCounterText = this.add.text(this.scale.width / 2, 10, '🗝 0 / 3', {
+            fontSize: '13px', fontFamily: 'monospace', color: '#cc88ff',
+            stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
+        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(30).setVisible(false);
+
         // Cosmic battery bar (purple) — shown above ult bar when on cosmic
         const cBarW = 280;
         const cBarH = 14;
@@ -136,9 +142,19 @@ class HUD {
     }
 
     updateHUD() {
-        const healthPercent = this.health / this.maxHealth;
+        const healthPercent = Math.min(this.health / this.maxHealth, 1);
         this.healthBarFill.width = 100 * healthPercent;
         this.healthText.setText(`${this.health.toFixed(1)}/${this.maxHealth}`);
+
+        // Overheal — health above max gets a teal tint on the bar
+        if (this.health > this.maxHealth) {
+            this.healthBarFill.setFillStyle(0x00ddaa);
+        } else {
+            this.healthBarFill.setFillStyle(0xff5566);
+        }
+
+        // Icicle heal bar — update every frame
+        this.updateIciclePips();
 
         const elementSymbols = {
             'fire': '🔥 FIRE',
@@ -178,11 +194,10 @@ class HUD {
         // Orb scrap bar — lightning only
         if (this.orbBarBg) {
             const onLightning = this.currentElement === 'lightning';
-            const usesNodes   = onLightning && (this.equippedWeapons?.lightning || 'lightning_fists') !== 'lightning_fists';
-            this.orbBarBg.setVisible(usesNodes);
-            this.orbBarBorder.setVisible(usesNodes);
-            this.orbCountText.setVisible(usesNodes);
-            if (this.orbBarLabel) this.orbBarLabel.setVisible(usesNodes);
+            this.orbBarBg.setVisible(onLightning);
+            this.orbBarBorder.setVisible(onLightning);
+            this.orbCountText.setVisible(onLightning);
+            if (this.orbBarLabel) this.orbBarLabel.setVisible(onLightning);
             this.orbBarGfx.clear();
             if (onLightning) {
                 const pct = Math.min(this.orbScraps / 10, 1);
@@ -217,39 +232,21 @@ class HUD {
             this.cosmicBatteryDisplay.setVisible(false);
         }
 
-        // Update ult bar / cosmic battery bar
+        // Update ult bar — same for all elements including cosmic
         if (this.ultBarFill) {
             const barW = this.ultBarW;
 
-            if (this.currentElement === 'cosmic') {
-                // Hide ult bar, show cosmic purple bar
-                this.ultBarBg.setVisible(false);
-                this.ultBarBorder.setVisible(false);
-                this.ultBarFill.setVisible(false);
-                this.ultBarLabel.setVisible(false);
+            // Always hide cosmic battery bar — it's no longer used
+            this.cosmicBatteryBg.setVisible(false);
+            this.cosmicBatteryBorder.setVisible(false);
+            this.cosmicBatteryFill.setVisible(false);
+            this.cosmicBatteryLabel.setVisible(false);
 
-                const cPct = Math.min(this.cosmicBatteryCharges / this.cosmicMaxCharges, 1);
-                this.cosmicBatteryBg.setVisible(true);
-                this.cosmicBatteryBorder.setVisible(true);
-                this.cosmicBatteryFill.setVisible(true);
-                this.cosmicBatteryLabel.setVisible(true);
-                this.cosmicBatteryFill.width = barW * cPct;
-                // Pulse brighter at 10 charges
-                if (this.cosmicBatteryCharges >= 10) {
-                    this.cosmicBatteryFill.setFillStyle(0xddaaff);
-                } else {
-                    this.cosmicBatteryFill.setFillStyle(0x9966ff);
-                }
-            } else {
-                // Show ult bar, hide cosmic bar
-                this.cosmicBatteryBg.setVisible(false);
-                this.cosmicBatteryBorder.setVisible(false);
-                this.cosmicBatteryFill.setVisible(false);
-                this.cosmicBatteryLabel.setVisible(false);
-                this.ultBarBg.setVisible(true);
-                this.ultBarBorder.setVisible(true);
-                this.ultBarFill.setVisible(true);
-                this.ultBarLabel.setVisible(true);
+            // Always show ult bar
+            this.ultBarBg.setVisible(true);
+            this.ultBarBorder.setVisible(true);
+            this.ultBarFill.setVisible(true);
+            this.ultBarLabel.setVisible(true);
 
                 if (this.ultDrainActive) {
                     const elapsed = this.time.now - this.ultDrainStartTime;
@@ -283,11 +280,102 @@ class HUD {
                         this.ultBarLabel.setColor('#aaaaaa');
                     }
                 }
-            }
         }
     }
 
-    openPauseMenu() {
+    updateIciclePips() {
+        // Alias — keep any old calls working
+        this.updateIcicleChargeBar();
+    }
+
+    updateIcicleChargeBar() {
+        const isCannon = this.currentElement === 'ice' &&
+            (this.equippedWeapons?.ice || 'ice_fists') === 'icicle_cannon';
+
+        if (!isCannon) {
+            this._destroyIcicleBarObjects();
+            return;
+        }
+
+        const HITS_TO_CHARGE = 28;
+        const BAR_W = 44, BAR_H = 5;
+        const px = this.player?.x || 0;
+        const py = (this.player?.y || 0) - 28;
+
+        const healModeActive = !!this._icicleHealModeActive;
+        const chargeFrac     = Math.min((this._icicleHitCounter || 0) / HITS_TO_CHARGE, 1);
+
+        // Create bar objects once
+        if (!this._icicleBarBg) {
+            this._icicleBarBg       = this.add.rectangle(px, py,   BAR_W + 4, BAR_H + 4, 0x001122, 0.80).setDepth(5.8);
+            this._icicleBarFill     = this.add.rectangle(px - BAR_W/2, py, 0, BAR_H, 0x00aa55, 1).setOrigin(0, 0.5).setDepth(5.9);
+            this._icicleHealBg      = this.add.rectangle(px, py - 7, BAR_W + 4, BAR_H + 4, 0x001122, 0.80).setDepth(5.8);
+            this._icicleHealFill    = this.add.rectangle(px - BAR_W/2, py - 7, BAR_W, BAR_H, 0x00ff88, 1).setOrigin(0, 0.5).setDepth(5.9);
+            this._icicleBarLabel    = this.add.text(px, py + 6, 'HEAL CHARGE', {
+                fontSize: '6px', fontFamily: 'monospace', color: '#33bb77', stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5, 0).setDepth(6);
+            this._icicleHealLabel   = this.add.text(px, py - 7 - 5, '✦ HEAL ARMED [R]', {
+                fontSize: '6px', fontFamily: 'monospace', color: '#00ff88', stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5, 1).setDepth(6);
+        }
+
+        // Update positions
+        this._icicleBarBg.x    = px; this._icicleBarBg.y    = py;
+        this._icicleBarFill.x  = px - BAR_W/2; this._icicleBarFill.y = py;
+        this._icicleHealBg.x   = px; this._icicleHealBg.y   = py - 7;
+        this._icicleHealFill.x = px - BAR_W/2; this._icicleHealFill.y = py - 7;
+        this._icicleBarLabel.x = px; this._icicleBarLabel.y = py + 6;
+        this._icicleHealLabel.x = px; this._icicleHealLabel.y = py - 7 - 5;
+
+        // Charge bar — green fill, glows gold when full
+        const chargeW = BAR_W * chargeFrac;
+        this._icicleBarFill.width = chargeW;
+        this._icicleBarFill.setFillStyle(chargeFrac >= 1 ? 0xffdd44 : 0x00aa55);
+        this._icicleBarLabel.setColor(chargeFrac >= 1 ? '#ffdd44' : '#33bb77');
+
+        // Heal armed indicator — solid bar pulsing green when armed, hidden otherwise
+        this._icicleHealBg.setVisible(healModeActive);
+        this._icicleHealFill.setVisible(healModeActive);
+        this._icicleHealLabel.setVisible(healModeActive);
+        if (healModeActive) {
+            // Pulse alpha on label
+            const pulse = 0.7 + 0.3 * Math.sin(this.time.now / 200);
+            this._icicleHealLabel.setAlpha(pulse);
+        }
+
+        // Flash + "HEAL READY" popup when charge first fills
+        if (chargeFrac >= 1 && !this._iciclePipsWereFull) {
+            this._iciclePipsWereFull = true;
+            this.tweens.killTweensOf(this._icicleBarFill);
+            this.tweens.add({ targets: this._icicleBarFill, scaleY: 2, duration: 100, yoyo: true, ease: 'Quad.easeOut' });
+            if (this._icicleReadyText) this._icicleReadyText.destroy();
+            const rtx = this.player.x, rty = this.player.y - 46;
+            this._icicleReadyText = this.add.text(rtx, rty, '✦ HEAL READY — PRESS R', {
+                fontSize: '9px', fontFamily: 'monospace', color: '#00ff88',
+                stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
+            }).setOrigin(0.5).setDepth(10);
+            this.tweens.add({
+                targets: this._icicleReadyText, y: rty - 12, alpha: 0, duration: 1400, ease: 'Quad.easeOut',
+                onComplete: () => { if (this._icicleReadyText) { this._icicleReadyText.destroy(); this._icicleReadyText = null; } }
+            });
+        } else if (chargeFrac < 1) {
+            this._iciclePipsWereFull = false;
+        }
+    }
+
+    _destroyIcicleBarObjects() {
+        const keys = ['_icicleBarBg','_icicleBarFill','_icicleHealBg','_icicleHealFill','_icicleBarLabel','_icicleHealLabel','_icicleReadyText'];
+        for (const k of keys) {
+            if (this[k]) { this.tweens?.killTweensOf(this[k]); this[k].destroy(); this[k] = null; }
+        }
+        // Also clean up old pip objects if present
+        if (this._iciclePips) { for (const p of this._iciclePips) p.destroy(); this._iciclePips = null; }
+        if (this._iciclePipBg)    { this._iciclePipBg.destroy();    this._iciclePipBg    = null; }
+        if (this._iciclePipLabel) { this._iciclePipLabel.destroy(); this._iciclePipLabel = null; }
+        this._iciclePipsWereFull = false;
+    }
+
+        openPauseMenu() {
         if (this._pauseMenuOpen) return;
         this._pauseMenuOpen = true;
         this.input.keyboard.enabled = true; // keep ESC working
@@ -391,7 +479,7 @@ class HUD {
 
         // Freeze enemies
         for (let enemy of this.enemies) {
-            if (enemy.sprite) enemy.sprite.stop();
+            if (enemy.sprite && typeof enemy.sprite.stop === 'function') enemy.sprite.stop();
         }
 
         // Use the camera fade — this actually blacks out the rendered world
@@ -500,6 +588,66 @@ class HUD {
             bg.on('pointerdown', () => { def.action(); });
             fadeIn(bg,  820 + i * 80, 300);
             fadeIn(txt, 820 + i * 80, 300);
+        });
+    }
+
+    showRoomName(name) {
+        // Kill any in-progress room name tween
+        if (this._roomNameText) {
+            this.tweens.killTweensOf(this._roomNameText);
+            this._roomNameText.destroy();
+            this._roomNameText = null;
+        }
+        if (this._roomNameRule) {
+            this.tweens.killTweensOf(this._roomNameRule);
+            this._roomNameRule.destroy();
+            this._roomNameRule = null;
+        }
+
+        const cx = this.scale.width / 2;
+        const ty = Math.floor(this.scale.height * 0.18);
+
+        // Thin horizontal rule above the name
+        const rule = this.add.graphics().setScrollFactor(0).setDepth(50).setAlpha(0);
+        const ruleW = 260;
+        rule.lineStyle(1, 0xaaaaaa, 0.55);
+        rule.beginPath(); rule.moveTo(cx - ruleW / 2, ty - 10); rule.lineTo(cx + ruleW / 2, ty - 10); rule.strokePath();
+        rule.lineStyle(1, 0xaaaaaa, 0.55);
+        rule.beginPath(); rule.moveTo(cx - ruleW / 2, ty + 26); rule.lineTo(cx + ruleW / 2, ty + 26); rule.strokePath();
+        this._roomNameRule = rule;
+
+        const txt = this.add.text(cx, ty, name.toUpperCase(), {
+            fontSize: '20px',
+            fontFamily: 'monospace',
+            fontStyle: 'bold',
+            color: '#dddddd',
+            stroke: '#000000',
+            strokeThickness: 4,
+            alpha: 0
+        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(50).setAlpha(0);
+        this._roomNameText = txt;
+
+        // Fade in, hold, fade out
+        this.tweens.add({
+            targets: [txt, rule],
+            alpha: 1,
+            duration: 500,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                this.tweens.add({
+                    targets: [txt, rule],
+                    alpha: 0,
+                    duration: 700,
+                    delay: 1600,
+                    ease: 'Quad.easeIn',
+                    onComplete: () => {
+                        txt.destroy();
+                        rule.destroy();
+                        this._roomNameText = null;
+                        this._roomNameRule = null;
+                    }
+                });
+            }
         });
     }
 }

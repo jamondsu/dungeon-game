@@ -15,6 +15,10 @@ class WorldGen {
             return this.generateLevel1();
         } else if (this.currentLevelIndex === 2) {
             return this.generateLevel2();
+        } else if (this.currentLevelIndex === 3) {
+            return this.generateLevel3();
+        } else if (this.currentLevelIndex === 4) {
+            return this.generateLevel4();
         }
 
         // Otherwise use procedural generation
@@ -501,6 +505,156 @@ class WorldGen {
         return world;
     }
 
+    generateLevel3() {
+        // ── Level 3: "The Void Rift" ─────────────────────────────────────────
+        // Hub-and-spoke layout. All coords fit within WORLD_WIDTH:120, WORLD_HEIGHT:100
+        //
+        //                [R2: Cosmic Tutorial]  (north)
+        //                       │
+        //  [R1: Crucible] ── [R0: Spawn] ── [R3: Ult Gauntlet]
+        //                       │
+        //                 [R4: Sniper Hall]
+        //                       │
+        //                 [R5: QS Chamber]
+        //                       │
+        //                 [R6: Boss Arena]
+        //
+        // Chest rooms off R1(NW) and R3(NE)
+
+        const world = [];
+        for (let x = 0; x < this.WORLD_WIDTH; x++) {
+            world[x] = [];
+            for (let y = 0; y < this.WORLD_HEIGHT; y++) world[x][y] = this.NOTHING;
+        }
+        this.rooms = [];
+
+        // ── ROOM 0: Spawn (14×10) — safe hub ────────────────────────────────
+        const r0 = { x: 43, y: 28, w: 14, h: 10, doorPositions: [] };
+        this.carveRoom(world, r0);
+        r0.doorPositions.push({ x: 43, y: 33, direction: 'west'  });
+        r0.doorPositions.push({ x: 57, y: 33, direction: 'east'  });
+        r0.doorPositions.push({ x: 50, y: 28, direction: 'north' });
+        r0.doorPositions.push({ x: 50, y: 38, direction: 'south' });
+        [[44,29],[55,29],[44,36],[55,36]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+        });
+        this.rooms.push(r0); // rooms[0]
+
+        // ── ROOM 1: Elemental Crucible (20×14) — WEST ───────────────────────
+        for (let x = 38; x <= 42; x++)
+            for (let dy = -1; dy <= 1; dy++) world[x][33 + dy] = this.FLOOR;
+        const r1 = { x: 18, y: 22, w: 20, h: 14, doorPositions: [] };
+        this.carveRoom(world, r1);
+        r1.doorPositions.push({ x: 38, y: 33, direction: 'east' });
+        for (let y = 22; y <= 32; y++) world[30][y] = this.WALL;
+        world[30][30] = this.FLOOR; world[30][31] = this.FLOOR;
+        [[20,24],[35,24],[20,33],[35,33]].forEach(([px,py]) => { world[px][py] = this.WALL; });
+        this.rooms.push(r1); // rooms[1]
+
+        // ── ROOM 2: Cosmic Tutorial (12×10) — NORTH ─────────────────────────
+        for (let y = 20; y <= 28; y++)
+            for (let dx = -1; dx <= 1; dx++) world[50 + dx][y] = this.FLOOR;
+        const r2 = { x: 44, y: 10, w: 12, h: 10, doorPositions: [] };
+        this.carveRoom(world, r2);
+        r2.doorPositions.push({ x: 50, y: 20, direction: 'south' });
+        world[44][12] = this.FLOOR; world[44][13] = this.FLOOR;
+        world[55][12] = this.FLOOR; world[55][13] = this.FLOOR;
+        world[44][17] = this.FLOOR; world[44][18] = this.FLOOR;
+        world[55][17] = this.FLOOR; world[55][18] = this.FLOOR;
+        this.rooms.push(r2); // rooms[2]
+
+        // ── ROOM 3: Ult Gauntlet (22×14) — EAST ─────────────────────────────
+        for (let x = 57; x <= 62; x++)
+            for (let dy = -1; dy <= 1; dy++) world[x][33 + dy] = this.FLOOR;
+        const r3 = { x: 63, y: 23, w: 22, h: 14, doorPositions: [] };
+        this.carveRoom(world, r3);
+        r3.doorPositions.push({ x: 63, y: 33, direction: 'west' });
+        [[65,25],[80,25],[65,33],[80,33],[72,25],[72,33]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+        });
+        this.rooms.push(r3); // rooms[3]
+
+        // ── ROOM 4: Sniper Hall (20×12) — SOUTH ─────────────────────────────
+        for (let y = 38; y <= 43; y++)
+            for (let dx = -1; dx <= 1; dx++) world[50 + dx][y] = this.FLOOR;
+        const r4 = { x: 40, y: 44, w: 20, h: 12, doorPositions: [] };
+        this.carveRoom(world, r4);
+        r4.doorPositions.push({ x: 50, y: 44, direction: 'north' });
+        r4.doorPositions.push({ x: 50, y: 56, direction: 'south' });
+        [[41,46],[57,46],[41,52],[57,52]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+            world[px][py+1] = this.WALL; world[px+1][py+1] = this.WALL;
+        });
+        world[49][50] = this.WALL; world[50][50] = this.WALL;
+        this.rooms.push(r4); // rooms[4]
+
+        // ── ROOM 5: Queen Slime Chamber (26×12) ─────────────────────────────
+        for (let y = 56; y <= 60; y++)
+            for (let dx = -1; dx <= 1; dx++) world[50 + dx][y] = this.FLOOR;
+        const r5 = { x: 37, y: 61, w: 26, h: 12, doorPositions: [] };
+        this.carveRoom(world, r5);
+        r5.doorPositions.push({ x: 50, y: 61, direction: 'north' });
+        r5.doorPositions.push({ x: 50, y: 73, direction: 'south' });
+        for (let y = 61; y <= 72; y++) {
+            if (y === 65 || y === 66 || y === 70 || y === 71) continue;
+            world[50][y] = this.WALL;
+        }
+        this.rooms.push(r5); // rooms[5]
+
+        // ── ROOM 6: Boss Arena (30×22) ───────────────────────────────────────
+        for (let y = 73; y <= 77; y++)
+            for (let dx = -1; dx <= 1; dx++) world[50 + dx][y] = this.FLOOR;
+        const r6 = { x: 34, y: 78, w: 32, h: 20, doorPositions: [] };
+        this.carveRoom(world, r6);
+        r6.doorPositions.push({ x: 50, y: 78, direction: 'north' });
+        // 4 corner pillars — destroyable at phase 2
+        [[36,80],[60,80],[36,94],[60,94]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+            world[px][py+1] = this.WALL; world[px+1][py+1] = this.WALL;
+        });
+        // Mid-wall cover
+        world[49][80] = this.WALL; world[50][80] = this.WALL;
+        world[49][96] = this.WALL; world[50][96] = this.WALL;
+        world[35][88] = this.WALL; world[35][89] = this.WALL;
+        world[63][88] = this.WALL; world[63][89] = this.WALL;
+        this.rooms.push(r6); // rooms[6]
+
+        // ── CHEST BRANCH ROOMS ───────────────────────────────────────────────
+        // Off R1 north-west
+        const c1 = { x: 18, y: 10, w: 10, h: 9, isChestRoom: true };
+        for (let y = 13; y <= 21; y++)
+            for (let dx = -1; dx <= 1; dx++) world[23 + dx][y] = this.FLOOR;
+        this.carveRoom(world, c1);
+        this.rooms.push(c1);
+
+        // Off R3 north-east
+        const c2 = { x: 73, y: 10, w: 10, h: 9, isChestRoom: true };
+        for (let y = 13; y <= 22; y++)
+            for (let dx = -1; dx <= 1; dx++) world[78 + dx][y] = this.FLOOR;
+        this.carveRoom(world, c2);
+        this.rooms.push(c2);
+
+        this.addWalls(world);
+
+        this.isTutorial          = false;
+        this.isIceTutorial       = false;
+        this.isLightningTutorial = false;
+        this.isLevel2            = false;
+        this.isLevel3            = true;
+        this.currentTutorialRoom = -1;
+        this.tutorialWeaponLocked = false;
+
+        this.tutorialRoomCleared = this.rooms.map(() => false);
+        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
+            if (i === 0) return false;
+            if (r.isChestRoom) return false;
+            return true;
+        });
+        this.tutorialRoomCleared[0] = true;
+
+        return world;
+    }
+
     canPlaceRoom(world, room) {
         for (let x = room.x - 1; x <= room.x + room.w; x++) {
             for (let y = room.y - 1; y <= room.y + room.h; y++) {
@@ -677,11 +831,36 @@ class WorldGen {
     }
 
     placePlayer() {
+        // Use center of rooms[0] (always the spawn room, never a chest room)
+        const spawnRoom = this.rooms?.find(r => !r.isChestRoom);
+        if (spawnRoom) {
+            const cx = Math.floor(spawnRoom.x + spawnRoom.w / 2);
+            const cy = Math.floor(spawnRoom.y + spawnRoom.h / 2);
+            for (let r = 0; r < Math.max(spawnRoom.w, spawnRoom.h); r++) {
+                for (let dx = -r; dx <= r; dx++) {
+                    for (let dy = -r; dy <= r; dy++) {
+                        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                        const tx = cx + dx, ty = cy + dy;
+                        if (this.world[tx]?.[ty] === this.FLOOR) {
+                            this.playerX = tx; this.playerY = ty;
+                            this.player = this.add.sprite(
+                                tx * this.TILE_SIZE + this.TILE_SIZE / 2,
+                                ty * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET,
+                                'slime_blue', 0
+                            );
+                            this.player.setScale(this.SLIME_SCALE);
+                            this.player.setDepth(1);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback: first floor tile
         for (let x = 0; x < this.WORLD_WIDTH; x++) {
             for (let y = 0; y < this.WORLD_HEIGHT; y++) {
                 if (this.world[x][y] === this.FLOOR) {
-                    this.playerX = x;
-                    this.playerY = y;
+                    this.playerX = x; this.playerY = y;
                     this.player = this.add.sprite(
                         x * this.TILE_SIZE + this.TILE_SIZE / 2,
                         y * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET,
@@ -701,6 +880,152 @@ class WorldGen {
             s = (s * 9301 + 49297) % 233280;
             return s / 233280;
         };
+    }
+
+    generateLevel4() {
+        // ── Level 4: "The Fracture" ──────────────────────────────────────────
+        // Layout:
+        //
+        //  [R2: Sinkhole] — [R1: Crater] — [R0: Spawn] — [R3: Chain Gang] — [R4: Splitter Farm]
+        //                                       |
+        //                                  [R5: Trap Gauntlet]
+        //                                       |
+        //                                  [R6: Fracture Core Arena]
+        //
+        // Chest rooms off R2(NW) and R4(NE)
+
+        const world = [];
+        for (let x = 0; x < this.WORLD_WIDTH; x++) {
+            world[x] = [];
+            for (let y = 0; y < this.WORLD_HEIGHT; y++) world[x][y] = this.NOTHING;
+        }
+        this.rooms = [];
+
+        // ── R0: Spawn hub (14×10) ────────────────────────────────────────────
+        const r0 = { x: 43, y: 28, w: 14, h: 10, doorPositions: [] };
+        this.carveRoom(world, r0);
+        r0.doorPositions.push({ x: 43, y: 33, direction: 'west'  });
+        r0.doorPositions.push({ x: 57, y: 33, direction: 'east'  });
+        r0.doorPositions.push({ x: 50, y: 38, direction: 'south' });
+        [[44,29],[55,29],[44,36],[55,36]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+        });
+        this.rooms.push(r0); // rooms[0]
+
+        // ── R1: Entry Crater (20×14) — WEST ─────────────────────────────────
+        for (let x = 38; x <= 42; x++)
+            for (let dy = -1; dy <= 1; dy++) world[x][33+dy] = this.FLOOR;
+        const r1 = { x: 18, y: 22, w: 20, h: 14, doorPositions: [] };
+        this.carveRoom(world, r1);
+        r1.doorPositions.push({ x: 38, y: 33, direction: 'east' });
+        r1.doorPositions.push({ x: 18, y: 33, direction: 'west' });
+        // Rubble pillars
+        [[20,24],[34,24],[20,32],[34,32]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+            world[px][py+1] = this.WALL;
+        });
+        this.rooms.push(r1); // rooms[1]
+
+        // ── R2: Sinkhole (22×14) — FAR WEST ─────────────────────────────────
+        for (let x = 5; x <= 17; x++)
+            for (let dy = -1; dy <= 1; dy++) world[x][33+dy] = this.FLOOR;
+        const r2 = { x: 4, y: 22, w: 14, h: 14, doorPositions: [] };
+        this.carveRoom(world, r2);
+        r2.doorPositions.push({ x: 18, y: 33, direction: 'east' });
+        // Internal wall creating cover zones
+        for (let y = 25; y <= 31; y++) world[11][y] = this.WALL;
+        world[11][28] = this.FLOOR;
+        this.rooms.push(r2); // rooms[2]
+
+        // ── R3: Chain Gang (22×14) — EAST ───────────────────────────────────
+        for (let x = 57; x <= 62; x++)
+            for (let dy = -1; dy <= 1; dy++) world[x][33+dy] = this.FLOOR;
+        const r3 = { x: 63, y: 23, w: 22, h: 14, doorPositions: [] };
+        this.carveRoom(world, r3);
+        r3.doorPositions.push({ x: 63, y: 33, direction: 'west' });
+        r3.doorPositions.push({ x: 85, y: 33, direction: 'east' });
+        [[65,25],[80,25],[65,33],[80,33]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+        });
+        this.rooms.push(r3); // rooms[3]
+
+        // ── R4: Splitter Farm (22×16) — FAR EAST ────────────────────────────
+        for (let x = 85; x <= 91; x++)
+            for (let dy = -1; dy <= 1; dy++) world[x][33+dy] = this.FLOOR;
+        const r4 = { x: 92, y: 23, w: 22, h: 16, doorPositions: [] };
+        this.carveRoom(world, r4);
+        r4.doorPositions.push({ x: 92, y: 33, direction: 'west' });
+        // Open space — minimal pillars for kiting
+        [[94,25],[110,25]].forEach(([px,py]) => { world[px][py] = this.WALL; world[px+1][py] = this.WALL; });
+        this.rooms.push(r4); // rooms[4]
+
+        // ── R5: Trap Gauntlet (26×14) — SOUTH ───────────────────────────────
+        for (let y = 38; y <= 43; y++)
+            for (let dx = -1; dx <= 1; dx++) world[50+dx][y] = this.FLOOR;
+        const r5 = { x: 37, y: 44, w: 26, h: 14, doorPositions: [] };
+        this.carveRoom(world, r5);
+        r5.doorPositions.push({ x: 50, y: 44, direction: 'north' });
+        r5.doorPositions.push({ x: 50, y: 58, direction: 'south' });
+        // Pillars creating trap corridors
+        [[39,46],[59,46],[39,54],[59,54],[49,50]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+        });
+        this.rooms.push(r5); // rooms[5]
+
+        // ── R6: Fracture Core Arena (36×26) ─────────────────────────────────
+        for (let y = 58; y <= 63; y++)
+            for (let dx = -1; dx <= 1; dx++) world[50+dx][y] = this.FLOOR;
+        const r6 = { x: 31, y: 64, w: 36, h: 26, doorPositions: [] };
+        this.carveRoom(world, r6);
+        r6.doorPositions.push({ x: 50, y: 64, direction: 'north' });
+        // Four quadrant dividers with gaps (no full walls — just cover pillars)
+        [[33,68],[62,68],[33,84],[62,84]].forEach(([px,py]) => {
+            world[px][py] = this.WALL; world[px+1][py] = this.WALL;
+            world[px][py+1] = this.WALL; world[px+1][py+1] = this.WALL;
+        });
+        // Mid-room rubble pillars
+        [[47,72],[52,72],[47,80],[52,80]].forEach(([px,py]) => { world[px][py] = this.WALL; });
+        this.rooms.push(r6); // rooms[6]
+
+        // ── CHEST BRANCHES ───────────────────────────────────────────────────
+        // Off R2 (north)
+        const c1 = { x: 5, y: 10, w: 10, h: 10, isChestRoom: true };
+        for (let y = 10; y <= 21; y++)
+            for (let dx = -1; dx <= 1; dx++) world[11+dx][y] = this.FLOOR;
+        this.carveRoom(world, c1);
+        this.rooms.push(c1); // rooms[7]
+
+        // Off R4 (north)
+        const c2 = { x: 98, y: 10, w: 10, h: 10, isChestRoom: true };
+        for (let y = 10; y <= 22; y++)
+            for (let dx = -1; dx <= 1; dx++) world[103+dx][y] = this.FLOOR;
+        this.carveRoom(world, c2);
+        this.rooms.push(c2); // rooms[8]
+
+        this.addWalls(world);
+
+        this.isTutorial          = false;
+        this.isIceTutorial       = false;
+        this.isLightningTutorial = false;
+        this.isLevel2            = false;
+        this.isLevel3            = false;
+        this.isLevel4            = true;
+        this.currentTutorialRoom = -1;
+        this.tutorialWeaponLocked = false;
+
+        this.tutorialRoomCleared = this.rooms.map(() => false);
+        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
+            if (i === 0) return false;
+            if (r.isChestRoom) return false;
+            return true;
+        });
+
+        const spawnRoom = this.rooms[0];
+        const spawnCX = Math.floor(spawnRoom.x + spawnRoom.w / 2);
+        const spawnCY = Math.floor(spawnRoom.y + spawnRoom.h / 2);
+        this.playerX = spawnCX; this.playerY = spawnCY;
+
+        return world;
     }
 
 }

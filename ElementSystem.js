@@ -7,20 +7,21 @@
 class ElementSystem {
 
     activateUlt() {
-        // Check for ult inhibitors nearby
+        // Check for ult inhibitors and absorbers nearby — both block activation
         if (this.enemies) {
             for (const enemy of this.enemies) {
-                if (!enemy.ultInhibitor) continue;
+                const isInhibitor = enemy.ultInhibitor;
+                const isAbsorber  = enemy.isUltAbsorber;
+                if (!isInhibitor && !isAbsorber) continue;
                 const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
-                if (dist <= (enemy.ultInhibitRadius || 3)) {
+                const radius = enemy.ultInhibitRadius || (isAbsorber ? 4 : 3);
+                if (dist <= radius) {
                     this.showStatusText(
                         this.player.x, this.player.y - 20,
-                        'ULT BLOCKED!', '#ff2200'
+                        isAbsorber ? 'ULT ABSORBED!' : 'ULT BLOCKED!',
+                        isAbsorber ? '#cc44ff' : '#ff2200'
                     );
-                    // Flash ult bar red
-                    if (this.ultBarFill) {
-                        this.cameras.main.shake(80, 0.005);
-                    }
+                    this.cameras.main.shake(80, 0.005);
                     return;
                 }
             }
@@ -102,10 +103,70 @@ class ElementSystem {
             loop: true
         });
 
+        // ── Speed boost during fire ult ──────────────────────────────
+        // ~1.4x speed: 140ms moveCooldown instead of base 200ms
+        this._ignitionBaseMoveCooldown = this.moveCooldown;
+        this.moveCooldown = 90; // fire ult — 2.2× speed
+        // Speed-up arrows during fire ult
+        if (this._playerSpeedIndTimer) { this._playerSpeedIndTimer.remove(); }
+        this._playerSpeedIndTimer = this._startSpeedIndicator(
+            () => this.player?.active ? { x: this.player.x, y: this.player.y - 16 } : null,
+            'speed_fire', 280
+        );
+
+        // ── Vampiric burn regen — ticks every 100ms ──────────────────
+        // Scales with highest burn stack count on any living enemy/boss.
+        // At 12+ stacks: 0.40/tick * 50 ticks = 20 HP max over 5s duration.
+        const REGEN_INTERVAL = 100;
+        const _getMaxBurnStacks = () => {
+            let max = 0;
+            for (const e of this.enemies) {
+                if (e.sprite?.active && e.health > 0) max = Math.max(max, e.burnStacks || 0);
+            }
+            if (this.voltslimeBoss?.active)     max = Math.max(max, this.voltslimeBoss.burnStacks    || 0);
+            if (this.voidSovereignBoss?.active)  max = Math.max(max, this.voidSovereignBoss.burnStacks || 0);
+            return max;
+        };
+        const _getRegenPerTick = (stacks) => {
+            if (stacks <= 0)  return 0.05;  // ~2.5 HP total at no burns
+            if (stacks <= 2)  return 0.10;  // ~5 HP at light burns
+            if (stacks <= 5)  return 0.18;  // ~9 HP at moderate burns
+            if (stacks <= 11) return 0.28;  // ~14 HP at heavy burns
+            return 0.40;                    // ~20 HP at max stacks (12+), hard cap
+        };
+        const regenTimer = this.time.addEvent({
+            delay: REGEN_INTERVAL, loop: true,
+            callback: () => {
+                if (!this.ignitionActive) { regenTimer.remove(); return; }
+                const stacks = _getMaxBurnStacks();
+                const tickHeal = _getRegenPerTick(stacks);
+                if (tickHeal > 0 && this.health < this.maxHealth) {
+                    this.health = Math.min(this.maxHealth, this.health + tickHeal);
+                    this.updateHUD();
+                    // Subtle heal ember particle — 20% chance per tick so it's not spammy
+                    if (Math.random() < 0.20) {
+                        const hg = this.add.graphics().setDepth(4);
+                        hg.x = this.player.x + (Math.random()-0.5)*10;
+                        hg.y = this.player.y - 8;
+                        hg.fillStyle(0xff6600, 0.80);
+                        hg.fillCircle(0, 0, 2.5);
+                        this.tweens.add({ targets: hg, y: hg.y - 14, alpha: 0, duration: 420, onComplete: () => hg.destroy() });
+                    }
+                }
+            }
+        });
+        this._ignitionRegenTimer = regenTimer;
+
         this.time.delayedCall(this.ignitionDuration, () => {
             this.ignitionActive = false;
             this.ultDrainActive = false;
             shotgunTimer.remove();
+            regenTimer.remove();
+            this._ignitionRegenTimer = null;
+            // Restore base movement speed
+            this.moveCooldown = this._ignitionBaseMoveCooldown ?? 200;
+            this._ignitionBaseMoveCooldown = null;
+            if (this._playerSpeedIndTimer) { this._playerSpeedIndTimer.remove(); this._playerSpeedIndTimer = null; }
             this.player.clearTint();
             if (this._ignitionAuraUpdate) { this._ignitionAuraUpdate.remove(); this._ignitionAuraUpdate = null; }
             if (this._ignitionAura) {
@@ -123,28 +184,48 @@ class ElementSystem {
         const worldY = (this.pointerY || 0) + this.cameras.main.scrollY;
         const dx = worldX - playerPixelX, dy = worldY - playerPixelY;
         const baseAngle = Math.atan2(dy, dx);
+        const stage = parseInt(localStorage.getItem('ultStage_fire') || '1');
 
         const muzzleFlash = this.add.circle(playerPixelX, playerPixelY, 14, 0xff6600, 0.7).setDepth(4);
         this.tweens.add({ targets: muzzleFlash, radius: 22, alpha: 0, duration: 120, onComplete: () => muzzleFlash.destroy() });
 
-        [-0.5, -0.25, 0, 0.25, 0.5].forEach(offset => {
+        // Stage 2: center fireball is a supernova, flanking ones are normal
+        const angles = [-0.5, -0.25, 0, 0.25, 0.5];
+        angles.forEach((offset, idx) => {
+            const isSupernova = stage >= 2 && idx === 2; // center fireball
             const a = baseAngle + offset;
             const dirX = Math.cos(a), dirY = Math.sin(a);
             const c = this.add.container(playerPixelX, playerPixelY).setDepth(2);
             const fg = this.add.graphics().setDepth(1.5);
             c.add(fg);
+
+            if (isSupernova) {
+                // Blue supernova visual — larger, glowing blue core
+                fg.fillStyle(0x0044ff, 0.85);
+                fg.fillCircle(0, 0, 9);
+                fg.fillStyle(0x4488ff, 0.70);
+                fg.fillCircle(0, 0, 6);
+                fg.fillStyle(0xaaccff, 0.90);
+                fg.fillCircle(0, 0, 3);
+                fg.lineStyle(2, 0x88bbff, 0.60);
+                fg.strokeCircle(0, 0, 11);
+            }
+
             this.fireballs.push({
                 sprite: c, fireGraphics: fg,
                 vx: dirX * this.fireballSpeed * 1.4,
                 vy: dirY * this.fireballSpeed * 1.4,
-                damage: this.baseFireballDamage * this.damageScaling * 2.5,
+                damage: isSupernova
+                    ? this.baseFireballDamage * this.damageScaling * 4.5
+                    : this.baseFireballDamage * this.damageScaling * 2.5,
                 dirX, dirY,
                 startX: playerPixelX, startY: playerPixelY,
                 splitCount: 99,
                 piercedEnemies: new Set(),
                 createdAt: this.time.now,
                 lastFlameTime: this.time.now,
-                _isShotgun: true
+                _isShotgun: true,
+                _isSupernova: isSupernova,
             });
         });
     }
@@ -216,7 +297,7 @@ class ElementSystem {
                     if (eDist <= r + 0.5) {
                         wetEnemies.add(enemy);
                         if (enemy.sprite && enemy.sprite.active) {
-                            enemy.sprite.setTint(0x4499ff);
+                            if (typeof enemy.sprite?.setTint === 'function') enemy.sprite.setTint(0x4499ff);
                             this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'WET', '#44aaff');
                         }
                     }
@@ -323,29 +404,30 @@ class ElementSystem {
                     if (tx2 < 0 || tx2 >= this.WORLD_WIDTH || ty2 < 0 || ty2 >= this.WORLD_HEIGHT) continue;
                     if (this.world[tx2][ty2] !== this.FLOOR) continue;
                     const px2 = tx2 * this.TILE_SIZE, py2 = ty2 * this.TILE_SIZE;
+                    const T2 = this.TILE_SIZE;
                     const iceOverlay = this.add.graphics().setDepth(1.8).setAlpha(0);
-                    iceOverlay.fillStyle(0x88ddff, 0.75);
-                    iceOverlay.fillRect(px2, py2, this.TILE_SIZE, this.TILE_SIZE);
-                    iceOverlay.fillStyle(0xffffff, 0.35);
-                    iceOverlay.fillRect(px2 + 2, py2 + 2, this.TILE_SIZE - 4, this.TILE_SIZE - 4);
-                    // Crack lines
-                    iceOverlay.lineStyle(1, 0xffffff, 0.5);
-                    iceOverlay.beginPath(); iceOverlay.moveTo(px2 + 4, py2 + 4); iceOverlay.lineTo(px2 + this.TILE_SIZE - 6, py2 + this.TILE_SIZE - 4); iceOverlay.strokePath();
-                    iceOverlay.beginPath(); iceOverlay.moveTo(px2 + this.TILE_SIZE/2, py2 + 2); iceOverlay.lineTo(px2 + 6, py2 + this.TILE_SIZE - 4); iceOverlay.strokePath();
+                    // Brief flash — faint tint + edge lines only
+                    iceOverlay.fillStyle(0x88ddff, 0.20);
+                    iceOverlay.fillRect(px2, py2, T2, T2);
+                    iceOverlay.lineStyle(1.2, 0xaaddff, 0.65);
+                    iceOverlay.strokeRect(px2 + 0.5, py2 + 0.5, T2 - 1, T2 - 1);
+                    iceOverlay.lineStyle(0.8, 0xffffff, 0.45);
+                    iceOverlay.beginPath(); iceOverlay.moveTo(px2 + 4, py2 + 4); iceOverlay.lineTo(px2 + T2 - 6, py2 + T2 - 4); iceOverlay.strokePath();
+                    iceOverlay.beginPath(); iceOverlay.moveTo(px2 + T2/2, py2 + 2); iceOverlay.lineTo(px2 + 6, py2 + T2 - 4); iceOverlay.strokePath();
                     iceTileOverlays.push(iceOverlay);
                 }
             }
-            // Fade in fast, hold briefly, fade out
-            this.tweens.add({
-                targets: iceTileOverlays, alpha: 1, duration: 80, ease: 'Quad.easeOut',
-                onComplete: () => {
-                    this.time.delayedCall(350, () => {
-                        this.tweens.add({
-                            targets: iceTileOverlays, alpha: 0, duration: 400, ease: 'Quad.easeIn',
-                            onComplete: () => iceTileOverlays.forEach(o => o.destroy())
-                        });
+            // Fade in fast, hold briefly, fade out — tween each tile individually to avoid crash
+            iceTileOverlays.forEach(o => {
+                this.tweens.add({ targets: o, alpha: 1, duration: 80, ease: 'Quad.easeOut' });
+            });
+            this.time.delayedCall(430, () => {
+                iceTileOverlays.forEach(o => {
+                    this.tweens.add({
+                        targets: o, alpha: 0, duration: 400, ease: 'Quad.easeIn',
+                        onComplete: () => o.destroy()
                     });
-                }
+                });
             });
 
             // Freeze all wet enemies
@@ -366,37 +448,16 @@ class ElementSystem {
                 enemy._tsunamiMultText = multTxt;
             }
 
-            // 5 scatter waves erupting from player — escalating damage and density
-            const waveCount = 5;
+            // Single scatter burst erupting from player on flash freeze
             const shardsPerWave = 18;
-            for (let w = 0; w < waveCount; w++) {
-                this.time.delayedCall(w * 350, () => {
-                    if (!this.tsunamiActive && w > 0) return;
-                    const px = this.player.x, py = this.player.y;
-
-                    // Wave visual ring — grows and brightens each wave
-                    const ringColor = w < 2 ? 0x88eeff : w < 4 ? 0xaaffff : 0xffffff;
-                    const wRing = this.add.circle(px, py, 6, ringColor, 0).setDepth(5);
-                    wRing.setStrokeStyle(2 + w * 0.5, ringColor, 1.0);
-                    this.tweens.add({
-                        targets: wRing, radius: 48 + w * 14, alpha: 0,
-                        duration: 260, ease: 'Quad.easeOut',
-                        onComplete: () => wRing.destroy()
-                    });
-
-                    for (let s = 0; s < shardsPerWave; s++) {
-                        // Each wave rotated slightly so coverage fills gaps from previous wave
-                        const baseAngle = (Math.PI * 2 / shardsPerWave) * s;
-                        const angle = baseAngle + (w * (Math.PI / shardsPerWave)) + (Math.random() - 0.5) * 0.15;
-                        const spd = 400 + Math.random() * 120 + w * 30;
-                        const vx = Math.cos(angle) * spd;
-                        const vy = Math.sin(angle) * spd;
-
-                        // Damage ramps up each wave: 1.5x / 1.9x / 2.3x / 2.7x / 3.2x
-                        const shardDmg = this.iceShardDamage * this.damageScaling * (1.5 + w * 0.4);
-                        this.spawnIceShardProjectile(px, py, vx, vy, shardDmg, angle);
-                    }
-                });
+            const px = this.player.x, py = this.player.y;
+            const wRing = this.add.circle(px, py, 6, 0xffffff, 0).setDepth(5);
+            wRing.setStrokeStyle(2.5, 0xffffff, 1.0);
+            this.tweens.add({ targets: wRing, radius: 62, alpha: 0, duration: 280, ease: 'Quad.easeOut', onComplete: () => wRing.destroy() });
+            for (let s = 0; s < shardsPerWave; s++) {
+                const angle = (Math.PI * 2 / shardsPerWave) * s + (Math.random() - 0.5) * 0.15;
+                const spd = 400 + Math.random() * 120;
+                this.spawnIceShardProjectile(px, py, Math.cos(angle) * spd, Math.sin(angle) * spd, this.iceShardDamage * this.damageScaling * 2.5, angle);
             }
 
             // Clean up any remaining water tiles
@@ -406,7 +467,521 @@ class ElementSystem {
             }
             this.tsunamiTiles = [];
 
-            this.time.delayedCall(this.tsunamiFreezeDuration, () => {
+            // ── ICE DOMAIN SNOWSTORM ───────────────────────────────────
+            const DOMAIN_R   = Math.max(2, Math.floor(maxR * 0.55));
+            const DOMAIN_DUR = this.tsunamiFreezeDuration * 10;  // ~25s
+            const CHILL_TICK = 500;
+            const WIND_INTERVAL = 3500;
+            const domainPxR  = DOMAIN_R * this.TILE_SIZE;
+            // Domain follows player — centerPx/centerPy are getters
+            const getDomainCenter = () => ({
+                cx: this.player.x,
+                cy: this.player.y,
+                tx: this.playerX,
+                ty: this.playerY,
+            });
+
+            // Track sweeps fired for E cash-out decay
+            let _sweepsFired = 0;
+            this._iceUltSweepsFired = 0;  // exposed for E handler
+            this._iceUltDomainActive = false; // set true below
+
+            // ── Iced floor tiles — single Graphics redrawn as player moves ──
+            const domainTileGfx = this.add.graphics().setDepth(1.8);
+            const domainTiles = [domainTileGfx]; // keep array for teardown compatibility
+
+            let _lastTileTX = -999, _lastTileTY = -999;
+
+            const _redrawDomainTiles = (centerTX, centerTY) => {
+                if (!domainTileGfx.active) return;
+                domainTileGfx.clear();
+                const T = this.TILE_SIZE;
+                for (let ddx = -DOMAIN_R; ddx <= DOMAIN_R; ddx++) {
+                    for (let ddy = -DOMAIN_R; ddy <= DOMAIN_R; ddy++) {
+                        if (Math.sqrt(ddx*ddx + ddy*ddy) > DOMAIN_R) continue;
+                        const tx3 = centerTX + ddx, ty3 = centerTY + ddy;
+                        if (tx3 < 0 || tx3 >= this.WORLD_WIDTH || ty3 < 0 || ty3 >= this.WORLD_HEIGHT) continue;
+                        if (this.world[tx3][ty3] !== this.FLOOR) continue;
+                        const px3 = tx3 * T, py3 = ty3 * T;
+                        domainTileGfx.fillStyle(0x88ddff, 0.12);
+                        domainTileGfx.fillRect(px3, py3, T, T);
+                        domainTileGfx.lineStyle(1.2, 0xaaddff, 0.55);
+                        domainTileGfx.strokeRect(px3 + 0.5, py3 + 0.5, T - 1, T - 1);
+                        domainTileGfx.lineStyle(0.8, 0xddf4ff, 0.40);
+                        domainTileGfx.beginPath(); domainTileGfx.moveTo(px3 + 3, py3 + 3); domainTileGfx.lineTo(px3 + T - 5, py3 + T - 3); domainTileGfx.strokePath();
+                        domainTileGfx.beginPath(); domainTileGfx.moveTo(px3 + T/2, py3 + 2); domainTileGfx.lineTo(px3 + 5, py3 + T - 4); domainTileGfx.strokePath();
+                        domainTileGfx.fillStyle(0xffffff, 0.45);
+                        domainTileGfx.fillCircle(px3 + 3, py3 + 3, 1.2);
+                        domainTileGfx.fillCircle(px3 + T - 3, py3 + 3, 1.2);
+                        domainTileGfx.fillCircle(px3 + 3, py3 + T - 3, 1.2);
+                    }
+                }
+            };
+
+            // Initial draw
+            _redrawDomainTiles(this.playerX, this.playerY);
+            domainTileGfx.setAlpha(0);
+            this.tweens.add({ targets: domainTileGfx, alpha: 1, duration: 350, ease: 'Quad.easeOut' });
+
+            // ── Domain border — bold jagged frost ring (follows player) ──
+            const domainRing = this.add.graphics().setDepth(3).setAlpha(0);
+            const _redrawDomainRing = () => {
+                if (!domainRing.active) return;
+                const { cx, cy } = getDomainCenter();
+                domainRing.clear();
+                domainRing.x = cx; domainRing.y = cy;
+                domainRing.lineStyle(10, 0x44aaff, 0.20); domainRing.strokeCircle(0, 0, domainPxR + 6);
+                domainRing.lineStyle(5,  0x88ccff, 0.40); domainRing.strokeCircle(0, 0, domainPxR + 2);
+                const RING_SEGS = 32;
+                for (let ri = 0; ri < RING_SEGS; ri++) {
+                    const ra1 = (ri / RING_SEGS) * Math.PI * 2;
+                    const ra2 = ((ri + 0.72) / RING_SEGS) * Math.PI * 2;
+                    const j1 = (Math.random() - 0.5) * 6, j2 = (Math.random() - 0.5) * 6;
+                    domainRing.lineStyle(ri % 4 === 0 ? 3.5 : 2, ri % 3 === 0 ? 0xffffff : 0xaaddff, 0.85);
+                    domainRing.beginPath();
+                    domainRing.moveTo(Math.cos(ra1)*(domainPxR+j1), Math.sin(ra1)*(domainPxR+j1));
+                    domainRing.lineTo(Math.cos(ra2)*(domainPxR+j2), Math.sin(ra2)*(domainPxR+j2));
+                    domainRing.strokePath();
+                    if (ri % 4 === 0) {
+                        const midA = (ra1 + ra2) / 2;
+                        const spikeLen = 8 + Math.random() * 10;
+                        domainRing.lineStyle(1.5, 0xddf8ff, 0.70);
+                        domainRing.beginPath();
+                        domainRing.moveTo(Math.cos(midA)*domainPxR, Math.sin(midA)*domainPxR);
+                        domainRing.lineTo(Math.cos(midA)*(domainPxR-spikeLen), Math.sin(midA)*(domainPxR-spikeLen));
+                        domainRing.strokePath();
+                    }
+                }
+                domainRing.lineStyle(1.5, 0xddf8ff, 0.45); domainRing.strokeCircle(0, 0, domainPxR - 10);
+            };
+            _redrawDomainRing();
+            this.tweens.add({ targets: domainRing, alpha: 1, duration: 350, ease: 'Quad.easeOut' });
+            this.tweens.add({ targets: domainRing, alpha: 0.65, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            // Slow vortex rotation
+            this.tweens.add({ targets: domainRing, angle: 360, duration: 6000, repeat: -1, ease: 'Linear' });
+
+            // ── Snowstorm particles ─────────────────────────────────────
+            let _domainActive = true;
+            const _domainGraphics = [];
+
+            const snowTimer = this.time.addEvent({
+                delay: 32, loop: true,
+                callback: () => {
+                    if (!_domainActive) return;
+                    const { cx: centerPx, cy: centerPy } = getDomainCenter();
+                    const type = Math.random();
+
+                    if (type < 0.45) {
+                        // ── Large visible snowflake ──────────────────────
+                        const spawnAngle = Math.random() * Math.PI * 2;
+                        const spawnR = domainPxR * (0.5 + Math.random() * 0.5);
+                        const sx = centerPx + Math.cos(spawnAngle) * spawnR;
+                        const sy = centerPy + Math.sin(spawnAngle) * spawnR;
+                        const sf = this.add.graphics().setDepth(3.5 + Math.random()*0.4).setAlpha(0);
+                        sf.x = sx; sf.y = sy;
+                        const ss = 3 + Math.random() * 4; // bigger — 3–7px spokes
+                        const fc = Math.random() > 0.4 ? 0xffffff : 0xbbecff;
+                        for (let fi = 0; fi < 6; fi++) {
+                            const fa = (fi / 6) * Math.PI * 2;
+                            sf.lineStyle(1.2, fc, 0.95);
+                            sf.beginPath(); sf.moveTo(0,0); sf.lineTo(Math.cos(fa)*ss, Math.sin(fa)*ss); sf.strokePath();
+                            const cbx = Math.cos(fa)*ss*0.55, cby = Math.sin(fa)*ss*0.55;
+                            const cpx2 = Math.sin(fa)*ss*0.32, cpy2 = -Math.cos(fa)*ss*0.32;
+                            sf.lineStyle(0.8, fc, 0.70);
+                            sf.beginPath(); sf.moveTo(cbx-cpx2, cby-cpy2); sf.lineTo(cbx+cpx2, cby+cpy2); sf.strokePath();
+                        }
+                        sf.fillStyle(0xffffff, 1.0); sf.fillCircle(0, 0, 1.0);
+                        _domainGraphics.push(sf);
+                        const windA = spawnAngle + Math.PI + (Math.random()-0.5)*1.4;
+                        const dist  = 40 + Math.random() * 60;
+                        const dur   = 700 + Math.random() * 600;
+                        this.tweens.add({ targets: sf, alpha: 0.95, duration: 100 });
+                        this.tweens.add({
+                            targets: sf,
+                            x: sx + Math.cos(windA)*dist, y: sy + Math.sin(windA)*dist + 8,
+                            angle: 180 + Math.random()*180, alpha: 0, duration: dur, ease: 'Sine.easeIn',
+                            onComplete: () => { sf.destroy(); const i = _domainGraphics.indexOf(sf); if (i !== -1) _domainGraphics.splice(i,1); }
+                        });
+
+                    } else if (type < 0.72) {
+                        // ── Medium drift dot ─────────────────────────────
+                        const sa2 = Math.random() * Math.PI * 2;
+                        const sr2 = Math.random() * domainPxR * 0.95;
+                        const sx2 = centerPx + Math.cos(sa2)*sr2, sy2 = centerPy + Math.sin(sa2)*sr2;
+                        const sp = this.add.graphics().setDepth(3).setAlpha(0.9);
+                        sp.x = sx2; sp.y = sy2;
+                        sp.fillStyle(0xffffff, 1.0); sp.fillCircle(0, 0, 1.2 + Math.random()*1.8);
+                        _domainGraphics.push(sp);
+                        const wd = Math.random() * Math.PI * 2;
+                        this.tweens.add({
+                            targets: sp,
+                            x: sx2 + Math.cos(wd)*(20+Math.random()*30),
+                            y: sy2 + Math.sin(wd)*(20+Math.random()*30),
+                            alpha: 0, duration: 400 + Math.random()*350,
+                            onComplete: () => { sp.destroy(); const i = _domainGraphics.indexOf(sp); if (i !== -1) _domainGraphics.splice(i,1); }
+                        });
+
+                    } else {
+                        // ── Wind streak ──────────────────────────────────
+                        const ga = (Math.random()-0.5)*0.9;
+                        const gx = centerPx + (Math.random()-0.5)*domainPxR*1.7;
+                        const gy = centerPy + (Math.random()-0.5)*domainPxR*1.7;
+                        const gl = 16 + Math.random()*28;
+                        const gg = this.add.graphics().setDepth(3.2).setAlpha(0);
+                        gg.x = gx; gg.y = gy;
+                        gg.lineStyle(1.2, 0xeef8ff, 0.80);
+                        gg.beginPath(); gg.moveTo(-gl*0.3, 0); gg.lineTo(gl*0.7, 0); gg.strokePath();
+                        // Fading tail
+                        gg.lineStyle(0.7, 0xaaddff, 0.40);
+                        gg.beginPath(); gg.moveTo(-gl, 0); gg.lineTo(-gl*0.3, 0); gg.strokePath();
+                        _domainGraphics.push(gg);
+                        this.tweens.add({ targets: gg, alpha: 0.85, duration: 55 });
+                        this.tweens.add({
+                            targets: gg,
+                            x: gx + Math.cos(ga)*(30+Math.random()*25),
+                            y: gy + Math.sin(ga)*(30+Math.random()*25),
+                            alpha: 0, duration: 280 + Math.random()*200,
+                            onComplete: () => { gg.destroy(); const i = _domainGraphics.indexOf(gg); if (i !== -1) _domainGraphics.splice(i,1); }
+                        });
+                    }
+                }
+            });
+
+            // ── Dense gust burst every ~1.5s ────────────────────────────
+            const gustTimer = this.time.addEvent({
+                delay: 1400 + Math.random()*600, loop: true,
+                callback: () => {
+                    if (!_domainActive) return;
+                    const { cx: centerPx, cy: centerPy } = getDomainCenter();
+                    const gustAngle = Math.random() * Math.PI * 2;
+                    for (let gi = 0; gi < 20; gi++) {
+                        const gx2 = centerPx + (Math.random()-0.5)*domainPxR*1.6;
+                        const gy2 = centerPy + (Math.random()-0.5)*domainPxR*1.6;
+                        const gl2 = 12 + Math.random()*24;
+                        const gg2 = this.add.graphics().setDepth(3.8).setAlpha(0);
+                        gg2.x = gx2; gg2.y = gy2;
+                        gg2.lineStyle(1.5, gi % 3 === 0 ? 0xffffff : 0xaaddff, 0.90);
+                        gg2.beginPath(); gg2.moveTo(0,0); gg2.lineTo(Math.cos(gustAngle)*gl2, Math.sin(gustAngle)*gl2); gg2.strokePath();
+                        _domainGraphics.push(gg2);
+                        this.tweens.add({ targets: gg2, alpha: 0.85, duration: 45, delay: gi*12 });
+                        this.tweens.add({
+                            targets: gg2, alpha: 0,
+                            x: gx2 + Math.cos(gustAngle)*(25+Math.random()*18),
+                            y: gy2 + Math.sin(gustAngle)*(25+Math.random()*18),
+                            duration: 240 + Math.random()*120, delay: gi*12 + 45,
+                            onComplete: () => { gg2.destroy(); const i = _domainGraphics.indexOf(gg2); if (i !== -1) _domainGraphics.splice(i,1); }
+                        });
+                    }
+                }
+            });
+
+            // ── Arctic wind sweep — random direction, freeze/shatter wave ──
+            const _fireWindSweep = () => {
+                if (!_domainActive) return;
+                _sweepsFired++;
+                this._iceUltSweepsFired = _sweepsFired;
+                const { cx: centerPx, cy: centerPy, tx: domainTX, ty: domainTY } = getDomainCenter();
+                const windAngle = Math.random() * Math.PI * 2;
+                const windDirX  = Math.cos(windAngle);
+                const windDirY  = Math.sin(windAngle);
+                const SWEEP_DUR = 900;
+                const SWEEP_W   = domainPxR * 2.2;
+                const FRONT_W   = this.TILE_SIZE * 1.5;
+                const STREAK_COUNT = 38;
+
+                // ── Wind streak visuals ──────────────────────────────────
+                for (let wi = 0; wi < STREAK_COUNT; wi++) {
+                    const perpA  = windAngle + Math.PI / 2;
+                    const spread = (Math.random() - 0.5) * domainPxR * 2.0;
+                    const sx = centerPx + Math.cos(perpA) * spread + windDirX * (-domainPxR - 8);
+                    const sy = centerPy + Math.sin(perpA) * spread + windDirY * (-domainPxR - 8);
+                    const delay = wi * (SWEEP_DUR / STREAK_COUNT) * 0.55 + Math.random() * 60;
+                    const streakLen = 18 + Math.random() * 28;
+                    const col = Math.random() > 0.5 ? 0xeef8ff : 0xaaddff;
+                    const wg = this.add.graphics().setDepth(4.5).setAlpha(0);
+                    wg.x = sx; wg.y = sy;
+                    wg.lineStyle(1.0 + Math.random() * 0.8, col, 0.90);
+                    wg.beginPath(); wg.moveTo(-windDirX*streakLen*0.3, -windDirY*streakLen*0.3); wg.lineTo(windDirX*streakLen*0.7, windDirY*streakLen*0.7); wg.strokePath();
+                    wg.lineStyle(0.6, 0x88ccff, 0.45);
+                    wg.beginPath(); wg.moveTo(-windDirX*streakLen, -windDirY*streakLen); wg.lineTo(-windDirX*streakLen*0.3, -windDirY*streakLen*0.3); wg.strokePath();
+                    _domainGraphics.push(wg);
+                    this.tweens.add({ targets: wg, alpha: 0.90, duration: 50, delay });
+                    this.tweens.add({
+                        targets: wg,
+                        x: sx + windDirX * (SWEEP_W * 0.5 + Math.random() * 40),
+                        y: sy + windDirY * (SWEEP_W * 0.5 + Math.random() * 40),
+                        alpha: 0, duration: SWEEP_DUR * 0.7, delay: delay + 50, ease: 'Sine.easeIn',
+                        onComplete: () => { wg.destroy(); const idx = _domainGraphics.indexOf(wg); if (idx !== -1) _domainGraphics.splice(idx, 1); }
+                    });
+                }
+
+                // Domain ring flashes on wind hit
+                if (domainRing?.active) {
+                    this.tweens.add({ targets: domainRing, alpha: 1.0, duration: 120, yoyo: true, ease: 'Quad.easeOut' });
+                }
+
+                // ── Wave front — hit enemies as it sweeps across ──────────
+                const STEPS = 18;
+                const alreadyHit = new Set();
+                for (let step = 0; step < STEPS; step++) {
+                    const progress  = step / (STEPS - 1);
+                    const frontDist = -domainPxR + progress * SWEEP_W;
+                    this.time.delayedCall(progress * SWEEP_DUR, () => {
+                        if (!_domainActive) return;
+
+                        // Boss check — voltslime and Void Sovereign
+                        const _sweepBoss = (boss) => {
+                            if (!boss?.active) return;
+                            const bdx = boss.tileX - domainTX, bdy = boss.tileY - domainTY;
+                            if (Math.sqrt(bdx*bdx + bdy*bdy) > DOMAIN_R + 1) return;
+                            const bpx = boss.container.x - centerPx, bpy = boss.container.y - centerPy;
+                            const bproj = bpx * windDirX + bpy * windDirY;
+                            if (Math.abs(bproj - frontDist) > FRONT_W * 3.5) return;
+                            const BOSS_SWEEP_DMG = 15 * this.damageScaling;
+                            if (boss._isFrozen) {
+                                if (typeof this.damageBossAtTile === 'function')
+                                    this.damageBossAtTile(boss.tileX, boss.tileY, BOSS_SWEEP_DMG * 2);
+                            } else {
+                                if (typeof this.damageBossAtTile === 'function')
+                                    this.damageBossAtTile(boss.tileX, boss.tileY, BOSS_SWEEP_DMG);
+                                if (typeof this.freezeBossFromIceWeapon === 'function')
+                                    this.freezeBossFromIceWeapon(false);
+                            }
+                        };
+                        _sweepBoss(this.voltslimeBoss);
+                        _sweepBoss(this.voidSovereignBoss);
+
+                        for (const enemy of this.enemies) {
+                            if (!enemy.sprite?.active || enemy.health <= 0) continue;
+                            if (alreadyHit.has(enemy)) continue;
+                            if (enemy.fireImmune || enemy.elementImmune) continue;
+                            const edx = enemy.x - domainTX, edy = enemy.y - domainTY;
+                            if (Math.sqrt(edx*edx + edy*edy) > DOMAIN_R + 1) continue;
+                            const epx = enemy.sprite.x - centerPx, epy = enemy.sprite.y - centerPy;
+                            const proj = epx * windDirX + epy * windDirY;
+                            if (Math.abs(proj - frontDist) > FRONT_W * 2.5) continue;
+                            alreadyHit.add(enemy);
+
+                            if (enemy.isFrozen) {
+                                // Shatter at 15× damageScaling
+                                this._triggerShatterBurst(enemy, 15 / 7.5);
+                                const bx = enemy.sprite.x, by = enemy.sprite.y;
+                                for (let ci = 0; ci < 6; ci++) {
+                                    const ca = (ci / 6) * Math.PI * 2 + windAngle;
+                                    const cg = this.add.graphics().setDepth(5);
+                                    cg.x = bx; cg.y = by;
+                                    cg.fillStyle(ci % 2 === 0 ? 0xaaeeff : 0xffffff, 0.90);
+                                    cg.fillRect(-1.5, -3, 3, 6); cg.setRotation(ca);
+                                    this.tweens.add({ targets: cg, x: bx + Math.cos(ca)*(14+Math.random()*10), y: by + Math.sin(ca)*(14+Math.random()*10), alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 260, ease: 'Cubic.easeOut', onComplete: () => cg.destroy() });
+                                }
+                            } else if (!enemy.iceImmune) {
+                                if (!enemy.chillStacks) enemy.chillStacks = 0;
+                                enemy.chillStacks = Math.min(3, enemy.chillStacks + 2);
+                                enemy.lastChillTime = this.time.now;
+                                this._updateChillIndicator(enemy);
+                                if (enemy.chillStacks >= 3) {
+                                    enemy.chillStacks = 0;
+                                    this._destroyChillIndicator(enemy);
+                                    this.freezeEnemy(enemy, 3500);
+                                    this.gainUltCharge(this.ultChargePerFreeze);
+                                    this.showStatusText(enemy.sprite.x, enemy.sprite.y - 12, 'FROZEN', '#88ddff');
+                                }
+                                const cg2 = this.add.graphics().setDepth(4);
+                                cg2.x = enemy.sprite.x + (Math.random()-0.5)*6; cg2.y = enemy.sprite.y - 10;
+                                cg2.fillStyle(0xbbecff, 0.80); cg2.fillCircle(0, 0, 3);
+                                this.tweens.add({ targets: cg2, y: cg2.y - 10, alpha: 0, duration: 380, onComplete: () => cg2.destroy() });
+                            }
+                        }
+                        // Queen portals in domain also get swept — applies chill/shatter
+                        if (this.portals) {
+                            for (const portal of this.portals) {
+                                if (!portal.active) continue;
+                                const pdx = portal.tileX - domainTX, pdy = portal.tileY - domainTY;
+                                if (Math.sqrt(pdx*pdx + pdy*pdy) > DOMAIN_R + 1) continue;
+                                const ppx = portal.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                                const ppy = portal.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+                                const pproj = (ppx - centerPx) * windDirX + (ppy - centerPy) * windDirY;
+                                if (Math.abs(pproj - frontDist) > FRONT_W * 2.5) continue;
+                                const portalDmg = 8 * this.damageScaling;
+                                if (portal.isFrozen) {
+                                    // Shatter frozen portal — double damage
+                                    this.damagePortal(portal, portalDmg * 2, { shatter: true });
+                                } else {
+                                    this.damagePortal(portal, portalDmg, { chill: true });
+                                }
+                            }
+                        }
+                    });
+                }
+            };
+
+            this.time.delayedCall(1800, _fireWindSweep);
+            const windTimer = this.time.addEvent({
+                delay: WIND_INTERVAL, loop: true,
+                startAt: WIND_INTERVAL - 1800,
+                callback: () => { if (_domainActive) _fireWindSweep(); }
+            });
+            const chillTimer = this.time.addEvent({
+                delay: CHILL_TICK, loop: true,
+                callback: () => {
+                    if (!_domainActive) return;
+                    const { tx: cTX, ty: cTY } = getDomainCenter();
+                    // Redraw ring and tiles to follow player
+                    _redrawDomainRing();
+                    if (cTX !== _lastTileTX || cTY !== _lastTileTY) {
+                        _lastTileTX = cTX; _lastTileTY = cTY;
+                        _redrawDomainTiles(cTX, cTY);
+                    }
+                    // Boss chill tick — apply freeze stack if in domain (voltslime + VS)
+                    const _chillBoss = (boss) => {
+                        if (!boss?.active || boss._isFrozen) return;
+                        const bdx = boss.tileX - cTX, bdy = boss.tileY - cTY;
+                        if (Math.sqrt(bdx*bdx + bdy*bdy) <= DOMAIN_R) {
+                            if (typeof this.freezeBossFromIceWeapon === 'function')
+                                this.freezeBossFromIceWeapon(false);
+                        }
+                    };
+                    _chillBoss(this.voltslimeBoss);
+                    _chillBoss(this.voidSovereignBoss);
+                    for (const enemy of this.enemies) {
+                        if (!enemy.sprite?.active || enemy.health <= 0) continue;
+                        const edx = enemy.x - cTX, edy = enemy.y - cTY;
+                        if (Math.sqrt(edx*edx + edy*edy) > DOMAIN_R) continue;
+                        if (enemy.iceImmune || enemy.fireImmune) continue;
+                        if (enemy.isFrozen) continue; // already frozen — skip chill stacking
+                        if (!enemy.chillStacks) enemy.chillStacks = 0;
+                        enemy.chillStacks = Math.min(3, enemy.chillStacks + 1);
+                        enemy.lastChillTime = this.time.now;
+                        this._updateChillIndicator(enemy);
+                        if (enemy.chillStacks >= 3) {
+                            enemy.chillStacks = 0;
+                            this._destroyChillIndicator(enemy);
+                            this.freezeEnemy(enemy, 2500);
+                            this.gainUltCharge(this.ultChargePerFreeze);
+                        }
+                        const hf = this.add.graphics().setDepth(4);
+                        hf.x = enemy.sprite.x + (Math.random()-0.5)*8;
+                        hf.y = enemy.sprite.y - 14 + (Math.random()-0.5)*4;
+                        hf.fillStyle(0xddf8ff, 0.85); hf.fillCircle(0, 0, 2.5);
+                        this.tweens.add({ targets: hf, y: hf.y - 12, alpha: 0, duration: 450, onComplete: () => hf.destroy() });
+                    }
+                }
+            });
+
+            // ── E key cash-out detonation ─────────────────────────────
+            const _detonateIceDomain = () => {
+                if (!_domainActive) return;
+                const { cx, cy, tx: cTX, ty: cTY } = getDomainCenter();
+
+                // Damage decays with each sweep: base 40× ds * 0.82^sweepsFired
+                const baseDmg = 40 * this.damageScaling;
+                const decayedDmg = baseDmg * Math.pow(0.82, _sweepsFired);
+
+                // Big shockwave visual
+                const ring1 = this.add.circle(cx, cy, 10, 0xffffff, 0.90).setDepth(6);
+                ring1.setStrokeStyle(4, 0xaaeeff, 1.0);
+                const ring2 = this.add.circle(cx, cy, 10, 0x44ccff, 0.30).setDepth(5.5);
+                this.tweens.add({ targets: [ring1, ring2], radius: domainPxR * 1.3, alpha: 0, duration: 500, ease: 'Quad.easeOut', onComplete: () => { ring1.destroy(); ring2.destroy(); } });
+                // Crystal shards burst outward
+                for (let i = 0; i < 16; i++) {
+                    const sa = (i / 16) * Math.PI * 2;
+                    const sg = this.add.graphics().setDepth(6);
+                    sg.x = cx; sg.y = cy;
+                    sg.fillStyle(i % 2 === 0 ? 0x44eeff : 0xffffff, 0.90);
+                    sg.fillRect(-2, -5, 4, 10); sg.setRotation(sa);
+                    this.tweens.add({ targets: sg, x: cx + Math.cos(sa)*domainPxR*0.9, y: cy + Math.sin(sa)*domainPxR*0.9, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 450, ease: 'Quad.easeOut', onComplete: () => sg.destroy() });
+                }
+                this.cameras.main.shake(60, 0.005);
+
+                // Show damage info
+                const sweepLabel = _sweepsFired === 0 ? 'MAX POWER' : `${_sweepsFired} sweep${_sweepsFired > 1 ? 's' : ''} — ${Math.round(decayedDmg / this.damageScaling)}× ds`;
+                this.showStatusText(cx, cy - 40, `❄ DETONATE — ${sweepLabel}`, '#aaeeff');
+
+                // Hit all enemies in domain
+                for (const enemy of this.enemies) {
+                    if (!enemy.sprite?.active || enemy.health <= 0) continue;
+                    const edx = enemy.x - cTX, edy = enemy.y - cTY;
+                    if (Math.sqrt(edx*edx + edy*edy) > DOMAIN_R + 0.5) continue;
+                    if (enemy.fireImmune || enemy.elementImmune) continue;
+                    if (enemy.isFrozen) {
+                        this._triggerShatterBurst(enemy, decayedDmg / (7.5 * this.damageScaling));
+                    } else if (!enemy.iceImmune) {
+                        enemy.health -= decayedDmg;
+                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(decayedDmg), '#aaeeff');
+                        this.updateEnemyHealthBar(enemy);
+                        if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
+                        // Apply 3 chill stacks — likely freezes
+                        enemy.chillStacks = 3;
+                        enemy.lastChillTime = this.time.now;
+                        this._destroyChillIndicator(enemy);
+                        this.freezeEnemy(enemy, 4000);
+                        this.gainUltCharge(this.ultChargePerFreeze);
+                    }
+                }
+
+                // Boss detonation damage (voltslime + Void Sovereign)
+                const _detonateBoss = (boss) => {
+                    if (!boss?.active) return;
+                    const bdx = boss.tileX - cTX, bdy = boss.tileY - cTY;
+                    if (Math.sqrt(bdx*bdx + bdy*bdy) > DOMAIN_R + 0.5) return;
+                    if (boss._isFrozen) {
+                        this.damageBossAtTile(boss.tileX, boss.tileY, decayedDmg * 2);
+                    } else {
+                        this.damageBossAtTile(boss.tileX, boss.tileY, decayedDmg);
+                        if (typeof this.freezeBossFromIceWeapon === 'function')
+                            this.freezeBossFromIceWeapon(false);
+                    }
+                };
+                _detonateBoss(this.voltslimeBoss);
+                _detonateBoss(this.voidSovereignBoss);
+
+                // End domain after detonation
+                _domainActive = false;
+                this._iceUltDomainActive = false;
+                this.ultDrainActive = false;
+                snowTimer.remove(); chillTimer.remove(); gustTimer.remove(); windTimer.remove();
+                for (const g of _domainGraphics) { this.tweens.killTweensOf(g); g.destroy(); }
+                _domainGraphics.length = 0;
+                domainTiles.forEach(t => { this.tweens.killTweensOf(t); this.tweens.add({ targets: t, alpha: 0, duration: 600, onComplete: () => t.destroy() }); });
+                this.tweens.killTweensOf(domainRing);
+                this.tweens.add({ targets: domainRing, alpha: 0, duration: 500, onComplete: () => domainRing.destroy() });
+                this._iceUltDetonate = null;
+            };
+
+            // Expose detonation so E key can call it
+            this._iceUltDetonate = _detonateIceDomain;
+            this._iceUltDomainActive = true;
+
+            this._domainSnowTimer  = snowTimer;
+            this._domainChillTimer = chillTimer;
+            this._domainGustTimer  = gustTimer;
+            this._domainWindTimer  = windTimer;
+            this._domainRing       = domainRing;
+            this._domainGraphics   = _domainGraphics;
+            this._domainTiles      = domainTiles;
+            this.time.delayedCall(DOMAIN_DUR, () => {
+                _domainActive = false;
+                snowTimer.remove();
+                chillTimer.remove();
+                gustTimer.remove();
+                windTimer.remove();
+                // Kill live particles
+                for (const g of _domainGraphics) { this.tweens.killTweensOf(g); g.destroy(); }
+                _domainGraphics.length = 0;
+                // Fade out all domain tiles together — simple batch to avoid performance issues
+                domainTiles.forEach(t => {
+                    this.tweens.killTweensOf(t);
+                    this.tweens.add({ targets: t, alpha: 0, duration: 800, ease: 'Quad.easeIn', onComplete: () => t.destroy() });
+                });
+                // Fade out ring
+                this.tweens.killTweensOf(domainRing);
+                this.tweens.add({ targets: domainRing, alpha: 0, duration: 800, onComplete: () => domainRing.destroy() });
+                this._domainSnowTimer = null; this._domainChillTimer = null;
+                this._domainGustTimer = null; this._domainRing = null; this._domainTiles = null;
+                this._iceUltDomainActive = false; this._iceUltDetonate = null;
+            });
+
+            this.time.delayedCall(DOMAIN_DUR + 200, () => {
                 this.deactivateTsunami();
             });
         });
@@ -415,6 +990,15 @@ class ElementSystem {
     deactivateTsunami() {
         this.tsunamiActive = false;
         this.ultDrainActive = false;
+
+        // Clean up ice domain if still active
+        if (this._domainSnowTimer)  { this._domainSnowTimer.remove();  this._domainSnowTimer  = null; }
+        if (this._domainChillTimer) { this._domainChillTimer.remove(); this._domainChillTimer = null; }
+        if (this._domainGustTimer)  { this._domainGustTimer.remove();  this._domainGustTimer  = null; }
+        if (this._domainWindTimer)  { this._domainWindTimer.remove();  this._domainWindTimer  = null; }
+        if (this._domainGraphics)   { for (const g of this._domainGraphics) { this.tweens.killTweensOf(g); g.destroy(); } this._domainGraphics = null; }
+        if (this._domainTiles)      { this._domainTiles.forEach(t => { this.tweens.killTweensOf(t); t.destroy(); }); this._domainTiles = null; }
+        if (this._domainRing)       { this.tweens.killTweensOf(this._domainRing); this._domainRing.destroy(); this._domainRing = null; }
 
         for (let enemy of this.tsunamiFrozenEnemies) {
             if (enemy._tsunamiMultText) {
@@ -527,80 +1111,166 @@ class ElementSystem {
     // ─── FIRE HELPERS ──────────────────────────────────────────────────
 
     activateLightningStorm() {
-        const ULT_DURATION = 4500;
+        const ULT_DURATION  = 5500;
+        const ZAP_RADIUS    = 4;
+        const ZAP_INTERVAL  = 50;
+        const ZAP_DMG_MULT  = 1.5;
+        const stage         = parseInt(localStorage.getItem('ultStage_lightning') || '1');
 
-        this.ultDrainActive = true;
-        this.ultDrainStartTime = this.time.now;
-        this.ultDrainDuration = ULT_DURATION;
+        // Stage 2: faster glide + afterimage sentries
+        const SENTRY_CD     = 500;   // ms between sentry spawns (while moving)
+        const SENTRY_DUR    = ULT_DURATION; // sentries last till ult ends
+        const SENTRY_RADIUS = 3;     // tile radius for sentry zap
 
-        this.lightningUltActive = true;
-        this.lightningUltInvuln = true;
+        this.ultDrainActive      = true;
+        this.ultDrainStartTime   = this.time.now;
+        this.ultDrainDuration    = ULT_DURATION;
+        this.lightningUltActive  = true;
+        this.lightningUltInvuln  = true;
         this.lightningUltEndTime = this.time.now + ULT_DURATION;
 
-        // Yellow screen flash
-        const screenFlash = this.add.rectangle(
-            this.scale.width / 2, this.scale.height / 2,
-            this.scale.width, this.scale.height, 0xffff44, 0.45
-        ).setScrollFactor(0).setDepth(20);
+        // Activate thunderhead glide movement
+        this.thunderheadActive     = true;
+        this.thunderheadEndTime    = this.time.now + ULT_DURATION;
+        this.thunderheadGlideSpeed = stage >= 2 ? 200 : 160; // px/s
+        this.thunderheadGlideX   = this.player.x;
+        this.thunderheadGlideY   = this.player.y - this.SLIME_Y_OFFSET;
+
+        // Screen flash
+        const screenFlash = this.add.rectangle(this.scale.width/2, this.scale.height/2, this.scale.width, this.scale.height, 0xffff44, 0.45).setScrollFactor(0).setDepth(20);
         this.tweens.add({ targets: screenFlash, alpha: 0, duration: 250, onComplete: () => screenFlash.destroy() });
 
-        // Yellow tint on player
         this.player.setTint(0xffff44);
 
-        const notice = this.add.text(this.scale.width / 2, 80, '⚡ FORK ⚡', {
+        const label = stage >= 2 ? '⚡ FORK II ⚡' : '⚡ FORK ⚡';
+        const notice = this.add.text(this.scale.width/2, 80, label, {
             fontSize: '22px', fontFamily: 'monospace', color: '#ffff00',
             stroke: '#000000', strokeThickness: 4, fontStyle: 'bold'
         }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
         this.tweens.add({ targets: notice, y: 55, alpha: 0, duration: 2000, onComplete: () => notice.destroy() });
 
-        // Auto-zap all enemies within 4 tiles every 400ms
-        const ZAP_RADIUS = 4, ZAP_INTERVAL = 400;
-        const globalHit = [];
+        // ── Helper: zap enemies in radius from a pixel position ──────
+        const _zapFromPos = (px, py, tileX, tileY, dmgMult = 1.0) => {
+            const globalHit = [];
+            for (const enemy of [...this.enemies]) {
+                if (!enemy.sprite?.active) continue;
+                const dist = Math.abs(enemy.x - tileX) + Math.abs(enemy.y - tileY);
+                if (dist > ZAP_RADIUS) continue;
+                if (globalHit.includes(enemy)) continue;
+                this.drawLightningBolt({ sprite: { x: px, y: py } }, enemy);
+                this.performChainLightningShared(enemy, this.baseLightningDamage * this.damageScaling * ZAP_DMG_MULT * dmgMult, globalHit, this.lightningChainFalloff);
+            }
+            if (this.voltslimeBoss?.active) {
+                const bd = Math.abs(this.voltslimeBoss.tileX - tileX) + Math.abs(this.voltslimeBoss.tileY - tileY);
+                if (bd <= ZAP_RADIUS) this.damageBossAtTile(this.voltslimeBoss.tileX, this.voltslimeBoss.tileY, this.baseLightningDamage * this.damageScaling * 1.5 * dmgMult);
+            }
+            if (this.portals) {
+                for (const portal of this.portals) {
+                    if (!portal.active) continue;
+                    const pd = Math.abs(portal.tileX - tileX) + Math.abs(portal.tileY - tileY);
+                    if (pd <= ZAP_RADIUS) this.damagePortal(portal, this.baseLightningDamage * this.damageScaling * ZAP_DMG_MULT * dmgMult);
+                }
+            }
+        };
+
+        // ── Player zap timer ─────────────────────────────────────────
         const zapTimer = this.time.addEvent({
             delay: ZAP_INTERVAL, loop: true,
             callback: () => {
                 if (!this.lightningUltActive) { zapTimer.remove(); return; }
-                globalHit.length = 0;
-                for (const enemy of [...this.enemies]) {
-                    if (!enemy.sprite?.active) continue;
-                    const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
-                    if (dist > ZAP_RADIUS) continue;
-                    if (globalHit.includes(enemy)) continue;
-                    this.drawLightningBolt({ sprite: this.player }, enemy);
-                    this.performChainLightningShared(
-                        enemy,
-                        this.baseLightningDamage * this.damageScaling * 1.2,
-                        globalHit,
-                        this.lightningChainFalloff
-                    );
-                }
-                // Also zap boss if in range
-                if (this.voltslimeBoss?.active) {
-                    const bd = Math.abs(this.voltslimeBoss.tileX - this.playerX) + Math.abs(this.voltslimeBoss.tileY - this.playerY);
-                    if (bd <= ZAP_RADIUS) {
-                        this.damageBossAtTile(this.voltslimeBoss.tileX, this.voltslimeBoss.tileY, this.baseLightningDamage * this.damageScaling * 1.5);
-                    }
-                }
-                // Also zap portals (Queen Slimes) in range
-                if (this.portals) {
-                    for (const portal of this.portals) {
-                        if (!portal.active) continue;
-                        const pd = Math.abs(portal.tileX - this.playerX) + Math.abs(portal.tileY - this.playerY);
-                        if (pd <= ZAP_RADIUS) {
-                            this.damagePortal(portal, this.baseLightningDamage * this.damageScaling * 1.2);
-                        }
-                    }
-                }
+                _zapFromPos(this.player.x, this.player.y, this.playerX, this.playerY);
             }
         });
 
+        // ── Stage 2: afterimage sentries ─────────────────────────────
+        const sentries = [];
+        this._lightningUltSentries = sentries;
+        let lastSentryTime   = 0;
+        let lastPlayerX      = this.player.x;
+        let lastPlayerY      = this.player.y;
+
+        const sentryTimer = stage >= 2 ? this.time.addEvent({
+            delay: 60, loop: true,
+            callback: () => {
+                if (!this.lightningUltActive) { sentryTimer?.remove(); return; }
+                const now = this.time.now;
+                const moved = Math.abs(this.player.x - lastPlayerX) > 2 || Math.abs(this.player.y - lastPlayerY) > 2;
+                lastPlayerX = this.player.x; lastPlayerY = this.player.y;
+
+                // Spawn sentry if cooldown up AND player is moving
+                if (moved && now - lastSentryTime >= SENTRY_CD) {
+                    lastSentryTime = now;
+                    this._spawnLightningSentry(this.player.x, this.player.y, this.playerX, this.playerY, SENTRY_DUR, ZAP_RADIUS, SENTRY_RADIUS, _zapFromPos);
+                }
+
+                // Tick all sentries — zap nearby enemies
+                for (let i = sentries.length - 1; i >= 0; i--) {
+                    const sentry = sentries[i];
+                    if (now >= sentry.expiresAt) {
+                        sentry.destroy();
+                        sentries.splice(i, 1);
+                        continue;
+                    }
+                    if (now - sentry.lastZap >= ZAP_INTERVAL) {
+                        sentry.lastZap = now;
+                        _zapFromPos(sentry.px, sentry.py, sentry.tileX, sentry.tileY, 1.2);
+                    }
+                }
+            }
+        }) : null;
+
+        // ── Cleanup ───────────────────────────────────────────────────
         this.time.delayedCall(ULT_DURATION, () => {
-            this.lightningUltActive = false;
-            this.lightningUltInvuln = false;
-            this.ultDrainActive = false;
+            this.lightningUltActive  = false;
+            this.lightningUltInvuln  = false;
+            this.ultDrainActive      = false;
+            this.thunderheadActive   = false;
             zapTimer.remove();
+            sentryTimer?.remove();
+            // Destroy remaining sentries
+            for (const s of sentries) s.destroy();
+            sentries.length = 0;
+            this._lightningUltSentries = null;
             if (this.player?.active) this.player.clearTint();
+            // Snap player to nearest valid tile after glide ends
+            const snap = this.snapToNearestFloor(this.thunderheadGlideX, this.thunderheadGlideY);
+            if (snap) {
+                this.playerX = snap.tx; this.playerY = snap.ty;
+                this.player.x = snap.px; this.player.y = snap.py + this.SLIME_Y_OFFSET;
+            }
         });
+    }
+
+    _spawnLightningSentry(px, py, tileX, tileY, duration, zapRadius, sentryRadius, _zapFn) {
+        // Afterimage — slime_blue sprite at same position, tinted bright yellow, semi-transparent
+        const ghost = this.add.sprite(px, py, 'slime_blue', 0)
+            .setScale(this.player.scaleX || 2)
+            .setTint(0xffff44)
+            .setAlpha(0.45)
+            .setDepth(this.player.depth - 0.1 || 1.9);
+
+        // Subtle pulse to read as "active sentry"
+        this.tweens.add({
+            targets: ghost, alpha: 0.25, duration: 400,
+            yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+        });
+
+        // Small zap arc radiating out every zap tick — visual feedback
+        const sentry = {
+            px, py, tileX, tileY,
+            expiresAt: this.time.now + duration,
+            lastZap: this.time.now,
+            destroy: () => {
+                this.tweens.killTweensOf(ghost);
+                this.tweens.add({
+                    targets: ghost, alpha: 0, duration: 200,
+                    onComplete: () => { if (ghost.active) ghost.destroy(); }
+                });
+            }
+        };
+
+        if (this._lightningUltSentries) this._lightningUltSentries.push(sentry);
+        return sentry;
     }
 
     updateStormCloud(time) {
@@ -708,7 +1378,7 @@ class ElementSystem {
         this.damageEnemy(sourceEnemy, damage);
         this.damageBossAtTile(sourceEnemy.x, sourceEnemy.y, damage);
 
-        sourceEnemy.sprite.setTint(0xffff00);
+        if (typeof sourceEnemy.sprite?.setTint === 'function') sourceEnemy.sprite.setTint(0xffff00);
         this.time.delayedCall(100, () => {
             if (sourceEnemy.sprite && sourceEnemy.sprite.active) {
                 sourceEnemy.sprite.clearTint();
@@ -1016,8 +1686,10 @@ class ElementSystem {
         enemy.superConductUntil = this.time.now + this.superConductDuration;
 
         if (enemy.superConductVisual) {
-            this.tweens.killTweensOf(enemy.superConductVisual.container);
-            enemy.superConductVisual.container.destroy();
+            if (enemy.superConductVisual.container?.active) {
+                this.tweens.killTweensOf(enemy.superConductVisual.container);
+                enemy.superConductVisual.container.destroy();
+            }
             enemy.superConductVisual = null;
         }
 
@@ -1062,7 +1734,7 @@ class ElementSystem {
         });
 
         enemy.superConductVisual = { container, g };
-        enemy.sprite.setTint(0xffffaa);
+        if (typeof enemy.sprite?.setTint === 'function') enemy.sprite.setTint(0xffffaa);
 
         this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'CONDUCTOR', '#ffff44');
     }
@@ -1071,8 +1743,10 @@ class ElementSystem {
         enemy.isSuperConducted = false;
         enemy.superConductUntil = 0;
         if (enemy.superConductVisual) {
-            this.tweens.killTweensOf(enemy.superConductVisual.container);
-            enemy.superConductVisual.container.destroy();
+            if (enemy.superConductVisual.container?.active) {
+                this.tweens.killTweensOf(enemy.superConductVisual.container);
+                enemy.superConductVisual.container.destroy();
+            }
             enemy.superConductVisual = null;
         }
         if (enemy.sprite && enemy.sprite.active && !enemy.isFrozen && !enemy.isBurning) {
@@ -1611,7 +2285,7 @@ class ElementSystem {
                             this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'STUNNED', '#ffee00');
 
                             // Visual feedback - flash yellow
-                            enemy.sprite.setTint(0xffff00);
+                            if (typeof enemy.sprite?.setTint === 'function') enemy.sprite.setTint(0xffff00);
                             this.time.delayedCall(stunDuration, () => {
                                 if (enemy.sprite && enemy.sprite.active) {
                                     enemy.sprite.clearTint();
@@ -1927,227 +2601,6 @@ class ElementSystem {
 
     // ─── ARC PROJECTILE (right click) ──────────────────────────────────
 
-    fireArcProjectile(screenX, screenY) {
-        const currentTime = this.time.now;
-        if (currentTime - this.lastFireballTime < this.lightningCooldown) return;
-        if (this.nodeChannelActive) this.cancelNodeChannel();
-        this.lastFireballTime = currentTime;
-
-        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const worldX = screenX + this.cameras.main.scrollX;
-        const worldY = screenY + this.cameras.main.scrollY;
-        const dx = worldX - playerPixelX, dy = worldY - playerPixelY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist === 0) return;
-
-        const speed = 100;
-        const g = this.add.graphics().setDepth(3);
-        g.x = playerPixelX; g.y = playerPixelY;
-
-        this.lightningProjectiles.push({
-            g, vx: (dx / dist) * speed, vy: (dy / dist) * speed,
-            startX: playerPixelX,
-            startY: playerPixelY,
-            createdAt: currentTime,
-            lastCrackleTime: currentTime,
-            lastZapTime: currentTime,
-            zapInterval: 300,
-            zapRadius: 10,
-            piercedEnemies: new Set()
-        });
-    }
-
-    drawOrbProjectile(g, time) {
-        g.clear();
-        const pulse = 0.6 + Math.sin(time / 70) * 0.4;
-        const flicker = 0.7 + Math.sin(time / 33) * 0.3;
-
-        // Core body only — no faint outer halos
-        g.fillStyle(0x33aaff, 0.8 * flicker);
-        g.fillCircle(0, 0, 10);
-
-        // Bright center
-        g.fillStyle(0xffffff, 0.95 * pulse);
-        g.fillCircle(0, 0, 4);
-
-        // Short irregular crackling arcs — tight around the orb
-        const numArcs = 4 + Math.floor(Math.random() * 4);
-        for (let i = 0; i < numArcs; i++) {
-            const baseA = Math.random() * Math.PI * 2;
-            const r1 = 8 + Math.random() * 2;        // starts at edge of core
-            const r2 = 12 + Math.random() * 6;        // short reach — was 15-29
-            const jags = Math.random() < 0.5 ? 1 : 2;
-            let prevX = Math.cos(baseA) * r1, prevY = Math.sin(baseA) * r1;
-
-            g.lineStyle(1 + Math.random(), 0x88ddff, 0.5 + Math.random() * 0.4);
-            g.beginPath();
-            g.moveTo(prevX, prevY);
-            for (let j = 0; j < jags; j++) {
-                const t = (j + 1) / (jags + 1);
-                const jagA = baseA + (Math.random() - 0.5) * 1.4;
-                const jagR = r1 + (r2 - r1) * t + (Math.random() - 0.5) * 3;
-                prevX = Math.cos(jagA) * jagR;
-                prevY = Math.sin(jagA) * jagR;
-                g.lineTo(prevX, prevY);
-            }
-            const endA = baseA + (Math.random() - 0.5) * 0.8;
-            g.lineTo(Math.cos(endA) * r2, Math.sin(endA) * r2);
-            g.strokePath();
-
-            if (Math.random() < 0.6) {
-                g.fillStyle(0xffffff, 0.7 + Math.random() * 0.3);
-                g.fillCircle(Math.cos(endA) * r2, Math.sin(endA) * r2, 1 + Math.random() * 0.8);
-            }
-        }
-    }
-
-    updateArcProjectiles(delta) {
-        const ds = delta / 1000;
-        const time = this.time.now;
-        for (let i = this.lightningProjectiles.length - 1; i >= 0; i--) {
-            const p = this.lightningProjectiles[i];
-            p.g.x += p.vx * ds;
-            p.g.y += p.vy * ds;
-
-            // Max range check (20 tiles)
-            const distTraveled = Math.sqrt(
-                Math.pow(p.g.x - p.startX, 2) +
-                Math.pow(p.g.y - p.startY, 2)
-            );
-            const maxRange = 20 * this.TILE_SIZE;
-            if (distTraveled > maxRange) {
-                p.g.destroy();
-                this.lightningProjectiles.splice(i, 1);
-                continue;
-            }
-
-            const tileX = Math.floor(p.g.x / this.TILE_SIZE);
-            const tileY = Math.floor(p.g.y / this.TILE_SIZE);
-
-            // Wall/out of bounds/locked room barrier
-            if (tileX < 0 || tileX >= this.WORLD_WIDTH || tileY < 0 || tileY >= this.WORLD_HEIGHT ||
-                this.world[tileX][tileY] === this.WALL || this.isInLockedRoom(tileX, tileY)) {
-                p.g.destroy();
-                this.lightningProjectiles.splice(i, 1);
-                continue;
-            }
-
-            // Crackle trail
-            if (time - p.lastCrackleTime > 35) {
-                p.lastCrackleTime = time;
-                const tr = this.add.circle(p.g.x+(Math.random()-0.5)*5, p.g.y+(Math.random()-0.5)*5, 2+Math.random()*2, 0x44ccff, 0.5).setDepth(2.5);
-                this.tweens.add({ targets: tr, alpha: 0, scale: 0.1, duration: 200, onComplete: () => tr.destroy() });
-            }
-
-            // Redraw orb every frame for live crackle feel
-            this.drawOrbProjectile(p.g, time);
-
-            // Direct hit — superconduct + chain (pierce, don't destroy)
-            for (let enemy of this.enemies) {
-                if (p.piercedEnemies.has(enemy)) continue;
-                const ex = enemy.sprite.x, ey = enemy.sprite.y;
-                if (Math.abs(ex - p.g.x) < this.TILE_SIZE * 0.9 && Math.abs(ey - p.g.y) < this.TILE_SIZE * 0.9) {
-                    p.piercedEnemies.add(enemy);
-                    this.applySuperConduct(enemy);
-                    this.drawLightningBolt({ sprite: { x: p.g.x, y: p.g.y } }, enemy);
-                    this.performChainLightning(enemy, this.baseLightningDamage * this.damageScaling, [], this.lightningChainFalloff);
-                    this.gainUltCharge(this.ultChargePerChain * 0.2);
-                }
-            }
-
-            // Node hit — charge it, destroy projectile
-            let hitNode = false;
-            for (let node of this.lightningNodes) {
-                if (Math.abs(node.px - p.g.x) < this.TILE_SIZE * 1.2 && Math.abs(node.py - p.g.y) < this.TILE_SIZE * 1.2) {
-                    this.activateLightningNode(node);
-                    for (let other of this.lightningNodes) {
-                        if (other === node || !other.active) continue;
-                        const d = Math.sqrt((other.tileX-node.tileX)**2 + (other.tileY-node.tileY)**2);
-                        if (d <= this.lightningNodeChainRange) {
-                            const g2 = this.add.graphics().setDepth(3);
-                            this.drawNodeArc(g2, node.px, node.py, other.px, other.py);
-                            this.tweens.add({ targets: g2, alpha: 0, duration: 400, onComplete: () => g2.destroy() });
-                        }
-                    }
-                    p.g.destroy();
-                    this.lightningProjectiles.splice(i, 1);
-                    hitNode = true;
-                    break;
-                }
-            }
-            if (hitNode) continue;
-
-            // Periodic area zap — reduced damage, but chains from ALL enemies in range
-            if (!p.lastZapTime) p.lastZapTime = time;
-            if (time - p.lastZapTime >= (p.zapInterval || 500)) {
-                p.lastZapTime = time;
-                const enemiesInRange = [];
-
-                // First pass: find all enemies in range
-                for (let enemy of this.enemies) {
-                    if (p.piercedEnemies.has(enemy)) continue; // already directly hit
-                    const d = Math.abs(enemy.x - tileX) + Math.abs(enemy.y - tileY);
-                    if (d <= (p.zapRadius || 10)) {
-                        enemiesInRange.push(enemy);
-                    }
-                }
-
-                // Second pass: hit each enemy directly from orb (no skipping!)
-                const zapGlobalHit = [];
-                for (let enemy of enemiesInRange) {
-                    // Hit this enemy directly - always
-                    this.drawLightningBolt({ sprite: { x: p.g.x, y: p.g.y } }, enemy);
-                    this.damageEnemy(enemy, this.baseLightningDamage * this.damageScaling * 0.5);
-
-                    // Flash
-                    enemy.sprite.setTint(0xffff00);
-                    this.time.delayedCall(100, () => {
-                        if (enemy.sprite && enemy.sprite.active) {
-                            enemy.sprite.clearTint();
-                        }
-                    });
-
-                    // Mark as hit for chains
-                    zapGlobalHit.push(enemy);
-                }
-
-                // Third pass: chain from each hit enemy
-                for (let enemy of enemiesInRange) {
-                    // Find nearest unchained enemy to chain to
-                    let nearestEnemy = null;
-                    let nearestDist = Infinity;
-
-                    for (let other of this.enemies) {
-                        if (zapGlobalHit.includes(other)) continue;
-                        const dist = Math.abs(other.x - enemy.x) + Math.abs(other.y - enemy.y);
-                        if (dist <= this.lightningChainRange && dist < nearestDist) {
-                            nearestEnemy = other;
-                            nearestDist = dist;
-                        }
-                    }
-
-                    if (nearestEnemy) {
-                        this.drawLightningBolt(enemy, nearestEnemy);
-                        this.performChainLightningShared(
-                            nearestEnemy,
-                            this.baseLightningDamage * this.damageScaling * 0.5 * this.lightningChainFalloff,
-                            zapGlobalHit,
-                            this.lightningChainFalloff
-                        );
-                    }
-                }
-
-                // Zap ring visual
-                if (enemiesInRange.length > 0) {
-                    const ring = this.add.circle(p.g.x, p.g.y, (p.zapRadius||10) * this.TILE_SIZE, 0x44ccff, 0);
-                    ring.setStrokeStyle(1, 0x44ccff, 0.3).setDepth(2.5);
-                    this.tweens.add({ targets: ring, alpha: 0, scaleX: 1.2, scaleY: 1.2, duration: 180, onComplete: () => ring.destroy() });
-                }
-            }
-        }
-    }
-
     shootChainLightning(targetX, targetY) {
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -2184,7 +2637,7 @@ class ElementSystem {
             this.spawnOrbScrap(sourceEnemy.sprite.x, sourceEnemy.sprite.y);
         }
 
-        sourceEnemy.sprite.setTint(0xffff00);
+        if (typeof sourceEnemy.sprite?.setTint === 'function') sourceEnemy.sprite.setTint(0xffff00);
         this.time.delayedCall(100, () => {
             if (sourceEnemy.sprite && sourceEnemy.sprite.active) {
                 sourceEnemy.sprite.clearTint();
@@ -3739,125 +4192,65 @@ class ElementSystem {
     cosmicDash(dirX, dirY, oldTileX, oldTileY) {
         const currentTime = this.time.now;
 
-        const dashCooldown = this.cosmicBlackHole ? this.cosmicDashCooldownUlt : this.cosmicDashCooldown;
-        if (currentTime - this.lastCosmicDashTime < dashCooldown) {
-            return;
-        }
+        const dashCooldown = this.cosmicDashCooldown;
+        if (currentTime - (this.lastCosmicDashTime || 0) < dashCooldown) return;
 
-        const chargeCost = this.cosmicBlackHole ? 0.5 : 1;
-        if (this.cosmicBatteryCharges < chargeCost) {
-            return;
-        }
-
-        // Calculate all tiles in dash path (pierce through)
+        // Calculate dash path — stop at first wall
+        let finalX = this.playerX, finalY = this.playerY;
         const dashPath = [];
         for (let i = 1; i <= this.cosmicDashDistance; i++) {
             const checkX = this.playerX + (dirX * i);
             const checkY = this.playerY + (dirY * i);
+            if (checkX < 0 || checkX >= this.WORLD_WIDTH || checkY < 0 || checkY >= this.WORLD_HEIGHT) break;
+            if (this.world[checkX][checkY] !== this.FLOOR) break;
+            if (this.isInLockedRoom && this.isInLockedRoom(checkX, checkY)) break;
             dashPath.push({ x: checkX, y: checkY });
+            finalX = checkX; finalY = checkY;
+        }
+        if (dashPath.length === 0) return;
+
+        // Stun enemies on dash path
+        for (const enemy of this.enemies) {
+            if (!enemy.sprite?.active) continue;
+            const inPath = dashPath.some(t => t.x === enemy.x && t.y === enemy.y);
+            if (!inPath) continue;
+            this.damageEnemy(enemy, this.cosmicDashDamage * this.damageScaling);
+            enemy.isStunned = true;
+            enemy.stunnedUntil = currentTime + this.cosmicDashStunDuration;
+            if (typeof enemy.sprite.setTint === 'function') enemy.sprite.setTint(0xcc88ff);
+            this.time.delayedCall(this.cosmicDashStunDuration, () => {
+                if (enemy.sprite?.active) { enemy.sprite.clearTint(); enemy.isStunned = false; }
+            });
+            this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'DAZED', '#cc88ff');
         }
 
-        // Check if final destination is valid
-        const targetX = this.playerX + (dirX * this.cosmicDashDistance);
-        const targetY = this.playerY + (dirY * this.cosmicDashDistance);
-
-        if (targetX < 0 || targetX >= this.WORLD_WIDTH ||
-            targetY < 0 || targetY >= this.WORLD_HEIGHT ||
-            this.world[targetX][targetY] !== this.FLOOR) {
-            return;
-        }
-
-        // Consume charges
-        this.cosmicBatteryCharges -= chargeCost;
-
-        // Check all enemies in dash path
-        let hitUnmarkedEnemy = false;
-        const hitEnemies = [];
-
-        for (let enemy of this.enemies) {
-            // Check if enemy is in dash path
-            const inPath = dashPath.some(tile => tile.x === enemy.x && tile.y === enemy.y);
-
-            if (inPath) {
-                hitEnemies.push(enemy);
-
-                // Apply mark (max 3)
-                if (enemy.cosmicMarks < this.cosmicMaxMarks) {
-                    if (enemy.cosmicMarks === 0) {
-                        hitUnmarkedEnemy = true;
-                    }
-                    enemy.cosmicMarks++;
-                    this.updateCosmicMarkVisual(enemy);
-                    this.showStatusText(enemy.sprite.x, enemy.sprite.y, `MARKED x${enemy.cosmicMarks}`, '#cc99ff');
-                }
-
-                // Stun enemy
-                enemy.isStunned = true;
-                enemy.stunnedUntil = currentTime + this.cosmicDashStunDuration;
-                this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'DAZED', '#9966ff');
-
-                // Flash
-                enemy.sprite.setTint(0x9966ff);
-                this.time.delayedCall(this.cosmicDashStunDuration, () => {
-                    if (enemy.sprite && enemy.sprite.active) {
-                        enemy.sprite.clearTint();
-                        enemy.isStunned = false;
-                    }
-                });
-            }
-        }
-
-        // Refund charge if hit at least one unmarked enemy
-        if (hitUnmarkedEnemy) {
-            this.cosmicBatteryCharges = Math.min(this.cosmicMaxCharges, this.cosmicBatteryCharges + 1);
-        }
-
-        // Draw trail using graphics API
+        // Trail visual
         const oldTrailX = oldTileX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const oldTrailY = oldTileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const newTrailX = targetX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const newTrailY = targetY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const newTrailX = finalX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const newTrailY = finalY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const trail = this.add.graphics().setDepth(2);
+        trail.lineStyle(6, 0xcc44ff, 0.65);
+        trail.beginPath(); trail.moveTo(oldTrailX, oldTrailY); trail.lineTo(newTrailX, newTrailY); trail.strokePath();
+        this.tweens.add({ targets: trail, alpha: 0, duration: 280, onComplete: () => trail.destroy() });
 
-        const graphics = this.add.graphics();
-        graphics.lineStyle(8, 0x9966ff, 0.6);
-        graphics.beginPath();
-        graphics.moveTo(oldTrailX, oldTrailY);
-        graphics.lineTo(newTrailX, newTrailY);
-        graphics.strokePath();
-
-        this.tweens.add({
-            targets: graphics,
-            alpha: 0,
-            duration: 300,
-            onComplete: () => graphics.destroy()
-        });
+        // Arrival burst
+        const burst = this.add.graphics().setDepth(3.5);
+        burst.x = newTrailX; burst.y = newTrailY;
+        burst.fillStyle(0xee88ff, 0.70); burst.fillCircle(0, 0, 14);
+        burst.lineStyle(2, 0xffffff, 0.80); burst.strokeCircle(0, 0, 14);
+        this.tweens.add({ targets: burst, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 280, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
 
         // Teleport player
-        this.playerX = targetX;
-        this.playerY = targetY;
-        this.player.x = targetX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        this.player.y = targetY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
-
-        // Visuals
-        const burst = this.add.circle(this.player.x, this.player.y, 5, 0xffffff, 1);
-        this.tweens.add({
-            targets: burst,
-            radius: 25,
-            alpha: 0,
-            duration: 300,
-            onComplete: () => burst.destroy()
-        });
-
-        this.player.setTint(0x9966ff);
-        this.time.delayedCall(150, () => {
-            if (this.cosmicBlackHole) {
-                this.player.setTint(0x9966ff);
-            } else {
-                this.player.clearTint();
-            }
-        });
+        this.playerX = finalX;
+        this.playerY = finalY;
+        this.player.x = finalX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        this.player.y = finalY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+        this.player.setTint(0xcc44ff);
+        this.time.delayedCall(120, () => { if (this.player?.active) this.player.clearTint(); });
 
         this.lastCosmicDashTime = currentTime;
+        this.cameras.main.shake(25, 0.002);
         this.updateHUD();
     }
 }

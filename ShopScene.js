@@ -70,9 +70,19 @@ class ShopScene extends Phaser.Scene {
             if (!active) {
                 bg.on('pointerover', () => bg.setFillStyle(0x0d1a26));
                 bg.on('pointerout',  () => bg.setFillStyle(0x0a1520));
-                bg.on('pointerdown', () => this.setGlurpDialogue('"Coming soon!"'));
+                if (i === 1) {
+                    bg.on('pointerdown', () => {
+                        contentContainer.setVisible(false);
+                        upgradesContainer.setVisible(true);
+                        upgradesContainer.setMask(mask);
+                        this.setGlurpDialogue('"Upgrade your\nults here!"');
+                    });
+                } else {
+                    bg.on('pointerdown', () => this.setGlurpDialogue('"Coming soon!"'));
+                }
             }
         });
+        this.add.line(W/2, 93, 0, 0, W-40, 0, 0x1a2a3a, 0.8).setOrigin(0.5);
         this.add.line(W/2, 93, 0, 0, W-40, 0, 0x1a2a3a, 0.8).setOrigin(0.5);
 
         // NPC panel
@@ -116,35 +126,38 @@ class ShopScene extends Phaser.Scene {
             { id:'flame_sword',  name:'Flame Sword',  element:'fire', cost:100,
               desc:'Wide 5-tile arc sweep.\nLeaves lava on all\nhit tiles. Heavy\nmelee damage.',
               color:0xff6600 },
-            { id:'magma_hammer', name:'Magma Hammer', element:'fire', cost:350,
-              desc:'Sends a 2-tile wide\nripple 6 tiles ahead,\nthen explodes in a\n4×4 lava blast.',
+            { id:'magma_staff', name:'Magma Staff', element:'fire', cost:350,
+              desc:'Fires 1–6 fireballs\nbased on burn stacks.\nAll hits apply burn.\nPress R: Magma Surge.',
               color:0xff2200 },
 
             // ICE
             { id:'ice_fists',   name:'Ice Fists',   element:'ice', cost:0,
               desc:'Throws ice shards\nat close range.\nApplies brittle and\ncan freeze. Default.',
               color:0x44aaff, defaultWeapon:true },
-            { id:'icicle_staff', name:'Icicle Staff', element:'ice', cost:80,
-              desc:'Blasts a 3-tile\nradius circle of ice\naround you. Applies\nchill to all hit.',
+            { id:'icicle_cannon', name:'Icicle Cannon', element:'ice', cost:80,
+              desc:'Fires 6 piercing\nicicles in a fan burst.\nEvery 3rd hit burst\ngrants lifesteal.',
               color:0x88ccff },
-            { id:'blizzard_staff', name:'Blizzard Staff', element:'ice', cost:0,
-              desc:'Coming soon...',   color:0x2266cc, comingSoon:true },
+            { id:'fractal_shard', name:'Fractal Shard', element:'ice', cost:150,
+              desc:'Slow heavy shard\nthat splits into 3\non impact. Each split\napplies freeze marks.',
+              color:0x44ccff },
 
             // LIGHTNING
             { id:'lightning_fists', name:'Storm Fists',    element:'lightning', cost:0,
               desc:'1-tile punch that\nchains lightning to\nnearby enemies.\nDefault weapon.',
               color:0xffff44, defaultWeapon:true },
-            { id:'lightning_rod',   name:'Lightning Rod',  element:'lightning', cost:0,
-              desc:'Coming soon...',   color:0xffdd00, comingSoon:true },
+            { id:'orb_emitter',     name:'Orb Emitter',    element:'lightning', cost:200,
+              desc:'Fires a bouncing\nelectric orb. Marks\nenemies & forks\nlightning on hit.',
+              color:0xffdd00 },
             { id:'thunder_axe',     name:'Thunder Axe',    element:'lightning', cost:0,
               desc:'Coming soon...',   color:0xffaa00, comingSoon:true },
 
             // COSMIC
             { id:'cosmic_fists',        name:'Void Fists',        element:'cosmic', cost:0,
-              desc:'Fires a cosmic beam.\nRequires battery\ncharges to use.\nDefault weapon.',
+              desc:'Melee punch.\nDash first for\n+25% damage per\ntile dashed.',
               color:0xcc44ff, defaultWeapon:true },
-            { id:'singularity_staff',   name:'Singularity Staff', element:'cosmic', cost:0,
-              desc:'Coming soon...',   color:0xaa22ff, comingSoon:true },
+            { id:'singularity_staff',   name:'Singularity Staff', element:'cosmic', cost:250,
+              desc:'Fires a black hole that\npulls enemies in its path.\nMove to accelerate it.\nR key: Collapse mode.',
+              color:0xaa22ff },
             { id:'void_blade',          name:'Void Blade',        element:'cosmic', cost:0,
               desc:'Coming soon...',   color:0x8800ff, comingSoon:true },
         ];
@@ -220,8 +233,210 @@ class ShopScene extends Phaser.Scene {
         const mask = maskGfx.createGeometryMask();
         contentContainer.setMask(mask);
 
-        // Mouse wheel scroll
-        this.input.on('wheel', (_p, _gos, _dx, dy) => updateScroll(dy * 0.5));
+        // ── UPGRADES TAB ──────────────────────────────────────────────
+        const upgradesContainer = this.add.container(GX0, CTOP).setVisible(false);
+
+        const fragments    = parseInt(localStorage.getItem('ultFragments') || '0');
+        this.fragments     = fragments;
+        this.fragmentText  = this.add.text(W - 16, 42, '◈ ' + fragments + ' Fragments', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#aaccff',
+            stroke: '#000', strokeThickness: 2
+        }).setOrigin(1, 0.5);
+
+        const ultDefs = [
+            {
+                key:     'fire',
+                label:   '🔥  FIRE ULT',
+                name:    'Ignition',
+                color:   '#ff6622',
+                hexCol:  0xff4400,
+                stages:  [
+                    { desc: 'Piercing shotgun fireballs.\nLava pools on hit.\nBurn stacks applied.' },
+                    { desc: 'Center fireball becomes\na Supernova — marks enemies\nwith ignition (2s fuse,\ncascading explosions).', fragCost: 5, glorpCost: 20 },
+                    { desc: 'Coming soon...', fragCost: 15, glorpCost: 80 },
+                ]
+            },
+            {
+                key:     'ice',
+                label:   '❄️  ICE ULT',
+                name:    'Blizzard Domain',
+                color:   '#44aaff',
+                hexCol:  0x44aaff,
+                stages:  [
+                    { desc: 'Frost domain: chill ticks,\nwind sweeps freeze/shatter,\nstays at cast location.' },
+                    { desc: 'Domain follows player.\nPress E to detonate —\nbig burst, decays per sweep.', fragCost: 5, glorpCost: 20 },
+                    { desc: 'Coming soon...', fragCost: 15, glorpCost: 80 },
+                ]
+            },
+            {
+                key:     'lightning',
+                label:   '⚡  LIGHTNING ULT',
+                name:    'Fork',
+                color:   '#ffff44',
+                hexCol:  0xffff44,
+                stages:  [
+                    { desc: 'Glide freely, invulnerable.\nAuto-zap all enemies\nwithin 4 tiles.' },
+                    { desc: 'Faster glide speed.\nLeave afterimage sentries\nas you move — each\nzaps nearby enemies.', fragCost: 5, glorpCost: 20 },
+                    { desc: 'Coming soon...', fragCost: 15, glorpCost: 80 },
+                ]
+            },
+            {
+                key:     'cosmic',
+                label:   '🌌  COSMIC ULT',
+                name:    'Black Hole',
+                color:   '#cc44ff',
+                hexCol:  0xcc44ff,
+                stages:  [
+                    { desc: 'Launch void bomb.\nE detonates early.\nPulls + marks enemies.' },
+                    { desc: 'Coming soon...', fragCost: 5, glorpCost: 20 },
+                    { desc: 'Coming soon...', fragCost: 15, glorpCost: 80 },
+                ]
+            },
+        ];
+
+        const CARD_H = 210, CARD_W = Math.floor((gridW - 24) / 3);
+        let uYOff = 4;
+
+        ultDefs.forEach(ult => {
+            const currentStage = parseInt(localStorage.getItem('ultStage_' + ult.key) || '1');
+            const elColor = Phaser.Display.Color.HexStringToColor(ult.color).color;
+
+            // Section header
+            const hBg  = this.add.rectangle(0, uYOff, gridW, 24, elColor, 0.10).setOrigin(0);
+            const hBar = this.add.rectangle(0, uYOff, 3, 24, elColor, 0.90).setOrigin(0);
+            const hLbl = this.add.text(10, uYOff + 12, ult.label, {
+                fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold',
+                color: ult.color, stroke: '#000', strokeThickness: 2
+            }).setOrigin(0, 0.5);
+            const hStage = this.add.text(gridW - 4, uYOff + 12, 'STAGE ' + currentStage + ' / 3', {
+                fontSize: '9px', fontFamily: 'monospace', color: '#44aa66', stroke: '#000', strokeThickness: 1
+            }).setOrigin(1, 0.5);
+            upgradesContainer.add([hBg, hBar, hLbl, hStage]);
+            uYOff += 28;
+
+            ult.stages.forEach((stage, idx) => {
+                const stageNum   = idx + 1;
+                const isOwned    = currentStage >= stageNum;
+                const isCurrent  = currentStage === stageNum;
+                const isNext     = stageNum === currentStage + 1;
+                const isSoon     = stage.desc === 'Coming soon...';
+                const canAfford  = isNext && !isSoon && this.glorps >= stage.glorpCost && this.fragments >= stage.fragCost;
+
+                const cx2 = idx * (CARD_W + 8) + CARD_W / 2;
+                const cy2 = uYOff + CARD_H / 2;
+                const dim = isSoon ? 0.28 : 1;
+
+                const bgCol  = isCurrent ? 0x0a2218 : isOwned ? 0x0a1828 : isSoon ? 0x090910 : 0x0d1a26;
+                const borCol = isCurrent ? 0x44dd88  : isOwned ? 0x2255aa  : isSoon ? 0x1a1a28 : ult.hexCol;
+
+                const card = this.add.rectangle(cx2, cy2, CARD_W, CARD_H, bgCol).setOrigin(0.5).setAlpha(dim);
+                card.setStrokeStyle(2, borCol, isSoon ? 0.12 : 0.85);
+                if (!isSoon) card.setInteractive();
+
+                const stripe = this.add.rectangle(cx2, cy2 - CARD_H/2 + 3, CARD_W - 4, 5, ult.hexCol, isSoon ? 0.12 : 0.7).setOrigin(0.5, 0).setAlpha(dim);
+
+                // Stage number badge
+                const badge = this.add.text(cx2, cy2 - CARD_H/2 + 22, 'STAGE ' + stageNum, {
+                    fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold',
+                    color: isCurrent ? '#44dd88' : isOwned ? '#4499cc' : isSoon ? '#222233' : ult.color,
+                    stroke: '#000', strokeThickness: 3
+                }).setOrigin(0.5).setAlpha(dim);
+
+                const descText = this.add.text(cx2, cy2 - CARD_H/2 + 42, stage.desc, {
+                    fontSize: '8px', fontFamily: 'monospace', align: 'center',
+                    color: isSoon ? '#1a1a28' : isOwned ? '#4a7a6a' : '#4a6a7a',
+                    wordWrap: { width: CARD_W - 16 }, lineSpacing: 2
+                }).setOrigin(0.5, 0).setAlpha(dim);
+
+                // Cost display
+                let costObj = null;
+                if (!isOwned && !isSoon) {
+                    const costCol = canAfford ? '#00ff88' : '#cc3333';
+                    costObj = this.add.text(cx2, cy2 + CARD_H/2 - 28,
+                        '◈ ' + stage.fragCost + ' Frags  ✦ ' + stage.glorpCost + ' Glorps', {
+                        fontSize: '8px', fontFamily: 'monospace', color: costCol,
+                        stroke: '#000', strokeThickness: 2
+                    }).setOrigin(0.5);
+                }
+
+                // Status / buy button
+                let statusObj = null;
+                if (isCurrent) {
+                    statusObj = this.add.text(cx2, cy2 + CARD_H/2 - 14, '★ CURRENT', {
+                        fontSize: '10px', fontFamily: 'monospace', color: '#44dd88',
+                        stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
+                    }).setOrigin(0.5);
+                } else if (isOwned) {
+                    statusObj = this.add.text(cx2, cy2 + CARD_H/2 - 14, '✓ OWNED', {
+                        fontSize: '10px', fontFamily: 'monospace', color: '#4499cc',
+                        stroke: '#000', strokeThickness: 2
+                    }).setOrigin(0.5);
+                } else if (!isSoon) {
+                    statusObj = this.add.text(cx2, cy2 + CARD_H/2 - 14,
+                        isNext ? (canAfford ? '▶ UPGRADE' : '✗ LOCKED') : '🔒 LOCKED', {
+                        fontSize: '10px', fontFamily: 'monospace',
+                        color: canAfford ? '#00ff88' : '#cc3333',
+                        stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
+                    }).setOrigin(0.5);
+
+                    if (isNext && canAfford) {
+                        statusObj.setInteractive();
+                        statusObj.on('pointerover', () => statusObj.setStyle({ color: '#88ffcc' }));
+                        statusObj.on('pointerout',  () => statusObj.setStyle({ color: '#00ff88' }));
+                        statusObj.on('pointerdown', () => this.buyUltUpgrade(ult.key, stageNum, stage.fragCost, stage.glorpCost));
+                    }
+                }
+
+                if (!isSoon) {
+                    card.on('pointerover', () => {
+                        card.setFillStyle(isCurrent ? 0x0d3a22 : isOwned ? 0x0d2233 : 0x112233);
+                        card.setStrokeStyle(2, borCol, 1);
+                        if (isCurrent) this.setGlurpDialogue('"Stage ' + stageNum + '!\nCurrently active!"');
+                        else if (isOwned) this.setGlurpDialogue('"Already\nunlocked!"');
+                        else if (canAfford) this.setGlurpDialogue('"Upgrade stage ' + stageNum + '!\nClick UPGRADE!"');
+                        else if (!isNext) this.setGlurpDialogue('"Unlock earlier\nstages first!"');
+                        else this.setGlurpDialogue('"Need ' + Math.max(0, stage.fragCost - this.fragments) + ' more frags\n& ' + Math.max(0, stage.glorpCost - this.glorps) + ' more glorps!"');
+                    });
+                    card.on('pointerout', () => {
+                        card.setFillStyle(bgCol);
+                        card.setStrokeStyle(2, borCol, 0.85);
+                        this.setGlurpDialogue('"Upgrade your\nults here!"');
+                    });
+                }
+
+                upgradesContainer.add([card, stripe, badge, descText,
+                    ...(costObj   ? [costObj]   : []),
+                    ...(statusObj ? [statusObj] : [])]);
+            });
+
+            uYOff += CARD_H + 12;
+        });
+
+        // Scroll for upgrades
+        const uMaxScroll = Math.max(0, uYOff - viewH);
+        this._uScrollY = 0;
+        const updateUScroll = (dy) => {
+            if (!upgradesContainer.visible) return;
+            this._uScrollY = Phaser.Math.Clamp(this._uScrollY + dy, 0, uMaxScroll);
+            upgradesContainer.y = CTOP - this._uScrollY;
+        };
+        this.input.on('wheel', (_p, _gos, _dx, dy) => {
+            if (upgradesContainer.visible) updateUScroll(dy * 0.5);
+        });
+
+        // Mouse wheel scroll — weapons tab
+        this.input.on('wheel', (_p, _gos, _dx, dy) => {
+            if (contentContainer.visible) updateScroll(dy * 0.5);
+        });
+
+        // Restore active tab after restart (e.g. after buying an upgrade)
+        if (localStorage.getItem('_shopTab') === 'upgrades') {
+            localStorage.removeItem('_shopTab');
+            contentContainer.setVisible(false);
+            upgradesContainer.setVisible(true);
+            upgradesContainer.setMask(mask);
+            this.setGlurpDialogue('"Upgrade your\nults here!"');
+        }
 
         // Scroll bar indicator if content overflows
         if (maxScroll > 0) {
@@ -354,6 +569,19 @@ class ShopScene extends Phaser.Scene {
         this.glorpCountText.setText('✦ ' + this.glorps + ' Glorps');
         this.setGlurpDialogue('"Excellent choice!\nEnjoy your\n' + w.name + '!"');
         this.tweens.add({ targets: card, alpha: 0.4, duration: 80, yoyo: true, repeat: 2, onComplete: () => this.scene.restart() });
+    }
+
+    buyUltUpgrade(ultKey, stageNum, fragCost, glorpCost) {
+        if (this.glorps < glorpCost) { this.setGlurpDialogue('"Not enough glorps!"'); return; }
+        if (this.fragments < fragCost) { this.setGlurpDialogue('"Not enough fragments!"'); return; }
+        this.glorps -= glorpCost;
+        this.fragments -= fragCost;
+        localStorage.setItem('glorps', this.glorps);
+        localStorage.setItem('ultFragments', this.fragments);
+        localStorage.setItem('ultStage_' + ultKey, stageNum);
+        localStorage.setItem('_shopTab', 'upgrades');
+        this.setGlurpDialogue('"Stage ' + stageNum + '\nunlocked! Nice!"');
+        this.scene.restart();
     }
 
     setGlurpDialogue(text) { if (this.glurpDialogue) this.glurpDialogue.setText(text); }

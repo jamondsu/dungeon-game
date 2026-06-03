@@ -127,3 +127,81 @@ LIGHTNING ULT (fork) — revised
 - ult drain bar depletes over duration as usual
 
 it still says ice element unlocked in level 2 just like the ice tutorial, and the fire visuals arent updating and stay behind, and the hallway to the chest room should also have a barrier while combat is in place, and the third room in level 2 is still bugged and enemies cant move and after killing them all the chest doesnt spawn so ur stuck
+
+═══════════════════════════════════════════════════════════
+LEVEL 3 — THE VOID RIFT (Design Document)
+═══════════════════════════════════════════════════════════
+
+UNLOCKS: Cosmic element (chest reward after Void Sovereign)
+
+ROOMS (6 total):
+  Room 0 — Fractured Hall
+    Cracked corridor, pillar pairs. Void snipers + normal slimes.
+    Snipers go invisible, telegraph with red laser sight before firing.
+
+  Room 1 — Elemental Crucible
+    One fire elemental, one ice elemental, one lightning elemental + normals.
+    Lightning elemental: immune to lightning, fires arc at player if within 5 tiles.
+    Queen Slime portal spawns adds periodically.
+
+  Room 2 — Cosmic Tutorial
+    3 weak enemies. Unlocks cosmic element tutorial hints.
+    Cosmic charges visible to pick up and experiment with.
+
+  Room 3 — Ult Gauntlet
+    4 ult absorbers spread across room, 6 normal enemies + 1 sniper.
+    Must clear absorbers carefully to use ults.
+
+  Room 4 — Queen Slime Chamber
+    Two Queen Slime portals on opposite sides of divided room.
+    Wall splits room with two gaps. Ice elemental + lightning elemental guards.
+
+  Room 5 — Void Sovereign Arena (Boss)
+    28×24 open arena. 4 destroyable corner pillars.
+    Mid-wall stones provide early-phase cover.
+    Guards: 4 normals + 1 lightning elemental.
+
+VOID SOVEREIGN BOSS (3000 HP):
+  Purple slime, 5× scale, orbiting void ring, debris particles.
+
+  PHASE 1 (100–60%): 3 attacks, random order
+    A1 — Void Mines: 5 black spheres, timer sweep arc, root 3s on detonation
+    A2 — Gravitational Pull: black hole at random tile, pulls player every 0.8s
+    A3 — Laser Cross: 4 cardinals anticlockwise sweep, then 4 diagonals clockwise
+
+  PHASE 2 (60–30%): + 2 new attacks, corner pillars destroyed
+    A4 — Dark Matter Fragments: boss invulnerable, 4 orbiting fragments fire ripples
+         Must hit all 4 → boss exposed for 2× damage 4s window
+    A5 — Stomp: flies offscreen, tracking circle 2.5s, brief escape window, massive damage
+
+  PHASE 3 (30–0%): + 2 more attacks
+    A6 — Singularity Collapse: 2s pull toward center then lethal AoE detonation
+    A7 — Event Horizon: rotating void ring reflects projectiles for 6s
+
+  REWARDS: 8 fragments + glorps + cosmic element unlock
+
+NEW ENEMY TYPES:
+  Lightning Elemental — immune to lightning, fires arc within 5 tiles, can be frozen/fire-killed
+  Void Sniper — invisible until firing, laser sight telegraph, high damage bolt, goes dark after firing
+
+BOSS INTERACTION WITH PLAYER DAMAGE:
+  - Immune during Dark Fragments phase
+  - Event Horizon reflects projectiles (melee/ult bypass)
+  - 2× damage during Fragment vulnerable window
+  - Root mechanic: player cannot move while rooted (purple tint)
+
+TODO / FOLLOW-UP:
+  - Event horizon projectile reflection in WeaponSystem.updateFireballs
+  - Lightning elemental arc visual polish
+  - Queen Slime portal spawner tie-in with existing portal system
+  - _voidSniperBolts: also damage boss if EventHorizon active (reflection)
+  - Level 3 accessible from LevelSelectScene (add level 3 button)
+
+  Slime CEO: every certain amount of time, transform a random slime in the room into a slime knight. this has very big hp and a very big shield (basically like extra hp on top of its hp), and swings in a 3x3 in front of it knocking you back one tile
+
+  Taunter: has a radius around this slime. whenever an enemy receives damage inside this slimes radius, it goes to this slime instead, and it takes only 50% of the damage dealt. for every tick of damage it receives, it has a 50% chance to shoot 2 green tendrils in random directions in its radius, dealing damage and rooting briefly
+
+  Blinder: throws a large haze in the direction of the player, which can pass through obstacles. if this haze touches the player, their line of sight is shortened to a radius of 2 tiles for 5 seconds
+
+  WereSlime: this slime attacks with an X in front of it. whenever the player moves, this slime gets enraged for 1 second, gaining significant movement speed and attack speed. if the player is under 50% health, it is enraged for as long as the player is under 50% hp
+
