@@ -617,6 +617,14 @@ class GameScene extends Phaser.Scene {
             if (pointer.button !== 0) return;
             if (this._devTeleportMode) return; // teleport mode consumes left-click
 
+            // Level 4 — during surface window, clicks route to weak point rhythm system
+            if (this.isLevel4 && this.fractureCore?._surfaced && this._fractureWeakPoints?.length) {
+                const worldX = pointer.x + this.cameras.main.scrollX;
+                const worldY = pointer.y + this.cameras.main.scrollY;
+                this._tryHitCurrentWeakPoint(worldX, worldY);
+                return;
+            }
+
             if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
                 this.throwLightning();
                 return;
@@ -766,7 +774,7 @@ class GameScene extends Phaser.Scene {
             this.updateVoidRipples(delta);
         }
         if (this.isLevel4) {
-            try { this.updateLevel4(time); }
+            try { this.updateLevel4(time, delta); }
             catch (e) { console.error('Level 4 error:', e); }
             this._updateCrumbleTiles(time);
         }
@@ -839,6 +847,17 @@ class GameScene extends Phaser.Scene {
                     newY >= 0 && newY < this.WORLD_HEIGHT &&
                     this.world[newX][newY] === this.FLOOR &&
                     !this.isNodeAt(newX, newY)) {
+
+                    // Level 4 — crack tiles are impassable for the player while dormant
+                    if (this.isLevel4 && this._cracks?.length && this.fractureCore?.active && !this.fractureCore._surfaced) {
+                        const targetWx = newX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const targetWy = newY * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        if (this._isInCrack(targetWx, targetWy)) {
+                            this.showStatusText(this.player.x, this.player.y - 28, 'IMPASSABLE', '#ff8844');
+                            this.lastMoveTime = time;
+                            return;
+                        }
+                    }
 
                     // Tutorial: if the target tile is a sealed door tile, block and flash it
                     if ((this.isTutorial || this.isLevel2 || this.isLevel3 || this.isLevel4) && this.lockedDoorTiles) {
@@ -1124,6 +1143,31 @@ class GameScene extends Phaser.Scene {
     _spawnFractureCore(...a)     { return LevelManager.prototype._spawnFractureCore.call(this, ...a); }
     _updateFractureCore(...a)    { return LevelManager.prototype._updateFractureCore.call(this, ...a); }
     damageFractureCore(...a)     { return LevelManager.prototype.damageFractureCore.call(this, ...a); }
+    _updateCracks(...a)          { return LevelManager.prototype._updateCracks.call(this, ...a); }
+    _isInCrack(...a)             { return LevelManager.prototype._isInCrack.call(this, ...a); }
+    _closestPointOnCrack(...a)   { return LevelManager.prototype._closestPointOnCrack.call(this, ...a); }
+    _crackMidpoint(...a)         { return LevelManager.prototype._crackMidpoint.call(this, ...a); }
+    _generateCrackPoints(...a)   { return LevelManager.prototype._generateCrackPoints.call(this, ...a); }
+    _drawWeakPointInner(...a)     { return LevelManager.prototype._drawWeakPointInner.call(this, ...a); }
+    _drawWeakPointRing(...a)      { return LevelManager.prototype._drawWeakPointRing.call(this, ...a); }
+    _drawWeakPointRing2(...a)     { return LevelManager.prototype._drawWeakPointRing2.call(this, ...a); }
+    _activateWeakPoint(...a)      { return LevelManager.prototype._activateWeakPoint.call(this, ...a); }
+    _updateWeakPointBar(...a)     { return LevelManager.prototype._updateWeakPointBar.call(this, ...a); }
+    _shrinkCrack(...a)            { return LevelManager.prototype._shrinkCrack.call(this, ...a); }
+    _crackWiden(...a)              { return LevelManager.prototype._crackWiden.call(this, ...a); }
+    _tryBreakCrackPulse(...a)     { return LevelManager.prototype._tryBreakCrackPulse.call(this, ...a); }
+    _hitFractureWeakPoint(...a)   { return LevelManager.prototype._hitFractureWeakPoint.call(this, ...a); }
+    _tryHitCurrentWeakPoint(...a) { return LevelManager.prototype._tryHitCurrentWeakPoint.call(this, ...a); }
+    _crackPhaseUp(...a)           { return LevelManager.prototype._crackPhaseUp.call(this, ...a); }
+    _pushPlayerOutOfCracks(...a)  { return LevelManager.prototype._pushPlayerOutOfCracks.call(this, ...a); }
+    _initCracks(...a)             { return LevelManager.prototype._initCracks.call(this, ...a); }
+    _addCrack(...a)               { return LevelManager.prototype._addCrack.call(this, ...a); }
+    _crackPulseWave(...a)         { return LevelManager.prototype._crackPulseWave.call(this, ...a); }
+    _tickCrackPulses(...a)        { return LevelManager.prototype._tickCrackPulses.call(this, ...a); }
+    _crackSpawnBurst(...a)        { return LevelManager.prototype._crackSpawnBurst.call(this, ...a); }
+    _fractureCoreSurface(...a)    { return LevelManager.prototype._fractureCoreSurface.call(this, ...a); }
+    _updateSurfaceWindow(...a)    { return LevelManager.prototype._updateSurfaceWindow.call(this, ...a); }
+    _fractureCoreSubmerge(...a)   { return LevelManager.prototype._fractureCoreSubmerge.call(this, ...a); }
     _fractureCoreNextAttack(...a){ return LevelManager.prototype._fractureCoreNextAttack.call(this, ...a); }
     _fractureCoreDoAttack(...a)  { return LevelManager.prototype._fractureCoreDoAttack.call(this, ...a); }
     _fractureCorePhase2Transition(...a){ return LevelManager.prototype._fractureCorePhase2Transition.call(this, ...a); }
@@ -1318,6 +1362,7 @@ class GameScene extends Phaser.Scene {
     spawnBounceImpact(...a) { return WeaponSystem.prototype.spawnBounceImpact.call(this, ...a); }
     destroyIceShard(...a) { return WeaponSystem.prototype.destroyIceShard.call(this, ...a); }
     updateFireballs(...a) { return WeaponSystem.prototype.updateFireballs.call(this, ...a); }
+    _checkProjectileCrackShrink(...a) { return WeaponSystem.prototype._checkProjectileCrackShrink.call(this, ...a); }
     updateLightningOrbs(...a) { return WeaponSystem.prototype.updateLightningOrbs.call(this, ...a); }
     cosmicFistsAttack(...a)  { return WeaponSystem.prototype.cosmicFistsAttack.call(this, ...a); }
     singularityStaffFire(...a)        { return WeaponSystem.prototype.singularityStaffFire.call(this, ...a); }

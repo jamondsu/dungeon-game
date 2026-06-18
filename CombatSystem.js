@@ -502,6 +502,23 @@ class CombatSystem {
             }
         }
 
+        // ── Fracture Core ─────────────────────────────────────────────────────
+        if (this.fractureCore?.active && typeof this.damageFractureCore === 'function') {
+            const fc = this.fractureCore;
+            if (!fc._surfaced) return false; // only damageable while surfaced
+            if (!_cooldownOk(fc)) return false;
+            const wpx = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+            const wpy = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+            const radius = this.TILE_SIZE * 0.6;
+            // Check if this hit lands on any incomplete weak point
+            const wp = (this._fractureWeakPoints || []).find(w =>
+                !w.complete && Math.hypot(w.x - wpx, w.y - wpy) < radius + 13);
+            if (!wp) return false;
+            this.damageFractureCore(damage, wpx, wpy);
+            if (this.currentElement !== 'cosmic') this.gainUltCharge(this.ultChargePerHit);
+            return true;
+        }
+
         return false;
     }
 

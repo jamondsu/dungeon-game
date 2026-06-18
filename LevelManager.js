@@ -1546,7 +1546,7 @@ class LevelManager {
         this._fractureCoreReady = true;
     }
 
-    updateLevel4(time) {
+    updateLevel4(time, delta) {
         const playerRoom = this.getCurrentPlayerRoom();
         if (playerRoom === -1) return;
 
@@ -1606,7 +1606,7 @@ class LevelManager {
             }
         }
 
-        if (this.fractureCore?.active) this._updateFractureCore(time);
+        if (this.fractureCore?.active) this._updateFractureCore(time, delta);
 
         if (this._playerRooted && time >= this._playerRootUntil) {
             this._playerRooted = false;
@@ -1636,11 +1636,12 @@ class LevelManager {
         const cy = Math.floor(bossRoom.y + bossRoom.h / 2);
         const px = cx * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = cy * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const TS = this.TILE_SIZE;
 
         this.showStatusText(px, py - 80, '✦ FRACTURE CORE ✦', '#ff6600');
         this.cameras.main.shake(60, 0.006);
 
-        // Core body — crystalline octagon
+        // Core body — crystalline octagon (hidden while dormant)
         const container = this.add.container(px, py).setDepth(3);
         const body = this.add.graphics();
         body.fillStyle(0xff6600, 0.90);
@@ -1672,241 +1673,891 @@ class LevelManager {
         body.closePath(); body.strokePath();
         container.add(body);
         this.tweens.add({ targets: container, angle: 360, duration: 8000, repeat: -1, ease: 'Linear' });
+        container.setVisible(false); // hidden until surfaced
 
-        // Health bar
+        // Health bar (hidden until surfaced)
         const hpBg   = this.add.rectangle(px, py - 50, 80, 8, 0x330000, 0.85).setDepth(4);
         const hpFill = this.add.rectangle(px - 40, py - 50, 80, 8, 0xff6600, 1.0).setDepth(4).setOrigin(0, 0.5);
         const hpText = this.add.text(px, py - 62, 'FRACTURE CORE', {
             fontSize: '10px', fontFamily: 'monospace', color: '#ff8844',
             stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(4);
+        hpBg.setVisible(false); hpFill.setVisible(false); hpText.setVisible(false);
+
+        // Damage-cap bar (shown only while surfaced)
+        const capBg   = this.add.rectangle(px, py - 38, 80, 6, 0x222222, 0.85).setDepth(4);
+        const capFill = this.add.rectangle(px - 40, py - 38, 80, 6, 0xffff44, 1.0).setDepth(4).setOrigin(0, 0.5);
+        const capText = this.add.text(px, py - 48, 'DAMAGE CAP', {
+            fontSize: '8px', fontFamily: 'monospace', color: '#ffff88',
+            stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(4);
+        capBg.setVisible(false); capFill.setVisible(false); capText.setVisible(false);
 
         const MAX_HP = 4000;
         this.fractureCore = {
-            active: true, container, body, hpBg, hpFill, hpText,
+            active: true, container, body, hpBg, hpFill, hpText, capBg, capFill, capText,
             health: MAX_HP, maxHealth: MAX_HP,
             tileX: cx, tileY: cy,
             _phase: 1,
-            _lastAttack: this.time.now,
-            _attackInterval: 5000,
-            _isInvulnerable: false,
+            _isInvulnerable: true, // invulnerable until first surface
+            _surfaced: false,
             _rootPhaseActive: false,
         };
 
+        // ── Crack system init ───────────────────────────────────────────────
+        this._crackPhase = 0;            // escalation level — increases via instant bursts
+        this._crackMaxPhase = 5;         // hard cap
+        this._cracks = [];               // array of crack objects
+        this._crackSpawnInterval = 12000;
+        this._crackSpawnTimer = this.time.now + 14000; // next enemy-spawn burst
+        this._crackPulseTimer = this.time.now + 9000; // next pulse wave
+        this._nextSurfaceTime = this.time.now + 12000; // first surface window
+        this._fractureWeakPoints = [];   // active weak points during surface
+        this._totalWidens = 0;           // tracks crack-widen events for global escalation
+        this._nextNewCrackTime = this.time.now + 30000; // periodic new-crack timer — independent of widens
+        this._crackPulses = [];
+
+        this._initCracks(bossRoom);
+
         this.spawnFinalLevelChest(cx, cy + 4, null);
-        this.time.delayedCall(2000, () => this._fractureCoreNextAttack());
     }
 
-    _updateFractureCore(time) {
+    // ── CRACK SYSTEM ─────────────────────────────────────────────────────────
+    _initCracks(bossRoom) {
+        // Two irregular fissures crossing the arena at oblique angles
+        const cx = bossRoom.x + bossRoom.w / 2;
+        const cy = bossRoom.y + bossRoom.h / 2;
+        const w = bossRoom.w, h = bossRoom.h;
+
+        // Fissure 1 — runs roughly NW-SE, off-center, jagged
+        this._addCrack({
+            x1: bossRoom.x + w * 0.18, y1: bossRoom.y + h * 0.08,
+            x2: bossRoom.x + w * 0.72, y2: bossRoom.y + h * 0.95,
+        });
+        // Fissure 2 — runs roughly NE-SW, crossing the first at an angle
+        this._addCrack({
+            x1: bossRoom.x + w * 0.88, y1: bossRoom.y + h * 0.20,
+            x2: bossRoom.x + w * 0.22, y2: bossRoom.y + h * 0.85,
+        });
+    }
+
+    // Generates a jagged polyline of tile-coord points between two endpoints
+    _generateCrackPoints(x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len = Math.hypot(dx, dy);
+        const segments = Math.max(4, Math.round(len / 2.2)); // ~1 jag every ~2 tiles
+        const perpX = -dy / len, perpY = dx / len;
+
+        const points = [];
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            let px = x1 + dx * t, py = y1 + dy * t;
+            // Jitter perpendicular to the main direction — less at the very ends
+            const edgeFade = Math.sin(t * Math.PI); // 0 at ends, 1 at middle
+            const jitter = (Math.random() - 0.5) * 2.6 * (0.3 + edgeFade * 0.7);
+            px += perpX * jitter;
+            py += perpY * jitter;
+            points.push({ x: px, y: py });
+        }
+        return points;
+    }
+
+    _addCrack(opts) {
+        const gfx = this.add.graphics().setDepth(2.6);
+        const points = this._generateCrackPoints(opts.x1, opts.y1, opts.x2, opts.y2);
+        const crack = {
+            gfx,
+            x1: opts.x1, y1: opts.y1, x2: opts.x2, y2: opts.y2, // tile coords — endpoints (for tendrils/spawn refs)
+            points,            // jagged polyline — array of {x,y} tile coords
+            width: 0.35,       // tile-widths — how wide the impassable zone is
+            baseWidth: 0.35,   // minimum width — shrinking can't go below this
+            growth: 0,         // 0-100 — ticks up over time, drives auto-widen
+            intensity: 0.4,    // visual pulse intensity, scales with phase/growth
+            phase: Math.random() * Math.PI * 2, // animation phase offset
+            lastShrinkHit: 0,  // cooldown tracker for projectile shrink
+            _debris: null,     // cached debris specks (generated once)
+        };
+        this._cracks.push(crack);
+        return crack;
+    }
+
+    // Returns the crack object if (wx,wy) world-pixel position is inside its impassable fissure
+    _isInCrack(wx, wy) {
+        const TS = this.TILE_SIZE;
+        for (const crack of this._cracks) {
+            const halfW = crack.width * TS / 2;
+            const pts = crack.points;
+            for (let i = 0; i < pts.length - 1; i++) {
+                const x1 = pts[i].x * TS, y1 = pts[i].y * TS;
+                const x2 = pts[i+1].x * TS, y2 = pts[i+1].y * TS;
+                const d = Utils.distancePointToSegment(wx, wy, x1, y1, x2, y2);
+                if (d < halfW) return crack;
+            }
+        }
+        return null;
+    }
+
+    // Closest point on a crack's polyline to a given world position — returns {x, y, segIdx}
+    _closestPointOnCrack(crack, wx, wy) {
+        const TS = this.TILE_SIZE;
+        const pts = crack.points;
+        let best = null, bestDist = Infinity;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const x1 = pts[i].x * TS, y1 = pts[i].y * TS;
+            const x2 = pts[i+1].x * TS, y2 = pts[i+1].y * TS;
+            const dx = x2 - x1, dy = y2 - y1;
+            const lenSq = dx*dx + dy*dy || 1;
+            const t = Math.max(0, Math.min(1, ((wx - x1)*dx + (wy - y1)*dy) / lenSq));
+            const cx = x1 + t * dx, cy = y1 + t * dy;
+            const d = Math.hypot(wx - cx, wy - cy);
+            if (d < bestDist) { bestDist = d; best = { x: cx, y: cy, segIdx: i }; }
+        }
+        return best;
+    }
+
+    // Called when an individual crack's growth meter fills — widens that crack
+    // and, every few total widen-events, escalates globally (new crack, faster spawns)
+    _crackWiden(crack) {
+        crack.width = Math.min(2.2, crack.width + 0.35);
+        crack.intensity = Math.min(1.0, crack.intensity + 0.15);
+        crack.growth = 0;
+
+        const core = this.fractureCore;
+        this.cameras.main.shake(50, 0.004);
+        this.showStatusText(crack.gfx.x || core.container.x, (crack.points[0].y * this.TILE_SIZE) - 30, '⚡ CRACK WIDENS', '#ff4400');
+
+        // Push player out if they're now standing in the widened crack
+        this._pushPlayerOutOfCracks();
+
+        // Global escalation tracking
+        this._totalWidens = (this._totalWidens || 0) + 1;
+        const WIDEN_THRESHOLD = 3; // every 3 widen-events, escalate globally
+        if (this._totalWidens >= WIDEN_THRESHOLD && this._crackPhase < this._crackMaxPhase) {
+            this._totalWidens = 0;
+            this._crackPhaseUp();
+        }
+    }
+
+    // Global escalation — adds a new crack and increases spawn/growth rates
+    _crackPhaseUp() {
+        if (this._crackPhase >= this._crackMaxPhase) return;
+        this._crackPhase++;
+        const core = this.fractureCore;
+
+        this.cameras.main.shake(70, 0.006);
+        this.cameras.main.flash(180, 255, 100, 50);
+        this.showStatusText(core.container.x, core.container.y - 90, `⚡⚡ NEW CRACK FORMS (${this._crackPhase}/${this._crackMaxPhase})`, '#ff4400');
+
+        this._spawnNewCrack();
+
+        // Increase enemy spawn rate
+        this._crackSpawnInterval = Math.max(5000, 12000 - this._crackPhase * 1000);
+
+        // Push player out of the new crack if it spawned on top of them
+        this._pushPlayerOutOfCracks();
+    }
+
+    // Picks a geometry variant and adds a new crack to the arena
+    _spawnNewCrack() {
+        const bossRoom = this.rooms[6];
+        const variant = (this._cracks.length + this._crackPhase) % 4;
+        const w = bossRoom.w, h = bossRoom.h;
+        let opts;
+        if (variant === 0) {
+            opts = { x1: bossRoom.x + w * 0.08, y1: bossRoom.y + h * 0.35, x2: bossRoom.x + w * 0.95, y2: bossRoom.y + h * 0.62 };
+        } else if (variant === 1) {
+            opts = { x1: bossRoom.x + w * 0.45, y1: bossRoom.y + h * 0.02, x2: bossRoom.x + w * 0.30, y2: bossRoom.y + h * 0.98 };
+        } else if (variant === 2) {
+            opts = { x1: bossRoom.x + w * 0.05, y1: bossRoom.y + h * 0.70, x2: bossRoom.x + w * 0.60, y2: bossRoom.y + h * 0.05 };
+        } else {
+            opts = { x1: bossRoom.x + w * 0.95, y1: bossRoom.y + h * 0.40, x2: bossRoom.x + w * 0.40, y2: bossRoom.y + h * 0.95 };
+        }
+        const nc = this._addCrack(opts);
+        nc.width = 0.5;
+        nc.intensity = 0.5;
+        return nc;
+    }
+
+    _pushPlayerOutOfCracks() {
+        const TS = this.TILE_SIZE;
+        const crack = this._isInCrack(this.player.x, this.player.y);
+        if (!crack) return;
+
+        // Find the nearest segment of the jagged polyline and push away from it
+        const pts = crack.points;
+        let bestSeg = null, bestDist = Infinity;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const x1 = pts[i].x * TS, y1 = pts[i].y * TS;
+            const x2 = pts[i+1].x * TS, y2 = pts[i+1].y * TS;
+            const d = Utils.distancePointToSegment(this.player.x, this.player.y, x1, y1, x2, y2);
+            if (d < bestDist) { bestDist = d; bestSeg = { x1, y1, x2, y2 }; }
+        }
+        if (!bestSeg) return;
+
+        const dx = bestSeg.x2 - bestSeg.x1, dy = bestSeg.y2 - bestSeg.y1;
+        const len = Math.hypot(dx, dy) || 1;
+        let perpX = -dy / len, perpY = dx / len;
+        // Determine which side the player is on relative to this segment
+        const toPx = this.player.x - bestSeg.x1, toPy = this.player.y - bestSeg.y1;
+        const side = toPx * perpX + toPy * perpY;
+        if (side < 0) { perpX = -perpX; perpY = -perpY; }
+
+        const pushDist = (crack.width * TS / 2) + TS * 0.6;
+        let newX = this.player.x + perpX * pushDist;
+        let newY = this.player.y + perpY * pushDist;
+
+        // Clamp to floor bounds
+        const ntx = Math.floor(newX / TS), nty = Math.floor(newY / TS);
+        if (this.world[ntx]?.[nty] === this.FLOOR) {
+            this.player.x = newX;
+            this.player.y = newY;
+            this.playerX = ntx;
+            this.playerY = nty;
+            this.showStatusText(newX, newY - 30, 'PUSHED BACK', '#ff8844');
+        }
+    }
+
+    _updateCracks(time, delta) {
+        if (!this._cracks?.length) return;
+        const TS = this.TILE_SIZE;
+        const core = this.fractureCore;
+
+        // ── Player collision — block movement into cracks ─────────────────
+        const playerCrack = this._isInCrack(this.player.x, this.player.y);
+        if (playerCrack && !core._surfaced) {
+            this._pushPlayerOutOfCracks();
+        }
+
+        // ── Render all cracks as jagged ground fissures ─────────────────────
+        for (const crack of this._cracks) {
+            if (!crack.gfx?.active) continue;
+            crack.phase += delta * 0.003;
+            const pulse = 0.6 + 0.4 * Math.sin(crack.phase);
+            const pts = crack.points;
+            const halfW = Math.max(1.5, crack.width * TS * 0.5);
+            const growthPct = crack.growth / 100;
+            const glowAlpha = (0.15 + crack.intensity * 0.25) * pulse + growthPct * 0.25;
+            const edgeCol = growthPct > 0.7 ? 0xffffff : 0xffaa44;
+
+            crack.gfx.clear();
+
+            // Build two offset polylines (left/right edges of the fissure gap)
+            // by offsetting each point perpendicular to its local segment direction.
+            const leftPts = [], rightPts = [];
+            for (let i = 0; i < pts.length; i++) {
+                // Use direction from prev->next for a smoother perpendicular at joints
+                const prev = pts[Math.max(0, i - 1)];
+                const next = pts[Math.min(pts.length - 1, i + 1)];
+                const ddx = (next.x - prev.x) * TS, ddy = (next.y - prev.y) * TS;
+                const dlen = Math.hypot(ddx, ddy) || 1;
+                const px = -ddy / dlen, py = ddx / dlen;
+                const wx = pts[i].x * TS, wy = pts[i].y * TS;
+                leftPts.push({ x: wx + px * halfW, y: wy + py * halfW });
+                rightPts.push({ x: wx - px * halfW, y: wy - py * halfW });
+            }
+
+            // Outer glow — wide soft halo following the fissure
+            crack.gfx.lineStyle(halfW * 3.5, 0xff6600, glowAlpha * 0.35);
+            crack.gfx.beginPath();
+            crack.gfx.moveTo(pts[0].x * TS, pts[0].y * TS);
+            for (let i = 1; i < pts.length; i++) crack.gfx.lineTo(pts[i].x * TS, pts[i].y * TS);
+            crack.gfx.strokePath();
+
+            // Dark void fill — the actual gap in the ground (filled polygon between edges)
+            crack.gfx.fillStyle(0x0a0408, 0.92);
+            crack.gfx.beginPath();
+            crack.gfx.moveTo(leftPts[0].x, leftPts[0].y);
+            for (let i = 1; i < leftPts.length; i++) crack.gfx.lineTo(leftPts[i].x, leftPts[i].y);
+            for (let i = rightPts.length - 1; i >= 0; i--) crack.gfx.lineTo(rightPts[i].x, rightPts[i].y);
+            crack.gfx.closePath();
+            crack.gfx.fillPath();
+
+            // Glowing edge lines — both sides of the fissure, jagged
+            crack.gfx.lineStyle(Math.max(1.5, halfW * 0.35), edgeCol, 0.65 + crack.intensity * 0.30);
+            crack.gfx.beginPath();
+            crack.gfx.moveTo(leftPts[0].x, leftPts[0].y);
+            for (let i = 1; i < leftPts.length; i++) crack.gfx.lineTo(leftPts[i].x, leftPts[i].y);
+            crack.gfx.strokePath();
+            crack.gfx.beginPath();
+            crack.gfx.moveTo(rightPts[0].x, rightPts[0].y);
+            for (let i = 1; i < rightPts.length; i++) crack.gfx.lineTo(rightPts[i].x, rightPts[i].y);
+            crack.gfx.strokePath();
+
+            // Bright pulsing seam down the center
+            crack.gfx.lineStyle(Math.max(1, halfW * 0.25), 0xffffff, 0.5 + 0.4 * pulse);
+            crack.gfx.beginPath();
+            crack.gfx.moveTo(pts[0].x * TS, pts[0].y * TS);
+            for (let i = 1; i < pts.length; i++) crack.gfx.lineTo(pts[i].x * TS, pts[i].y * TS);
+            crack.gfx.strokePath();
+
+            // Debris specks scattered along the fissure edges (generated once, cached)
+            if (!crack._debris) {
+                crack._debris = [];
+                for (let i = 0; i < pts.length - 1; i++) {
+                    const numSpecks = 1 + Math.floor(Math.random() * 2);
+                    for (let s = 0; s < numSpecks; s++) {
+                        const t = Math.random();
+                        const side = Math.random() < 0.5 ? leftPts : rightPts;
+                        crack._debris.push({
+                            segIdx: i, t,
+                            side: side === leftPts ? 1 : -1,
+                            offset: (Math.random() - 0.5) * halfW * 0.6,
+                            size: 1 + Math.random() * 2,
+                        });
+                    }
+                }
+            }
+            for (const d of crack._debris) {
+                const baseX = pts[d.segIdx].x * TS + (pts[d.segIdx+1].x - pts[d.segIdx].x) * TS * d.t;
+                const baseY = pts[d.segIdx].y * TS + (pts[d.segIdx+1].y - pts[d.segIdx].y) * TS * d.t;
+                crack.gfx.fillStyle(0x442211, 0.7);
+                crack.gfx.fillCircle(baseX + d.offset, baseY + d.offset * 0.6, d.size);
+            }
+        }
+
+        // ── Growth meter — each crack grows toward auto-widen, faster at higher phase ──
+        if (!core._surfaced) {
+            const growthRate = (0.012 + this._crackPhase * 0.006) * delta; // points per ms, scales with phase
+            for (const crack of this._cracks) {
+                crack.growth = Math.min(100, crack.growth + growthRate);
+                if (crack.growth >= 100) {
+                    this._crackWiden(crack);
+                }
+            }
+        }
+
+        // ── Periodic new-crack timer — independent of widen events, the arena ──
+        // ── inevitably gets more cracks over time regardless of player skill ──
+        if (!core._surfaced && time >= this._nextNewCrackTime) {
+            if (this._crackPhase < this._crackMaxPhase) {
+                this._crackPhase++;
+                this.cameras.main.shake(70, 0.006);
+                this.cameras.main.flash(180, 255, 100, 50);
+                this.showStatusText(core.container.x, core.container.y - 90, `⚡⚡ NEW CRACK FORMS (${this._crackPhase}/${this._crackMaxPhase})`, '#ff4400');
+                this._spawnNewCrack();
+                this._crackSpawnInterval = Math.max(5000, 12000 - this._crackPhase * 1000);
+                this._pushPlayerOutOfCracks();
+            }
+            // Next new crack a bit sooner each time, with a sane floor
+            this._nextNewCrackTime = time + Math.max(18000, 30000 - this._crackPhase * 2000);
+        }
+
+        // ── Surface cycle ────────────────────────────────────────────────────
+        if (!core._surfaced && time >= this._nextSurfaceTime) {
+            this._fractureCoreSurface();
+        }
+        if (core._surfaced) {
+            this._updateSurfaceWindow(time, delta);
+        }
+
+        // ── Pulse wave timer ─────────────────────────────────────────────────
+        if (!core._surfaced && time >= this._crackPulseTimer) {
+            this._crackPulseWave();
+            this._crackPulseTimer = time + Math.max(4500, 9000 - this._crackPhase * 700);
+        }
+
+        // ── Spawn burst timer ────────────────────────────────────────────────
+        if (!core._surfaced && time >= this._crackSpawnTimer) {
+            this._crackSpawnBurst();
+            this._crackSpawnTimer = time + (this._crackSpawnInterval || 12000);
+        }
+    }
+
+    // ── PULSE WAVE — every active crack fires a pulse toward the player ──────
+    _crackPulseWave() {
+        const TS = this.TILE_SIZE;
+        this.showStatusText(this.player.x, this.player.y - 40, '◢ CRACK PULSE', '#ff6600');
+        for (const crack of this._cracks) {
+            if (!crack.gfx?.active) continue;
+            // Closest point on crack line to player
+            const closest = this._closestPointOnCrack(crack, this.player.x, this.player.y);
+            const originX = closest.x, originY = closest.y;
+
+            const pdx = this.player.x - originX, pdy = this.player.y - originY;
+            const plen = Math.hypot(pdx, pdy) || 1;
+            const dirX = pdx / plen, dirY = pdy / plen;
+
+            // Pulse projectile
+            const g = this.add.graphics().setDepth(3.4);
+            g.fillStyle(0xff6600, 0.85); g.fillCircle(0, 0, 8);
+            g.lineStyle(2, 0xffaa44, 0.80); g.strokeCircle(0, 0, 11);
+            g.x = originX; g.y = originY;
+            const SPEED = 200;
+            const vx = dirX * SPEED, vy = dirY * SPEED;
+
+            const pulseObj = { gfx: g, crack, vx, vy, dist: 0, broken: false };
+            if (!this._crackPulses) this._crackPulses = [];
+            this._crackPulses.push(pulseObj);
+        }
+        this._tickCrackPulses();
+    }
+
+    _tickCrackPulses() {
+        if (!this._crackPulses?.length) return;
+        const TS = this.TILE_SIZE;
+        const tick = () => {
+            if (!this.fractureCore?.active || !this.player?.active) {
+                for (const p of this._crackPulses) { if (p.gfx?.active) p.gfx.destroy(); }
+                this._crackPulses = [];
+                return;
+            }
+            for (let i = this._crackPulses.length - 1; i >= 0; i--) {
+                const p = this._crackPulses[i];
+                if (!p.gfx?.active || p.broken) {
+                    if (p.gfx?.active) p.gfx.destroy();
+                    this._crackPulses.splice(i, 1); continue;
+                }
+                p.gfx.x += p.vx * 0.016;
+                p.gfx.y += p.vy * 0.016;
+                p.dist += 200 * 0.016;
+
+                // Hit player
+                if (Math.hypot(p.gfx.x - this.player.x, p.gfx.y - this.player.y) < TS * 0.6) {
+                    this.takeDamage(6 * this.damageScaling);
+                    p.gfx.destroy();
+                    this._crackPulses.splice(i, 1);
+                    continue;
+                }
+                // Expire
+                if (p.dist > 14 * TS) {
+                    p.gfx.destroy();
+                    this._crackPulses.splice(i, 1);
+                }
+            }
+            if (this._crackPulses.length > 0) {
+                this.time.delayedCall(16, tick);
+            }
+        };
+        tick();
+    }
+
+    // Break a pulse projectile if player attacks near it — called from CombatSystem on hit
+    _tryBreakCrackPulse(wx, wy, radius) {
+        if (!this._crackPulses?.length) return false;
+        let broke = false;
+        for (const p of this._crackPulses) {
+            if (p.broken || !p.gfx?.active) continue;
+            if (Math.hypot(p.gfx.x - wx, p.gfx.y - wy) < radius) {
+                p.broken = true;
+                // Breaking reduces that crack's intensity slightly
+                p.crack.intensity = Math.max(0.2, p.crack.intensity - 0.08);
+                const burst = this.add.graphics().setDepth(4);
+                burst.x = p.gfx.x; burst.y = p.gfx.y;
+                burst.fillStyle(0xffffff, 0.85); burst.fillCircle(0, 0, 10);
+                this.tweens.add({ targets: burst, scaleX: 2, scaleY: 2, alpha: 0, duration: 200, onComplete: () => burst.destroy() });
+                broke = true;
+            }
+        }
+        return broke;
+    }
+
+    // ── ENEMY SPAWN BURST FROM CRACKS ─────────────────────────────────────────
+    _crackSpawnBurst() {
+        const TS = this.TILE_SIZE;
+        this.showStatusText(this.fractureCore.container.x, this.fractureCore.container.y - 100, '◉ CRACKS OPEN', '#ff4400');
+        this.cameras.main.shake(40, 0.003);
+
+        // Spawn count scales with crack phase
+        // Spawn count scales with crack phase — gentler curve
+        const count = 1 + Math.floor(this._crackPhase * 0.6);
+        const types = ['rooter', 'mortar', 'anchor', 'healer', 'splitter', 'normal'];
+
+        for (let i = 0; i < count; i++) {
+            // Pick a random crack and spawn point along its jagged polyline
+            const crack = this._cracks[Math.floor(Math.random() * this._cracks.length)];
+            if (!crack?.points?.length) continue;
+            const pt = crack.points[Math.floor(Math.random() * crack.points.length)];
+            const tx = Math.round(pt.x);
+            const ty = Math.round(pt.y);
+            if (this.world[tx]?.[ty] !== this.FLOOR) continue;
+            if (this.getEnemyAt && this.getEnemyAt(tx, ty)) continue;
+
+            // Emergence visual
+            const burst = this.add.graphics().setDepth(3.5);
+            burst.x = tx * TS + TS/2; burst.y = ty * TS + TS/2;
+            burst.fillStyle(0xff6600, 0.70); burst.fillCircle(0, 0, 4);
+            burst.lineStyle(2, 0xffaa44, 0.80); burst.strokeCircle(0, 0, 4);
+            this.tweens.add({ targets: burst, scaleX: 6, scaleY: 6, alpha: 0, duration: 350, onComplete: () => burst.destroy() });
+
+            const type = types[Math.floor(Math.random() * types.length)];
+            this.time.delayedCall(200, () => {
+                let e;
+                switch (type) {
+                    case 'rooter':   e = this.createRooter?.(tx, ty, 6); break;
+                    case 'mortar':   e = this.createMortar?.(tx, ty, 6); break;
+                    case 'anchor':   e = this.createAnchorSlime?.(tx, ty, 6); break;
+                    case 'healer':   e = this.createHealerTotem?.(tx, ty, 6); break;
+                    case 'splitter': e = this.createSplitter?.(tx, ty, 6, 0); break;
+                    default:         e = this.createEnemy(tx, ty, 40); e.tutorialRoomIndex = 6; break;
+                }
+            });
+        }
+    }
+
+    // Midpoint of a crack's jagged polyline (world pixel coords) — kept as a general helper
+    _crackMidpoint(crack) {
+        const TS = this.TILE_SIZE;
+        const pts = crack.points;
+        const mid = pts[Math.floor(pts.length / 2)];
+        return { x: mid.x * TS, y: mid.y * TS };
+    }
+
+    // Called when a player projectile hits a crack — shrinks it (cooldown-gated per crack)
+    _shrinkCrack(crack, time) {
+        if (time - (crack.lastShrinkHit || 0) < 400) return false; // cooldown
+        crack.lastShrinkHit = time;
+
+        // Reduce growth meter and width
+        crack.growth = Math.max(0, crack.growth - 18);
+        crack.width = Math.max(crack.baseWidth, crack.width - 0.05);
+        crack.intensity = Math.max(0.2, crack.intensity - 0.02);
+
+        // Visual flash — follow the jagged polyline, cool blue/white to contrast the hot crack glow
+        const TS = this.TILE_SIZE;
+        const flash = this.add.graphics().setDepth(3);
+        const pts = crack.points;
+        flash.lineStyle(Math.max(2, crack.width * TS * 0.8), 0x88ccff, 0.55);
+        flash.beginPath();
+        flash.moveTo(pts[0].x * TS, pts[0].y * TS);
+        for (let i = 1; i < pts.length; i++) flash.lineTo(pts[i].x * TS, pts[i].y * TS);
+        flash.strokePath();
+        this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
+
+        return true;
+    }
+
+    // ── SURFACE WINDOW — Fracture Core erupts, ordered weak point sequence ────
+    _fractureCoreSurface() {
         const core = this.fractureCore;
         if (!core?.active) return;
-        const px = this.fractureCore.container.x;
-        const py = this.fractureCore.container.y;
+        const TS = this.TILE_SIZE;
+        const phase = this._crackPhase;
+
+        core._surfaced = true;
+        core._isInvulnerable = false;
+        core.container.setVisible(true);
+        core.hpBg.setVisible(true); core.hpFill.setVisible(true); core.hpText.setVisible(true);
+        core.capBg.setVisible(true); core.capFill.setVisible(true); core.capText.setVisible(true);
+
+        core._surfaceEndTime = this.time.now + 10000;
+
+        this.showStatusText(core.container.x, core.container.y - 100, '✦ CORE SURFACES ✦', '#ffff44');
+        this.cameras.main.shake(80, 0.007);
+        this.cameras.main.flash(200, 255, 200, 100);
+        this.tweens.add({ targets: core.container, scaleX: 1.3, scaleY: 1.3, duration: 200, yoyo: true, ease: 'Back.easeOut' });
+
+        // Ring duration scales with phase — faster at higher phases (1600ms → 900ms)
+        const BASE_RING_DURATION = Math.max(900, 1600 - phase * 140);
+
+        // Build weak points from each crack, shuffled into random order
+        const candidates = [];
+        for (let i = 0; i < this._cracks.length; i++) {
+            const crack = this._cracks[i];
+            const pts = crack.points;
+            const idx = Math.floor(pts.length * (0.2 + Math.random() * 0.6));
+            const pt = pts[Math.min(pts.length - 1, idx)];
+            const wx = pt.x * TS, wy = pt.y * TS;
+
+            // Armored (double-ring) rare at low phase, more common at high phase, but always rare
+            const armorChance = 0.15 + phase * 0.06;
+            const armored = Math.random() < armorChance;
+
+            candidates.push({
+                x: wx, y: wy, armored,
+                hitsNeeded: armored ? 2 : 1, hits: 0, complete: false,
+                innerR: 14, outerStart: 44, ringDuration: BASE_RING_DURATION,
+                ringElapsed: 0, ringR: 44,
+                // Second outer ring for armored (slightly offset start)
+                ring2R: armored ? 56 : null, ring2Elapsed: armored ? 200 : null,
+                outerStart2: 56,
+                innerGfx: null, ringGfx: null, ring2Gfx: null,
+                active: false, // only the current point is active
+            });
+        }
+
+        // Shuffle order randomly
+        for (let i = candidates.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+
+        // Create graphics for all points
+        for (const wp of candidates) {
+            wp.innerGfx = this.add.graphics().setDepth(4.5);
+            wp.ringGfx  = this.add.graphics().setDepth(4.6);
+            wp.innerGfx.x = wp.x; wp.innerGfx.y = wp.y;
+            wp.ringGfx.x  = wp.x; wp.ringGfx.y  = wp.y;
+            if (wp.armored) {
+                wp.ring2Gfx = this.add.graphics().setDepth(4.6);
+                wp.ring2Gfx.x = wp.x; wp.ring2Gfx.y = wp.y;
+            }
+        }
+
+        this._fractureWeakPoints = candidates;
+        this._wpSequenceIdx = 0; // current active point index
+        this._wpMisses = 0;      // total misses this surface window
+        this._activateWeakPoint(0);
+        this._updateWeakPointBar();
+    }
+
+    // Activates (brightens) the weak point at index idx, dims all others
+    _activateWeakPoint(idx) {
+        if (!this._fractureWeakPoints?.length) return;
+        this._wpSequenceIdx = idx;
+        for (let i = 0; i < this._fractureWeakPoints.length; i++) {
+            const wp = this._fractureWeakPoints[i];
+            wp.active = (i === idx) && !wp.complete;
+            // Reset ring position when newly activated
+            if (wp.active) {
+                wp.ringElapsed = 0;
+                wp.ringR = wp.outerStart;
+                if (wp.armored && wp.hits === 0) {
+                    wp.ring2Elapsed = 200;
+                    wp.ring2R = wp.outerStart2;
+                }
+            }
+            this._drawWeakPointInner(wp);
+        }
+    }
+
+    // Fixed inner target — dim if not active, colored based on state
+    _drawWeakPointInner(wp) {
+        const g = wp.innerGfx;
+        if (!g?.active) return;
+        g.clear();
+        const dimAlpha = wp.active ? 1.0 : 0.25;
+        if (wp.complete) {
+            g.fillStyle(0x44ff88, 0.85); g.fillCircle(0, 0, wp.innerR);
+            g.lineStyle(2, 0xffffff, 0.95); g.strokeCircle(0, 0, wp.innerR + 2);
+        } else if (wp.armored && wp.hits === 0) {
+            g.fillStyle(0x888888, dimAlpha); g.fillCircle(0, 0, wp.innerR);
+            g.lineStyle(2, 0xcccccc, dimAlpha); g.strokeCircle(0, 0, wp.innerR + 2);
+            g.fillStyle(0xffff00, dimAlpha * 0.55); g.fillCircle(0, 0, wp.innerR * 0.5);
+        } else {
+            g.fillStyle(0xffff00, dimAlpha); g.fillCircle(0, 0, wp.innerR);
+            g.lineStyle(2, 0xffffff, dimAlpha * 0.90); g.strokeCircle(0, 0, wp.innerR + 2);
+        }
+    }
+
+    // Shrinking outer ring — only drawn for active non-complete points
+    _drawWeakPointRing(wp) {
+        const g = wp.ringGfx;
+        if (!g?.active) return;
+        g.clear();
+        if (wp.complete || !wp.active) return;
+        const diff = Math.abs(wp.ringR - wp.innerR);
+        let col = 0xffffff, alpha = 0.75;
+        if (diff <= 3)       { col = 0x44ff88; alpha = 1.0; }  // PERFECT zone — green
+        else if (diff <= 7)  { col = 0xaaff44; alpha = 0.90; } // EXCELLENT — yellow-green
+        else if (diff <= 13) { col = 0xffdd44; alpha = 0.80; } // GOOD — yellow
+        g.lineStyle(2.5, col, alpha);
+        g.strokeCircle(0, 0, Math.max(wp.innerR, wp.ringR));
+    }
+
+    // Second outer ring for armored points
+    _drawWeakPointRing2(wp) {
+        const g = wp.ring2Gfx;
+        if (!g?.active) return;
+        g.clear();
+        if (wp.complete || !wp.active || !wp.armored || wp.hits > 0) return;
+        const diff2 = Math.abs(wp.ring2R - wp.innerR);
+        let col = 0xff8844, alpha = 0.65; // orange tint to distinguish
+        if (diff2 <= 3)       { col = 0x44ff88; alpha = 1.0; }
+        else if (diff2 <= 7)  { col = 0xaaff44; alpha = 0.85; }
+        else if (diff2 <= 13) { col = 0xffdd44; alpha = 0.75; }
+        g.lineStyle(2.5, col, alpha);
+        g.strokeCircle(0, 0, Math.max(wp.innerR, wp.ring2R));
+    }
+
+    _updateSurfaceWindow(time, delta) {
+        const core = this.fractureCore;
+        if (!core?._surfaced) return;
+        const px = core.container.x, py = core.container.y;
+
+        // Update HP bar position
         core.hpFill.width = 80 * Math.max(0, core.health / core.maxHealth);
         core.hpBg.x = px; core.hpBg.y = py - 50;
         core.hpFill.x = px - 40; core.hpFill.y = py - 50;
         core.hpText.x = px; core.hpText.y = py - 62;
+        core.capBg.x = px; core.capBg.y = py - 38;
+        core.capFill.x = px - 40; core.capFill.y = py - 38;
+        core.capText.x = px; core.capText.y = py - 48;
 
-        // Phase transitions
-        const pct = core.health / core.maxHealth;
-        if (pct <= 0.60 && core._phase === 1) { core._phase = 2; this._fractureCorePhase2Transition(); }
-        if (pct <= 0.30 && core._phase === 2) { core._phase = 3; this._fractureCorePhase3Transition(); }
+        // Tick rings for the current active weak point only
+        const wp = this._fractureWeakPoints?.[this._wpSequenceIdx];
+        if (wp && !wp.complete && wp.active) {
+            wp.ringElapsed += (delta || 16);
+            const t = (wp.ringElapsed % wp.ringDuration) / wp.ringDuration;
+            wp.ringR = wp.outerStart - (wp.outerStart - wp.innerR) * t;
+            this._drawWeakPointRing(wp);
+
+            if (wp.armored && wp.hits === 0 && wp.ring2Gfx) {
+                wp.ring2Elapsed = (wp.ring2Elapsed || 0) + (delta || 16);
+                const t2 = (wp.ring2Elapsed % wp.ringDuration) / wp.ringDuration;
+                wp.ring2R = wp.outerStart2 - (wp.outerStart2 - wp.innerR) * t2;
+                this._drawWeakPointRing2(wp);
+            }
+        }
+
+        this._updateWeakPointBar();
+
+        if (time >= core._surfaceEndTime) {
+            const total = this._fractureWeakPoints.length;
+            const completed = this._fractureWeakPoints.filter(w => w.complete).length;
+            const thresholdMet = total > 0 && (completed / total) >= 0.6;
+            this._fractureCoreSubmerge(thresholdMet);
+        }
     }
 
-    damageFractureCore(amount) {
+    _updateWeakPointBar() {
         const core = this.fractureCore;
-        if (!core?.active || core._isInvulnerable) return;
-        core.health -= amount;
-        this.showDamageNumber(core.container.x, core.container.y - 40, Math.round(amount), '#ff8844');
-        // Flash
+        if (!core?.capFill) return;
+        const total = this._fractureWeakPoints.length || 1;
+        const completed = this._fractureWeakPoints.filter(wp => wp.complete).length;
+        const pct = completed / total;
+        core.capFill.width = 80 * pct;
+        core.capFill.setFillStyle(pct >= 0.6 ? 0x44ff88 : 0xffff44);
+        core.capText.setText(`WEAK POINTS ${completed}/${total}`);
+    }
+
+    _fractureCoreSubmerge(thresholdMet) {
+        const core = this.fractureCore;
+        if (!core?.active) return;
+
+        core._surfaced = false;
+        core._isInvulnerable = true;
+        core.container.setVisible(false);
+        core.hpBg.setVisible(false); core.hpFill.setVisible(false); core.hpText.setVisible(false);
+        core.capBg.setVisible(false); core.capFill.setVisible(false); core.capText.setVisible(false);
+
+        for (const wp of this._fractureWeakPoints) {
+            if (wp.innerGfx?.active) { this.tweens.killTweensOf(wp.innerGfx); wp.innerGfx.destroy(); }
+            if (wp.ringGfx?.active)  { this.tweens.killTweensOf(wp.ringGfx);  wp.ringGfx.destroy(); }
+            if (wp.ring2Gfx?.active) { this.tweens.killTweensOf(wp.ring2Gfx); wp.ring2Gfx.destroy(); }
+        }
+        this._fractureWeakPoints = [];
+
+        if (thresholdMet) {
+            const FIXED_DAMAGE = 500 + this._crackPhase * 60;
+            core.health -= FIXED_DAMAGE;
+            this.showDamageNumber(core.container.x, core.container.y - 40, FIXED_DAMAGE, '#ff8844');
+            this.showStatusText(core.container.x, core.container.y - 80, '✦ CORE STAGGERED!', '#44ff88');
+            this.cameras.main.shake(80, 0.008);
+            this._nextSurfaceTime = this.time.now + 6000;
+            if (core.health <= 0) { this._fractureCoreKill(); return; }
+        } else {
+            this.showStatusText(core.container.x, core.container.y - 80, 'CORE RETREATS — NO DAMAGE', '#ff8844');
+            this._nextSurfaceTime = this.time.now + 10000;
+        }
+        this.cameras.main.shake(60, 0.005);
+    }
+
+    // Main click handler — routes to the currently active weak point only
+    _tryHitCurrentWeakPoint(wx, wy) {
+        const core = this.fractureCore;
+        if (!core?._surfaced || !this._fractureWeakPoints?.length) return;
+
+        const idx = this._wpSequenceIdx;
+        if (idx >= this._fractureWeakPoints.length) return;
+        const wp = this._fractureWeakPoints[idx];
+        if (!wp || wp.complete || !wp.active) return;
+
+        // Check if click is near this weak point
+        const clickDist = Math.hypot(wp.x - wx, wp.y - wy);
+        const CLICK_RADIUS = wp.outerStart + 12;
+        if (clickDist > CLICK_RADIUS) return; // missed the point entirely, no punishment
+
+        // Grade the timing based on ring proximity to inner circle
+        const diff = Math.abs(wp.ringR - wp.innerR);
+        // For armored unbroken points, BOTH rings must be in tolerance
+        const isArmored1stHit = wp.armored && wp.hits === 0;
+        const diff2 = isArmored1stHit ? Math.abs((wp.ring2R || 99) - wp.innerR) : 0;
+        const worstDiff = isArmored1stHit ? Math.max(diff, diff2) : diff;
+
+        let grade, gradeCol, gradeText;
+        if (worstDiff <= 3)       { grade = 'PERFECT';   gradeCol = '#44ff88'; }
+        else if (worstDiff <= 7)  { grade = 'EXCELLENT'; gradeCol = '#aaff44'; }
+        else if (worstDiff <= 13) { grade = 'GOOD';      gradeCol = '#ffdd44'; }
+        else                       { grade = 'MISS';      gradeCol = '#ff4444'; }
+
+        if (grade === 'MISS') {
+            // Miss punishment — red flash, player takes damage, ring resets
+            const miss = this.add.graphics().setDepth(4.6);
+            miss.x = wp.x; miss.y = wp.y;
+            miss.lineStyle(2.5, 0xff4444, 0.90); miss.strokeCircle(0, 0, wp.ringR);
+            this.tweens.add({ targets: miss, alpha: 0, duration: 250, onComplete: () => miss.destroy() });
+            this.showStatusText(wp.x, wp.y - 28, 'MISS', gradeCol);
+            this.takeDamage(8 * (this.damageScaling || 1));
+            this._wpMisses = (this._wpMisses || 0) + 1;
+            // Ring resets so player gets another chance
+            wp.ringElapsed = 0; wp.ringR = wp.outerStart;
+            if (isArmored1stHit) { wp.ring2Elapsed = 200; wp.ring2R = wp.outerStart2; }
+            return;
+        }
+
+        // Successful hit
+        wp.hits++;
+        this.showStatusText(wp.x, wp.y - 28, grade, gradeCol);
+
+        // Hit flash — color matches grade
+        const flashCol = grade === 'PERFECT' ? 0xffffff : grade === 'EXCELLENT' ? 0xaaff44 : 0xffdd44;
+        const flash = this.add.graphics().setDepth(4.7);
+        flash.x = wp.x; flash.y = wp.y;
+        flash.fillStyle(flashCol, 0.85); flash.fillCircle(0, 0, 16);
+        this.tweens.add({ targets: flash, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 180, onComplete: () => flash.destroy() });
+
+        if (wp.hits >= wp.hitsNeeded) {
+            // Completed — lock in green
+            wp.complete = true;
+            if (wp.ringGfx?.active)  wp.ringGfx.clear();
+            if (wp.ring2Gfx?.active) wp.ring2Gfx.clear();
+            this._drawWeakPointInner(wp);
+            this._updateWeakPointBar();
+
+            // Move to next point in sequence
+            const nextIdx = idx + 1;
+            if (nextIdx < this._fractureWeakPoints.length) {
+                this._activateWeakPoint(nextIdx);
+            }
+        } else {
+            // Armored — first hit done, reset ring for round 2 at same point
+            this._drawWeakPointInner(wp);
+            wp.ringElapsed = 0; wp.ringR = wp.outerStart;
+            // Second hit only needs 1 ring, so clear ring2
+            if (wp.ring2Gfx?.active) { wp.ring2Gfx.clear(); wp.ring2Gfx = null; }
+            this.showStatusText(wp.x, wp.y - 44, 'ARMOR BROKEN', '#ffaa44');
+        }
+    }
+
+    // Legacy routing (called from CombatSystem/WeaponSystem) — now just delegates to click handler
+    _hitFractureWeakPoint(wx, wy, radius, damage) {
+        this._tryHitCurrentWeakPoint(wx, wy);
+        return false; // weapon projectiles don't deal direct weak-point damage
+    }
+
+    _updateFractureCore(time, delta) {
+        const core = this.fractureCore;
+        if (!core?.active) return;
+
+        // Crack system drives everything — surface cycle, pulses, spawns, tendrils
+        this._updateCracks(time, delta || 16);
+    }
+
+    // Called when the player's attack lands on a weak point during a surface window.
+    // Damage to the core is NOT applied per-hit — it's a fixed amount applied when
+    // all weak points are completed (see _fractureCoreSubmerge).
+    damageFractureCore(amount, wx, wy) {
+        const core = this.fractureCore;
+        if (!core?.active || core._isInvulnerable || !core._surfaced) return;
+        if (wx === undefined || wy === undefined) return;
+
+        const radius = this.TILE_SIZE * 0.6;
+        this._hitFractureWeakPoint(wx, wy, radius, amount);
+
+        // Visual feedback on the core itself
         this.tweens.killTweensOf(core.container);
         this.tweens.add({ targets: core.container, angle: core.container.angle + 45, duration: 100,
             onComplete: () => this.tweens.add({ targets: core.container, angle: 360, duration: 8000, repeat: -1, ease: 'Linear' }) });
-        if (core.health <= 0) { this._fractureCoreKill(); return; }
-    }
-
-    _fractureCoreNextAttack() {
-        const core = this.fractureCore;
-        if (!core?.active) return;
-        const phase = core._phase;
-        const attacks1 = ['shardBurst', 'collapseWave', 'shardBurst'];
-        const attacks2 = [...attacks1, 'rootNova', 'summonGuards'];
-        const attacks3 = [...attacks2, 'fractureField', 'chainRoot'];
-        const pool = phase === 3 ? attacks3 : phase === 2 ? attacks2 : attacks1;
-        const attack = pool[Math.floor(Math.random() * pool.length)];
-        this._fractureCoreDoAttack(attack);
-    }
-
-    _fractureCoreDoAttack(attack) {
-        const core = this.fractureCore;
-        if (!core?.active) return;
-        const cx = core.container.x, cy = core.container.y;
-        const TS = this.TILE_SIZE;
-        const pause = core._phase === 3 ? 4000 : core._phase === 2 ? 5000 : 6500;
-
-        if (attack === 'shardBurst') {
-            // 8 crystal shards in all directions, root on hit
-            this.showStatusText(cx, cy - 70, '✦ SHARD BURST', '#ff8844');
-            const SHARDS = 8;
-            for (let i = 0; i < SHARDS; i++) {
-                const a = (i / SHARDS) * Math.PI * 2;
-                const g = this.add.graphics().setDepth(4);
-                g.fillStyle(0xff6600, 0.90); g.fillCircle(0, 0, 6);
-                g.lineStyle(1.5, 0xffaa44, 0.80); g.strokeCircle(0, 0, 8);
-                g.x = cx; g.y = cy;
-                const SPEED = 180;
-                const vx = Math.cos(a) * SPEED, vy = Math.sin(a) * SPEED;
-                // Shard travels until wall or max range
-                let dist = 0;
-                const shardTimer = this.time.addEvent({
-                    delay: 16, loop: true, callback: () => {
-                        dist += SPEED * 0.016;
-                        g.x += vx * 0.016; g.y += vy * 0.016;
-                        const stx = Math.floor(g.x/TS), sty = Math.floor(g.y/TS);
-                        const oob = stx < 0 || stx >= this.WORLD_WIDTH || sty < 0 || sty >= this.WORLD_HEIGHT;
-                        if (oob || this.world[stx]?.[sty] === this.WALL || dist > 12*TS) {
-                            shardTimer.remove(); g.destroy(); return;
-                        }
-                        // Hit player
-                        if (Math.hypot(g.x - this.player.x, g.y - this.player.y) < TS * 0.7) {
-                            this.takeDamage(15 * this.damageScaling);
-                            if (typeof this._rootPlayer === 'function') this._rootPlayer(1500, this.time.now);
-                            shardTimer.remove(); g.destroy();
-                        }
-                    }
-                });
-            }
-        } else if (attack === 'collapseWave') {
-            // Expanding ring of collapse tiles outward from center
-            this.showStatusText(cx, cy - 70, '◎ COLLAPSE WAVE', '#ff6600');
-            this.cameras.main.shake(40, 0.004);
-            let ringR = 2;
-            const expandTimer = this.time.addEvent({
-                delay: 300, repeat: 6, callback: () => {
-                    // Visual ring
-                    const ring = this.add.graphics().setDepth(3);
-                    ring.lineStyle(3, 0xff6600, 0.80);
-                    ring.strokeCircle(cx, cy, ringR * TS);
-                    this.tweens.add({ targets: ring, alpha: 0, duration: 400, onComplete: () => ring.destroy() });
-                    // Damage player if on ring
-                    const pdist = Math.hypot(this.player.x - cx, this.player.y - cy);
-                    if (Math.abs(pdist - ringR * TS) < TS * 0.8) {
-                        this.takeDamage(12 * this.damageScaling);
-                    }
-                    ringR += 2;
-                }
-            });
-        } else if (attack === 'rootNova') {
-            // Phase 2+ — roots player for 3s then fires shards at rooted player
-            // This is the key "switch to cosmic to dash" moment
-            this.showStatusText(cx, cy - 70, '⬡ ROOT NOVA', '#44ff88');
-            this.cameras.main.flash(200, 255, 100, 0);
-            if (typeof this._rootPlayer === 'function') this._rootPlayer(3000, this.time.now);
-            this.showStatusText(this.player.x, this.player.y - 40, 'USE COSMIC DASH!', '#44ff88');
-            // After 1.5s, fire tracking shards at player position
-            this.time.delayedCall(1500, () => {
-                if (!core.active) return;
-                for (let i = 0; i < 5; i++) {
-                    this.time.delayedCall(i * 300, () => {
-                        if (!core.active) return;
-                        const tx = this.player.x, ty = this.player.y;
-                        const dx = tx - cx, dy = ty - cy;
-                        const len = Math.sqrt(dx*dx + dy*dy) || 1;
-                        const g = this.add.graphics().setDepth(4);
-                        g.fillStyle(0xffaa00, 0.90); g.fillCircle(0, 0, 7);
-                        g.x = cx; g.y = cy;
-                        const SPEED = 220;
-                        const vx = (dx/len)*SPEED, vy = (dy/len)*SPEED;
-                        let d = 0;
-                        const st = this.time.addEvent({
-                            delay: 16, loop: true, callback: () => {
-                                d += SPEED * 0.016; g.x += vx * 0.016; g.y += vy * 0.016;
-                                if (d > 14*TS) { st.remove(); g.destroy(); return; }
-                                if (Math.hypot(g.x - this.player.x, g.y - this.player.y) < TS * 0.7) {
-                                    this.takeDamage(18 * this.damageScaling);
-                                    st.remove(); g.destroy();
-                                }
-                            }
-                        });
-                    });
-                }
-            });
-        } else if (attack === 'summonGuards') {
-            this.showStatusText(cx, cy - 70, '☉ SUMMON GUARDS', '#ff8844');
-            const bossRoom = this.rooms[6];
-            const offsets = [[-8,0],[8,0],[0,-8],[0,8]];
-            for (const [ox, oy] of offsets) {
-                const nx = Math.floor(bossRoom.x + bossRoom.w/2 + ox);
-                const ny = Math.floor(bossRoom.y + bossRoom.h/2 + oy);
-                if (this.world[nx]?.[ny] === this.FLOOR) {
-                    const e = this.createRooter ? this.createRooter(nx, ny, 6) : this.createEnemy(nx, ny, 60);
-                    this.enemies.push(e);
-                }
-            }
-        } else if (attack === 'fractureField') {
-            // Phase 3 — entire arena becomes dangerous, one safe 3×3 zone near core
-            this.showStatusText(cx, cy - 70, '◈ FRACTURE FIELD', '#ff2200');
-            this.cameras.main.shake(80, 0.008);
-            // Visual — arena-wide red overlay with pulsing cracks
-            const field = this.add.graphics().setDepth(2.5);
-            const br = this.rooms[6];
-            field.fillStyle(0xff2200, 0.12);
-            field.fillRect(br.x*TS, br.y*TS, br.w*TS, br.h*TS);
-            field.lineStyle(1, 0xff4400, 0.30);
-            for (let i = 0; i < 12; i++) {
-                const fx = br.x*TS + Math.random()*br.w*TS;
-                const fy = br.y*TS + Math.random()*br.h*TS;
-                field.beginPath(); field.moveTo(fx, fy);
-                field.lineTo(fx + (Math.random()-0.5)*80, fy + (Math.random()-0.5)*80); field.strokePath();
-            }
-            // Damage player every 400ms for 4s if not in 3×3 safe zone around core
-            let ticks = 0;
-            const fieldTimer = this.time.addEvent({
-                delay: 400, repeat: 10, callback: () => {
-                    if (!core.active) return;
-                    const pdx = Math.abs(this.playerX - core.tileX);
-                    const pdy = Math.abs(this.playerY - core.tileY);
-                    if (pdx > 1 || pdy > 1) {
-                        this.takeDamage(8 * this.damageScaling);
-                    }
-                    if (++ticks >= 10) { this.tweens.add({ targets: field, alpha: 0, duration: 500, onComplete: () => field.destroy() }); }
-                }
-            });
-        } else if (attack === 'chainRoot') {
-            // Phase 3 — continuous tracking roots requiring cosmic dash
-            this.showStatusText(cx, cy - 70, '⛓ CHAIN ROOT', '#44ff88');
-            this.cameras.main.flash(300, 0, 200, 0);
-            let rootCount = 0;
-            const rootTimer = this.time.addEvent({
-                delay: 1200, repeat: 4, callback: () => {
-                    if (!core.active) return;
-                    if (typeof this._rootPlayer === 'function') this._rootPlayer(1000, this.time.now);
-                    const txt = this.showStatusText(this.player.x, this.player.y - 36, 'DASH OUT!', '#44ff88');
-                    rootCount++;
-                }
-            });
-        }
-
-        this.time.delayedCall(pause, () => {
-            if (core?.active) this._fractureCoreNextAttack();
-        });
-    }
-
-    _fractureCorePhase2Transition() {
-        const core = this.fractureCore;
-        if (!core) return;
-        this.showStatusText(core.container.x, core.container.y - 90, '⚠ PHASE 2', '#ffaa00');
-        this.cameras.main.shake(120, 0.010);
-        // Tint shift — more red
-        this.tweens.add({ targets: core.container, alpha: 0.3, duration: 200, yoyo: true, repeat: 2 });
-    }
-
-    _fractureCorePhase3Transition() {
-        const core = this.fractureCore;
-        if (!core) return;
-        this.showStatusText(core.container.x, core.container.y - 90, '⚠ PHASE 3 — FINAL', '#ff2200');
-        this.cameras.main.shake(200, 0.015);
-        this.cameras.main.flash(400, 255, 50, 0);
     }
 
     _fractureCoreKill() {
@@ -1928,7 +2579,24 @@ class LevelManager {
         }
         core.container.destroy();
         core.hpBg.destroy(); core.hpFill.destroy(); core.hpText.destroy();
+        core.capBg?.destroy(); core.capFill?.destroy(); core.capText?.destroy();
         core.active = false;
+
+        // Clean up crack system
+        for (const crack of (this._cracks || [])) {
+            if (crack.gfx?.active) crack.gfx.destroy();
+        }
+        this._cracks = [];
+        for (const wp of (this._fractureWeakPoints || [])) {
+            if (wp.innerGfx?.active) { this.tweens.killTweensOf(wp.innerGfx); wp.innerGfx.destroy(); }
+            if (wp.ringGfx?.active)  { this.tweens.killTweensOf(wp.ringGfx);  wp.ringGfx.destroy(); }
+        }
+        this._fractureWeakPoints = [];
+        for (const p of (this._crackPulses || [])) {
+            if (p.gfx?.active) p.gfx.destroy();
+        }
+        this._crackPulses = [];
+
         this.fractureCore = null;
         this._level4RoomClear(6);
     }
@@ -2425,7 +3093,7 @@ class LevelManager {
         container.add([shadow, hpBg, hpBar, hpLabel, orbitRing, body, crownGfx, hitboxRing]);
 
         const baseY = py + offsetY;
-        this.tweens.add({ targets:container, y:baseY - 10, duration:1200, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
+        const idleBobTween = this.tweens.add({ targets:container, y:baseY - 10, duration:1200, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
         // Rotate orbitRing continuously
         this.tweens.add({ targets:orbitRing, angle:360, duration:4000, repeat:-1, ease:'Linear' });
 
@@ -2443,7 +3111,7 @@ class LevelManager {
             tileX, tileY, hp: 3000, maxHp: 3000,
             container, body, hpBar, orbitRing, crownGfx, debris,
             active: true, phase: 'waiting',
-            _baseY: baseY, _activated: false,
+            _baseY: baseY, _activated: false, _idleBobTween: idleBobTween,
             _attackQueue: [], _attackIndex: 0,
             _pillarPositions: [[6,59],[24,59],[6,74],[24,74]], // destroyable at 60%
             _pillarsDestroyed: false,
@@ -3177,6 +3845,9 @@ class LevelManager {
         const boss = this.voidSovereignBoss;
         this.showStatusText(boss.container.x, boss.container.y - 80, '⬆ STOMP INCOMING', '#ff4444');
 
+        // Pause the idle bob tween so it doesn't fight over container.y during the stomp sequence
+        if (boss._idleBobTween) boss._idleBobTween.pause();
+
         // Boss flies up (scale down + fade)
         this.tweens.add({ targets:boss.container, scaleY:0.1, alpha:0.1, duration:600, ease:'Quad.easeIn' });
 
@@ -3245,8 +3916,13 @@ class LevelManager {
                     this.time.delayedCall(600, () => {
                         const bossSpawn = this.rooms[6];
                         const homeX = (bossSpawn.x + bossSpawn.w/2) * this.TILE_SIZE;
-                        const homeY = (bossSpawn.y + bossSpawn.h/2) * this.TILE_SIZE;
-                        this.tweens.add({ targets:boss.container, x:homeX, y:homeY + (this.SLIME_Y_OFFSET||0), duration:700, ease:'Quad.easeOut' });
+                        const homeY = boss._baseY; // use the stored home Y (matches idle bob anchor exactly)
+                        this.tweens.add({
+                            targets: boss.container, x: homeX, y: homeY, duration: 700, ease: 'Quad.easeOut',
+                            onComplete: () => {
+                                if (boss._idleBobTween) boss._idleBobTween.resume();
+                            }
+                        });
                         this.time.delayedCall(1200, () => this._voidSovereignNextAttack());
                     });
                 });
@@ -3267,8 +3943,9 @@ class LevelManager {
         const centerTY = Math.floor(cy / this.TILE_SIZE);
 
         // Full screen darkness — fades in ominously over 2s, held at 0.92 until collapse
+        // Depth 0.8: sits just above floor tiles, below player/enemies/status text so they remain visible through the dark
         const dark = this.add.rectangle(this.scale.width/2, this.scale.height/2,
-            this.scale.width, this.scale.height, 0x000000, 0).setScrollFactor(0).setDepth(20);
+            this.scale.width, this.scale.height, 0x000000, 1).setScrollFactor(0).setDepth(0.8).setAlpha(0);
         this.tweens.add({ targets: dark, alpha: 0.92, duration: 2000, ease: 'Quad.easeIn' });
 
         // Inward-sucking particles — intensify as collapse nears
@@ -3284,7 +3961,7 @@ class LevelManager {
                 for (let i = 0; i < count; i++) {
                     const a = Math.random() * Math.PI * 2;
                     const r = 4 * this.TILE_SIZE + Math.random() * 6 * this.TILE_SIZE;
-                    const pg = this.add.graphics().setDepth(21);
+                    const pg = this.add.graphics().setDepth(9);
                     const col = t > 0.6 ? 0xff44ff : 0xcc44ff;
                     pg.fillStyle(col, 0.70 + t * 0.25);
                     pg.fillCircle(0, 0, 2 + Math.random() * 3 + t * 2);
@@ -3412,7 +4089,7 @@ class LevelManager {
 
             // Flash and lift darkness
             const flash = this.add.rectangle(this.scale.width/2, this.scale.height/2,
-                this.scale.width, this.scale.height, 0xffffff, 0.80).setScrollFactor(0).setDepth(22);
+                this.scale.width, this.scale.height, 0xffffff, 0.80).setScrollFactor(0).setDepth(40);
             this.tweens.add({ targets: flash, alpha: 0, duration: 600, onComplete: () => flash.destroy() });
             this.tweens.add({ targets: dark, alpha: 0, duration: 1200, onComplete: () => dark.destroy() });
 

@@ -110,6 +110,19 @@ class EnemyManager {
 
         enemy.healthBarFill.x = enemy.sprite.x;
         enemy.healthBarFill.y = enemy.sprite.y;
+
+        // Keep burn stack pips pinned to enemy
+        if (enemy._burnStackBar?.length) {
+            const stacks = enemy._burnStackBar.length;
+            const GAP = 6, W = 6;
+            const totalW = stacks * W + (stacks - 1) * GAP;
+            for (let i = 0; i < stacks; i++) {
+                const pip = enemy._burnStackBar[i];
+                if (!pip?.active) continue;
+                pip.x = enemy.sprite.x - totalW / 2 + i * (W + GAP) + W / 2;
+                pip.y = enemy.sprite.y - 36;
+            }
+        }
     }
 
     getEnemyAt(x, y) {
@@ -393,6 +406,7 @@ class EnemyManager {
                             if (this.world[tx2][ty2] !== this.FLOOR) continue;
                             if (this.getEnemyAt && this.getEnemyAt(tx2, ty2)) continue;
                             if (this.isInLockedRoom(tx2, ty2)) continue;
+                            if (!this.isInCurrentRoom(tx2, ty2)) continue; // must stay inside player's room
                             flanks.push({ x: tx2, y: ty2 });
                         }
                     }
@@ -405,7 +419,8 @@ class EnemyManager {
                             const ty3 = this.playerY + Math.round(Math.sin(ang) * rd);
                             if (tx3 >= 0 && tx3 < this.WORLD_WIDTH && ty3 >= 0 && ty3 < this.WORLD_HEIGHT
                                 && this.world[tx3][ty3] === this.FLOOR
-                                && !this.isInLockedRoom(tx3, ty3)) {
+                                && !this.isInLockedRoom(tx3, ty3)
+                                && this.isInCurrentRoom(tx3, ty3)) {
                                 flanks.push({ x: tx3, y: ty3 }); break;
                             }
                         }
@@ -430,8 +445,8 @@ class EnemyManager {
                     // Open portal at new position
                     if (typeof this._spawnSniperPortal === 'function') this._spawnSniperPortal(enemy, wx, wy);
 
-                    // 400ms — materialize
-                    this.time.delayedCall(400, () => {
+                    // 1500ms — portal opens, player has time to react before sniper pops out
+                    this.time.delayedCall(1500, () => {
                         if (!enemy.sprite?.active) return;
                         enemy._inDimension = false;
                         enemy._sniperInvisible = false;

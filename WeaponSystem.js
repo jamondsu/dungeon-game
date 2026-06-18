@@ -44,6 +44,13 @@ class WeaponSystem {
     }
 
     fireEquippedWeapon(targetX, targetY) {
+        // Level 4 — attacking near a crack pulse breaks it
+        if (this.isLevel4 && this._crackPulses?.length) {
+            const worldX = targetX + this.cameras.main.scrollX;
+            const worldY = targetY + this.cameras.main.scrollY;
+            this._tryBreakCrackPulse(worldX, worldY, this.TILE_SIZE * 1.2);
+        }
+
         const weapon = this.equippedWeapons?.[this.currentElement] || 'flame_fists';
         switch (weapon) {
             case 'flame_sword':     this.flameSwordAttack(targetX, targetY); break;
@@ -448,6 +455,9 @@ class WeaponSystem {
             const speedMult = 1 + tilesDelta * 0.06;
             s.gfx.x += s.vx * speedMult * ds;
             s.gfx.y += s.vy * speedMult * ds;
+
+            // Crack shrink — pierces, no effect on projectile flight (Level 4)
+            this._checkProjectileCrackShrink(s.gfx.x, s.gfx.y);
 
             // Wall / locked room check
             const tx = Math.floor(s.gfx.x / TS), ty = Math.floor(s.gfx.y / TS);
@@ -1090,6 +1100,9 @@ class WeaponSystem {
             orb.gfx.x += orb.vx * ds;
             orb.gfx.y += orb.vy * ds;
 
+            // Crack shrink — pierces, no effect on projectile flight (Level 4)
+            this._checkProjectileCrackShrink(orb.gfx.x, orb.gfx.y);
+
             // Animate orb (redraw arc lines)
             this._drawOrbEmitterGfx(orb.gfx);
 
@@ -1120,6 +1133,14 @@ class WeaponSystem {
                     this._orbHitEnemy(orb, enemy);
                     break;
                 }
+            }
+
+            // Portal collision (queen slime)
+            const portalHit = this.getPortalAt(tx, ty);
+            if (portalHit) {
+                this.damagePortal(portalHit, orb.damage);
+                orb._done = true;
+                continue;
             }
 
             // Boss collision
@@ -3585,6 +3606,9 @@ class WeaponSystem {
             // Move
             s.sprite.x += s.vx * ds;
             s.sprite.y += s.vy * ds;
+
+            // Crack shrink — pierces, no effect on projectile flight (Level 4)
+            this._checkProjectileCrackShrink(s.sprite.x, s.sprite.y);
             // Spinning pellets — rotate container (graphics drawn once at creation)
             if (s.rotSpeed) s.sprite.rotation += s.rotSpeed * ds;
             if (s.sprite._glow)     { s.sprite._glow.x = s.sprite.x; s.sprite._glow.y = s.sprite.y; }
@@ -4379,6 +4403,30 @@ class WeaponSystem {
         s.sprite.destroy();
     }
 
+    // Generic helper — call after moving any player projectile to check crack collision (Level 4 Fracture Core).
+    // Projectiles PIERCE cracks — shrinking every crack they currently touch (each on its own cooldown).
+    // Does not destroy or stop the projectile.
+    _checkProjectileCrackShrink(wx, wy) {
+        if (!this.isLevel4 || !this.fractureCore?.active || !this._cracks?.length) return false;
+        const TS = this.TILE_SIZE;
+        const time = this.time.now;
+        let hitAny = false;
+        for (const crack of this._cracks) {
+            const halfW = crack.width * TS / 2;
+            const pts = crack.points;
+            for (let i = 0; i < pts.length - 1; i++) {
+                const x1 = pts[i].x * TS, y1 = pts[i].y * TS;
+                const x2 = pts[i+1].x * TS, y2 = pts[i+1].y * TS;
+                const d = Utils.distancePointToSegment(wx, wy, x1, y1, x2, y2);
+                if (d < halfW) {
+                    if (this._shrinkCrack(crack, time)) hitAny = true;
+                    break; // one hit per crack per check, regardless of segment count
+                }
+            }
+        }
+        return hitAny;
+    }
+
     updateFireballs(delta) {
         const deltaSeconds = delta / 1000;
 
@@ -4387,6 +4435,9 @@ class WeaponSystem {
 
             fireball.sprite.x += fireball.vx * deltaSeconds;
             fireball.sprite.y += fireball.vy * deltaSeconds;
+
+            // Crack shrink — pierces, no effect on projectile flight (Level 4)
+            this._checkProjectileCrackShrink(fireball.sprite.x, fireball.sprite.y);
 
             // Max range check (15 tiles)
             const distTraveled = Math.sqrt(

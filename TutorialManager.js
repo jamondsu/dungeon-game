@@ -7,7 +7,7 @@
 class TutorialManager {
 
     updateTutorial(time) {
-        if (this.isLevel3) return;
+        if (this.isLevel3 || this.isLevel2 || this.isLevel4) return;
         // Collect glorps
         if (this.glorps && this.glorps.length > 0) {
             const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -237,7 +237,7 @@ class TutorialManager {
     }
 
     onTutorialRoomEnter(roomIndex) {
-        if (this.isLevel3) return;
+        if (this.isLevel3 || this.isLevel2 || this.isLevel4) return;
 
         // Always lock doors immediately on entering any room
         if (this.tutorialDoorsLocked[roomIndex]) {
@@ -471,6 +471,8 @@ class TutorialManager {
     }
 
     onTutorialRoomClear(roomIndex) {
+        // Level 2/3/4 have their own room clear logic — don't run tutorial clear
+        if (this.isLevel2 || this.isLevel3 || this.isLevel4) return;
         this.tutorialRoomCleared[roomIndex] = true;
 
         // Ice tutorial room 6 = final room
@@ -819,8 +821,8 @@ class TutorialManager {
             this.cameras.main.flash(300, 100, 180, 255);
         }
 
-        // Fire tutorial room 3 → pit sequence; level 2 → no dialogue; others → show reward message
-        if (this.isLevel2) {
+        // Fire tutorial room 3 → pit sequence; level 2/3/4 → no dialogue; others → show reward message
+        if (this.isLevel2 || this.isLevel3 || this.isLevel4) {
             // No Glerp dialogue in real dungeon levels
         } else if (!this.isIceTutorial && roomIndex === 3) {
             this.time.delayedCall(600, () => {

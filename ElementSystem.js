@@ -750,6 +750,7 @@ class ElementSystem {
                         };
                         _sweepBoss(this.voltslimeBoss);
                         _sweepBoss(this.voidSovereignBoss);
+                        _sweepBoss(this.fractureCore);
 
                         for (const enemy of this.enemies) {
                             if (!enemy.sprite?.active || enemy.health <= 0) continue;
@@ -843,6 +844,7 @@ class ElementSystem {
                     };
                     _chillBoss(this.voltslimeBoss);
                     _chillBoss(this.voidSovereignBoss);
+                    _chillBoss(this.fractureCore);
                     for (const enemy of this.enemies) {
                         if (!enemy.sprite?.active || enemy.health <= 0) continue;
                         const edx = enemy.x - cTX, edy = enemy.y - cTY;
@@ -934,6 +936,7 @@ class ElementSystem {
                 };
                 _detonateBoss(this.voltslimeBoss);
                 _detonateBoss(this.voidSovereignBoss);
+                _detonateBoss(this.fractureCore);
 
                 // End domain after detonation
                 _domainActive = false;
@@ -1163,6 +1166,14 @@ class ElementSystem {
             if (this.voltslimeBoss?.active) {
                 const bd = Math.abs(this.voltslimeBoss.tileX - tileX) + Math.abs(this.voltslimeBoss.tileY - tileY);
                 if (bd <= ZAP_RADIUS) this.damageBossAtTile(this.voltslimeBoss.tileX, this.voltslimeBoss.tileY, this.baseLightningDamage * this.damageScaling * 1.5 * dmgMult);
+            }
+            if (this.voidSovereignBoss?.active) {
+                const bd = Math.abs(Math.floor(this.voidSovereignBoss.container.x / this.TILE_SIZE) - tileX) + Math.abs(Math.floor(this.voidSovereignBoss.container.y / this.TILE_SIZE) - tileY);
+                if (bd <= ZAP_RADIUS) this.damageBossAtTile(this.voidSovereignBoss.tileX, this.voidSovereignBoss.tileY, this.baseLightningDamage * this.damageScaling * 1.5 * dmgMult);
+            }
+            if (this.fractureCore?.active) {
+                const bd = Math.abs(this.fractureCore.tileX - tileX) + Math.abs(this.fractureCore.tileY - tileY);
+                if (bd <= ZAP_RADIUS) this.damageBossAtTile(this.fractureCore.tileX, this.fractureCore.tileY, this.baseLightningDamage * this.damageScaling * 1.5 * dmgMult);
             }
             if (this.portals) {
                 for (const portal of this.portals) {
