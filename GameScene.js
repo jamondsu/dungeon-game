@@ -617,12 +617,16 @@ class GameScene extends Phaser.Scene {
             if (pointer.button !== 0) return;
             if (this._devTeleportMode) return; // teleport mode consumes left-click
 
-            // Level 4 — during surface window, clicks route to weak point rhythm system
+            // Level 4 — during surface window, clicks ON the active weak point route to
+            // the rhythm system. Clicks elsewhere fall through to normal weapon fire.
             if (this.isLevel4 && this.fractureCore?._surfaced && this._fractureWeakPoints?.length) {
                 const worldX = pointer.x + this.cameras.main.scrollX;
                 const worldY = pointer.y + this.cameras.main.scrollY;
-                this._tryHitCurrentWeakPoint(worldX, worldY);
-                return;
+                if (this._isClickOnActiveWeakPoint(worldX, worldY)) {
+                    this._tryHitCurrentWeakPoint(worldX, worldY);
+                    return;
+                }
+                // not on the weak point — fall through to normal combat below
             }
 
             if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
@@ -1158,6 +1162,7 @@ class GameScene extends Phaser.Scene {
     _tryBreakCrackPulse(...a)     { return LevelManager.prototype._tryBreakCrackPulse.call(this, ...a); }
     _hitFractureWeakPoint(...a)   { return LevelManager.prototype._hitFractureWeakPoint.call(this, ...a); }
     _tryHitCurrentWeakPoint(...a) { return LevelManager.prototype._tryHitCurrentWeakPoint.call(this, ...a); }
+    _isClickOnActiveWeakPoint(...a) { return LevelManager.prototype._isClickOnActiveWeakPoint.call(this, ...a); }
     _crackPhaseUp(...a)           { return LevelManager.prototype._crackPhaseUp.call(this, ...a); }
     _pushPlayerOutOfCracks(...a)  { return LevelManager.prototype._pushPlayerOutOfCracks.call(this, ...a); }
     _initCracks(...a)             { return LevelManager.prototype._initCracks.call(this, ...a); }
@@ -1167,6 +1172,16 @@ class GameScene extends Phaser.Scene {
     _crackSpawnBurst(...a)        { return LevelManager.prototype._crackSpawnBurst.call(this, ...a); }
     _fractureCoreSurface(...a)    { return LevelManager.prototype._fractureCoreSurface.call(this, ...a); }
     _updateSurfaceWindow(...a)    { return LevelManager.prototype._updateSurfaceWindow.call(this, ...a); }
+    _spawnNewCrack(...a)          { return LevelManager.prototype._spawnNewCrack.call(this, ...a); }
+    _voidMawHop(...a)             { return LevelManager.prototype._voidMawHop.call(this, ...a); }
+    _drawCrackPulseWave(...a)     { return LevelManager.prototype._drawCrackPulseWave.call(this, ...a); }
+    _showRhythmSessionBanner(...a){ return LevelManager.prototype._showRhythmSessionBanner.call(this, ...a); }
+    _gradeColor(...a)             { return LevelManager.prototype._gradeColor.call(this, ...a); }
+    _worseGrade(...a)             { return LevelManager.prototype._worseGrade.call(this, ...a); }
+    _gradeForDiff(...a)            { return LevelManager.prototype._gradeForDiff.call(this, ...a); }
+    _resolveWeakPoint(...a)        { return LevelManager.prototype._resolveWeakPoint.call(this, ...a); }
+    _fractureCoreSurfaceAbort(...a){ return LevelManager.prototype._fractureCoreSurfaceAbort.call(this, ...a); }
+    _gradeWeight(...a)             { return LevelManager.prototype._gradeWeight.call(this, ...a); }
     _fractureCoreSubmerge(...a)   { return LevelManager.prototype._fractureCoreSubmerge.call(this, ...a); }
     _fractureCoreNextAttack(...a){ return LevelManager.prototype._fractureCoreNextAttack.call(this, ...a); }
     _fractureCoreDoAttack(...a)  { return LevelManager.prototype._fractureCoreDoAttack.call(this, ...a); }
@@ -1220,6 +1235,8 @@ class GameScene extends Phaser.Scene {
     _vsAttackStomp(...a)         { return LevelManager.prototype._vsAttackStomp.call(this, ...a); }
     _vsAttackSingularityCollapse(...a){ return LevelManager.prototype._vsAttackSingularityCollapse.call(this, ...a); }
     _vsAttackEventHorizon(...a)  { return LevelManager.prototype._vsAttackEventHorizon.call(this, ...a); }
+    _vsAttackVoidMaw(...a)        { return LevelManager.prototype._vsAttackVoidMaw.call(this, ...a); }
+    _fireVoidMawShotgun(...a)     { return LevelManager.prototype._fireVoidMawShotgun.call(this, ...a); }
     _voidSovereignPhase2Transition(...a){ return LevelManager.prototype._voidSovereignPhase2Transition.call(this, ...a); }
     _voidSovereignDeath(...a)    { return LevelManager.prototype._voidSovereignDeath.call(this, ...a); }
     _spawnVoidRipple(...a)       { return LevelManager.prototype._spawnVoidRipple.call(this, ...a); }
@@ -1245,8 +1262,8 @@ class GameScene extends Phaser.Scene {
     openFinalLevelChest(...a)   { return LevelManager.prototype.openFinalLevelChest.call(this, ...a); }
     _showElementUnlockCinematic(...a) { return LevelManager.prototype._showElementUnlockCinematic.call(this, ...a); }
     onGlorpsCollected(...a) { return TutorialManager.prototype.onGlorpsCollected.call(this, ...a); }
-    isInLockedRoom(...a) { return TutorialManager.prototype.isInLockedRoom.call(this, ...a); }
-    getCurrentPlayerRoom(...a) { return TutorialManager.prototype.getCurrentPlayerRoom.call(this, ...a); }
+    isInLockedRoom(...a) { return LevelManager.prototype.isInLockedRoom.call(this, ...a); }
+    getCurrentPlayerRoom(...a) { return LevelManager.prototype.getCurrentPlayerRoom.call(this, ...a); }
     onTutorialRoomEnter(...a) { return TutorialManager.prototype.onTutorialRoomEnter.call(this, ...a); }
     _onIceTutorialRoomEnter(...a) { return TutorialManager.prototype._onIceTutorialRoomEnter.call(this, ...a); }
     _triggerIceImmuneGlerpReaction(...a) { return TutorialManager.prototype._triggerIceImmuneGlerpReaction.call(this, ...a); }
@@ -1256,10 +1273,10 @@ class GameScene extends Phaser.Scene {
     spawnTutorialGlorps(...a) { return TutorialManager.prototype.spawnTutorialGlorps.call(this, ...a); }
     _buildGlorpContainer(...a) { return TutorialManager.prototype._buildGlorpContainer.call(this, ...a); }
     onTutorialRoomClear(...a) { return TutorialManager.prototype.onTutorialRoomClear.call(this, ...a); }
-    isInCurrentRoom(...a) { return TutorialManager.prototype.isInCurrentRoom.call(this, ...a); }
+    isInCurrentRoom(...a) { return LevelManager.prototype.isInCurrentRoom.call(this, ...a); }
     getPortalAt(...a) { return LevelManager.prototype.getPortalAt.call(this, ...a); }
-    lockTutorialDoors(...a) { return TutorialManager.prototype.lockTutorialDoors.call(this, ...a); }
-    unlockTutorialDoors(...a) { return TutorialManager.prototype.unlockTutorialDoors.call(this, ...a); }
+    lockTutorialDoors(...a) { return LevelManager.prototype.lockTutorialDoors.call(this, ...a); }
+    unlockTutorialDoors(...a) { return LevelManager.prototype.unlockTutorialDoors.call(this, ...a); }
     spawnTutorialChest(...a) { return TutorialManager.prototype.spawnTutorialChest.call(this, ...a); }
     openTutorialChest(...a) { return TutorialManager.prototype.openTutorialChest.call(this, ...a); }
     spawnTutorialPortalPit(...a) { return TutorialManager.prototype.spawnTutorialPortalPit.call(this, ...a); }
@@ -1269,18 +1286,19 @@ class GameScene extends Phaser.Scene {
     endTutorialReturnToMenu(...a) { return TutorialManager.prototype.endTutorialReturnToMenu.call(this, ...a); }
     showTutorialDialogue(...a) { return TutorialManager.prototype.showTutorialDialogue.call(this, ...a); }
     clearTutorialDialogue(...a) { return TutorialManager.prototype.clearTutorialDialogue.call(this, ...a); }
-    spawnEnemies(...a) { return TutorialManager.prototype.spawnEnemies.call(this, ...a); }
+    spawnEnemies(...a) { return LevelManager.prototype.spawnEnemies.call(this, ...a); }
     spawnTutorialEnemies(...a) { return TutorialManager.prototype.spawnTutorialEnemies.call(this, ...a); }
     spawnIceTutorialEnemies(...a) { return TutorialManager.prototype.spawnIceTutorialEnemies.call(this, ...a); }
-    spawnFireMark(...a) { return TutorialManager.prototype.spawnFireMark.call(this, ...a); }
-    spawnIceMark(...a) { return TutorialManager.prototype.spawnIceMark.call(this, ...a); }
-    createRangedEnemy(...a) { return TutorialManager.prototype.createRangedEnemy.call(this, ...a); }
+    spawnFireMark(...a) { return LevelManager.prototype.spawnFireMark.call(this, ...a); }
+    spawnIceMark(...a) { return LevelManager.prototype.spawnIceMark.call(this, ...a); }
+    createRangedEnemy(...a) { return EnemyManager.prototype.createRangedEnemy.call(this, ...a); }
+    _applyUltAbsorberVisual(...a) { return TutorialManager.prototype._applyUltAbsorberVisual.call(this, ...a); }
     spawnIceTraps(...a) { return TutorialManager.prototype.spawnIceTraps.call(this, ...a); }
     spawnPortal(...a) { return LevelManager.prototype.spawnPortal.call(this, ...a); }
     updatePortals(...a) { return LevelManager.prototype.updatePortals.call(this, ...a); }
     damagePortal(...a) { return LevelManager.prototype.damagePortal.call(this, ...a); }
     _destroyPortal(...a) { return LevelManager.prototype._destroyPortal.call(this, ...a); }
-    spawnLevel1Enemies(...a) { return TutorialManager.prototype.spawnLevel1Enemies.call(this, ...a); }
+    spawnLevel1Enemies(...a) { return LevelManager.prototype.spawnLevel1Enemies.call(this, ...a); }
 
     // EnemyManager
     createEnemy(...a) { return EnemyManager.prototype.createEnemy.call(this, ...a); }
@@ -1323,6 +1341,7 @@ class GameScene extends Phaser.Scene {
     lightningFistsAttack(...a) { return WeaponSystem.prototype.lightningFistsAttack.call(this, ...a); }
     iceFistsAttack(...a) { return WeaponSystem.prototype.iceFistsAttack.call(this, ...a); }
     icicleStaffAttack(...a) { return WeaponSystem.prototype.icicleStaffAttack.call(this, ...a); }
+    _fireIcicleNovaBurst(...a) { return WeaponSystem.prototype._fireIcicleNovaBurst.call(this, ...a); }
     _fireHealIcicle(...a)   { return WeaponSystem.prototype._fireHealIcicle.call(this, ...a); }
     _triggerHealIcicleSplit(...a) { return WeaponSystem.prototype._triggerHealIcicleSplit.call(this, ...a); }
     applyIceFistsHit(...a)     { return WeaponSystem.prototype.applyIceFistsHit.call(this, ...a); }
@@ -1346,6 +1365,7 @@ class GameScene extends Phaser.Scene {
     _updateMagmaOrbs(...a)     { return WeaponSystem.prototype._updateMagmaOrbs.call(this, ...a); }
     applyBurnStack(...a)    { return WeaponSystem.prototype.applyBurnStack.call(this, ...a); }
     applyBurnStackBoss(...a){ return WeaponSystem.prototype.applyBurnStackBoss.call(this, ...a); }
+    _burnTierStats(...a)    { return WeaponSystem.prototype._burnTierStats.call(this, ...a); }
     _applyBurnDoTVoidSovereign(...a){ return WeaponSystem.prototype._applyBurnDoTVoidSovereign.call(this, ...a); }
     _recalcMagmaFireballCount(...a) { return WeaponSystem.prototype._recalcMagmaFireballCount.call(this, ...a); }
     _applyBurnDoT(...a)     { return WeaponSystem.prototype._applyBurnDoT.call(this, ...a); }

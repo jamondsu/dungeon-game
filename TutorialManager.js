@@ -210,32 +210,6 @@ class TutorialManager {
         );
     }
 
-    isInLockedRoom(tileX, tileY) {
-        if ((!this.isTutorial && !this.isLevel2 && !this.isLevel3 && !this.isLevel4) || !this.tutorialDoorsLocked) return false;
-        for (let i = 0; i < this.rooms.length; i++) {
-            if (!this.tutorialDoorsLocked[i]) continue;
-            const room = this.rooms[i];
-            if (tileX >= room.x && tileX < room.x + room.w &&
-                tileY >= room.y && tileY < room.y + room.h) {
-                // Only block if player is NOT in this room
-                const playerRoom = this.getCurrentPlayerRoom();
-                if (playerRoom !== i) return true;
-            }
-        }
-        return false;
-    }
-
-    getCurrentPlayerRoom() {
-        for (let i = 0; i < this.rooms.length; i++) {
-            const room = this.rooms[i];
-            if (this.playerX >= room.x && this.playerX < room.x + room.w &&
-                this.playerY >= room.y && this.playerY < room.y + room.h) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     onTutorialRoomEnter(roomIndex) {
         if (this.isLevel3 || this.isLevel2 || this.isLevel4) return;
 
@@ -493,120 +467,9 @@ class TutorialManager {
         });
     }
 
-    isInCurrentRoom(tx, ty) {
-        if (!this.isTutorial && !this.isLevel2) return true;
-        const ri = this.getCurrentPlayerRoom();
-        if (ri < 0) return false;
-        const r = this.rooms[ri];
-        return tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h;
-    }
-
-    // getPortalAt, spawnPortal, updatePortals, damagePortal, _destroyPortal
-    // moved to LevelManager — queen slime is a general enemy, not tutorial-exclusive
-
-    lockTutorialDoors(roomIndex) {
-        const room = this.rooms[roomIndex];
-        if (!room || !room.doorPositions) return;
-        if (!this.lockedDoorTiles) this.lockedDoorTiles = [];
-        if (!this.lockedDoorSprites) this.lockedDoorSprites = [];
-
-        for (let door of room.doorPositions) {
-            let sealTiles = [];
-
-            if (door.direction === 'east') {
-                const ex = room.x + room.w - 1;
-                for (let ty = room.y; ty < room.y + room.h; ty++) sealTiles.push({ x: ex, y: ty });
-            } else if (door.direction === 'west') {
-                const wx = room.x;
-                for (let ty = room.y; ty < room.y + room.h; ty++) sealTiles.push({ x: wx, y: ty });
-            } else if (door.direction === 'north') {
-                const ny = room.y;
-                for (let tx = room.x; tx < room.x + room.w; tx++) sealTiles.push({ x: tx, y: ny });
-            } else if (door.direction === 'south') {
-                const sy = room.y + room.h - 1;
-                for (let tx = room.x; tx < room.x + room.w; tx++) sealTiles.push({ x: tx, y: sy });
-            }
-
-            for (let { x: tx, y: ty } of sealTiles) {
-                if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
-                this.world[tx][ty] = this.WALL;
-                this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
-                const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const bar = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
-                this.tweens.add({ targets: bar, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
-                this.lockedDoorSprites.push({ sprite: bar, roomIndex });
-            }
-
-            // If player is on a sealed tile, nudge them 2 tiles inward
-            const onSeal = sealTiles.some(t => t.x === this.playerX && t.y === this.playerY);
-            if (onSeal) {
-                let nx = 0, ny = 0;
-                if (door.direction === 'east')  nx = -2;
-                if (door.direction === 'west')  nx =  2;
-                if (door.direction === 'north') ny =  2;
-                if (door.direction === 'south') ny = -2;
-                const tx2 = this.playerX + nx;
-                const ty2 = this.playerY + ny;
-                const clampedX = Math.max(room.x + 1, Math.min(room.x + room.w - 2, tx2));
-                const clampedY = Math.max(room.y + 1, Math.min(room.y + room.h - 2, ty2));
-                this.playerX = clampedX;
-                this.playerY = clampedY;
-                const wx = clampedX * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const wy = clampedY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
-                this.tweens.killTweensOf(this.player);
-                this.tweens.add({ targets: this.player, x: wx, y: wy, duration: 120, ease: 'Power2' });
-            }
-        }
-
-        // Also seal corridor entrances to chest rooms branching off this combat room
-        if (this.isLevel2 && this.rooms) {
-            const combatRooms = this.rooms.filter(r => !r.isChestRoom);
-            const combatIdx = combatRooms.indexOf(room);
-            const tagMap = ['r0','r1','r2','r3','r4','r5','boss'];
-            const tag = tagMap[combatIdx] || null;
-            if (tag) {
-                for (const cr of this.rooms) {
-                    if (!cr.isChestRoom || cr.parentTag !== tag) continue;
-                    if (!cr.entranceTiles) continue;
-                    for (const { x: tx, y: ty } of cr.entranceTiles) {
-                        if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
-                        this.world[tx][ty] = this.WALL;
-                        this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
-                        const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
-                        const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
-                        const bar = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
-                        this.tweens.add({ targets: bar, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
-                        this.lockedDoorSprites.push({ sprite: bar, roomIndex });
-                    }
-                }
-            }
-        }
-    }
-
-    unlockTutorialDoors(roomIndex) {
-        if (!this.lockedDoorTiles) return;
-
-        // Remove wall tiles
-        for (let i = this.lockedDoorTiles.length - 1; i >= 0; i--) {
-            const tile = this.lockedDoorTiles[i];
-            if (tile.roomIndex === roomIndex) {
-                this.world[tile.x][tile.y] = this.FLOOR;
-                this.lockedDoorTiles.splice(i, 1);
-            }
-        }
-
-        // Remove visual sprites
-        if (this.lockedDoorSprites) {
-            for (let i = this.lockedDoorSprites.length - 1; i >= 0; i--) {
-                const doorSprite = this.lockedDoorSprites[i];
-                if (doorSprite.roomIndex === roomIndex) {
-                    doorSprite.sprite.destroy();
-                    this.lockedDoorSprites.splice(i, 1);
-                }
-            }
-        }
-    }
+    // isInCurrentRoom, lockTutorialDoors, unlockTutorialDoors moved to LevelManager —
+    // used by every level's combat/door-seal logic, not tutorial-exclusive
+    // (getCurrentPlayerRoom, isInLockedRoom also moved there for the same reason)
 
     spawnTutorialChest(roomIndex) {
         const room = this.rooms[roomIndex];
@@ -1080,59 +943,8 @@ class TutorialManager {
 
     // ─── PAUSE MENU ────────────────────────────────────────────────────────────
 
-    spawnEnemies() {
-        // Tutorial level has custom enemy placement
-        if (this.currentLevelIndex === 0) {
-            if (this.isIceTutorial) {
-                this.spawnIceTutorialEnemies();
-            } else {
-                this.spawnTutorialEnemies();
-            }
-            return;
-        } else if (this.currentLevelIndex === 1) {
-            this.spawnLevel1Enemies();
-            return;
-        } else if (this.currentLevelIndex === 2) {
-            this.spawnLevel2Enemies();
-            return;
-        } else if (this.currentLevelIndex === 3) {
-            this.spawnLevel3Enemies();
-            return;
-        } else if (this.currentLevelIndex === 4) {
-            this.spawnLevel4Enemies();
-            return;
-        }
-
-        // Fixed enemy range per run: 3–5 enemies per room, skip player's starting room
-        const minPerRoom = 3;
-        const maxPerRoom = 5;
-        const rooms = this.rooms || [];
-
-        for (let i = 0; i < rooms.length; i++) {
-            const room = rooms[i];
-            const cx = Math.floor(room.x + room.w / 2);
-            const cy = Math.floor(room.y + room.h / 2);
-
-            // Skip the room the player starts in
-            const distToPlayer = Math.abs(cx - this.playerX) + Math.abs(cy - this.playerY);
-            if (distToPlayer < 8) continue;
-
-            const count = minPerRoom + Math.floor(this.rng() * (maxPerRoom - minPerRoom + 1));
-            let spawned = 0;
-            let attempts = 0;
-
-            while (spawned < count && attempts < 100) {
-                attempts++;
-                const x = room.x + 1 + Math.floor(this.rng() * (room.w - 2));
-                const y = room.y + 1 + Math.floor(this.rng() * (room.h - 2));
-
-                if (this.world[x][y] === this.FLOOR && !this.getEnemyAt(x, y)) {
-                    this.createEnemy(x, y);
-                    spawned++;
-                }
-            }
-        }
-    }
+    // spawnEnemies (level dispatcher) moved to LevelManager — routes to all levels,
+    // not tutorial-specific, even though it happened to live here historically
 
     spawnTutorialEnemies() {
         this.tutorialNPC = null;
@@ -1361,62 +1173,8 @@ class TutorialManager {
         this.spawnPortal(53, 80, 6);
     }
 
-    // ── Shared mark spawners ───────────────────────────────────────────────
-
-    spawnFireMark(enemy) {
-        const mark = this.add.graphics().setDepth(2);
-        mark.fillStyle(0xff6600, 0.95);
-        mark.fillTriangle(0, -9, -6, 3, 6, 3);
-        mark.fillStyle(0xffdd00, 1);
-        mark.fillCircle(0, -2, 3);
-        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
-        this.tweens.add({ targets: mark, scaleY: 1.25, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        return mark;
-    }
-
-    spawnIceMark(enemy) {
-        const mark = this.add.graphics().setDepth(2);
-        // Snowflake: 6 arms + centre circle
-        mark.lineStyle(2, 0x88eeff, 1);
-        for (let i = 0; i < 6; i++) {
-            const a = (i / 6) * Math.PI * 2;
-            mark.beginPath();
-            mark.moveTo(0, 0);
-            mark.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
-            mark.strokePath();
-            // small tick at 60% along each arm
-            const bx = Math.cos(a) * 5, by = Math.sin(a) * 5;
-            const px = Math.cos(a + Math.PI / 2) * 3, py = Math.sin(a + Math.PI / 2) * 3;
-            mark.beginPath();
-            mark.moveTo(bx - px, by - py); mark.lineTo(bx + px, by + py);
-            mark.strokePath();
-        }
-        mark.fillStyle(0xaaffff, 0.9);
-        mark.fillCircle(0, 0, 3);
-        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
-        // Slow spin
-        this.tweens.add({ targets: mark, angle: 360, duration: 2400, repeat: -1, ease: 'Linear' });
-        return mark;
-    }
-
-    createRangedEnemy(x, y, tutorialRoomIndex) {
-        const enemy = this.createEnemy(x, y, 30);
-        enemy.tutorialRoomIndex = tutorialRoomIndex;
-        enemy.isRanged = true;
-        enemy.rangedState = 'idle';
-
-        // Yellow crosshair mark to distinguish from melee
-        const mark = this.add.graphics().setDepth(2);
-        mark.lineStyle(2, 0xffee00, 0.9);
-        mark.strokeCircle(0, 0, 7);
-        mark.beginPath(); mark.moveTo(-10, 0); mark.lineTo(10, 0); mark.strokePath();
-        mark.beginPath(); mark.moveTo(0, -10); mark.lineTo(0, 10); mark.strokePath();
-        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
-        this.tweens.add({ targets: mark, scaleX: 1.2, scaleY: 1.2, duration: 500, yoyo: true, repeat: -1 });
-        enemy._rangedMark = mark;
-
-        return enemy;
-    }
+    // spawnFireMark, spawnIceMark moved to LevelManager — generic visual helpers
+    // already used by Level 2/3's elemental-immune enemies, not tutorial-exclusive
 
     // ─── FLOOR TRAPS ───────────────────────────────────────────────────────────
 
@@ -1436,147 +1194,9 @@ class TutorialManager {
             for (const s of line) this.spawnSpikeTrap(s.x, s.y);
     }
 
-    // ─── QUEEN SLIME SPAWNERS ────────────────────────────────────────────────
-    spawnLevel1Enemies() {
-        // Starting room: No enemies
-
-        // Hub room (T-junction): 2 enemies to introduce threat
-        const hubPositions = [
-            { x: 47, y: 48 },
-            { x: 52, y: 51 }
-        ];
-        for (let pos of hubPositions) {
-            this.createEnemy(pos.x, pos.y);
-        }
-
-        // Left branch room: 5 enemies in a defensive formation
-        const leftPositions = [
-            { x: 21, y: 34 },
-            { x: 24, y: 36 },
-            { x: 21, y: 38 },
-            { x: 24, y: 40 },
-            { x: 27, y: 38 }
-        ];
-        for (let pos of leftPositions) {
-            this.createEnemy(pos.x, pos.y);
-        }
-
-        // Right branch room: 5 enemies clustered
-        const rightPositions = [
-            { x: 74, y: 35 },
-            { x: 77, y: 35 },
-            { x: 80, y: 37 },
-            { x: 77, y: 40 },
-            { x: 74, y: 42 }
-        ];
-        for (let pos of rightPositions) {
-            this.createEnemy(pos.x, pos.y);
-        }
-
-        // Boss room: 8 enemies spread throughout
-        const bossPositions = [
-            { x: 80, y: 44 },
-            { x: 84, y: 44 },
-            { x: 88, y: 46 },
-            { x: 92, y: 46 },
-            { x: 84, y: 50 },
-            { x: 88, y: 50 },
-            { x: 90, y: 54 },
-            { x: 94, y: 56 }
-        ];
-        for (let pos of bossPositions) {
-            this.createEnemy(pos.x, pos.y);
-        }
-    }
+    // spawnLevel1Enemies moved to LevelManager — alongside Level 2/3/4's equivalents
 
     // ─── LIGHTNING TUTORIAL (LEVEL 2) ────────────────────────────────────────
-
-    spawnLevel2Enemies() {
-        // Room 0 (start): no enemies
-
-        // Room 1: pillar corridor — 4 normal slimes weaving between pillars
-        const r1 = [
-            { x: 22, y: 45 }, { x: 28, y: 46 }, { x: 34, y: 45 }, { x: 28, y: 51 }
-        ];
-        for (const pos of r1) {
-            const e = this.createEnemy(pos.x, pos.y, 80);
-            e.tutorialRoomIndex = 1;
-        }
-
-        // Room 2: wide brawl — mixed fire-immune and ice elementals + normals
-        // Normal
-        const r2Normal = [ { x: 45, y: 43 }, { x: 55, y: 43 }, { x: 50, y: 50 }, { x: 45, y: 53 } ];
-        // Fire-immune (orange mark)
-        const r2Fire = [ { x: 53, y: 47 }, { x: 47, y: 47 } ];
-        // Ice elemental (blue mark — only ice weapons can hurt)
-        const r2Ice = [ { x: 56, y: 53 }, { x: 44, y: 53 } ];
-
-        for (const pos of r2Normal) {
-            const e = this.createEnemy(pos.x, pos.y, 80); e.tutorialRoomIndex = 2;
-        }
-        for (const pos of r2Fire) {
-            const e = this.createEnemy(pos.x, pos.y, 100); e.tutorialRoomIndex = 2;
-            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
-        }
-        for (const pos of r2Ice) {
-            const e = this.createEnemy(pos.x, pos.y, 120); e.tutorialRoomIndex = 2;
-            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
-        }
-
-        // Room 3: L-shape chokepoint — ranged snipers on far side of dividing wall + normals near entrance
-        const r3Normal = [ { x: 66, y: 44 }, { x: 69, y: 52 }, { x: 66, y: 50 } ];
-        const r3Ranged = [ { x: 76, y: 43 }, { x: 79, y: 47 }, { x: 76, y: 52 } ];
-        const r3Ice = [ { x: 74, y: 44 }, { x: 74, y: 51 } ];
-
-        for (const pos of r3Normal) {
-            const e = this.createEnemy(pos.x, pos.y, 80); e.tutorialRoomIndex = 3;
-        }
-        for (const pos of r3Ranged) {
-            this.createRangedEnemy(pos.x, pos.y, 3);
-        }
-        for (const pos of r3Ice) {
-            const e = this.createEnemy(pos.x, pos.y, 120); e.tutorialRoomIndex = 3;
-            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
-        }
-
-        // Room 4: trap maze — ult absorbers to punish ult-spamming through traps
-        const r4Normal = [ { x: 68, y: 62 }, { x: 80, y: 62 }, { x: 74, y: 70 } ];
-        const r4Absorbers = [ { x: 72, y: 65 }, { x: 78, y: 69 } ];
-
-        for (const pos of r4Normal) {
-            const e = this.createEnemy(pos.x, pos.y, 80); e.tutorialRoomIndex = 4;
-        }
-        for (const pos of r4Absorbers) {
-            const e = this.createEnemy(pos.x, pos.y, 120); e.tutorialRoomIndex = 4;
-            e.isUltAbsorber = true;
-            this._applyUltAbsorberVisual(e);
-        }
-
-        // Room 5: ambush — mixed types hiding behind pillars
-        const r5Normal = [ { x: 41, y: 64 }, { x: 54, y: 64 }, { x: 48, y: 67 }, { x: 41, y: 72 }, { x: 54, y: 72 } ];
-        const r5Fire = [ { x: 44, y: 64 }, { x: 52, y: 72 } ];
-        const r5Ice = [ { x: 52, y: 64 }, { x: 44, y: 72 } ];
-        const r5Absorbers = [ { x: 48, y: 62 } ];
-
-        for (const pos of r5Normal) {
-            const e = this.createEnemy(pos.x, pos.y, 100); e.tutorialRoomIndex = 5;
-        }
-        for (const pos of r5Fire) {
-            const e = this.createEnemy(pos.x, pos.y, 100); e.tutorialRoomIndex = 5;
-            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
-        }
-        for (const pos of r5Ice) {
-            const e = this.createEnemy(pos.x, pos.y, 130); e.tutorialRoomIndex = 5;
-            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
-        }
-        for (const pos of r5Absorbers) {
-            const e = this.createEnemy(pos.x, pos.y, 150); e.tutorialRoomIndex = 5;
-            e.isUltAbsorber = true;
-            this._applyUltAbsorberVisual(e);
-        }
-
-        // Room 6: boss arena — no pre-spawned enemies (voltslime spawns separately)
-    }
 
     _applyUltAbsorberVisual(enemy) {
         // Absorbers are tankier — boost health

@@ -1237,7 +1237,7 @@ class WeaponSystem {
         }
         // Check frozen BEFORE iceImmune — frozen ice elementals can be shattered
         if (enemy.isFrozen) {
-            this._triggerShatterBurst(enemy);
+            this._triggerShatterBurst(enemy, 1.6); // Fractal Shard — buffed shatter damage
             return;
         }
         // Ice elementals: skip chip damage, only chill toward shatter
@@ -1555,7 +1555,15 @@ class WeaponSystem {
             }
             this.tweens.add({ targets: lines, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 130, onComplete: () => lines.destroy() });
 
-            this._spawnPierceSpike(playerPx, playerPy, angle);
+            // Fire 3 pierce spikes in a tight shotgun spread instead of a single needle.
+            // Shared volleyId lets boss-hit logic ensure only ONE freeze-or-shatter event
+            // happens per volley, even though all 3 needles can land base damage on the
+            // same target like a shotgun.
+            const SHOTGUN_SPREAD = 0.10; // ~5.7° half-angle — tight, still reads as one attack
+            const volleyId = Math.random().toString(36).slice(2);
+            this._spawnPierceSpike(playerPx, playerPy, angle - SHOTGUN_SPREAD, volleyId);
+            this._spawnPierceSpike(playerPx, playerPy, angle, volleyId);
+            this._spawnPierceSpike(playerPx, playerPy, angle + SHOTGUN_SPREAD, volleyId);
 
         } else {
             // ── PHASE 2: UNSTABLE SPLITTER ────────────────────────────────
@@ -1581,7 +1589,13 @@ class WeaponSystem {
             muzzle.lineStyle(1.5, 0x88ddff, 0.55); muzzle.strokeCircle(0, 0, 20);
             this.tweens.add({ targets: muzzle, scaleX: 3.0, scaleY: 3.0, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => muzzle.destroy() });
 
-            this._spawnSplitterShard(playerPx, playerPy, angle, 0);
+            // Fire in every direction around the player — each seed shard fractures
+            // independently, turning this into a full 360° fractal nova.
+            const RADIAL_COUNT = 8;
+            for (let i = 0; i < RADIAL_COUNT; i++) {
+                const radialAngle = (i / RADIAL_COUNT) * Math.PI * 2;
+                this._spawnSplitterShard(playerPx, playerPy, radialAngle, 0);
+            }
         }
     }
 
@@ -1712,7 +1726,7 @@ class WeaponSystem {
         this.tweens.add({ targets: mv, scaleX: 1.3, scaleY: 1.3, alpha: 0.55, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
-    _spawnPierceSpike(x, y, angle) {
+    _spawnPierceSpike(x, y, angle, volleyId = null) {
         const SPEED  = 580;  // very fast — feels like a bullet
         const DAMAGE = 12 * this.damageScaling;
         const vx = Math.cos(angle) * SPEED;
@@ -1756,6 +1770,7 @@ class WeaponSystem {
             _lastAfterimageTime: 0,
             isCannonShard: true,
             isPierceSpike: true,
+            volleyId,
             hitEnemies: new Set(),
             piercedEnemies: new Set(),
         };
@@ -1890,7 +1905,7 @@ class WeaponSystem {
         const MAX_GEN      = 4;
         const SPLIT_INTERVAL = 250; // ms between splits
         const SPEEDS     = [160, 130, 105, 85, 70];
-        const DAMAGES    = [14,   9,   5,   3,  2];
+        const DAMAGES    = [10,   6,   3,   2,  1];
         const SIZES      = [8,    6,   5,   4,  3];
 
         const speed  = SPEEDS[gen];
@@ -2035,7 +2050,7 @@ class WeaponSystem {
             if (edx*edx + edy*edy > AOE_R*AOE_R) continue;
             if (enemy.iceImmune || enemy.fireImmune || enemy.elementImmune) continue;
             if (enemy.isFrozen) {
-                this._triggerShatterBurst(enemy);
+                this._triggerShatterBurst(enemy, 1.6); // Fractal Shard — buffed shatter damage
             } else {
                 enemy.health -= splitDmg;
                 this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(splitDmg), '#aaeeff');
@@ -2055,7 +2070,7 @@ class WeaponSystem {
         const currentTime = this.time.now;
 
         // ── Accuracy zone constants ──────────────────────────────────────────
-        const ACCURACY_RADIUS_TILES = 2;
+        const ACCURACY_RADIUS_TILES = 2.75;
         const ACCURACY_RADIUS_PX    = ACCURACY_RADIUS_TILES * this.TILE_SIZE;
 
         // ── Per-shot config ──────────────────────────────────────────────────
@@ -2085,9 +2100,9 @@ class WeaponSystem {
         if (currentTime - (this.lastIcicleStaffTime || 0) < effectiveCD) return;
         this.lastIcicleStaffTime = currentTime;
 
-        // ── Heal shard mode — fired instead of normal burst ──────────────────
+        // ── Charged nova burst — fired instead of normal burst once charged ──
         if (this._icicleHealModeActive && (this._icicleHitCounter || 0) >= HITS_TO_CHARGE) {
-            this._fireIcicleHealShard(playerPx, playerPy, worldX, worldY);
+            this._fireIcicleNovaBurst(playerPx, playerPy);
             this._icicleHealModeActive = false;
             this._icicleHitCounter = 0;
             this._updateIcicleChargeBar();
@@ -2289,6 +2304,118 @@ class WeaponSystem {
     }
 
     // ── Heal shard — fired when heal mode is active ───────────────────────────
+    // ── Charged Nova Burst — fires a full ring of icicle shards in every ──
+    // ── direction around the player. Damages + heals on every hit, exactly ──
+    // ── like the old heal shard's payload, but instant and all-around. ──
+    _fireIcicleNovaBurst(ox, oy) {
+        const NOVA_COUNT  = 16;           // shards in the ring
+        const NOVA_SPEED  = 260;
+        const NOVA_DMG    = 4.5 * this.damageScaling;
+        const HEAL_ON_HIT = 5;
+        const SPLASH_R    = 40; // super shot impact radius — larger reach per enemy hit
+
+        this.showStatusText(ox, oy - 34, '❄ NOVA BURST', '#00ff88');
+        this.cameras.main.shake(70, 0.006);
+
+        // Big expanding ring shockwave visual at the origin — scaled up to match the larger radius
+        const ringG = this.add.graphics().setDepth(5);
+        ringG.x = ox; ringG.y = oy;
+        ringG.lineStyle(4, 0x00ffaa, 0.85); ringG.strokeCircle(0, 0, 12);
+        ringG.lineStyle(2, 0xffffff, 0.70); ringG.strokeCircle(0, 0, 18);
+        this.tweens.add({ targets: ringG, scaleX: 8, scaleY: 8, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => ringG.destroy() });
+
+        for (let i = 0; i < NOVA_COUNT; i++) {
+            const angle = (i / NOVA_COUNT) * Math.PI * 2;
+            const vx = Math.cos(angle) * NOVA_SPEED;
+            const vy = Math.sin(angle) * NOVA_SPEED;
+
+            // Shard visual — green-tinted icicle, oriented along travel direction
+            const container = this.add.container(ox, oy).setDepth(3.4);
+            const g = this.add.graphics();
+            container.add(g);
+            container.setAngle(angle * (180 / Math.PI));
+            const R = 5.5 + Math.random() * 1.5;
+            g.fillStyle(0x007744, 0.90);
+            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.closePath(); g.fillPath();
+            g.fillStyle(0x00cc66, 1.0);
+            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.lineTo(-R,0); g.closePath(); g.fillPath();
+            g.fillStyle(0x55ffbb, 0.75);
+            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(-R,0); g.lineTo(0,R*2.0); g.closePath(); g.fillPath();
+            g.fillStyle(0xffffff, 0.85); g.fillCircle(-R*0.25, -R*0.5, R*0.20);
+            g.lineStyle(1.0, 0x88ffcc, 0.85);
+            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.lineTo(-R,0); g.closePath(); g.strokePath();
+
+            const novaObj = {
+                sprite: container, vx, vy,
+                damage: NOVA_DMG,
+                startX: ox, startY: oy,
+                createdAt: this.time.now,
+                isCannonShard: true,
+                isNovaShard: true,
+                isPiercing: true,
+                bounces: 0, maxBounces: 1,
+                pierceCount: 0, maxPierces: 2,
+                isHoming: false,
+                rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (2.0 + Math.random() * 2.0),
+                hitEnemies: new Set(),
+                piercedEnemies: new Set(),
+                _onHit: (enemy) => {
+                    if (!enemy.sprite?.active) return;
+                    if (enemy.isFrozen) {
+                        this._triggerShatterBurst(enemy, 1 / 7.5);
+                    } else if (!enemy.iceImmune) {
+                        enemy.health -= NOVA_DMG;
+                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(NOVA_DMG), '#44ffaa');
+                        this.updateEnemyHealthBar(enemy);
+                        if (enemy.health <= 0) { this.killEnemy(enemy); return; }
+                        if (!enemy.chillStacks) enemy.chillStacks = 0;
+                        enemy.chillStacks++;
+                        enemy.lastChillTime = this.time.now;
+                        this._updateChillIndicator(enemy);
+                        if (enemy.chillStacks >= 3) {
+                            enemy.chillStacks = 0;
+                            enemy.frozenAt = this.time.now;
+                            this._destroyChillIndicator(enemy);
+                            this.freezeEnemy(enemy, 10000);
+                            this.gainUltCharge(this.ultChargePerFreeze);
+                            enemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
+                                if (enemy.sprite?.active) this._shatterWaterSplash(enemy.x, enemy.y);
+                            });
+                        }
+                    }
+                    // Heal on every enemy hit — keeps the sustain identity of the old heal shard
+                    this.health = Math.min((this.maxHealth || 100) + 25, this.health + HEAL_ON_HIT);
+                    if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
+                    const hbG = this.add.graphics().setDepth(5);
+                    hbG.x = enemy.sprite.x; hbG.y = enemy.sprite.y;
+                    hbG.fillStyle(0x00ff88, 0.70); hbG.fillCircle(0, 0, 10);
+                    hbG.fillStyle(0xffffff, 0.85); hbG.fillCircle(0, 0, 4);
+                    this.tweens.add({ targets: hbG, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 250, onComplete: () => hbG.destroy() });
+
+                    // Splash on impact — larger radius (super shot)
+                    const burstG = this.add.graphics().setDepth(4.5);
+                    burstG.x = enemy.sprite.x; burstG.y = enemy.sprite.y;
+                    burstG.fillStyle(0x00ffaa, 0.30); burstG.fillCircle(0, 0, SPLASH_R);
+                    this.tweens.add({ targets: burstG, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 220, onComplete: () => burstG.destroy() });
+
+                    // Splash damage to nearby enemies within SPLASH_R
+                    for (const other of this.enemies) {
+                        if (other === enemy || !other.sprite?.active) continue;
+                        const edx = other.sprite.x - enemy.sprite.x, edy = other.sprite.y - enemy.sprite.y;
+                        if (edx*edx + edy*edy > SPLASH_R*SPLASH_R) continue;
+                        if (other.iceImmune || other.fireImmune || other.elementImmune) continue;
+                        const splashDmg = NOVA_DMG * 0.5;
+                        other.health -= splashDmg;
+                        this.showDamageNumber(other.sprite.x, other.sprite.y - 10, Math.round(splashDmg), '#44ffaa');
+                        this.updateEnemyHealthBar(other);
+                        if (other.health <= 0) this.killEnemy(other);
+                    }
+                },
+            };
+            this.iceShards.push(novaObj);
+        }
+    }
+
     _fireIcicleHealShard(ox, oy, worldX, worldY) {
         const baseAngle = Math.atan2(worldY - oy, worldX - ox);
         const HEAL_SHARD_SPEED = 220;
@@ -2455,7 +2582,7 @@ class WeaponSystem {
             return;
         }
 
-        const ACCURACY_RADIUS_PX = 2 * this.TILE_SIZE;
+        const ACCURACY_RADIUS_PX = 2.75 * this.TILE_SIZE;
         const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
         const worldX   = targetX + this.cameras.main.scrollX;
@@ -2634,9 +2761,11 @@ class WeaponSystem {
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         const baseAngle = Math.atan2(dy, dx);
 
-        // Damage scales with fireball count: 1 ball = 1.0x, 6 balls = 2.8x
-        const damageMultiplier = 1.0 + (fireballCount - 1) * 0.36;
-        const baseDmg = 6 * this.damageScaling * damageMultiplier;
+        // Per-fireball damage is fixed across tiers — tier only affects fireball COUNT
+        // and cooldown (more shots per cast as stacks build), not per-hit damage.
+        // Burn stacks are now the reward for stacking tier, not raw fireball damage.
+        // (Lowered from 6 to 4.5 to balance the max-tier 3-per-shot shotgun below.)
+        const baseDmg = 4.5 * this.damageScaling;
 
         // Muzzle flash
         const muzzle = this.add.graphics().setDepth(4).setScrollFactor(0);
@@ -2646,44 +2775,71 @@ class WeaponSystem {
         muzzle.fillStyle(0xffff44, 0.6); muzzle.fillCircle(mx, my, 5);
         this.tweens.add({ targets: muzzle, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 180, onComplete: () => muzzle.destroy() });
 
-        // Fire fireballs sequentially with slight random spread
+        // Fire fireballs sequentially with slight random spread.
+        // At max tier (6 shots), each shot becomes a tight 3-pellet shotgun burst
+        // instead of a single fireball — 6 shots × 3 pellets = 18 total fireballs.
         const SPEED = 210;
         const SHOT_INTERVAL = 90;
         const leavesTrail = (fireballCount >= 6);
+        const isMaxTier = fireballCount >= 6;
+        const PELLETS_PER_SHOT = isMaxTier ? 3 : 1;
+        const PELLET_SPREAD = 0.32; // ~18.3° half-angle fan between the 3 pellets in a burst
 
         for (let i = 0; i < fireballCount; i++) {
             this.time.delayedCall(i * SHOT_INTERVAL, () => {
                 if (this._deathScreenActive) return;
                 const spread = 0.12 - (fireballCount - 1) * 0.01;
-                const angle = baseAngle + (Math.random() - 0.5) * spread * 2;
-                const vx = Math.cos(angle) * SPEED;
-                const vy = Math.sin(angle) * SPEED;
+                const shotAngle = baseAngle + (Math.random() - 0.5) * spread * 2;
 
-                const container = this.add.container(playerPx, playerPy);
-                const fireGraphics = this.add.graphics().setDepth(1.5);
-                container.add(fireGraphics);
-                container.setDepth(2);
+                for (let p = 0; p < PELLETS_PER_SHOT; p++) {
+                    // Pellets fan evenly around shotAngle; single-pellet shots are unchanged
+                    const pelletOffset = PELLETS_PER_SHOT === 1 ? 0
+                        : (p / (PELLETS_PER_SHOT - 1) - 0.5) * PELLET_SPREAD * 2;
+                    const angle = shotAngle + pelletOffset;
+                    const vx = Math.cos(angle) * SPEED;
+                    const vy = Math.sin(angle) * SPEED;
 
-                this.fireballs.push({
-                    sprite:        container,
-                    fireGraphics:  fireGraphics,
-                    vx, vy,
-                    damage:        baseDmg,
-                    dirX:          Math.cos(angle),
-                    dirY:          Math.sin(angle),
-                    startX:        playerPx, startY: playerPy,
-                    splitCount:    0,
-                    piercedEnemies: new Set(),
-                    createdAt:     this.time.now,
-                    lastFlameTime: this.time.now,
-                    isStaffBall:   true,
-                    leavesTrail,
-                    _burnApplied:  new Set(),
-                });
+                    const container = this.add.container(playerPx, playerPy);
+                    const fireGraphics = this.add.graphics().setDepth(1.5);
+                    container.add(fireGraphics);
+                    container.setDepth(2);
+
+                    this.fireballs.push({
+                        sprite:        container,
+                        fireGraphics:  fireGraphics,
+                        vx, vy,
+                        damage:        baseDmg,
+                        dirX:          Math.cos(angle),
+                        dirY:          Math.sin(angle),
+                        startX:        playerPx, startY: playerPy,
+                        splitCount:    0,
+                        piercedEnemies: new Set(),
+                        createdAt:     this.time.now,
+                        lastFlameTime: this.time.now,
+                        isStaffBall:   true,
+                        leavesTrail,
+                        _burnApplied:  new Set(),
+                    });
+                }
             });
         }
 
         this.cameras.main.shake(30 + fireballCount * 5, 0.002);
+    }
+
+    // Single source of truth for burn DoT damage/interval per stack count (1-5).
+    // Each of the 5 stacks now has its own distinct, escalating tier instead of
+    // grouping into 3 bands — every stack should feel like it matters.
+    _burnTierStats(stacks) {
+        const TIERS = {
+            1: { dmg: 0.8, interval: 1900 },
+            2: { dmg: 1.6, interval: 1600 },
+            3: { dmg: 2.8, interval: 1300 },
+            4: { dmg: 4.4, interval: 1000 },
+            5: { dmg: 6.5, interval: 700  },
+        };
+        const tier = TIERS[Math.min(5, Math.max(1, stacks))];
+        return { dmg: tier.dmg * this.damageScaling, interval: tier.interval };
     }
 
     // Apply one burn stack to an enemy — called by fire hits and lava tiles
@@ -2812,7 +2968,7 @@ class WeaponSystem {
             boss.lastBurnStackTime = this.time.now;
             this._recalcMagmaFireballCount();
             this._applyBurnDoTBoss();
-            this._updateBossBurnIndicator();
+            this._updateBossBurnIndicator(boss);
         }
         // Apply to void sovereign
         const vs = this.voidSovereignBoss;
@@ -2822,6 +2978,7 @@ class WeaponSystem {
             vs.lastBurnStackTime = this.time.now;
             this._recalcMagmaFireballCount();
             this._applyBurnDoTVoidSovereign();
+            this._updateBossBurnIndicator(vs);
         }
     }
 
@@ -2830,10 +2987,7 @@ class WeaponSystem {
         if (!vs?.active) return;
         const s = vs.burnStacks || 0;
         if (s <= 0) return;
-        const dmgPerTick = s <= 2 ? 0.6 * this.damageScaling
-                         : s <= 4 ? 1.4 * this.damageScaling
-                                  : 2.8 * this.damageScaling;
-        const interval = s <= 2 ? 2000 : s <= 4 ? 1200 : 700;
+        const { dmg: dmgPerTick, interval } = this._burnTierStats(s);
         if (vs._burnDoTTimer) { vs._burnDoTTimer.remove(); vs._burnDoTTimer = null; }
         const tick = () => {
             if (!vs?.active || vs.hp <= 0 || !vs.burnStacks) return;
@@ -2841,6 +2995,7 @@ class WeaponSystem {
             if (timeSinceLast > interval * 1.5) {
                 vs.burnStacks = Math.max(0, vs.burnStacks - 1);
                 this._recalcMagmaFireballCount();
+                this._updateBossBurnIndicator(vs);
                 if (vs.burnStacks > 0) this._applyBurnDoTVoidSovereign();
                 return;
             }
@@ -2867,10 +3022,7 @@ class WeaponSystem {
         if (!boss?.active) return;
         const s = boss.burnStacks || 0;
         if (s <= 0) return;
-        const dmgPerTick = s <= 2 ? 0.6 * this.damageScaling
-                         : s <= 4 ? 1.4 * this.damageScaling
-                                  : 2.8 * this.damageScaling;
-        const interval   = s <= 2 ? 2000 : s <= 4 ? 1200 : 700;
+        const { dmg: dmgPerTick, interval } = this._burnTierStats(s);
         if (boss._burnDoTTimer) { boss._burnDoTTimer.remove(); boss._burnDoTTimer = null; }
         const tick = () => {
             if (!boss?.active || boss.hp <= 0 || !boss.burnStacks) return;
@@ -2878,7 +3030,7 @@ class WeaponSystem {
             if (timeSinceLast > interval * 1.5) {
                 boss.burnStacks = Math.max(0, boss.burnStacks - 1);
                 this._recalcMagmaFireballCount();
-                this._updateBossBurnIndicator();
+                this._updateBossBurnIndicator(boss);
                 if (boss.burnStacks > 0) { this._applyBurnDoTBoss(); }
                 return;
             }
@@ -2889,8 +3041,8 @@ class WeaponSystem {
         boss._burnDoTTimer = this.time.delayedCall(interval, tick);
     }
 
-    _updateBossBurnIndicator() {
-        const boss = this.voltslimeBoss;
+    // Burn stack pip indicator — works for any boss object with .container/.burnStacks/.active
+    _updateBossBurnIndicator(boss) {
         if (!boss?.active) return;
         // Clean old pips
         if (boss._burnStackBar) {
@@ -2919,11 +3071,7 @@ class WeaponSystem {
     _applyBurnDoT(enemy) {
         const s = enemy.burnStacks || 0;
         if (s <= 0) return;
-        // 3 tiers based on stacks
-        const dmgPerTick = s <= 2 ? 0.6 * this.damageScaling
-                         : s <= 4 ? 1.4 * this.damageScaling
-                                  : 2.8 * this.damageScaling;
-        const interval   = s <= 2 ? 2000 : s <= 4 ? 1200 : 700;
+        const { dmg: dmgPerTick, interval } = this._burnTierStats(s);
 
         if (enemy._burnDoTTimer) { enemy._burnDoTTimer.remove(); enemy._burnDoTTimer = null; }
 
@@ -3760,33 +3908,41 @@ class WeaponSystem {
                     if (!s._id) s._id = Math.random().toString(36).slice(2);
                     if (!vboss._hitShards) vboss._hitShards = new Set();
                     if (!vboss._frozenByShards) vboss._frozenByShards = new Set();
+                    if (!vboss._handledVolleys) vboss._handledVolleys = new Set();
                     if (!vboss._hitShards.has(s._id)) {
                         vboss._hitShards.add(s._id);
                         s._hitBossThisFrame = true;
 
                         const wasAlreadyFrozen = vboss._isFrozen;
+                        // Only the first shard from a given volley (e.g. one of the 3 Fractal
+                        // Shard pierce needles) may trigger a freeze-or-shatter event against
+                        // this boss. Other shards from the SAME volley that also land just deal
+                        // plain damage instead of each re-triggering freeze/shatter.
+                        const volleyAlreadyHandled = s.volleyId && vboss._handledVolleys.has(s.volleyId);
 
                         // Cannon shards chill/freeze VS; pierce/block instant-freeze; splitters only shatter
-                        if (!s.isSplitter) {
+                        if (!s.isSplitter && !volleyAlreadyHandled) {
                             if (typeof this.freezeBossFromIceWeapon === 'function') {
                                 this.freezeBossFromIceWeapon(!!s.isBlock || !!s.isPierceSpike);
                             }
                         }
 
-                        const justFroze = !wasAlreadyFrozen && vboss._isFrozen;
+                        const justFroze = !wasAlreadyFrozen && vboss._isFrozen && !volleyAlreadyHandled;
 
                         if (justFroze) {
                             // Froze VS this frame — don't deal damage
                             vboss._frozenByShards.add(s._id);
+                            if (s.volleyId) vboss._handledVolleys.add(s.volleyId);
                         } else if (!vboss._frozenByShards.has(s._id)) {
-                            // Already frozen → shatter bonus; or normal damage
-                            if (wasAlreadyFrozen) {
+                            // Already frozen → shatter bonus (once per volley); or normal damage
+                            if (wasAlreadyFrozen && !volleyAlreadyHandled) {
                                 // Shatter — deal full damage with shatter mult
                                 const shatterMult = s.isCannonShard ? (s._shatterMult || 0.5) : 1.0;
                                 this.damageVoidSovereignBoss(s.damage * (1 + shatterMult * 5));
                                 if (typeof this._clearFreezeVisuals === 'function') this._clearFreezeVisuals(vboss._bossProxy || vboss);
-                                if (typeof this._thawVoidSovereign === 'function') this._thawVoidSovereign();
+                                vboss._isFrozen = false; // thaw — _thawVoidSovereign doesn't exist, so clear directly
                                 this.showStatusText(vpx, vpy - 60, 'SHATTER!', '#aaffff');
+                                if (s.volleyId) vboss._handledVolleys.add(s.volleyId);
                             } else {
                                 this.damageVoidSovereignBoss(s.damage);
                             }

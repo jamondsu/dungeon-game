@@ -5,6 +5,295 @@
 
 class LevelManager {
 
+    // ─── CROSS-LEVEL GEOMETRY & DISPATCH HELPERS ───────────────────────────
+    // Moved here from TutorialManager.js — these are used by every level
+    // (enemy AI, boss attacks, weapon hit detection, dev tools), not tutorial-
+    // exclusive logic, even though some originated there historically.
+
+    getCurrentPlayerRoom() {
+        for (let i = 0; i < this.rooms.length; i++) {
+            const room = this.rooms[i];
+            if (this.playerX >= room.x && this.playerX < room.x + room.w &&
+                this.playerY >= room.y && this.playerY < room.y + room.h) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    isInCurrentRoom(tx, ty) {
+        if (!this.isTutorial && !this.isLevel2 && !this.isLevel3 && !this.isLevel4) return true;
+        const ri = this.getCurrentPlayerRoom();
+        if (ri < 0) return false;
+        const r = this.rooms[ri];
+        return tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h;
+    }
+
+    isInLockedRoom(tileX, tileY) {
+        if ((!this.isTutorial && !this.isLevel2 && !this.isLevel3 && !this.isLevel4) || !this.tutorialDoorsLocked) return false;
+        for (let i = 0; i < this.rooms.length; i++) {
+            if (!this.tutorialDoorsLocked[i]) continue;
+            const room = this.rooms[i];
+            if (tileX >= room.x && tileX < room.x + room.w &&
+                tileY >= room.y && tileY < room.y + room.h) {
+                // Only block if player is NOT in this room
+                const playerRoom = this.getCurrentPlayerRoom();
+                if (playerRoom !== i) return true;
+            }
+        }
+        return false;
+    }
+
+    lockTutorialDoors(roomIndex) {
+        const room = this.rooms[roomIndex];
+        if (!room || !room.doorPositions) return;
+        if (!this.lockedDoorTiles) this.lockedDoorTiles = [];
+        if (!this.lockedDoorSprites) this.lockedDoorSprites = [];
+
+        for (let door of room.doorPositions) {
+            let sealTiles = [];
+
+            if (door.direction === 'east') {
+                const ex = room.x + room.w - 1;
+                for (let ty = room.y; ty < room.y + room.h; ty++) sealTiles.push({ x: ex, y: ty });
+            } else if (door.direction === 'west') {
+                const wx = room.x;
+                for (let ty = room.y; ty < room.y + room.h; ty++) sealTiles.push({ x: wx, y: ty });
+            } else if (door.direction === 'north') {
+                const ny = room.y;
+                for (let tx = room.x; tx < room.x + room.w; tx++) sealTiles.push({ x: tx, y: ny });
+            } else if (door.direction === 'south') {
+                const sy = room.y + room.h - 1;
+                for (let tx = room.x; tx < room.x + room.w; tx++) sealTiles.push({ x: tx, y: sy });
+            }
+
+            for (let { x: tx, y: ty } of sealTiles) {
+                if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
+                this.world[tx][ty] = this.WALL;
+                this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
+                const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const bar = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
+                this.tweens.add({ targets: bar, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+                this.lockedDoorSprites.push({ sprite: bar, roomIndex });
+            }
+
+            // If player is on a sealed tile, nudge them 2 tiles inward
+            const onSeal = sealTiles.some(t => t.x === this.playerX && t.y === this.playerY);
+            if (onSeal) {
+                let nx = 0, ny = 0;
+                if (door.direction === 'east')  nx = -2;
+                if (door.direction === 'west')  nx =  2;
+                if (door.direction === 'north') ny =  2;
+                if (door.direction === 'south') ny = -2;
+                const tx2 = this.playerX + nx;
+                const ty2 = this.playerY + ny;
+                const clampedX = Math.max(room.x + 1, Math.min(room.x + room.w - 2, tx2));
+                const clampedY = Math.max(room.y + 1, Math.min(room.y + room.h - 2, ty2));
+                this.playerX = clampedX;
+                this.playerY = clampedY;
+                const wx = clampedX * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const wy = clampedY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
+                this.tweens.killTweensOf(this.player);
+                this.tweens.add({ targets: this.player, x: wx, y: wy, duration: 120, ease: 'Power2' });
+            }
+        }
+
+        // Also seal corridor entrances to chest rooms branching off this combat room
+        if (this.isLevel2 && this.rooms) {
+            const combatRooms = this.rooms.filter(r => !r.isChestRoom);
+            const combatIdx = combatRooms.indexOf(room);
+            const tagMap = ['r0','r1','r2','r3','r4','r5','boss'];
+            const tag = tagMap[combatIdx] || null;
+            if (tag) {
+                for (const cr of this.rooms) {
+                    if (!cr.isChestRoom || cr.parentTag !== tag) continue;
+                    if (!cr.entranceTiles) continue;
+                    for (const { x: tx, y: ty } of cr.entranceTiles) {
+                        if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
+                        this.world[tx][ty] = this.WALL;
+                        this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
+                        const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
+                        const bar = this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
+                        this.tweens.add({ targets: bar, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+                        this.lockedDoorSprites.push({ sprite: bar, roomIndex });
+                    }
+                }
+            }
+        }
+    }
+
+    unlockTutorialDoors(roomIndex) {
+        if (!this.lockedDoorTiles) return;
+
+        // Remove wall tiles
+        for (let i = this.lockedDoorTiles.length - 1; i >= 0; i--) {
+            const tile = this.lockedDoorTiles[i];
+            if (tile.roomIndex === roomIndex) {
+                this.world[tile.x][tile.y] = this.FLOOR;
+                this.lockedDoorTiles.splice(i, 1);
+            }
+        }
+
+        // Remove visual sprites
+        if (this.lockedDoorSprites) {
+            for (let i = this.lockedDoorSprites.length - 1; i >= 0; i--) {
+                const doorSprite = this.lockedDoorSprites[i];
+                if (doorSprite.roomIndex === roomIndex) {
+                    doorSprite.sprite.destroy();
+                    this.lockedDoorSprites.splice(i, 1);
+                }
+            }
+        }
+    }
+
+    // ─── ENEMY SPAWN DISPATCH ───────────────────────────────────────────────
+
+    spawnEnemies() {
+        // Tutorial level has custom enemy placement
+        if (this.currentLevelIndex === 0) {
+            if (this.isIceTutorial) {
+                this.spawnIceTutorialEnemies();
+            } else {
+                this.spawnTutorialEnemies();
+            }
+            return;
+        } else if (this.currentLevelIndex === 1) {
+            this.spawnLevel1Enemies();
+            return;
+        } else if (this.currentLevelIndex === 2) {
+            this.spawnLevel2Enemies();
+            return;
+        } else if (this.currentLevelIndex === 3) {
+            this.spawnLevel3Enemies();
+            return;
+        } else if (this.currentLevelIndex === 4) {
+            this.spawnLevel4Enemies();
+            return;
+        }
+
+        // Fixed enemy range per run: 3–5 enemies per room, skip player's starting room
+        const minPerRoom = 3;
+        const maxPerRoom = 5;
+        const rooms = this.rooms || [];
+
+        for (let i = 0; i < rooms.length; i++) {
+            const room = rooms[i];
+            const cx = Math.floor(room.x + room.w / 2);
+            const cy = Math.floor(room.y + room.h / 2);
+
+            // Skip the room the player starts in
+            const distToPlayer = Math.abs(cx - this.playerX) + Math.abs(cy - this.playerY);
+            if (distToPlayer < 8) continue;
+
+            const count = minPerRoom + Math.floor(this.rng() * (maxPerRoom - minPerRoom + 1));
+            let spawned = 0;
+            let attempts = 0;
+
+            while (spawned < count && attempts < 100) {
+                attempts++;
+                const x = room.x + 1 + Math.floor(this.rng() * (room.w - 2));
+                const y = room.y + 1 + Math.floor(this.rng() * (room.h - 2));
+
+                if (this.world[x][y] === this.FLOOR && !this.getEnemyAt(x, y)) {
+                    this.createEnemy(x, y);
+                    spawned++;
+                }
+            }
+        }
+    }
+
+    spawnLevel1Enemies() {
+        // Starting room: No enemies
+
+        // Hub room (T-junction): 2 enemies to introduce threat
+        const hubPositions = [
+            { x: 47, y: 48 },
+            { x: 52, y: 51 }
+        ];
+        for (let pos of hubPositions) {
+            this.createEnemy(pos.x, pos.y);
+        }
+
+        // Left branch room: 5 enemies in a defensive formation
+        const leftPositions = [
+            { x: 21, y: 34 },
+            { x: 24, y: 36 },
+            { x: 21, y: 38 },
+            { x: 24, y: 40 },
+            { x: 27, y: 38 }
+        ];
+        for (let pos of leftPositions) {
+            this.createEnemy(pos.x, pos.y);
+        }
+
+        // Right branch room: 5 enemies clustered
+        const rightPositions = [
+            { x: 74, y: 35 },
+            { x: 77, y: 35 },
+            { x: 80, y: 37 },
+            { x: 77, y: 40 },
+            { x: 74, y: 42 }
+        ];
+        for (let pos of rightPositions) {
+            this.createEnemy(pos.x, pos.y);
+        }
+
+        // Boss room: 8 enemies spread throughout
+        const bossPositions = [
+            { x: 80, y: 44 },
+            { x: 84, y: 44 },
+            { x: 88, y: 46 },
+            { x: 92, y: 46 },
+            { x: 84, y: 50 },
+            { x: 88, y: 50 },
+            { x: 90, y: 54 },
+            { x: 94, y: 56 }
+        ];
+        for (let pos of bossPositions) {
+            this.createEnemy(pos.x, pos.y);
+        }
+    }
+
+    // ─── SHARED ENEMY VISUAL MARKERS ────────────────────────────────────────
+
+    spawnFireMark(enemy) {
+        const mark = this.add.graphics().setDepth(2);
+        mark.fillStyle(0xff6600, 0.95);
+        mark.fillTriangle(0, -9, -6, 3, 6, 3);
+        mark.fillStyle(0xffdd00, 1);
+        mark.fillCircle(0, -2, 3);
+        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
+        this.tweens.add({ targets: mark, scaleY: 1.25, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        return mark;
+    }
+
+    spawnIceMark(enemy) {
+        const mark = this.add.graphics().setDepth(2);
+        // Snowflake: 6 arms + centre circle
+        mark.lineStyle(2, 0x88eeff, 1);
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            mark.beginPath();
+            mark.moveTo(0, 0);
+            mark.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
+            mark.strokePath();
+            // small tick at 60% along each arm
+            const bx = Math.cos(a) * 5, by = Math.sin(a) * 5;
+            const px = Math.cos(a + Math.PI / 2) * 3, py = Math.sin(a + Math.PI / 2) * 3;
+            mark.beginPath();
+            mark.moveTo(bx - px, by - py); mark.lineTo(bx + px, by + py);
+            mark.strokePath();
+        }
+        mark.fillStyle(0xaaffff, 0.9);
+        mark.fillCircle(0, 0, 3);
+        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
+        // Slow spin
+        this.tweens.add({ targets: mark, angle: 360, duration: 2400, repeat: -1, ease: 'Linear' });
+        return mark;
+    }
+
     // ─── LEVEL 2 UPDATE LOOP ──────────────────────────────────────────────
 
     updateLevel2(time) {
@@ -114,7 +403,7 @@ class LevelManager {
         this.createRangedEnemy(57, 43, 2);
         // Ult absorber healer hiding at the back
         const r2abs = { x: 52, y: 47 };
-        { const e = this.createEnemy(r2abs.x, r2abs.y, 55); e.tutorialRoomIndex = 2; e.isUltAbsorber = true; LevelManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        { const e = this.createEnemy(r2abs.x, r2abs.y, 55); e.tutorialRoomIndex = 2; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
 
         // Chest branch rooms
         this._spawnLevel2ChestRooms();
@@ -128,7 +417,7 @@ class LevelManager {
         const r3ice = [{ x: 78, y: 46 }, { x: 82, y: 48 }];
         for (const p of r3ice) { const e = this.createEnemy(p.x, p.y, 55); e.tutorialRoomIndex = 3; e.iceImmune = true; e._iceMark = this.spawnIceMark(e); }
         // Ult absorber lurking in corner
-        { const e = this.createEnemy(74, 50, 65); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; LevelManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        { const e = this.createEnemy(74, 50, 65); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
 
         // R4: spike maze — add ice elemental behind spikes
         const spikeRow1 = [{ x:67,y:62 },{ x:68,y:62 },{ x:69,y:62 },{ x:72,y:62 },{ x:73,y:62 }];
@@ -152,7 +441,7 @@ class LevelManager {
         const r5ice = [{ x:43,y:65 }, { x:50,y:67 }];
         for (const p of r5ice) { const e = this.createEnemy(p.x, p.y, 60); e.tutorialRoomIndex = 5; e.iceImmune = true; e._iceMark = this.spawnIceMark(e); }
         // Ult absorber healer in the centre of the ambush
-        { const e = this.createEnemy(47, 66, 75); e.tutorialRoomIndex = 5; e.isUltAbsorber = true; LevelManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        { const e = this.createEnemy(47, 66, 75); e.tutorialRoomIndex = 5; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
 
         // Boss arena guards — mix in ice elemental
         const bossIdx = 6;
@@ -815,32 +1104,6 @@ class LevelManager {
         if (boss.body?.active) boss.body.setTint(0x6600aa); // restore base dark purple
     }
 
-    damageBossAtTile(tileX, tileY, damage) {
-        let hit = false;
-        if (this.voltslimeBoss?.active) {
-            const boss = this.voltslimeBoss;
-            if (Math.abs(tileX - boss.tileX) <= 1 && Math.abs(tileY - boss.tileY) <= 1) {
-                this.damageVoltslimeBoss(damage);
-                hit = true;
-            }
-        }
-        if (this.voidSovereignBoss?.active && !this.voidSovereignBoss._isInvulnerable) {
-            const boss = this.voidSovereignBoss;
-            if (Math.abs(tileX - boss.tileX) <= 2 && Math.abs(tileY - boss.tileY) <= 2) {
-                this.damageVoidSovereignBoss(damage);
-                hit = true;
-            }
-        }
-        if (this.fractureCore?.active && !this.fractureCore._isInvulnerable) {
-            const core = this.fractureCore;
-            if (Math.abs(tileX - core.tileX) <= 2 && Math.abs(tileY - core.tileY) <= 2) {
-                this.damageFractureCore(damage);
-                hit = true;
-            }
-        }
-        return hit;
-    }
-
     _killVoltslimeBoss() {
         const boss = this.voltslimeBoss;
         if (!boss?.active) return;
@@ -935,10 +1198,13 @@ class LevelManager {
         this.cameras.main.shake(80, 0.006);
 
         const element = chest.elementToUnlock;
-        const alreadyHad = localStorage.getItem(`unlocked_${element}`) === 'true';
-        localStorage.setItem(`unlocked_${element}`, 'true');
-        if (!this.unlockedElements) this.unlockedElements = new Set(['fire','ice']);
-        this.unlockedElements.add(element);
+        let alreadyHad = false;
+        if (element) {
+            alreadyHad = localStorage.getItem(`unlocked_${element}`) === 'true';
+            localStorage.setItem(`unlocked_${element}`, 'true');
+            if (!this.unlockedElements) this.unlockedElements = new Set(['fire','ice']);
+            this.unlockedElements.add(element);
+        }
 
         this.time.delayedCall(600, () => this._showElementUnlockCinematic(element, alreadyHad));
     }
@@ -950,10 +1216,10 @@ class LevelManager {
             const colors = { lightning:0xffff44, cosmic:0xcc88ff, fire:0xff6600, ice:0x44ccff };
             const names  = { lightning:'LIGHTNING', cosmic:'COSMIC', fire:'FIRE', ice:'ICE' };
             const keys   = { lightning:'3', cosmic:'4', fire:'1', ice:'2' };
-            const col = colors[element] || 0xffffff;
+            const col = element ? (colors[element] || 0xffffff) : 0xffd866;
             const colHex = '#'+col.toString(16).padStart(6,'0');
-            const elName = names[element] || element.toUpperCase();
-            const keyNum = keys[element] || '?';
+            const elName = element ? (names[element] || element.toUpperCase()) : null;
+            const keyNum = element ? (keys[element] || '?') : null;
             const sx = W/2, sy = H/2 - 60;
 
             const sigil = this.add.graphics().setScrollFactor(0).setDepth(501).setAlpha(0);
@@ -972,17 +1238,19 @@ class LevelManager {
                 this.tweens.add({ targets:ring, radius:70, alpha:0, duration:700, ease:'Quad.easeOut', onComplete:()=>ring.destroy() });
             }});
 
-            const unlockLabel = alreadyUnlocked
-                ? this.add.text(W/2,H/2+20,`${elName} MASTERED`,{ fontSize:'28px',fontFamily:'monospace',color:colHex,stroke:'#000000',strokeThickness:5,fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0)
-                : this.add.text(W/2,H/2+10,'YOU UNLOCKED',{ fontSize:'18px',fontFamily:'monospace',color:'#aaaaaa',stroke:'#000000',strokeThickness:3 }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
-            const elLabel = alreadyUnlocked ? null : this.add.text(W/2,H/2+44,elName,{ fontSize:'38px',fontFamily:'monospace',color:colHex,stroke:'#000000',strokeThickness:6,fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
-            const subLabel = this.add.text(W/2,H/2+90,`Press ${keyNum} to switch`,{ fontSize:'14px',fontFamily:'monospace',color:'#666666',stroke:'#000000',strokeThickness:2 }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
+            const unlockLabel = !element
+                ? this.add.text(W/2,H/2+20,'LEVEL COMPLETE',{ fontSize:'30px',fontFamily:'monospace',color:colHex,stroke:'#000000',strokeThickness:5,fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0)
+                : alreadyUnlocked
+                    ? this.add.text(W/2,H/2+20,`${elName} MASTERED`,{ fontSize:'28px',fontFamily:'monospace',color:colHex,stroke:'#000000',strokeThickness:5,fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0)
+                    : this.add.text(W/2,H/2+10,'YOU UNLOCKED',{ fontSize:'18px',fontFamily:'monospace',color:'#aaaaaa',stroke:'#000000',strokeThickness:3 }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
+            const elLabel = (!element || alreadyUnlocked) ? null : this.add.text(W/2,H/2+44,elName,{ fontSize:'38px',fontFamily:'monospace',color:colHex,stroke:'#000000',strokeThickness:6,fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
+            const subLabel = element ? this.add.text(W/2,H/2+90,`Press ${keyNum} to switch`,{ fontSize:'14px',fontFamily:'monospace',color:'#666666',stroke:'#000000',strokeThickness:2 }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0) : null;
             const contLabel = this.add.text(W/2,H-80,'▼ Click to continue',{ fontSize:'13px',fontFamily:'monospace',color:'#444444' }).setOrigin(0.5).setScrollFactor(0).setDepth(502).setAlpha(0);
 
             this.time.delayedCall(200, () => {
                 this.tweens.add({ targets:unlockLabel, alpha:1, y:unlockLabel.y-8, duration:500, ease:'Quad.easeOut' });
                 if (elLabel) this.tweens.add({ targets:elLabel, alpha:1, y:elLabel.y-8, duration:500, ease:'Quad.easeOut', delay:150 });
-                this.tweens.add({ targets:subLabel, alpha:0.7, duration:400, delay:400 });
+                if (subLabel) this.tweens.add({ targets:subLabel, alpha:0.7, duration:400, delay:400 });
                 this.tweens.add({ targets:contLabel, alpha:0.6, duration:400, delay:700, onComplete:() => {
                     this.tweens.add({ targets:contLabel, alpha:0.3, duration:600, yoyo:true, repeat:-1 });
                 }});
@@ -995,60 +1263,6 @@ class LevelManager {
             };
             this.time.delayedCall(800, () => this.input.on('pointerdown', handler));
         }});
-    }
-
-    _applyUltAbsorberVisual(enemy) {
-        enemy.health    = Math.round(enemy.health * 1.8);
-        enemy.maxHealth = enemy.health;
-        this.updateEnemyHealthBar(enemy);
-
-        if (enemy.sprite?.active) enemy.sprite.setTint(0xdd88ff);
-
-        const sx = enemy.sprite.x, sy = enemy.sprite.y;
-
-        const aura = this.add.graphics().setDepth(1.2);
-        aura.x = sx; aura.y = sy;
-        aura._rotAngle = 0;
-
-        const drawAura = (g) => {
-            g.clear();
-            const R = 26, rot = g._rotAngle;
-            g.lineStyle(1.5, 0xcc44ff, 0.55); g.strokeCircle(0, 0, R);
-            g.fillStyle(0xff88ff, 0.90);
-            for (let i = 0; i < 6; i++) {
-                const a = (i / 6) * Math.PI * 2 + rot;
-                const nx = Math.cos(a) * R, ny = Math.sin(a) * R;
-                g.beginPath(); g.moveTo(nx, ny-4); g.lineTo(nx+3, ny); g.lineTo(nx, ny+4); g.lineTo(nx-3, ny); g.closePath(); g.fillPath();
-            }
-            g.lineStyle(0.8, 0xdd66ff, 0.35);
-            for (let i = 0; i < 3; i++) {
-                const a = (i / 3) * Math.PI * 2 + rot;
-                g.beginPath(); g.moveTo(Math.cos(a)*R*0.85, Math.sin(a)*R*0.85); g.lineTo(Math.cos(a+Math.PI)*R*0.85, Math.sin(a+Math.PI)*R*0.85); g.strokePath();
-            }
-        };
-        drawAura(aura);
-        enemy._ultAbsorberAura = aura;
-
-        const rotTimer = this.time.addEvent({
-            delay: 50, loop: true,
-            callback: () => {
-                if (!aura.active) { rotTimer.remove(); return; }
-                aura._rotAngle += 0.04;
-                drawAura(aura);
-            }
-        });
-        enemy._ultAbsorberRotTimer = rotTimer;
-
-        const mark = this.add.graphics().setDepth(3.0);
-        mark.x = sx; mark.y = sy - 22;
-        mark.fillStyle(0xdd44ff, 0.95);
-        mark.fillRect(-7, -2, 14, 4);
-        mark.fillTriangle(-6, -2, -3, -2, -4.5, -8);
-        mark.fillTriangle(-1, -2,  1, -2,  0,   -9);
-        mark.fillTriangle( 3, -2,  6, -2,  4.5, -8);
-        mark.lineStyle(1.0, 0xff99ff, 0.85); mark.strokeRect(-7, -2, 14, 4);
-        enemy._ultAbsorberMark = mark;
-        this.tweens.add({ targets: mark, alpha: 0.55, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1388,7 +1602,7 @@ class LevelManager {
 
         // R3: x:63,y:23,w:22,h:14 — Ult Gauntlet (EAST)
         const r3abs = [{ x:66,y:26 },{ x:80,y:26 },{ x:66,y:34 },{ x:80,y:34 }];
-        for (const p of r3abs) { const e = this.createEnemy(p.x, p.y, 90); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; LevelManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        for (const p of r3abs) { const e = this.createEnemy(p.x, p.y, 90); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
         [{ x:70,y:29 },{ x:75,y:29 },{ x:70,y:33 },{ x:75,y:33 },{ x:73,y:31 }].forEach(p => {
             const e = this.createEnemy(p.x, p.y, 70); e.tutorialRoomIndex = 3;
         });
@@ -1675,14 +1889,13 @@ class LevelManager {
         this.tweens.add({ targets: container, angle: 360, duration: 8000, repeat: -1, ease: 'Linear' });
         container.setVisible(false); // hidden until surfaced
 
-        // Health bar (hidden until surfaced)
+        // Health bar (always visible — tracks core HP even while submerged/hidden)
         const hpBg   = this.add.rectangle(px, py - 50, 80, 8, 0x330000, 0.85).setDepth(4);
         const hpFill = this.add.rectangle(px - 40, py - 50, 80, 8, 0xff6600, 1.0).setDepth(4).setOrigin(0, 0.5);
         const hpText = this.add.text(px, py - 62, 'FRACTURE CORE', {
             fontSize: '10px', fontFamily: 'monospace', color: '#ff8844',
             stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(4);
-        hpBg.setVisible(false); hpFill.setVisible(false); hpText.setVisible(false);
 
         // Damage-cap bar (shown only while surfaced)
         const capBg   = this.add.rectangle(px, py - 38, 80, 6, 0x222222, 0.85).setDepth(4);
@@ -2077,19 +2290,48 @@ class LevelManager {
             const plen = Math.hypot(pdx, pdy) || 1;
             const dirX = pdx / plen, dirY = pdy / plen;
 
-            // Pulse projectile
+            // Pulse projectile — drawn as a curved wave/arc facing its travel direction,
+            // not a ball. The arc bows forward (convex toward dirX/dirY).
+            const travelAngle = Math.atan2(dirY, dirX);
             const g = this.add.graphics().setDepth(3.4);
-            g.fillStyle(0xff6600, 0.85); g.fillCircle(0, 0, 8);
-            g.lineStyle(2, 0xffaa44, 0.80); g.strokeCircle(0, 0, 11);
             g.x = originX; g.y = originY;
-            const SPEED = 200;
+            g.rotation = travelAngle;
+            this._drawCrackPulseWave(g);
+
+            const SPEED = 110; // slower moving — was 200, gives more time to react/dodge
             const vx = dirX * SPEED, vy = dirY * SPEED;
 
-            const pulseObj = { gfx: g, crack, vx, vy, dist: 0, broken: false };
+            const pulseObj = { gfx: g, crack, vx, vy, speed: SPEED, dist: 0, broken: false };
             if (!this._crackPulses) this._crackPulses = [];
             this._crackPulses.push(pulseObj);
         }
         this._tickCrackPulses();
+    }
+
+    // Draws the arc/wave shape for a crack pulse, in the graphics object's own local
+    // space (already rotated to face travel direction — local +X is "forward").
+    _drawCrackPulseWave(g) {
+        g.clear();
+        const R = 30;           // arc radius — much wider wave-front (was 16)
+        const SPAN = 2.7;       // arc span in radians (~155°) — broad, sweeping crescent (was 1.9 / ~109°)
+
+        // Outer glow pass — wider, faint
+        g.lineStyle(7, 0xffaa44, 0.22);
+        g.beginPath();
+        g.arc(0, 0, R + 4, -SPAN / 2, SPAN / 2, false);
+        g.strokePath();
+
+        // Main wave stroke — thick, bright, leading edge of the crack's energy
+        g.lineStyle(4, 0xff6600, 0.92);
+        g.beginPath();
+        g.arc(0, 0, R, -SPAN / 2, SPAN / 2, false);
+        g.strokePath();
+
+        // Inner highlight — thin bright core line
+        g.lineStyle(2, 0xffe8cc, 0.85);
+        g.beginPath();
+        g.arc(0, 0, R - 3.5, -SPAN / 2.6, SPAN / 2.6, false);
+        g.strokePath();
     }
 
     _tickCrackPulses() {
@@ -2109,7 +2351,7 @@ class LevelManager {
                 }
                 p.gfx.x += p.vx * 0.016;
                 p.gfx.y += p.vy * 0.016;
-                p.dist += 200 * 0.016;
+                p.dist += p.speed * 0.016;
 
                 // Hit player
                 if (Math.hypot(p.gfx.x - this.player.x, p.gfx.y - this.player.y) < TS * 0.6) {
@@ -2227,6 +2469,38 @@ class LevelManager {
     }
 
     // ── SURFACE WINDOW — Fracture Core erupts, ordered weak point sequence ────
+    // Unmissable screen-anchored banner for rhythm session start/end — distinct from
+    // the small floating showStatusText, which is easy to lose in on-screen chaos.
+    _showRhythmSessionBanner(text, color = '#ffff44', subtext = null) {
+        const W = this.scale.width, H = this.scale.height;
+        const bannerY = H * 0.22;
+
+        const bg = this.add.rectangle(W / 2, bannerY, W * 0.8, subtext ? 64 : 46, 0x000000, 0.55)
+            .setScrollFactor(0).setDepth(520).setAlpha(0);
+        const label = this.add.text(W / 2, bannerY - (subtext ? 10 : 0), text, {
+            fontSize: '26px', fontFamily: 'monospace', color, stroke: '#000000',
+            strokeThickness: 5, fontStyle: 'bold'
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(521).setAlpha(0);
+        const sub = subtext ? this.add.text(W / 2, bannerY + 20, subtext, {
+            fontSize: '13px', fontFamily: 'monospace', color: '#cccccc', stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(521).setAlpha(0) : null;
+
+        const targets = sub ? [bg, label, sub] : [bg, label];
+        this.tweens.add({
+            targets, alpha: 1, duration: 180, ease: 'Power1',
+            onComplete: () => {
+                this.tweens.add({
+                    targets, alpha: 0, duration: 350, delay: 900, ease: 'Power1',
+                    onComplete: () => targets.forEach(t => t.destroy())
+                });
+            }
+        });
+        // Small punch-in scale on the label for extra emphasis
+        label.setScale(0.7);
+        this.tweens.add({ targets: label, scale: 1, duration: 220, ease: 'Back.easeOut' });
+    }
+
     _fractureCoreSurface() {
         const core = this.fractureCore;
         if (!core?.active) return;
@@ -2236,18 +2510,22 @@ class LevelManager {
         core._surfaced = true;
         core._isInvulnerable = false;
         core.container.setVisible(true);
-        core.hpBg.setVisible(true); core.hpFill.setVisible(true); core.hpText.setVisible(true);
         core.capBg.setVisible(true); core.capFill.setVisible(true); core.capText.setVisible(true);
 
         core._surfaceEndTime = this.time.now + 10000;
 
         this.showStatusText(core.container.x, core.container.y - 100, '✦ CORE SURFACES ✦', '#ffff44');
+        this._showRhythmSessionBanner('◆ WEAK POINT SEQUENCE ◆', '#ffff44', 'Click each point as the ring converges');
         this.cameras.main.shake(80, 0.007);
         this.cameras.main.flash(200, 255, 200, 100);
         this.tweens.add({ targets: core.container, scaleX: 1.3, scaleY: 1.3, duration: 200, yoyo: true, ease: 'Back.easeOut' });
 
-        // Ring duration scales with phase — faster at higher phases (1600ms → 900ms)
-        const BASE_RING_DURATION = Math.max(900, 1600 - phase * 140);
+        // Ring duration scales with phase AND how many cracks/weak points are active
+        // this window — more cracks means each individual ring converges faster, so
+        // more simultaneous threats genuinely means less time per point, not just a
+        // longer sequence at the same pace.
+        const crackCount = this._cracks.length;
+        const BASE_RING_DURATION = Math.max(1100, 2200 - phase * 100 - crackCount * 120);
 
         // Build weak points from each crack, shuffled into random order
         const candidates = [];
@@ -2264,12 +2542,16 @@ class LevelManager {
 
             candidates.push({
                 x: wx, y: wy, armored,
-                hitsNeeded: armored ? 2 : 1, hits: 0, complete: false,
-                innerR: 14, outerStart: 44, ringDuration: BASE_RING_DURATION,
-                ringElapsed: 0, ringR: 44,
-                // Second outer ring for armored (slightly offset start)
-                ring2R: armored ? 56 : null, ring2Elapsed: armored ? 200 : null,
-                outerStart2: 56,
+                resolved: false, complete: false, grade: null,
+                innerR: 20, outerStart: 64, ringDuration: BASE_RING_DURATION,
+                ringElapsed: 0, ringR: 64,
+                // Second ring for armored — converges concurrently alongside ring 1, but each
+                // ring needs its OWN click. First click always judges ring 1; once ring 1 is
+                // resolved (hit or auto-miss on convergence) it disappears and the next click
+                // judges ring 2, which has kept shrinking independently in the background.
+                ring1Done: false, grade1: null, grade2: null,
+                ring2R: armored ? 104 : null, ring2Elapsed: 0,
+                outerStart2: 104,
                 innerGfx: null, ringGfx: null, ring2Gfx: null,
                 active: false, // only the current point is active
             });
@@ -2295,7 +2577,7 @@ class LevelManager {
 
         this._fractureWeakPoints = candidates;
         this._wpSequenceIdx = 0; // current active point index
-        this._wpMisses = 0;      // total misses this surface window
+        this._wpTotalMisses = 0; // total misses this surface window — 3 aborts it early
         this._activateWeakPoint(0);
         this._updateWeakPointBar();
     }
@@ -2306,13 +2588,15 @@ class LevelManager {
         this._wpSequenceIdx = idx;
         for (let i = 0; i < this._fractureWeakPoints.length; i++) {
             const wp = this._fractureWeakPoints[i];
-            wp.active = (i === idx) && !wp.complete;
+            wp.active = (i === idx) && !wp.resolved;
             // Reset ring position when newly activated
             if (wp.active) {
                 wp.ringElapsed = 0;
                 wp.ringR = wp.outerStart;
-                if (wp.armored && wp.hits === 0) {
-                    wp.ring2Elapsed = 200;
+                if (wp.armored) {
+                    wp.ring1Done = false;
+                    wp.grade1 = null; wp.grade2 = null;
+                    wp.ring2Elapsed = 0; // ring 2 still shrinks concurrently with ring 1
                     wp.ring2R = wp.outerStart2;
                 }
             }
@@ -2326,10 +2610,14 @@ class LevelManager {
         if (!g?.active) return;
         g.clear();
         const dimAlpha = wp.active ? 1.0 : 0.25;
-        if (wp.complete) {
+        if (wp.complete && wp.grade === 'MISS') {
+            // Resolved as a miss — dead, red-gray, no longer interactive
+            g.fillStyle(0x552222, 0.85); g.fillCircle(0, 0, wp.innerR);
+            g.lineStyle(2, 0xff4444, 0.85); g.strokeCircle(0, 0, wp.innerR + 2);
+        } else if (wp.complete) {
             g.fillStyle(0x44ff88, 0.85); g.fillCircle(0, 0, wp.innerR);
             g.lineStyle(2, 0xffffff, 0.95); g.strokeCircle(0, 0, wp.innerR + 2);
-        } else if (wp.armored && wp.hits === 0) {
+        } else if (wp.armored) {
             g.fillStyle(0x888888, dimAlpha); g.fillCircle(0, 0, wp.innerR);
             g.lineStyle(2, 0xcccccc, dimAlpha); g.strokeCircle(0, 0, wp.innerR + 2);
             g.fillStyle(0xffff00, dimAlpha * 0.55); g.fillCircle(0, 0, wp.innerR * 0.5);
@@ -2346,10 +2634,11 @@ class LevelManager {
         g.clear();
         if (wp.complete || !wp.active) return;
         const diff = Math.abs(wp.ringR - wp.innerR);
+        const grade = this._gradeForDiff(diff);
         let col = 0xffffff, alpha = 0.75;
-        if (diff <= 3)       { col = 0x44ff88; alpha = 1.0; }  // PERFECT zone — green
-        else if (diff <= 7)  { col = 0xaaff44; alpha = 0.90; } // EXCELLENT — yellow-green
-        else if (diff <= 13) { col = 0xffdd44; alpha = 0.80; } // GOOD — yellow
+        if (grade === 'PERFECT')        { col = 0x44ff88; alpha = 1.0; }
+        else if (grade === 'EXCELLENT') { col = 0xaaff44; alpha = 0.90; }
+        else if (grade === 'GOOD')      { col = 0xffdd44; alpha = 0.80; }
         g.lineStyle(2.5, col, alpha);
         g.strokeCircle(0, 0, Math.max(wp.innerR, wp.ringR));
     }
@@ -2359,12 +2648,13 @@ class LevelManager {
         const g = wp.ring2Gfx;
         if (!g?.active) return;
         g.clear();
-        if (wp.complete || !wp.active || !wp.armored || wp.hits > 0) return;
+        if (wp.complete || !wp.active || !wp.armored) return;
         const diff2 = Math.abs(wp.ring2R - wp.innerR);
+        const grade2 = this._gradeForDiff(diff2);
         let col = 0xff8844, alpha = 0.65; // orange tint to distinguish
-        if (diff2 <= 3)       { col = 0x44ff88; alpha = 1.0; }
-        else if (diff2 <= 7)  { col = 0xaaff44; alpha = 0.85; }
-        else if (diff2 <= 13) { col = 0xffdd44; alpha = 0.75; }
+        if (grade2 === 'PERFECT')        { col = 0x44ff88; alpha = 1.0; }
+        else if (grade2 === 'EXCELLENT') { col = 0xaaff44; alpha = 0.85; }
+        else if (grade2 === 'GOOD')      { col = 0xffdd44; alpha = 0.75; }
         g.lineStyle(2.5, col, alpha);
         g.strokeCircle(0, 0, Math.max(wp.innerR, wp.ring2R));
     }
@@ -2383,19 +2673,46 @@ class LevelManager {
         core.capFill.x = px - 40; core.capFill.y = py - 38;
         core.capText.x = px; core.capText.y = py - 48;
 
-        // Tick rings for the current active weak point only
+        // Tick the ring(s) for the current active weak point — one cycle only per ring.
+        // Normal points: single ring, auto-MISS on convergence if not clicked.
+        // Armored points: ring 1 and ring 2 both shrink concurrently from the start.
+        // Ring 1 stops ticking once judged (click or timeout); ring 2 keeps going
+        // independently and is judged by the next click (or its own timeout).
         const wp = this._fractureWeakPoints?.[this._wpSequenceIdx];
-        if (wp && !wp.complete && wp.active) {
-            wp.ringElapsed += (delta || 16);
-            const t = (wp.ringElapsed % wp.ringDuration) / wp.ringDuration;
-            wp.ringR = wp.outerStart - (wp.outerStart - wp.innerR) * t;
-            this._drawWeakPointRing(wp);
-
-            if (wp.armored && wp.hits === 0 && wp.ring2Gfx) {
+        if (wp && !wp.resolved && wp.active) {
+            if (!wp.armored) {
+                wp.ringElapsed += (delta || 16);
+                const t = Math.min(1, wp.ringElapsed / wp.ringDuration);
+                wp.ringR = wp.outerStart - (wp.outerStart - wp.innerR) * t;
+                this._drawWeakPointRing(wp);
+                if (t >= 1) {
+                    this._resolveWeakPoint(wp, this._wpSequenceIdx, 'MISS');
+                }
+            } else {
+                if (!wp.ring1Done) {
+                    wp.ringElapsed += (delta || 16);
+                    const t = Math.min(1, wp.ringElapsed / wp.ringDuration);
+                    wp.ringR = wp.outerStart - (wp.outerStart - wp.innerR) * t;
+                    this._drawWeakPointRing(wp);
+                    if (t >= 1) {
+                        // Ring 1 timed out without a click — auto-MISS for ring 1, ring 2 carries on
+                        wp.grade1 = 'MISS';
+                        wp.ring1Done = true;
+                        if (wp.ringGfx?.active) wp.ringGfx.clear();
+                        this.showStatusText(wp.x, wp.y - 28, 'MISSED', this._gradeColor('MISS'));
+                    }
+                }
+                // Ring 2 always ticks concurrently, independent of ring 1's state
                 wp.ring2Elapsed = (wp.ring2Elapsed || 0) + (delta || 16);
-                const t2 = (wp.ring2Elapsed % wp.ringDuration) / wp.ringDuration;
+                const t2 = Math.min(1, wp.ring2Elapsed / wp.ringDuration);
                 wp.ring2R = wp.outerStart2 - (wp.outerStart2 - wp.innerR) * t2;
                 this._drawWeakPointRing2(wp);
+                if (t2 >= 1 && wp.grade2 === null) {
+                    // Ring 2 timed out without a click — auto-MISS for ring 2, point resolves now
+                    wp.grade2 = 'MISS';
+                    const finalGrade = wp.ring1Done ? this._worseGrade(wp.grade1, wp.grade2) : 'MISS';
+                    this._resolveWeakPoint(wp, this._wpSequenceIdx, finalGrade);
+                }
             }
         }
 
@@ -2403,34 +2720,45 @@ class LevelManager {
 
         if (time >= core._surfaceEndTime) {
             const total = this._fractureWeakPoints.length;
-            const completed = this._fractureWeakPoints.filter(w => w.complete).length;
-            const thresholdMet = total > 0 && (completed / total) >= 0.6;
+            const hitCount = this._fractureWeakPoints.filter(w => w.grade && w.grade !== 'MISS').length;
+            const thresholdMet = total > 0 && (hitCount / total) >= 0.6;
             this._fractureCoreSubmerge(thresholdMet);
         }
+    }
+
+    // Grade → damage weight, used both for the live bar and final damage calc
+    _gradeWeight(grade) {
+        if (grade === 'PERFECT')   return 1.0;
+        if (grade === 'EXCELLENT') return 0.75;
+        if (grade === 'GOOD')      return 0.40;
+        return 0; // MISS or unresolved
     }
 
     _updateWeakPointBar() {
         const core = this.fractureCore;
         if (!core?.capFill) return;
-        const total = this._fractureWeakPoints.length || 1;
-        const completed = this._fractureWeakPoints.filter(wp => wp.complete).length;
-        const pct = completed / total;
+        const points = this._fractureWeakPoints || [];
+        const total = points.length || 1;
+        const resolved = points.filter(wp => wp.resolved).length;
+        const weightSum = points.reduce((sum, wp) => sum + this._gradeWeight(wp.grade), 0);
+        const pct = weightSum / total; // current damage % if window ended right now
         core.capFill.width = 80 * pct;
         core.capFill.setFillStyle(pct >= 0.6 ? 0x44ff88 : 0xffff44);
-        core.capText.setText(`WEAK POINTS ${completed}/${total}`);
+        core.capText.setText(`DAMAGE ${Math.round(pct * 100)}% (${resolved}/${total})`);
     }
 
-    _fractureCoreSubmerge(thresholdMet) {
+    _fractureCoreSubmerge(thresholdMet, failReason = 'Not enough points hit') {
         const core = this.fractureCore;
-        if (!core?.active) return;
+        if (!core?.active || !core._surfaced) return; // already submerged this tick — avoid double-fire
 
         core._surfaced = false;
         core._isInvulnerable = true;
         core.container.setVisible(false);
-        core.hpBg.setVisible(false); core.hpFill.setVisible(false); core.hpText.setVisible(false);
         core.capBg.setVisible(false); core.capFill.setVisible(false); core.capText.setVisible(false);
 
-        for (const wp of this._fractureWeakPoints) {
+        const resolvedPoints = this._fractureWeakPoints; // snapshot before clearing below
+
+        for (const wp of resolvedPoints) {
             if (wp.innerGfx?.active) { this.tweens.killTweensOf(wp.innerGfx); wp.innerGfx.destroy(); }
             if (wp.ringGfx?.active)  { this.tweens.killTweensOf(wp.ringGfx);  wp.ringGfx.destroy(); }
             if (wp.ring2Gfx?.active) { this.tweens.killTweensOf(wp.ring2Gfx); wp.ring2Gfx.destroy(); }
@@ -2438,21 +2766,51 @@ class LevelManager {
         this._fractureWeakPoints = [];
 
         if (thresholdMet) {
-            const FIXED_DAMAGE = 500 + this._crackPhase * 60;
-            core.health -= FIXED_DAMAGE;
-            this.showDamageNumber(core.container.x, core.container.y - 40, FIXED_DAMAGE, '#ff8844');
-            this.showStatusText(core.container.x, core.container.y - 80, '✦ CORE STAGGERED!', '#44ff88');
+            const MAX_DAMAGE = 500 + this._crackPhase * 60; // ceiling, same scaling as before
+            const total = resolvedPoints.length || 1;
+            const weightSum = resolvedPoints.reduce((sum, wp) => sum + this._gradeWeight(wp.grade), 0);
+            const gradePct = weightSum / total; // average grade quality across ALL points, misses count as 0
+            const damage = Math.round(MAX_DAMAGE * gradePct);
+
+            core.health -= damage;
+            core.hpFill.width = 80 * Math.max(0, core.health / core.maxHealth);
+            this.showDamageNumber(core.container.x, core.container.y - 40, damage, '#ff8844');
+            this.showStatusText(core.container.x, core.container.y - 80, `✦ CORE STAGGERED! (${Math.round(gradePct * 100)}%)`, '#44ff88');
+            this._showRhythmSessionBanner('◆ SEQUENCE COMPLETE ◆', '#44ff88', `${Math.round(gradePct * 100)}% damage dealt`);
             this.cameras.main.shake(80, 0.008);
             this._nextSurfaceTime = this.time.now + 6000;
             if (core.health <= 0) { this._fractureCoreKill(); return; }
         } else {
             this.showStatusText(core.container.x, core.container.y - 80, 'CORE RETREATS — NO DAMAGE', '#ff8844');
+            this._showRhythmSessionBanner('◆ SEQUENCE FAILED ◆', '#ff8844', `${failReason} — no damage dealt`);
             this._nextSurfaceTime = this.time.now + 10000;
         }
         this.cameras.main.shake(60, 0.005);
     }
 
-    // Main click handler — routes to the currently active weak point only
+    // True if the given world coords land within the CURRENT target ring's click radius.
+    // For armored points this is ring 1 until it's resolved, then ring 2.
+    // Used both to decide whether a click should be intercepted at all (GameScene's
+    // pointerdown handler) and inside the actual resolution logic below.
+    _isClickOnActiveWeakPoint(wx, wy) {
+        const core = this.fractureCore;
+        if (!core?._surfaced || !this._fractureWeakPoints?.length) return false;
+        const idx = this._wpSequenceIdx;
+        if (idx >= this._fractureWeakPoints.length) return false;
+        const wp = this._fractureWeakPoints[idx];
+        if (!wp || wp.resolved || !wp.active) return false;
+
+        const targetingRing2 = wp.armored && wp.ring1Done;
+        const targetR = targetingRing2 ? wp.outerStart2 : wp.outerStart;
+        const clickDist = Math.hypot(wp.x - wx, wp.y - wy);
+        const CLICK_RADIUS = targetR + 12;
+        return clickDist <= CLICK_RADIUS;
+    }
+
+    // Main click handler — routes to the currently active weak point only.
+    // Armored points need two separate clicks: the first always judges ring 1
+    // (which then disappears), the second judges ring 2 (which kept shrinking
+    // independently the whole time). Final grade is the worse of the two.
     _tryHitCurrentWeakPoint(wx, wy) {
         const core = this.fractureCore;
         if (!core?._surfaced || !this._fractureWeakPoints?.length) return;
@@ -2460,73 +2818,129 @@ class LevelManager {
         const idx = this._wpSequenceIdx;
         if (idx >= this._fractureWeakPoints.length) return;
         const wp = this._fractureWeakPoints[idx];
-        if (!wp || wp.complete || !wp.active) return;
+        if (!wp || wp.resolved || !wp.active) return;
 
-        // Check if click is near this weak point
-        const clickDist = Math.hypot(wp.x - wx, wp.y - wy);
-        const CLICK_RADIUS = wp.outerStart + 12;
-        if (clickDist > CLICK_RADIUS) return; // missed the point entirely, no punishment
+        if (!this._isClickOnActiveWeakPoint(wx, wy)) return; // missed the point entirely, no punishment
 
-        // Grade the timing based on ring proximity to inner circle
-        const diff = Math.abs(wp.ringR - wp.innerR);
-        // For armored unbroken points, BOTH rings must be in tolerance
-        const isArmored1stHit = wp.armored && wp.hits === 0;
-        const diff2 = isArmored1stHit ? Math.abs((wp.ring2R || 99) - wp.innerR) : 0;
-        const worstDiff = isArmored1stHit ? Math.max(diff, diff2) : diff;
+        if (!wp.armored) {
+            // Normal point — single ring, single click
+            const diff = Math.abs(wp.ringR - wp.innerR);
+            const grade = this._gradeForDiff(diff);
+            this._resolveWeakPoint(wp, idx, grade);
+            return;
+        }
 
-        let grade, gradeCol, gradeText;
-        if (worstDiff <= 3)       { grade = 'PERFECT';   gradeCol = '#44ff88'; }
-        else if (worstDiff <= 7)  { grade = 'EXCELLENT'; gradeCol = '#aaff44'; }
-        else if (worstDiff <= 13) { grade = 'GOOD';      gradeCol = '#ffdd44'; }
-        else                       { grade = 'MISS';      gradeCol = '#ff4444'; }
+        if (!wp.ring1Done) {
+            // This click judges ring 1
+            const diff1 = Math.abs(wp.ringR - wp.innerR);
+            wp.grade1 = this._gradeForDiff(diff1);
+            wp.ring1Done = true;
+            if (wp.ringGfx?.active) wp.ringGfx.clear(); // ring 1 disappears once judged
+            this.showStatusText(wp.x, wp.y - 28, wp.grade1, this._gradeColor(wp.grade1));
+            // Point doesn't resolve yet — ring 2 still converging, next click judges it
+        } else {
+            // This click judges ring 2 — finalize the point with the worse of both grades
+            const diff2 = Math.abs(wp.ring2R - wp.innerR);
+            wp.grade2 = this._gradeForDiff(diff2);
+            const finalGrade = this._worseGrade(wp.grade1, wp.grade2);
+            this._resolveWeakPoint(wp, idx, finalGrade);
+        }
+    }
+
+    // Returns a hex color string for a grade — shared by inline status text calls
+    _gradeColor(grade) {
+        const COLORS = { PERFECT: '#44ff88', EXCELLENT: '#aaff44', GOOD: '#ffdd44', MISS: '#ff4444' };
+        return COLORS[grade] || '#ffffff';
+    }
+
+    // Returns whichever of two grades is worse (MISS worst, PERFECT best)
+    _worseGrade(g1, g2) {
+        const RANK = { PERFECT: 3, EXCELLENT: 2, GOOD: 1, MISS: 0 };
+        return RANK[g1] <= RANK[g2] ? g1 : g2;
+    }
+
+    // Converts a ring-tolerance diff into a letter grade
+    _gradeForDiff(worstDiff) {
+        if (worstDiff <= 8)      return 'PERFECT';
+        if (worstDiff <= 18)     return 'EXCELLENT';
+        if (worstDiff <= 30)     return 'GOOD';
+        return 'MISS';
+    }
+
+    // Resolves the current weak point with a final grade (from a click or from timeout),
+    // applies visuals/punishment/total-miss tracking, and advances the sequence.
+    // One cycle only — no retries, whatever grade lands here is final for this point.
+    _resolveWeakPoint(wp, idx, grade) {
+        if (wp.resolved) return;
+        wp.resolved = true;
+
+        const GRADE_COLORS = {
+            PERFECT: '#44ff88', EXCELLENT: '#aaff44', GOOD: '#ffdd44', MISS: '#ff4444'
+        };
+        const gradeCol = GRADE_COLORS[grade];
 
         if (grade === 'MISS') {
-            // Miss punishment — red flash, player takes damage, ring resets
             const miss = this.add.graphics().setDepth(4.6);
             miss.x = wp.x; miss.y = wp.y;
             miss.lineStyle(2.5, 0xff4444, 0.90); miss.strokeCircle(0, 0, wp.ringR);
             this.tweens.add({ targets: miss, alpha: 0, duration: 250, onComplete: () => miss.destroy() });
-            this.showStatusText(wp.x, wp.y - 28, 'MISS', gradeCol);
+            this.showStatusText(wp.x, wp.y - 28, 'MISSED', gradeCol);
             this.takeDamage(8 * (this.damageScaling || 1));
-            this._wpMisses = (this._wpMisses || 0) + 1;
-            // Ring resets so player gets another chance
-            wp.ringElapsed = 0; wp.ringR = wp.outerStart;
-            if (isArmored1stHit) { wp.ring2Elapsed = 200; wp.ring2R = wp.outerStart2; }
+
+            this._wpTotalMisses = (this._wpTotalMisses || 0) + 1;
+            wp.grade = 'MISS';
+        } else {
+            this.showStatusText(wp.x, wp.y - 28, grade, gradeCol);
+
+            const flashCol = grade === 'PERFECT' ? 0xffffff : grade === 'EXCELLENT' ? 0xaaff44 : 0xffdd44;
+            const flash = this.add.graphics().setDepth(4.7);
+            flash.x = wp.x; flash.y = wp.y;
+            flash.fillStyle(flashCol, 0.85); flash.fillCircle(0, 0, 16);
+            this.tweens.add({ targets: flash, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 180, onComplete: () => flash.destroy() });
+
+            wp.grade = grade;
+        }
+
+        // Point is done (hit or missed) — lock it visually and clear rings
+        wp.complete = true;
+        wp.active = false;
+        if (wp.ringGfx?.active)  wp.ringGfx.clear();
+        if (wp.ring2Gfx?.active) wp.ring2Gfx.clear();
+        this._drawWeakPointInner(wp);
+        this._updateWeakPointBar();
+
+        // Premature sink-back: 3 TOTAL misses across the session aborts the whole window
+        if ((this._wpTotalMisses || 0) >= 3) {
+            this._fractureCoreSurfaceAbort();
             return;
         }
 
-        // Successful hit
-        wp.hits++;
-        this.showStatusText(wp.x, wp.y - 28, grade, gradeCol);
-
-        // Hit flash — color matches grade
-        const flashCol = grade === 'PERFECT' ? 0xffffff : grade === 'EXCELLENT' ? 0xaaff44 : 0xffdd44;
-        const flash = this.add.graphics().setDepth(4.7);
-        flash.x = wp.x; flash.y = wp.y;
-        flash.fillStyle(flashCol, 0.85); flash.fillCircle(0, 0, 16);
-        this.tweens.add({ targets: flash, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 180, onComplete: () => flash.destroy() });
-
-        if (wp.hits >= wp.hitsNeeded) {
-            // Completed — lock in green
-            wp.complete = true;
-            if (wp.ringGfx?.active)  wp.ringGfx.clear();
-            if (wp.ring2Gfx?.active) wp.ring2Gfx.clear();
-            this._drawWeakPointInner(wp);
-            this._updateWeakPointBar();
-
-            // Move to next point in sequence
-            const nextIdx = idx + 1;
-            if (nextIdx < this._fractureWeakPoints.length) {
-                this._activateWeakPoint(nextIdx);
-            }
-        } else {
-            // Armored — first hit done, reset ring for round 2 at same point
-            this._drawWeakPointInner(wp);
-            wp.ringElapsed = 0; wp.ringR = wp.outerStart;
-            // Second hit only needs 1 ring, so clear ring2
-            if (wp.ring2Gfx?.active) { wp.ring2Gfx.clear(); wp.ring2Gfx = null; }
-            this.showStatusText(wp.x, wp.y - 44, 'ARMOR BROKEN', '#ffaa44');
+        // All points resolved — end the surface window immediately instead of
+        // waiting out the rest of the timer
+        const allResolved = this._fractureWeakPoints.every(w => w.resolved);
+        if (allResolved) {
+            const total = this._fractureWeakPoints.length;
+            const hitCount = this._fractureWeakPoints.filter(w => w.grade && w.grade !== 'MISS').length;
+            const thresholdMet = total > 0 && (hitCount / total) >= 0.6;
+            this._fractureCoreSubmerge(thresholdMet);
+            return;
         }
+
+        // Advance to next point in sequence
+        const nextIdx = idx + 1;
+        if (nextIdx < this._fractureWeakPoints.length) {
+            this._activateWeakPoint(nextIdx);
+        }
+    }
+
+    // Core sinks back early as punishment for 3 total missed weak points this session —
+    // counts as a failed window (no core damage), plus a fixed player damage hit.
+    _fractureCoreSurfaceAbort() {
+        const core = this.fractureCore;
+        if (!core?.active) return;
+        this.showStatusText(core.container.x, core.container.y - 90, '✦ CORE RETREATS — TOO MANY MISSES', '#ff4444');
+        this.takeDamage((15 + this._crackPhase * 3) * (this.damageScaling || 1));
+        this._fractureCoreSubmerge(false, 'Too many misses');
     }
 
     // Legacy routing (called from CombatSystem/WeaponSystem) — now just delegates to click handler
@@ -3175,6 +3589,21 @@ class LevelManager {
         const hpCol = hpPct > 0.6 ? 0xaa22ff : hpPct > 0.3 ? 0xff6600 : 0xff2200;
         boss.hpBar.setFillStyle(hpCol);
 
+        // Update boss burn stack pip positions
+        if (boss._burnStackBar) {
+            const bx = boss.container.x;
+            const by = boss.container.y - 130;
+            const stacks = boss._burnStackBar.length;
+            const GAP = 8, W = 8;
+            const totalW = stacks * W + (stacks - 1) * GAP;
+            for (let i = 0; i < stacks; i++) {
+                const pip = boss._burnStackBar[i];
+                if (!pip?.active) continue;
+                pip.x = bx - totalW / 2 + i * (W + GAP) + W / 2;
+                pip.y = by;
+            }
+        }
+
         // Phase transitions
         if (!boss._phase2Unlocked && hpPct <= 0.60) {
             boss._phase2Unlocked = true;
@@ -3281,9 +3710,10 @@ class LevelManager {
         const p1 = ['voidMines', 'singularitySlimes', 'laserCross'];
         // Phase 2 adds darkFragments + stomp — weighted 2× so they appear more often
         const p2 = [...p1, 'darkFragments', 'darkFragments', 'stomp', 'stomp'];
-        // Phase 3 adds singularityCollapse + eventHorizon — weighted 2× alongside boosted p2 attacks
+        // Phase 3 adds singularityCollapse + eventHorizon + voidMaw — weighted 2× alongside boosted p2 attacks
         const p3 = [...p1, 'darkFragments', 'darkFragments', 'stomp', 'stomp',
-                          'singularityCollapse', 'singularityCollapse', 'eventHorizon', 'eventHorizon'];
+                          'singularityCollapse', 'singularityCollapse', 'eventHorizon', 'eventHorizon',
+                          'voidMaw', 'voidMaw'];
 
         const pool = boss._phase3Unlocked ? p3 : boss._phase2Unlocked ? p2 : p1;
 
@@ -3311,6 +3741,7 @@ class LevelManager {
         else if (attack === 'stomp')               this._vsAttackStomp();
         else if (attack === 'singularityCollapse') this._vsAttackSingularityCollapse();
         else if (attack === 'eventHorizon')        this._vsAttackEventHorizon();
+        else if (attack === 'voidMaw')             this._vsAttackVoidMaw();
     }
 
     // ─── BOSS ATTACKS ────────────────────────────────────────────────────
@@ -3930,9 +4361,212 @@ class LevelManager {
         });
     }
 
+    // ── VOID MAW — boss sinks into a giant portal, reappears flanking the player, ──
+    // ── then unleashes a wide shotgun wave of ricocheting pellets ───────────────
+    // Void Maw — boss teleports via portal 4 times in one attack, firing an all-around
+    // burst at each landing spot. First hop is slow/telegraphed; hops 2-4 ramp up faster.
+    _vsAttackVoidMaw() {
+        const boss = this.voidSovereignBoss;
+        this.showStatusText(boss.container.x, boss.container.y - 80, '◉ VOID MAW OPENING', '#cc44ff');
+        if (boss._idleBobTween) boss._idleBobTween.pause();
+        this._voidMawHop(boss, 0, boss.container.x, boss.container.y);
+    }
+
+    // Performs one teleport-and-fire hop, then either chains to the next hop or returns
+    // the boss home after the final one. hopIndex 0 = first (slow) hop, 1-3 = faster hops.
+    _voidMawHop(boss, hopIndex, fromX, fromY) {
+        const TOTAL_HOPS = 4;
+        if (!boss?.active) return;
+
+        // Timing ramps up after the first hop — shorter telegraphs, more pressure
+        const isFirst = hopIndex === 0;
+        const PORTAL_OPEN_DUR = isFirst ? 1400 : 700;
+        const TRAVEL_PAUSE    = isFirst ? 900  : 450;
+        const ARRIVE_OPEN_DUR = isFirst ? 900  : 500;
+        const RETURN_PAUSE_AFTER_FIRE = isFirst ? 900 : 550;
+
+        const PORTAL_R = 1.6 * this.TILE_SIZE;
+
+        // ── Sink portal at current position ──
+        const portalGfx = this.add.graphics().setDepth(2.0);
+        portalGfx.x = fromX; portalGfx.y = fromY;
+        let portalAngle = 0;
+        const drawGiantPortal = (scale) => {
+            portalGfx.clear();
+            const r = PORTAL_R * scale;
+            portalGfx.lineStyle(5, 0xcc44ff, 0.85); portalGfx.strokeCircle(0, 0, r);
+            for (let i = 0; i < 10; i++) {
+                const a = portalAngle + (i / 10) * Math.PI * 2;
+                portalGfx.lineStyle(2, 0xee88ff, 0.50);
+                portalGfx.beginPath(); portalGfx.moveTo(0, 0); portalGfx.lineTo(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6); portalGfx.strokePath();
+            }
+            portalGfx.fillStyle(0x110022, 0.92); portalGfx.fillCircle(0, 0, r * 0.55);
+            portalGfx.fillStyle(0xcc44ff, 0.55); portalGfx.fillCircle(0, 0, r * 0.22);
+        };
+        drawGiantPortal(0.05);
+        const portalSpinTimer = this.time.addEvent({ delay: 30, loop: true, callback: () => { portalAngle += 0.04; } });
+
+        const openStart = this.time.now;
+        const portalGrowTimer = this.time.addEvent({
+            delay: 30, loop: true,
+            callback: () => {
+                const t = Math.min((this.time.now - openStart) / PORTAL_OPEN_DUR, 1);
+                drawGiantPortal(0.05 + t * 0.95);
+                if (t >= 1) portalGrowTimer.remove();
+            }
+        });
+
+        this.tweens.add({ targets: boss.container, scaleX: 0.15, scaleY: 0.15, alpha: 0.15, duration: PORTAL_OPEN_DUR, ease: 'Quad.easeIn' });
+
+        this.time.delayedCall(PORTAL_OPEN_DUR + 150, () => {
+            if (!boss.active) { portalSpinTimer.remove(); portalGfx.destroy(); return; }
+            boss.container.setVisible(false);
+
+            this.tweens.add({
+                targets: portalGfx, scaleX: 0.05, scaleY: 0.05, alpha: 0, duration: 400, ease: 'Quad.easeIn',
+                onComplete: () => { portalSpinTimer.remove(); portalGfx.destroy(); }
+            });
+
+            // ── Travel beneath the arena ──
+            this.time.delayedCall(TRAVEL_PAUSE, () => {
+                if (!boss.active) return;
+
+                // Pick a new flanking tile near the player (re-rolled every hop)
+                const flanks = [];
+                for (let ddx = -3; ddx <= 3; ddx++) {
+                    for (let ddy = -3; ddy <= 3; ddy++) {
+                        const md = Math.abs(ddx) + Math.abs(ddy);
+                        if (md < 2 || md > 3) continue;
+                        const tx2 = this.playerX + ddx, ty2 = this.playerY + ddy;
+                        if (tx2 < 0 || tx2 >= this.WORLD_WIDTH || ty2 < 0 || ty2 >= this.WORLD_HEIGHT) continue;
+                        if (this.world[tx2][ty2] !== this.FLOOR) continue;
+                        if (!this.isInCurrentRoom(tx2, ty2)) continue;
+                        flanks.push({ x: tx2, y: ty2 });
+                    }
+                }
+                let pick = flanks.length ? flanks[Math.floor(Math.random() * flanks.length)] : { x: this.playerX, y: this.playerY };
+                const wx = pick.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const wy = pick.y * this.TILE_SIZE + this.TILE_SIZE / 2 + (this.SLIME_Y_OFFSET || -10);
+
+                // Re-open the giant portal at the new position
+                const arrivePortal = this.add.graphics().setDepth(2.0);
+                arrivePortal.x = wx; arrivePortal.y = wy;
+                let arriveAngle = 0;
+                const drawArrivePortal = (scale) => {
+                    arrivePortal.clear();
+                    const r = PORTAL_R * scale;
+                    arrivePortal.lineStyle(5, 0xcc44ff, 0.85); arrivePortal.strokeCircle(0, 0, r);
+                    for (let i = 0; i < 10; i++) {
+                        const a = arriveAngle + (i / 10) * Math.PI * 2;
+                        arrivePortal.lineStyle(2, 0xee88ff, 0.50);
+                        arrivePortal.beginPath(); arrivePortal.moveTo(0, 0); arrivePortal.lineTo(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6); arrivePortal.strokePath();
+                    }
+                    arrivePortal.fillStyle(0x110022, 0.92); arrivePortal.fillCircle(0, 0, r * 0.55);
+                    arrivePortal.fillStyle(0xcc44ff, 0.55); arrivePortal.fillCircle(0, 0, r * 0.22);
+                };
+                drawArrivePortal(0.05);
+                const arriveSpinTimer = this.time.addEvent({ delay: 30, loop: true, callback: () => { arriveAngle += 0.04; } });
+
+                this.showStatusText(wx, wy - 70, hopIndex < TOTAL_HOPS - 1 ? `⚠ MAW SURFACING (${hopIndex + 1}/${TOTAL_HOPS})` : '⚠ MAW SURFACING — FINAL', '#ff2200');
+
+                const arriveOpenStart = this.time.now;
+                const arriveGrowTimer = this.time.addEvent({
+                    delay: 30, loop: true,
+                    callback: () => {
+                        const t = Math.min((this.time.now - arriveOpenStart) / ARRIVE_OPEN_DUR, 1);
+                        drawArrivePortal(0.05 + t * 0.95);
+                        if (t >= 1) arriveGrowTimer.remove();
+                    }
+                });
+
+                this.time.delayedCall(ARRIVE_OPEN_DUR, () => {
+                    if (!boss.active) { arriveSpinTimer.remove(); arrivePortal.destroy(); return; }
+
+                    boss.container.x = wx; boss.container.y = wy;
+                    boss.container.setVisible(true);
+                    boss.container.scaleX = 0.1; boss.container.scaleY = 0.1; boss.container.alpha = 1;
+                    this.tweens.add({ targets: boss.container, scaleX: 1, scaleY: 1, duration: 300, ease: 'Back.easeOut' });
+                    this.cameras.main.shake(100, 0.010);
+
+                    this.tweens.add({
+                        targets: arrivePortal, scaleX: 0.05, scaleY: 0.05, alpha: 0, duration: 350, ease: 'Quad.easeIn',
+                        onComplete: () => { arriveSpinTimer.remove(); arrivePortal.destroy(); }
+                    });
+
+                    // ── All-around burst — fires in every direction, not aimed at the player ──
+                    this.time.delayedCall(250, () => {
+                        if (!boss.active) return;
+                        this._fireVoidMawShotgun(boss);
+
+                        const nextHop = hopIndex + 1;
+                        this.time.delayedCall(RETURN_PAUSE_AFTER_FIRE, () => {
+                            if (!boss.active) return;
+                            if (nextHop < TOTAL_HOPS) {
+                                // Chain to the next hop from this landing spot
+                                this._voidMawHop(boss, nextHop, boss.container.x, boss.container.y);
+                            } else {
+                                // Final hop done — return home
+                                const bossSpawn = this.rooms[6];
+                                const returnHomeX = (bossSpawn.x + bossSpawn.w / 2) * this.TILE_SIZE;
+                                const returnHomeY = boss._baseY;
+                                this.tweens.add({
+                                    targets: boss.container, x: returnHomeX, y: returnHomeY, duration: 700, ease: 'Quad.easeOut',
+                                    onComplete: () => { if (boss._idleBobTween) boss._idleBobTween.resume(); }
+                                });
+                                this.time.delayedCall(1200, () => this._voidSovereignNextAttack());
+                            }
+                        });
+                    });
+                });
+            });
+        });
+    }
+
+    // All-around burst fired by Void Maw — pellets spread across the FULL 360°,
+    // not aimed at the player, so positioning around the boss matters at every landing.
+    _fireVoidMawShotgun(boss) {
+        const ex = boss.container.x, ey = boss.container.y;
+        const PELLETS = 16;
+        const SPEED = 230; // medium speed, dodgeable
+        const DAMAGE = 11;
+        const MAX_DIST = this.TILE_SIZE * 9;
+
+        // Big muzzle flash
+        const flash = this.add.graphics().setDepth(4);
+        flash.x = ex; flash.y = ey;
+        flash.fillStyle(0xcc44ff, 0.85); flash.fillCircle(0, 0, 26);
+        flash.lineStyle(3, 0xffffff, 0.90); flash.strokeCircle(0, 0, 34);
+        this.tweens.add({ targets: flash, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 240, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
+        this.cameras.main.shake(70, 0.008);
+
+        if (!this.enemyProjectiles) this.enemyProjectiles = [];
+
+        for (let i = 0; i < PELLETS; i++) {
+            const angle = (i / PELLETS) * Math.PI * 2; // even spread, full circle
+            const vx = Math.cos(angle) * SPEED;
+            const vy = Math.sin(angle) * SPEED;
+
+            const g = this.add.graphics().setDepth(2.8);
+            g.lineStyle(3, 0xdd66ff, 1);
+            g.beginPath();
+            g.moveTo(-Math.cos(angle) * 6, -Math.sin(angle) * 6);
+            g.lineTo( Math.cos(angle) * 6,  Math.sin(angle) * 6);
+            g.strokePath();
+            g.fillStyle(0xffffff, 0.9); g.fillCircle(0, 0, 3);
+            g.x = ex; g.y = ey;
+
+            this.enemyProjectiles.push({
+                gfx: g, vx, vy, damage: DAMAGE * (this.damageScaling || 1),
+                startX: ex, startY: ey, maxDist: MAX_DIST,
+                isRicochetArrow: true, ricochetLeft: 5,
+            });
+        }
+    }
+
     _vsAttackSingularityCollapse() {
         const boss = this.voidSovereignBoss;
         boss._isInvulnerable = true;
+        const _bossOrigDepth = boss.container.depth;
         this.showStatusText(boss.container.x, boss.container.y - 80, '◉ SINGULARITY COLLAPSE', '#220044');
         this.cameras.main.shake(40, 0.004);
 
@@ -3942,26 +4576,30 @@ class LevelManager {
         const centerTX = Math.floor(cx / this.TILE_SIZE);
         const centerTY = Math.floor(cy / this.TILE_SIZE);
 
-        // Full screen darkness — fades in ominously over 2s, held at 0.92 until collapse
-        // Depth 0.8: sits just above floor tiles, below player/enemies/status text so they remain visible through the dark
+        // Full screen darkness — fades in ominously, held until collapse. Covers player/enemies
+        // (depth ~1) but NOT the boss itself, which is lifted above the overlay so it stays
+        // visible — the void sovereign is the source of the dark, not a victim of it.
         const dark = this.add.rectangle(this.scale.width/2, this.scale.height/2,
-            this.scale.width, this.scale.height, 0x000000, 1).setScrollFactor(0).setDepth(0.8).setAlpha(0);
-        this.tweens.add({ targets: dark, alpha: 0.92, duration: 2000, ease: 'Quad.easeIn' });
+            this.scale.width, this.scale.height, 0x000000, 1).setScrollFactor(0).setDepth(15).setAlpha(0);
+        this.tweens.add({ targets: dark, alpha: 0.72, duration: 2000, ease: 'Quad.easeIn' });
+        boss.container.setDepth(16);
 
-        // Inward-sucking particles — intensify as collapse nears
+        // Inward-sucking particles — intensify exponentially as collapse nears
+        const COLLAPSE_DURATION = 9000; // total time before the killing collapse fires
         const particleInterval = this.time.addEvent({
             delay: 200, loop: true,
             callback: () => {
                 if (!boss?.active) return;
                 const elapsed = this.time.now - collapseStartTime;
-                const t = Math.min(elapsed / 5000, 1);
+                const tLin = Math.min(elapsed / COLLAPSE_DURATION, 1);
+                const t = Math.pow(tLin, 3); // cubic — stays mild early, ramps hard late
                 // More particles + faster travel as we near collapse
-                const count = Math.floor(2 + t * 6);
-                const travelDur = Math.max(400, 1200 - t * 800);
+                const count = Math.floor(2 + t * 10);
+                const travelDur = Math.max(250, 1200 - t * 950);
                 for (let i = 0; i < count; i++) {
                     const a = Math.random() * Math.PI * 2;
                     const r = 4 * this.TILE_SIZE + Math.random() * 6 * this.TILE_SIZE;
-                    const pg = this.add.graphics().setDepth(9);
+                    const pg = this.add.graphics().setDepth(16);
                     const col = t > 0.6 ? 0xff44ff : 0xcc44ff;
                     pg.fillStyle(col, 0.70 + t * 0.25);
                     pg.fillCircle(0, 0, 2 + Math.random() * 3 + t * 2);
@@ -3972,15 +4610,16 @@ class LevelManager {
         });
         const collapseStartTime = this.time.now;
 
-        // ── Gradual player suck — starts slow, accelerates over the 5s ──
-        // Moves player one tile toward center periodically; interval shrinks over time.
+        // ── Gradual player suck — starts slow, accelerates EXPONENTIALLY over the duration ──
+        // Moves player toward center periodically; interval shrinks exponentially, and the
+        // distance pulled per tick also grows late in the sequence for a true "falling in" feel.
         // LOS check each tick — walls block the pull.
         let _suckTimer = null;
         const _scheduleNextSuck = (delay) => {
             _suckTimer = this.time.delayedCall(delay, () => {
                 if (!boss?.active) return;
                 const elapsed = this.time.now - collapseStartTime;
-                if (elapsed >= 5000) return; // collapse fires, stop gradual suck
+                if (elapsed >= COLLAPSE_DURATION) return; // collapse fires, stop gradual suck
 
                 // LOS check — wall blocks pull
                 const playerPx = this.player.x, playerPy = this.player.y;
@@ -3994,50 +4633,64 @@ class LevelManager {
                     if (this.world[checkX]?.[checkY] === this.WALL) { blocked = true; break; }
                 }
 
+                const tLin = Math.min(elapsed / COLLAPSE_DURATION, 1);
+                const t = Math.pow(tLin, 3); // matches particle ramp — mild early, brutal late
+
                 if (!blocked) {
-                    // Step one tile toward center
+                    // Pull distance grows from 1 tile up to 3 tiles per tick as collapse nears
+                    const pullTiles = Math.max(1, Math.round(1 + t * 2));
                     const ddx = centerTX - this.playerX;
                     const ddy = centerTY - this.playerY;
                     const dist = Math.sqrt(ddx*ddx + ddy*ddy);
                     if (dist > 1.5) { // don't pull if already at center
                         const stepX = ddx !== 0 ? Math.sign(ddx) : 0;
                         const stepY = ddy !== 0 ? Math.sign(ddy) : 0;
-                        // Prefer the dominant axis each step
-                        const moveX = Math.abs(ddx) >= Math.abs(ddy) ? stepX : 0;
-                        const moveY = Math.abs(ddy) > Math.abs(ddx) ? stepY : 0;
-                        const nx = this.playerX + moveX;
-                        const ny = this.playerY + moveY;
-                        if (this.world[nx]?.[ny] === this.FLOOR) {
+                        // Prefer the dominant axis each step, walking up to pullTiles tiles,
+                        // stopping early if a wall blocks further movement along the path.
+                        let nx = this.playerX, ny = this.playerY;
+                        for (let p = 0; p < pullTiles; p++) {
+                            const moveX = Math.abs(ddx) >= Math.abs(ddy) ? stepX : 0;
+                            const moveY = Math.abs(ddy) > Math.abs(ddx) ? stepY : 0;
+                            const tryX = nx + moveX, tryY = ny + moveY;
+                            if (this.world[tryX]?.[tryY] !== this.FLOOR) break;
+                            nx = tryX; ny = tryY;
+                            if (nx === centerTX && ny === centerTY) break;
+                        }
+                        if (nx !== this.playerX || ny !== this.playerY) {
                             this.playerX = nx;
                             this.playerY = ny;
                             const npx = nx * this.TILE_SIZE + this.TILE_SIZE / 2;
                             const npy = ny * this.TILE_SIZE + this.TILE_SIZE / 2;
-                            this.tweens.add({ targets: this.player, x: npx, y: npy, duration: 180, ease: 'Quad.easeOut' });
+                            this.tweens.add({ targets: this.player, x: npx, y: npy, duration: Math.max(90, 180 - t * 90), ease: 'Quad.easeOut' });
                         }
                     }
                 }
 
-                // Acceleration: interval shrinks from 1100ms → 250ms over the 5s
-                const t = Math.min(elapsed / 5000, 1);
-                const nextDelay = Math.max(250, 1100 - t * 850);
+                // Acceleration: interval shrinks exponentially from 1100ms → 150ms
+                const nextDelay = 1100 * Math.pow(150 / 1100, t);
                 _scheduleNextSuck(nextDelay);
             });
         };
         _scheduleNextSuck(1100); // first pull after 1.1s — gives player a moment to react
 
         // Warning text
-        this.time.delayedCall(1800, () => {
+        this.time.delayedCall(Math.round(COLLAPSE_DURATION * 0.2), () => {
             if (!boss.active) return;
             this.showStatusText(cx, cy - 80, '⚠ FIND COVER ⚠', '#ff2200');
         });
-        this.time.delayedCall(3500, () => {
+        this.time.delayedCall(Math.round(COLLAPSE_DURATION * 0.45), () => {
+            if (!boss.active) return;
+            this.showStatusText(cx, cy - 80, '◉ THE PULL INTENSIFIES', '#9922cc');
+            this.cameras.main.shake(60, 0.006);
+        });
+        this.time.delayedCall(Math.round(COLLAPSE_DURATION * 0.75), () => {
             if (!boss.active) return;
             this.showStatusText(cx, cy - 80, '◉ COLLAPSE IMMINENT', '#9922cc');
             this.cameras.main.shake(80, 0.008);
         });
 
-        // COLLAPSE at 5s — instant suck + 1HP
-        this.time.delayedCall(5000, () => {
+        // COLLAPSE at the end of the duration — instant suck + 1HP
+        this.time.delayedCall(COLLAPSE_DURATION, () => {
             if (!boss.active) return;
             if (_suckTimer) { _suckTimer.remove(); _suckTimer = null; }
             particleInterval.remove();
@@ -4092,6 +4745,7 @@ class LevelManager {
                 this.scale.width, this.scale.height, 0xffffff, 0.80).setScrollFactor(0).setDepth(40);
             this.tweens.add({ targets: flash, alpha: 0, duration: 600, onComplete: () => flash.destroy() });
             this.tweens.add({ targets: dark, alpha: 0, duration: 1200, onComplete: () => dark.destroy() });
+            boss.container.setDepth(_bossOrigDepth);
 
             boss._isInvulnerable = false;
             this.time.delayedCall(2000, () => this._voidSovereignNextAttack());
@@ -4101,45 +4755,110 @@ class LevelManager {
     _vsAttackEventHorizon() {
         const boss = this.voidSovereignBoss;
         const DURATION = 7000;
+        boss._isInvulnerable = true;
+        boss._eventHorizonActive = true;
         this.showStatusText(boss.container.x, boss.container.y - 80, '🌑 EVENT HORIZON', '#110022');
+        this.cameras.main.shake(40, 0.005);
 
-        // Spinning reflective void ring around boss
+        const startTime = this.time.now;
+        const RING_START_R = 2.8 * this.TILE_SIZE;
+        const RING_END_R = 1.6 * this.TILE_SIZE; // the safe radius shrinks toward this over the duration
+
+        // Spinning reflective void ring around boss — radius slowly contracts over DURATION
         const ringGfx = this.add.graphics().setDepth(4.5);
-        const RING_R = 2.8 * this.TILE_SIZE;
         let ringAngle = 0;
+        let currentRingR = RING_START_R;
         const drawRing = () => {
             ringGfx.clear();
-            // Outer dark ring
-            ringGfx.lineStyle(8, 0x220044, 0.80); ringGfx.strokeCircle(boss.container.x, boss.container.y, RING_R);
-            // Bright edge segments — spinning
+            ringGfx.lineStyle(8, 0x220044, 0.80); ringGfx.strokeCircle(boss.container.x, boss.container.y, currentRingR);
             for (let i = 0; i < 8; i++) {
                 const a1 = ringAngle + (i / 8) * Math.PI * 2;
                 const a2 = a1 + 0.4;
                 ringGfx.lineStyle(3, i % 2 === 0 ? 0xcc44ff : 0xffffff, 0.90);
                 ringGfx.beginPath();
-                ringGfx.arc(boss.container.x, boss.container.y, RING_R, a1, a2, false);
+                ringGfx.arc(boss.container.x, boss.container.y, currentRingR, a1, a2, false);
                 ringGfx.strokePath();
-                // Spark at contact point
                 ringGfx.fillStyle(0xffffff, 0.70);
                 ringGfx.fillCircle(
-                    boss.container.x + Math.cos(a1) * RING_R,
-                    boss.container.y + Math.sin(a1) * RING_R, 2.5
+                    boss.container.x + Math.cos(a1) * currentRingR,
+                    boss.container.y + Math.sin(a1) * currentRingR, 2.5
                 );
             }
         };
-        const ringTimer = this.time.addEvent({ delay:25, loop:true, callback:() => { ringAngle += 0.06; drawRing(); } });
-        boss._eventHorizonActive = true;
+        const ringTimer = this.time.addEvent({
+            delay: 25, loop: true,
+            callback: () => {
+                ringAngle += 0.06;
+                const t = Math.min((this.time.now - startTime) / DURATION, 1);
+                currentRingR = RING_START_R - (RING_START_R - RING_END_R) * t;
+                drawRing();
+            }
+        });
 
-        // Show immunity text periodically
-        const immuneTimer = this.time.addEvent({ delay:1200, loop:true, callback:() => {
+        // ── Reflective pulse — fires outward periodically. Standing inside the pulse's
+        // ── radius when it fires gets you knocked back and damaged ("reflected").
+        const firePulse = () => {
             if (!boss._eventHorizonActive) return;
-            this.showStatusText(boss.container.x, boss.container.y - 60, 'PROJECTILES REFLECTED', '#cc44ff');
+            const px = boss.container.x, py = boss.container.y;
+            const pulseGfx = this.add.graphics().setDepth(4.4);
+            const PULSE_MAX = 6 * this.TILE_SIZE;
+            const PULSE_DUR = 550;
+            const pulseStart = this.time.now;
+            this.cameras.main.shake(20, 0.003);
+            const pulseTimer = this.time.addEvent({
+                delay: 16, loop: true,
+                callback: () => {
+                    const pt = (this.time.now - pulseStart) / PULSE_DUR;
+                    if (pt >= 1) { pulseGfx.destroy(); pulseTimer.remove(); return; }
+                    const r = currentRingR + pt * (PULSE_MAX - currentRingR);
+                    pulseGfx.clear();
+                    pulseGfx.lineStyle(5, 0xcc44ff, 0.85 * (1 - pt));
+                    pulseGfx.strokeCircle(px, py, r);
+                    pulseGfx.lineStyle(2, 0xffffff, 0.6 * (1 - pt));
+                    pulseGfx.strokeCircle(px, py, r);
+
+                    // Catch the player if the expanding ring sweeps through their position
+                    const dist = Math.hypot(this.player.x - px, this.player.y - py);
+                    if (!boss._pulseHitThisCycle && Math.abs(dist - r) < this.TILE_SIZE * 0.6) {
+                        boss._pulseHitThisCycle = true;
+                        this.takeDamage(12 * (this.damageScaling || 1));
+                        this.showStatusText(this.player.x, this.player.y - 28, 'REFLECTED!', '#cc44ff');
+                        // Knockback away from the boss
+                        const dx = this.player.x - px, dy = this.player.y - py;
+                        const dlen = Math.hypot(dx, dy) || 1;
+                        const knockDist = this.TILE_SIZE * 1.5;
+                        let nx = this.player.x + (dx / dlen) * knockDist;
+                        let ny = this.player.y + (dy / dlen) * knockDist;
+                        const ntx = Math.floor(nx / this.TILE_SIZE), nty = Math.floor(ny / this.TILE_SIZE);
+                        if (this.world[ntx]?.[nty] === this.FLOOR) {
+                            this.tweens.add({ targets: this.player, x: nx, y: ny, duration: 200, ease: 'Quad.easeOut' });
+                            this.playerX = ntx; this.playerY = nty;
+                        }
+                    }
+                }
+            });
+        };
+
+        const pulseInterval = this.time.addEvent({
+            delay: 1500, loop: true,
+            callback: () => {
+                if (!boss._eventHorizonActive) return;
+                boss._pulseHitThisCycle = false;
+                firePulse();
+            }
+        });
+
+        // Show immunity/warning text periodically
+        const immuneTimer = this.time.addEvent({ delay:1800, loop:true, callback:() => {
+            if (!boss._eventHorizonActive) return;
+            this.showStatusText(boss.container.x, boss.container.y - 60, 'PROJECTILES REFLECTED — STAY MOBILE', '#cc44ff');
         }});
 
         this.time.delayedCall(DURATION, () => {
-            ringTimer.remove(); immuneTimer.remove();
+            ringTimer.remove(); immuneTimer.remove(); pulseInterval.remove();
             ringGfx.destroy();
             boss._eventHorizonActive = false;
+            boss._isInvulnerable = false;
             this._voidSovereignNextAttack();
         });
     }
@@ -4212,7 +4931,7 @@ class LevelManager {
     damageVoidSovereignBoss(amount) {
         const boss = this.voidSovereignBoss;
         if (!boss?.active) return;
-        if (boss._isInvulnerable && !boss._eventHorizonActive) return;
+        if (boss._isInvulnerable) return;
 
         // Shatter if frozen — only the FIRST hit that shatters gets 2× and shows text
         if (boss._isFrozen) {
@@ -4320,6 +5039,11 @@ class LevelManager {
         }
         if (boss._freezeTimer) { boss._freezeTimer.remove(); boss._freezeTimer = null; }
         boss._bossProxy = null; boss._iceOverlay = null;
+
+        // Clean up burn stacks
+        if (boss._burnDoTTimer) { boss._burnDoTTimer.remove(); boss._burnDoTTimer = null; }
+        if (boss._burnStackBar) { for (const pip of boss._burnStackBar) pip.destroy(); boss._burnStackBar = null; }
+        boss.burnStacks = 0;
 
         // Drop reward fragments
         for (let i = 0; i < 8; i++) this.spawnOrbScrap(boss.container.x + (Math.random()-0.5)*60, boss.container.y + (Math.random()-0.5)*60);
