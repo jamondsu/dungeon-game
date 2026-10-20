@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../Slime_Pack"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "dungeon_game_summer2026"
+	}
+}

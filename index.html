@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="icon" href="data:,">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dungeon Roguelike</title>
@@ -19,10 +20,45 @@
 <body>
     <!-- Phaser 3 -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    
+
     <!-- Load utility files first -->
     <script src="Utils.js"></script>
-    
+    <script src="Sound.js"></script>
+    <script src="Settings.js"></script>
+    <script src="Telemetry.js"></script>
+    <script src="Relics.js"></script>
+    <script src="Enchants.js"></script>
+    <script src="Garden.js"></script>
+    <script src="Stats.js"></script>
+    <script src="Progress.js"></script>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         ENGINE — UIKit + ElementResist + Transitions, INLINED.
+
+         These were three files, then one file, and both times a copy that missed
+         them left index.html requesting a script that 404s: the global never
+         defines, the first scene throws ReferenceError inside create(), and the
+         canvas stays black with the cause buried in the console.
+
+         Inlined here because index.html is the one file that reliably travels. It
+         cannot be out of step with itself and there is nothing beside it to forget.
+
+         ORDER, preserved: UIKit (palette + widgets, called during create) →
+         ElementResist (damage table, used by CombatSystem.damageEnemy) →
+         Transitions (reads UIKit.PALETTE when it RUNS, not when it loads).
+
+         EDITING: the readable sources are still UIKit.js / ElementResist.js /
+         Transitions.js in the outputs folder. Edit those and re-inline, or edit
+         here directly. Do NOT also load Engine.js or the three separates — each
+         defines the same consts and the second definition throws.
+         ═══════════════════════════════════════════════════════════════════════ -->
+        <script src="UIKit.js"></script>
+    <script src="ElementResist.js"></script>
+    <script src="FieldKit.js"></script>
+    <script src="Transitions.js"></script>
+    <script src="Menus.js"></script>
+    <script src="Loot.js"></script>
+
     <!-- Load modules (must come before GameScene.js) -->
     <script src="WorldGen.js"></script>
     <script src="TutorialManager.js"></script>
@@ -30,27 +66,40 @@
     <script src="WeaponSystem.js"></script>
     <script src="CombatSystem.js"></script>
     <script src="ElementSystem.js"></script>
+    <script src="Cosmic.js"></script>
     <script src="HUD.js"></script>
+    <script src="Visuals.js"></script>
+    <script src="Creatures.js"></script>
+    <script src="Bosses.js"></script>
+    <script src="Tower.js"></script>
+    <script src="Training.js"></script>
 
     <!-- Load scene files -->
     <script src="BootScene.js"></script>
     <script src="LevelSelectScene.js"></script>
     <script src="ShopScene.js"></script>
+    <script src="EnchantScene.js"></script>
+    <script src="GardenScene.js"></script>
     <script src="LevelManager.js"></script>
+    <script src="TowerDefenseScene.js"></script>
     <script src="GameScene.js"></script>
-    
+
     <!-- Initialize game -->
     <script>
+        // No dependency guard here any more: UIKit, ElementResist and Transitions are
+        // inlined above, so there is no external file of mine that can go missing. The
+        // remaining <script src> tags are the project's own long-standing modules.
         const config = {
             type: Phaser.AUTO,
             width: window.innerWidth,
             height: window.innerHeight,
-            scene: [BootScene, LevelSelectScene, ShopScene, GameScene],
+            scene: [BootScene, LevelSelectScene, ShopScene, EnchantScene, GardenScene, UnderwellScene, SkyScene, GameScene, TowerDefenseScene],
             pixelArt: true,
             backgroundColor: '#000000'
         };
-        
+
         const game = new Phaser.Game(config);
+        Settings.fpsMeter(game);   // the frame counter in the corner (Settings > FPS)
     </script>
 </body>
 </html>

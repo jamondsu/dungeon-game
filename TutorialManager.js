@@ -50,8 +50,8 @@ class TutorialManager {
                                     playerPx, playerPy, 4, 4, 0x00ffaa, 1
                                 ).setDepth(10).setScrollFactor(0);
                                 // Convert world → screen for scroll factor 0
-                                spark.x = playerPx - this.cameras.main.scrollX;
-                                spark.y = playerPy - this.cameras.main.scrollY;
+                                spark.x = this._scrX(playerPx);
+                                spark.y = this._scrY(playerPy);
                                 this.tweens.add({
                                     targets: spark,
                                     x: spark.x + Math.cos(angle) * 22,
@@ -65,8 +65,8 @@ class TutorialManager {
                             }
 
                             // ── "+N Glorps" floating text ────────────────
-                            const fx = playerPx - this.cameras.main.scrollX;
-                            const fy = playerPy - this.cameras.main.scrollY - 20;
+                            const fx = this._scrX(playerPx);
+                            const fy = this._scrY(playerPy) - 20;
                             const ft = this.add.text(fx, fy, `+${value} Glorps`, {
                                 fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold',
                                 color: '#00ffaa', stroke: '#000000', strokeThickness: 3
@@ -106,6 +106,8 @@ class TutorialManager {
             }
         }
 
+        this._tutTips();
+
         // Check which room player is in
         const playerRoom = this.getCurrentPlayerRoom();
         if (playerRoom === -1) return;
@@ -128,13 +130,13 @@ class TutorialManager {
                 // Fire tutorial room 1 requires ult
                 if (!hasEnemies && !this._ultNagShown) {
                     this._ultNagShown = true;
-                    this.showTutorialDialogue("Enemies defeated! Now press E to use your Ultimate before you can leave!", "Glerp");
+                    this.showTutorialDialogue(`Slimes down! Now cast your fire ult (${this._k('ult')} or ${this._k('ultFire')}) to open the doors.`, "Glerp");
                 }
             } else if (this.isIceTutorial && playerRoom === 3 && !this._iceUltUsed) {
                 // Ice tutorial room 3 requires ice ult
                 if (!hasEnemies && !this._ultNagShown) {
                     this._ultNagShown = true;
-                    this.showTutorialDialogue("Enemies down! Switch to Ice (press 2) and press E to unleash the Blizzard of Courage!\nYou must use your ice ult to leave.", "Glerp");
+                    this.showTutorialDialogue(`Snipers down! Cast the Blizzard (${this._k('ultIce')}) to open the doors.`, "Glerp");
                 }
             } else if (!hasEnemies && (this.tutorialDoorsLocked[playerRoom] || this._roomHadEnemies?.[playerRoom])) {
                 // Room 6 also requires all portals destroyed
@@ -181,15 +183,10 @@ class TutorialManager {
             if (enemy._shieldMark?.active)  enemy._shieldMark.setPosition(mx, my - 22);
             if (enemy._iceMark?.active)     enemy._iceMark.setPosition(mx, my - 22);
             if (enemy._rangedMark?.active)  enemy._rangedMark.setPosition(mx, my - 22);
-            // Chill stack dots
-            if (enemy._chillBar) {
-                for (let i = 0; i < enemy._chillBar.length; i++) {
-                    const dot = enemy._chillBar[i];
-                    if (dot.active) {
-                        dot.x = enemy.sprite.x + (i - 1) * 10;
-                        dot.y = enemy.sprite.y - 30;
-                    }
-                }
+            // Chill bar -- ONE Graphics object now, not three dots.
+            if (enemy._chillBar?.active) {
+                enemy._chillBar.x = enemy.sprite.x - 11;
+                enemy._chillBar.y = enemy.sprite.y - 30;
             }
         }
     }
@@ -204,10 +201,10 @@ class TutorialManager {
             this.tutorialEnemySpawns[0] = null;
         }
 
-        this.showTutorialDialogue(
-            `Great job! Now defeat the enemies to unlock the exit!`,
-            "Glerp"
-        );
+        this._tutSay([
+            `Slimes! Left click to punch with your Flame Fists (hold it to keep punching). Their health bars show once they're hurt.`,
+            `Fire BURNS: hit something again and again and it keeps taking damage. And if it gets busy, press ${this._k('dash')} to DASH: you zip through enemies and can't be hurt mid-dash.`,
+        ], () => this._tutObjective('Defeat the slimes'));
     }
 
     onTutorialRoomEnter(roomIndex) {
@@ -231,48 +228,63 @@ class TutorialManager {
         }
 
         // Show tutorial text based on room
-        const messages = [
-            { text: "Defeat all enemies to unlock the next room!\nLeft click to punch with your Flame Fists.", speaker: "Glerp" },
-            { text: `Nice work, ${this.playerName || 'Hero'}! Feel the ult bar filling up at the bottom?\nKill these enemies, then press E to unleash your Ultimate!\nYou MUST use your ult to leave this room.`, speaker: "Glerp" },
-            { text: "Those enemies with the ORANGE mark are immune to fire!\nPress 2 to switch to Ice and freeze them!", speaker: "Glerp" },
-            { text: `Final challenge, ${this.playerName || 'Hero'}! Watch out for enemies with RED rings — standing near them blocks your ult. Eliminate them first!`, speaker: "Glerp" }
-        ];
-
-        const msg = messages[roomIndex];
-        if (msg && this.tutorialNameEntered) {
-            const text = msg.text.replace('${this.playerName}', this.playerName || 'Hero');
-            this.showTutorialDialogue(text, msg.speaker);
-        }
+        if (!this.tutorialNameEntered) return;
+        const name = this.playerName || 'Hero';
+        const LESSONS = {
+            1: [[`Nice work, ${name}! Now: ULTS. See the four gems at the bottom of the screen? Every element has its own.`,
+                 `A gem fills when you hit things with that element. Hit a slime that's carrying ANOTHER element's effect (burning, chilled...) and that's a REACTION: it charges much faster.`,
+                 `Full gem? ${this._k('ult')} casts the ult of the element you're holding, and ${this._k('ultFire')} casts the fire ult directly. Once you unlock more elements, ${this._k('ultIce')} ${this._k('ultLightning')} ${this._k('ultCosmic')} cast theirs from anything.`,
+                 `Beat these slimes, then cast your fire ult. This room won't open until you do!`],
+                'Defeat the slimes, then cast your fire ult'],
+            2: [[`See the rings at their feet? Those are RESISTANCE wards. Orange means fire: your fire does about 60% less to them.`,
+                 `Fire's all you have for now, so they're TANKY. Keep the pressure on, let their burn tick, and don't let them surround you.`,
+                 `Later you'll unlock other elements and can switch to one they don't resist. That's the real answer to a ward!`],
+                'Beat the fire-resistant slimes (they take longer)'],
+            3: [[`Last room, ${name}! Slimes with a RED ring block your ult while you're near them. Take them out first.`,
+                 `Slimes sometimes drop red HEALTH POTS. Walk over one when you're hurt.`],
+                'Take out the red-ringed ult blockers first'],
+        };
+        const L = LESSONS[roomIndex];
+        if (L) this._tutSay(L[0], () => this._tutObjective(L[1]));
     }
 
     _onIceTutorialRoomEnter(roomIndex) {
         // Reset Glerp ice reaction flag each room so it fires once per room
         this._iceGlerpFired = false;
         const name = this.playerName || 'Hero';
-        // Room 0: Glerp greets the player and praises the flame sword
+        // Room 0: Glerp's welcome back: weapons, and the shape of the fight
         if (roomIndex === 0) {
-            this.time.delayedCall(400, () => {
-                this.showTutorialDialogue(
-                    `Welcome back, ${name}! That Flame Sword looks good on you.\nIt sweeps a wide arc — perfect for groups.\nHead into the next room and show 'em what it can do!`,
-                    "Glerp"
-                );
-            });
+            this.time.delayedCall(400, () => this._tutSay([
+                `Welcome back, ${name}! This time you get the whole toolkit. Fire hits hard, ice controls the crowd, and switching between them mid-fight is the game.`,
+                `Each element holds one weapon, and ${this._k('fire')}-${this._k('cosmic')} swap between them. Glurp sells more, and every weapon you own can be upgraded: POWER for damage, and its own PERKS.`,
+                `Got the Flame Sword? It sweeps a wide arc, perfect for groups. Let's go!`,
+            ], () => this._tutObjective('Head into the next room')));
             // Unlock room 0 doors immediately — no enemies
             this.tutorialDoorsLocked[0] = false;
             this.unlockTutorialDoors(0);
             return;
         }
-        const messages = [
-            null,
-            { text: `Room full of baddies! ORANGE mark = fire immune, RED ring = blocks your ult.\nYour Flame Sword tears through the rest!`, speaker: "Glerp" },
-            null,
-            { text: `Snipers! They'll pelt you from range and there's nowhere to hide.\nYou're ICE-ONLY in here — no switching out.\nDefeat them, then press E on ICE to unleash the Blizzard of Courage!\nIt'll drag every one of them right to you. You MUST use it to leave.`, speaker: "Glerp" },
-            { text: `Watch your step! Purple clouds = POISON (slows your damage).\nGrey spike tiles = OUCH. Enemies can drop health pots — pick them up!`, speaker: "Glerp" },
-            { text: `Final mix, ${name}! Flame Sword for normals, Ice Fists for ice elementals.\nFreeze → Shatter for big damage. Almost done!`, speaker: "Glerp" },
-            { text: `Those glowing PORTALS keep spawning slimes! Destroy them all to clear the room.\nWatch out for snipers and use both elements — you've got the full toolkit now!`, speaker: "Glerp" },
-        ];
-        const msg = messages[roomIndex];
-        if (msg) this.showTutorialDialogue(msg.text, msg.speaker);
+        const LESSONS = {
+            1: [[`A crowd! Read their rings: orange resists fire, blue resists ice, yellow resists lightning. A RED ring blocks your ult while you're close.`,
+                 `Resisted isn't immune. It just hurts less, so swap to the element that works and keep swinging.`],
+                'Clear the room'],
+            2: [[`Something tougher in here. Hit it with fire and see what happens...`], 'Find what works on them'],
+            3: [[`Snipers! They hit from range, and you're ICE-ONLY in here.`,
+                 `Your ice ult is the BLIZZARD: ${this._k('ult')} holding ice, or ${this._k('ultIce')} from anything. It freezes everything it reaches. Cast it again while they're frozen to SHATTER them all at once!`,
+                 `Beat the snipers, then cast the Blizzard. You must use it to leave.`],
+                `Ice only: beat the snipers, then cast the Blizzard ${this._k('ultIce')}`],
+            4: [[`Watch your step! Purple clouds are POISON (your damage drops while you're in them), and grey spike tiles hurt.`,
+                 `Dash ${this._k('dash')} straight across hazards: you can't be hurt mid-dash. And grab any health pots the slimes drop.`],
+                'Cross the hazards and clear the room'],
+            5: [[`Final mix, ${name}! The best combo: FREEZE them with ice, then switch to fire and smash the frozen ones.`,
+                 `Hitting a chilled slime with fire, or a burning one with ice, is a REACTION, and reactions fill your ult gems fast.`],
+                'Freeze them, then smash them with fire'],
+            6: [[`PORTALS! They keep spawning slimes until they're destroyed. Break every portal to clear the room.`,
+                 `Snipers too. Keep moving, use both elements: you've got the full toolkit now!`],
+                'Destroy every portal'],
+        };
+        const L = LESSONS[roomIndex];
+        if (L) this._tutSay(L[0], () => this._tutObjective(L[1]));
     }
 
     _triggerIceImmuneGlerpReaction() {
@@ -283,10 +295,10 @@ class TutorialManager {
         // Unlock ice switching immediately
         this.tutorialIceUnlocked = true;
         this.time.delayedCall(250, () => {
-            this.showTutorialDialogue(
-                "Whoa! Your attacks bounced right off!\nThat's an ICE elemental — fire and physical attacks can't hurt them.\nPress 2 to switch to ICE, then left click to throw ice shards!\nStack enough hits and they'll FREEZE — then one more hit SHATTERS them!",
-                "Glerp"
-            );
+            this._tutSay([
+                `Whoa, that barely scratched it! See the orange ring? These slimes RESIST fire.`,
+                `Press ${this._k('ice')} for ICE and hit them. Stack chill until they FREEZE, then one more hit SHATTERS them!`,
+            ], () => this._tutObjective(`Switch to Ice ${this._k('ice')}: freeze and shatter them`));
         });
     }
 
@@ -377,18 +389,14 @@ class TutorialManager {
     }
 
     continueAfterName() {
-        this.showTutorialDialogue(
-            `Nice to meet you, ${this.playerName}! Let me teach you the basics.\n\nFirst, collect these shiny Glorps! They're used to buy weapons.`,
-            "Glerp",
-            () => {
-                // Spawn glorps in room
-                this.spawnTutorialGlorps();
-                this.showTutorialDialogue(
-                    `Walk over the Glorps to collect them!\nThen we'll practice combat.`,
-                    "Glerp"
-                );
-            }
-        );
+        this._tutSay([
+            `Nice to meet you, ${this.playerName}! Let's get you ready for the dungeon.`,
+            `Move with ${this._k('up')} ${this._k('left')} ${this._k('down')} ${this._k('right')}. Rooms seal when you walk in, and open again once every slime in them is gone.`,
+            `See those shiny things? GLORPS, the dungeon's money. Glurp's shop takes them for weapons, upgrades and training. Go grab them!`,
+        ], () => {
+            this.spawnTutorialGlorps();
+            this._tutObjective('Collect the 3 Glorps');
+        });
     }
 
     spawnTutorialGlorps() {
@@ -416,7 +424,7 @@ class TutorialManager {
         const sparkle = this.add.graphics();
         sparkle.fillStyle(0xffffff, 0.9); sparkle.fillCircle(-3, -3, 2);
         const label = this.add.text(0, 14, `✦${value}`, {
-            fontSize: '8px', fontFamily: 'monospace', color: '#00ffaa',
+            fontSize: '9px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#7dffc8', resolution: 2,
             stroke: '#000000', strokeThickness: 2
         }).setOrigin(0.5, 0);
         glorp.add([shadow, aura, bodyGlow, bodyMid, bodyCore, sparkle, label]);
@@ -447,23 +455,28 @@ class TutorialManager {
     onTutorialRoomClear(roomIndex) {
         // Level 2/3/4 have their own room clear logic — don't run tutorial clear
         if (this.isLevel2 || this.isLevel3 || this.isLevel4) return;
+        if (this.tutorialRoomCleared[roomIndex]) return;   // once: each ult press used to clear it again (a second chest)
         this.tutorialRoomCleared[roomIndex] = true;
 
         // Ice tutorial room 6 = final room
         if (this.isIceTutorial && roomIndex === 6) {
             this.time.delayedCall(600, () => {
-                this.showTutorialDialogue(
-                    `You did it, ${this.playerName || 'Hero'}! Fire, Ice, positioning, traps, portals — you handled it all.\nThe real dungeon awaits. Don't die.\n\n...Glerp believes in you. Probably.`,
-                    "Glerp"
-                );
-                this.time.delayedCall(4000, () => this.endTutorialReturnToMenu());
+                this._tutObjective(null);
+                this._tutSay([
+                    `You did it, ${this.playerName || 'Hero'}! Fire, ice, positioning, traps, portals: you handled it all.`,
+                    `Out there, THE GAUNTLET earns you LIGHTNING and THE VOID RIFT earns you COSMIC. Clearing a level for the first time pays FRAGMENTS too.`,
+                    `At Glurp's: new weapons and their upgrades, STATS to train (keep them even: every 5 levels earns a talent), ULT STAGES (glorps + fragments) and GADGETS for ${this._k('gadget1')} and ${this._k('gadget2')}.`,
+                    `Settings and keybinds live in the lobby. The real dungeon awaits. Don't die... Glerp believes in you. Probably.`,
+                ], () => this.endTutorialReturnToMenu());
             });
             return;
         }
 
         this.spawnTutorialChest(roomIndex);
+        this._tutObjective('Walk onto the chest to open it');
         this.time.delayedCall(1000, () => {
-            this.showTutorialDialogue("Room cleared! Open the chest to continue.", "Glerp");
+            if ((this.tutorialChests || []).some(c => c.roomIndex === roomIndex && !c.opened))   // not if you beat me to it
+                this.showTutorialDialogue("Room cleared! Walk onto the chest to open it.", "Glerp");
         });
     }
 
@@ -497,29 +510,10 @@ class TutorialManager {
         const cx = chestTileX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const cy = chestTileY * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // Layered chest graphic — two parts: lid and body (for open animation)
-        const container = this.add.container(cx, cy).setDepth(2);
-
-        const shadow = this.add.ellipse(0, 6, 22, 8, 0x000000, 0.3);
-
-        // Body (bottom half — stays put on open)
-        const body = this.add.graphics();
-        body.fillStyle(0x884400, 1); body.fillRect(-10, 0, 20, 7);
-        body.fillStyle(0xffcc44, 1); body.fillRect(-3, 1, 6, 5);   // lock
-        body.lineStyle(1, 0x553300, 1); body.strokeRect(-10, 0, 20, 7);
-
-        // Lid (top half — flies up on open)
-        const lid = this.add.graphics();
-        lid.fillStyle(0xaa6600, 1); lid.fillRect(-10, -7, 20, 7);
-        lid.lineStyle(1, 0x553300, 1); lid.strokeRect(-10, -7, 20, 7);
-
-        const glow = this.add.rectangle(0, 0, 24, 16, 0xffaa00, 0.2);
-
-        container.add([shadow, glow, body, lid]);
-
-        // Bob animation
-        const bobTween = this.tweens.add({ targets: container, y: cy - 4, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        this.tweens.add({ targets: glow, alpha: 0.45, duration: 400, yoyo: true, repeat: -1 });
+        // The chest (Loot.js): oak and iron, lid and body apart so the lid can open. It sits on
+        // the floor (it used to bob in the air).
+        const { container, body, lid, glow, shadow } = LootFX.chest(this, cx, cy, 'wood');
+        const bobTween = null;
 
         // Store chest data for walk-on detection — no click needed
         if (!this.tutorialChests) this.tutorialChests = [];
@@ -533,7 +527,8 @@ class TutorialManager {
     openTutorialChest(roomIndex, container, _unused) {
         // Level 2 chest branch rooms — mimic or loot (identified by isChestRoom flag on room)
         if (this.isLevel2 && this.rooms[roomIndex]?.isChestRoom) {
-            const chest = (this.tutorialChests || []).find(c => c.roomIndex === 3 && !c.opened);
+            // this room's chest (it looked for room 3's, which no chest room is: none of them opened)
+            const chest = (this.tutorialChests || []).find(c => c.roomIndex === roomIndex && !c.opened);
             if (!chest) return;
             chest.opened = true;
             this.tweens.killTweensOf(chest.container);
@@ -541,6 +536,7 @@ class TutorialManager {
             if (chest.isMimic && !chest._mimicTriggered) {
                 chest._mimicTriggered = true;
                 this.cameras.main.shake(80, 0.007);
+                if (chest.lid?.active) this.tweens.add({ targets: chest.lid, y: chest.lid.y - 5, duration: 60, yoyo: true, repeat: 4 });   // it snaps
                 this.tweens.add({ targets: chest.container, angle: 15, duration: 60, yoyo: true, repeat: 4, onComplete: () => {
                     chest.container.destroy();
                     const offsets = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:1,y:-1}];
@@ -548,31 +544,22 @@ class TutorialManager {
                         const ex = chest.tileX + off.x, ey = chest.tileY + off.y;
                         if (this.world[ex]?.[ey] === this.FLOOR) {
                             const e = this.createEnemy(ex, ey, 40);
-                            e.tutorialRoomIndex = 3;
+                            e.tutorialRoomIndex = roomIndex;
                             e.sprite.setTint(0xff4444);
                         }
                     }
                     this.showStatusText(chest.tileX * this.TILE_SIZE + this.TILE_SIZE/2, chest.tileY * this.TILE_SIZE - 10, 'MIMIC!', '#ff4444');
                 }});
             } else if (!chest.isMimic) {
-                // Open animation
-                if (chest.lid) this.tweens.add({ targets: chest.lid, y: -28, angle: -30, alpha: 0, duration: 350, ease: 'Quad.easeOut', onComplete: () => chest.lid.destroy() });
-                for (let i = 0; i < 8; i++) {
-                    const a = (i / 8) * Math.PI * 2;
-                    const spark = this.add.rectangle(chest.container.x, chest.container.y, 4, 4, 0xffcc44, 1).setDepth(4);
-                    this.tweens.add({ targets: spark, x: spark.x + Math.cos(a) * 28, y: spark.y + Math.sin(a) * 28, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 400, ease: 'Quad.easeOut', onComplete: () => spark.destroy() });
-                }
-                this.time.delayedCall(300, () => { if (chest.container?.active) chest.container.destroy(); });
+                // Loot.js: the lid flips back, light and coins spill, the chest fades
+                LootFX.open(this, chest);
                 this.cameras.main.shake(50, 0.003);
 
                 // Reward: 30 glorps + small pot chance
                 this.totalGlorps = (this.totalGlorps || 0) + 30;
                 localStorage.setItem('glorps', this.totalGlorps);
                 if (this.glorpText) this.glorpText.setText(`✦ ${this.totalGlorps} Glorps`);
-                const sx = chest.tileX * this.TILE_SIZE + this.TILE_SIZE/2 - this.cameras.main.scrollX;
-                const sy = chest.tileY * this.TILE_SIZE - 10 - this.cameras.main.scrollY;
-                const ft = this.add.text(sx, sy, '+30 Glorps', { fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold', color: '#00ffaa', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(50).setScrollFactor(0);
-                this.tweens.add({ targets: ft, y: sy - 28, alpha: 0, duration: 800, ease: 'Quad.easeOut', onComplete: () => ft.destroy() });
+                LootFX.reward(this, chest.tileX * this.TILE_SIZE + this.TILE_SIZE / 2, chest.tileY * this.TILE_SIZE - 4, '+30');
                 if (Math.random() < 0.15) this.spawnUltPot(chest.tileX * this.TILE_SIZE, chest.tileY * this.TILE_SIZE);
                 else if (Math.random() < 0.10) this.spawnHealthPot(chest.tileX * this.TILE_SIZE, chest.tileY * this.TILE_SIZE);
             }
@@ -591,55 +578,22 @@ class TutorialManager {
             chest.container.y = chest.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
         }
 
-        // Open animation: lid flies up and rotates, sparks burst, then body fades
-        if (chest) {
-            // Lid pops up
-            this.tweens.add({
-                targets: chest.lid,
-                y: -28, angle: -30, alpha: 0,
-                duration: 400, ease: 'Quad.easeOut',
-                onComplete: () => chest.lid.destroy()
-            });
-            // Sparkle burst
-            for (let i = 0; i < 8; i++) {
-                const angle = (i / 8) * Math.PI * 2;
-                const spark = this.add.rectangle(
-                    chest.container.x, chest.container.y,
-                    4, 4, 0xffcc44, 1).setDepth(4);
-                this.tweens.add({
-                    targets: spark,
-                    x: spark.x + Math.cos(angle) * 24,
-                    y: spark.y + Math.sin(angle) * 24,
-                    alpha: 0, scaleX: 0.2, scaleY: 0.2,
-                    duration: 350, ease: 'Quad.easeOut',
-                    onComplete: () => spark.destroy()
-                });
-            }
-            // Body fades after short delay
-            this.time.delayedCall(350, () => {
-                this.tweens.add({
-                    targets: chest.container, alpha: 0, duration: 250,
-                    onComplete: () => chest.container.destroy()
-                });
-            });
-        } else {
-            // Fallback if chest object not found
-            this.tweens.add({
-                targets: container, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 300,
-                onComplete: () => container?.destroy()
-            });
-        }
+        // Open animation (Loot.js): the lid flips back, light and coins spill out, the chest fades
+        if (chest) LootFX.open(this, chest);
+        else this.tweens.add({ targets: container, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 300, onComplete: () => container?.destroy() });
         this.cameras.main.shake(60, 0.004);
 
         // Rewards — level 2 just gives glorps, no tutorial reward system
         let reward;
         if (this.isLevel2) {
             reward = { type: 'glorps', amount: 20, message: null };
+        } else if (this.isLevel6) {   // the Cistern's room chests: deeper, so more, and no tutorial lines
+            reward = { type: 'glorps', amount: 35, message: null };
         } else if (this.isIceTutorial) {
             const iceRewards = [
                 null, // room 0: no chest
                 { type: 'glorps', amount: 15, message: "15 Glorps! Keep pushing forward." },
-                { type: 'glorps', amount: 20, message: "20 Glorps! Ice fists are tricky — practice the freeze combo." },
+                { type: 'glorps', amount: 20, message: "20 Glorps! Freeze, then shatter: practice that combo." },
                 { type: 'glorps', amount: 15, message: "15 Glorps! The ult is powerful — save it for groups." },
                 { type: 'glorps', amount: 20, message: "20 Glorps! Careful through the traps ahead." },
                 { type: 'glorps', amount: 25, message: "25 Glorps! One more room stands between you and freedom." },
@@ -650,7 +604,7 @@ class TutorialManager {
             const fireRewards = [
                 { type: 'glorps', amount: 10, message: "10 Glorps! Keep collecting!" },
                 { type: 'glorps', amount: 20, message: "20 Glorps! You're getting the hang of it." },
-                { type: 'glorps', amount: 20, message: "20 Glorps! The lava tiles deal damage over time — use them!" },
+                { type: 'glorps', amount: 20, message: "20 Glorps! Switching elements mid-fight is how you win." },
                 { type: 'glorps', amount: 25, message: "25 Glorps! Almost there!" },
                 { type: 'glorps', amount: 25, message: "25 Glorps! That's 100 total — enough to buy your first weapon!" },
             ];
@@ -665,14 +619,8 @@ class TutorialManager {
                 this.glorpText.setText(`✦ ${this.totalGlorps} Glorps`);
                 localStorage.setItem('glorps', this.totalGlorps);
             }
-            // Floating +N glorps
-            const screenX = container.x - this.cameras.main.scrollX;
-            const screenY = container.y - this.cameras.main.scrollY - 20;
-            const ft = this.add.text(screenX, screenY, `+${reward.amount} Glorps`, {
-                fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold',
-                color: '#00ffaa', stroke: '#000', strokeThickness: 3
-            }).setOrigin(0.5).setDepth(50).setScrollFactor(0);
-            this.tweens.add({ targets: ft, y: screenY - 28, alpha: 0, duration: 800, ease: 'Quad.easeOut', onComplete: () => ft.destroy() });
+            // +N, rising off the chest (Loot.js)
+            LootFX.reward(this, container.x, container.y - 14, `+${reward.amount}`);
         } else if (reward.type === 'flame_sword') {
             this.equippedWeapons.fire = 'flame_sword';
             localStorage.setItem('equip_fire', 'flame_sword');
@@ -684,9 +632,10 @@ class TutorialManager {
             this.cameras.main.flash(300, 100, 180, 255);
         }
 
+        if (this.isTutorial) this._tutObjective('Head to the next room');
         // Fire tutorial room 3 → pit sequence; level 2/3/4 → no dialogue; others → show reward message
-        if (this.isLevel2 || this.isLevel3 || this.isLevel4) {
-            // No Glerp dialogue in real dungeon levels
+        if (this.isLevel2 || this.isLevel3 || this.isLevel4 || this.isLevel6 || !this.isTutorial) {
+            // No Glerp dialogue in real dungeon levels (the Cistern's chests fell through to the fire tutorial's lines)
         } else if (!this.isIceTutorial && roomIndex === 3) {
             this.time.delayedCall(600, () => {
                 this.showTutorialDialogue(
@@ -731,6 +680,7 @@ class TutorialManager {
 
         this._tutorialPit = { pitX, pitY, glow, ring1, ring2, ring3, pitLabel };
 
+        this._tutObjective('Jump into the pit');
         this.showTutorialDialogue(
             "It's perfectly safe! Probably. Walk onto the dark circle.",
             "Glerp"
@@ -811,11 +761,10 @@ class TutorialManager {
 
         // Second beat
         this.time.delayedCall(3000, () => {
-            this.showTutorialDialogue(
-                "Anyway! Head to the shop and buy the Flame Sword.\nIt costs 100 Glorps — exactly what you collected!",
-                "Glerp",
-                () => this.endTutorialReturnToMenu()
-            );
+            this._tutSay([
+                "Anyway! You've got the basics. Next stop: Glurp's shop.",
+                "Buy the Flame Sword. It costs 100 Glorps, exactly what you collected! Then come back for the Ice tutorial.",
+            ], () => this.endTutorialReturnToMenu());
         });
     }
 
@@ -823,12 +772,14 @@ class TutorialManager {
         const W = this.scale.width;
         const H = this.scale.height;
 
-        // Save glorps to localStorage
-        const saved = parseInt(localStorage.getItem('glorps') || '0');
-        localStorage.setItem('glorps', saved + (this.totalGlorps || 0));
+        // Save glorps to localStorage. totalGlorps is the whole balance (the HUD loads it from
+        // here and every pickup writes it back), so adding the saved figure on top of it
+        // doubled every glorp picked up in a tutorial.
+        localStorage.setItem('glorps', this.totalGlorps || 0);
 
         if (this.isIceTutorial) {
             localStorage.setItem('iceTutorialComplete', '1');
+            Progress.clear('tutorial');   // both halves done: The Gauntlet opens
             localStorage.setItem('unlocked_ice', 'true');
         } else {
             localStorage.setItem('fireTutorialComplete', '1');
@@ -849,79 +800,94 @@ class TutorialManager {
         });
     }
 
-    showTutorialDialogue(message, speakerName = null, onComplete = null) {
-        // Remove ALL existing dialogue elements
+    // Glerp's speech box, along the bottom: a panel, his portrait, the line typing itself out
+    // (a click or Enter finishes it, the next one moves on), and a page count when it's one of
+    // a run (_tutSay). Used by every level for its story beats too.
+    showTutorialDialogue(message, speakerName = null, onComplete = null, page = null) {
         this.clearTutorialDialogue();
-
-        const W = this.scale.width;
-        const H = this.scale.height;
-
-        // Track all dialogue objects so we can destroy them together
+        const W = this.scale.width, H = this.scale.height, P = UIKit.PALETTE, D = 1000;
+        const bw = Math.min(980, W - 80), bh = 132, bx = W / 2 - bw / 2, by = H - bh - 78;   // above the ult gems
         this._dialogueObjects = [];
-
-        // Background box
-        const boxBg = this.add.rectangle(W / 2, H - 100, W - 100, 120, 0x1a1a2e, 0.95)
-            .setDepth(1000).setScrollFactor(0);
-        const boxBorder = this.add.rectangle(W / 2, H - 100, W - 100, 120, 0xffaa00, 0)
-            .setDepth(1000).setScrollFactor(0);
-        boxBorder.setStrokeStyle(3, 0xffaa00, 1);
-        this._dialogueObjects.push(boxBg, boxBorder);
-
-        // Speaker name + portrait
+        const keep = o => { this._dialogueObjects.push(o); o.setScrollFactor?.(0); return o; };
+        this._dialogueObjects.push(...UIKit.panel(this, { x: bx, y: by, w: bw, h: bh, accent: P.accentGold, depth: D }).objs);
+        let tx = bx + 28;
         if (speakerName) {
-            const leftX = W / 2 - (W - 100) / 2;
-            // Name label - shifted right
-            const speakerText = this.add.text(leftX + 40, H - 145, speakerName, {
-                fontSize: '15px', fontFamily: 'monospace',
-                color: '#ffff00', stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
-            }).setDepth(1002).setScrollFactor(0);
-            this._dialogueObjects.push(speakerText);
-
-            // Portrait - shifted right, vertically centered in box
-            const portrait = this.add.sprite(leftX + 65, H - 114, 'slime_orange', 0)
-                .setScale(3.5).setDepth(1002).setScrollFactor(0);
+            const portrait = keep(this.add.sprite(bx + 62, by + bh / 2 - 22, 'slime_orange', 0).setScale(3.4).setDepth(D + 2));   // the slime fills its frame's bottom
             portrait.play('orange_idle');
-            this.tweens.add({ targets: portrait, y: H - 120, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            this._dialogueObjects.push(portrait);
+            if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, portrait, { mood: 'friend', look: () => null });   // Creatures.js
+            this.tweens.add({ targets: portrait, y: portrait.y - 4, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            keep(this.add.text(bx + 62, by + 16, speakerName.toUpperCase(), {
+                fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f6d58a', stroke: '#000', strokeThickness: 3,
+            }).setOrigin(0.5, 0).setDepth(D + 2));
+            tx = bx + 120;
         }
+        const msg = keep(this.add.text(tx, by + 22, '', {
+            fontSize: '16px', fontFamily: 'monospace', color: UIKit.CSS.textHi, lineSpacing: 6,
+            wordWrap: { width: bx + bw - 28 - tx },
+        }).setDepth(D + 1));
+        const foot = keep(this.add.text(bx + bw - 22, by + bh - 14, (page ? `${page[0]} / ${page[1]}   ` : '') + '▼ click or Enter', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#d2bf98',
+        }).setOrigin(1, 1).setDepth(D + 1).setAlpha(0));
+        // type it out, two letters a frame
+        let n = 0;
+        const typer = this.time.addEvent({ delay: 16, loop: true, callback: () => {
+            n = Math.min(message.length, n + 2);
+            msg.setText(message.slice(0, n));
+            if (n >= message.length) { typer.remove(); foot.setAlpha(1); this.tweens.add({ targets: foot, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 }); }
+        } });
+        this._dialogueTyper = typer;
+        const advance = () => {
+            if (n < message.length) { n = message.length - 2; return; }   // first press: finish the line
+            this.clearTutorialDialogue();
+            if (onComplete) onComplete();
+        };
+        this.dialogueClickHandler = advance;
+        this.input.on('pointerdown', advance);
+        this._dialogueKeyHandler = advance;
+        this.input.keyboard?.on('keydown-ENTER', advance);
+    }
 
-        // Message text
-        const messageText = this.add.text(W / 2, H - 100, message, {
-            fontSize: '16px', fontFamily: 'monospace',
-            color: '#ffffff', stroke: '#000000', strokeThickness: 2,
-            align: 'center', wordWrap: { width: W - 160 }
-        }).setOrigin(0.5).setDepth(1001).setScrollFactor(0);
-        this._dialogueObjects.push(messageText);
+    // A run of lines, one after another (page counts on each), then `onDone`.
+    _tutSay(lines, onDone = null, speaker = 'Glerp') {
+        const go = (i) => this.showTutorialDialogue(lines[i], speaker, i + 1 < lines.length ? () => go(i + 1) : onDone || (() => {}), lines.length > 1 ? [i + 1, lines.length] : null);
+        go(0);
+    }
+    // A key as it's bound right now (Settings.js), in brackets: _k('dash') → '[Space]'.
+    _k(id) { return `[${Settings.label(Settings.key(id))}]`; }
 
-        if (onComplete) {
-            const continueText = this.add.text(W / 2, H - 55, '▼ Click to continue', {
-                fontSize: '12px', fontFamily: 'monospace', color: '#ffaa00'
-            }).setOrigin(0.5).setDepth(1001).setScrollFactor(0).setAlpha(0.7);
-            this._dialogueObjects.push(continueText);
-            this.tweens.add({ targets: continueText, alpha: 1, duration: 500, yoyo: true, repeat: -1 });
+    // What to do right now, under the clock. Null clears it.
+    _tutObjective(text) {
+        const o = this._tutObj;
+        if (!text) { if (o) { o.box.destroy(); o.txt.destroy(); this._tutObj = null; } return; }
+        if (!o?.txt?.active) {
+            const box = this.add.graphics().setScrollFactor(0).setDepth(39);
+            const txt = this.add.text(this.scale.width / 2, 44, '', {
+                fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold', color: '#f6d58a', stroke: '#05060a', strokeThickness: 3,
+            }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(40);
+            this._tutObj = { box, txt };
+        }
+        const { box, txt } = this._tutObj;
+        txt.setText('◆ ' + text);
+        box.clear().fillStyle(0x0b0d16, 0.78).fillRoundedRect(txt.x - txt.width / 2 - 12, 40, txt.width + 24, txt.height + 8, 6)
+           .lineStyle(1, 0xf0b84a, 0.6).strokeRoundedRect(txt.x - txt.width / 2 - 12, 40, txt.width + 24, txt.height + 8, 6);
+        this.tweens.add({ targets: txt, scale: { from: 1.15, to: 1 }, duration: 220, ease: 'Back.easeOut' });
+    }
 
-            if (this.dialogueClickHandler) this.input.off('pointerdown', this.dialogueClickHandler);
-            this.dialogueClickHandler = () => {
-                this.input.off('pointerdown', this.dialogueClickHandler);
-                this.dialogueClickHandler = null;
-                this.clearTutorialDialogue();
-                if (onComplete) onComplete();
-            };
-            this.input.on('pointerdown', this.dialogueClickHandler);
-        } else {
-            // No callback — still require click to dismiss
-            const dismissText = this.add.text(W / 2, H - 55, '▼ Click to dismiss', {
-                fontSize: '12px', fontFamily: 'monospace', color: '#888888'
-            }).setOrigin(0.5).setDepth(1001).setScrollFactor(0).setAlpha(0.5);
-            this._dialogueObjects.push(dismissText);
-
-            if (this.dialogueClickHandler) this.input.off('pointerdown', this.dialogueClickHandler);
-            this.dialogueClickHandler = () => {
-                this.input.off('pointerdown', this.dialogueClickHandler);
-                this.dialogueClickHandler = null;
-                this.clearTutorialDialogue();
-            };
-            this.input.on('pointerdown', this.dialogueClickHandler);
+    // Once each, during a tutorial: the first full ult gem, the first time you're badly hurt.
+    _tutTips() {
+        if (!this.isTutorial || this._dialogueObjects) return;
+        const seen = this._tutSeen || (this._tutSeen = {});
+        const KEY = { fire: 'ultFire', ice: 'ultIce', lightning: 'ultLightning', cosmic: 'ultCosmic' };
+        for (const el of this.isIceTutorial ? ['fire', 'ice'] : ['fire']) {   // only what you have
+            if (!seen['gem_' + el] && (this.ultGems?.[el] || 0) >= this.ultChargeMax) {
+                seen['gem_' + el] = true;
+                this.showTutorialDialogue(`Your ${el.toUpperCase()} gem is full! Cast it with ${this._k('ult')} while holding ${el}, or ${this._k(KEY[el])} from any element.`, 'Glerp');
+                return;
+            }
+        }
+        if (!seen.hurt && this.health > 0 && this.health < (this.maxHealth || 100) * 0.4) {
+            seen.hurt = true;
+            this.showTutorialDialogue(`You're hurt! Slimes sometimes drop red HEALTH POTS: walk over one to heal. ${this._k('dash')} dashes you out of a crowd, and you can't be hit mid-dash.`, 'Glerp');
         }
     }
 
@@ -939,6 +905,8 @@ class TutorialManager {
             this.input.off('pointerdown', this.dialogueClickHandler);
             this.dialogueClickHandler = null;
         }
+        if (this._dialogueKeyHandler) { this.input.keyboard?.off('keydown-ENTER', this._dialogueKeyHandler); this._dialogueKeyHandler = null; }
+        if (this._dialogueTyper) { this._dialogueTyper.remove(); this._dialogueTyper = null; }
     }
 
     // ─── PAUSE MENU ────────────────────────────────────────────────────────────
@@ -1012,8 +980,7 @@ class TutorialManager {
         for (let pos of room3FireImmune) {
             const enemy = this.createEnemy(pos.x, pos.y, 30);
             enemy.tutorialRoomIndex = pos.roomIndex;
-            enemy.fireImmune = true;
-            enemy._fireMark = this.spawnFireMark(enemy);
+            this._tagResist(enemy, 'fire');
         }
 
         // Room 3: ult-inhibiting enemies
@@ -1073,8 +1040,7 @@ class TutorialManager {
         for (let pos of room1FireImmune) {
             const e = this.createEnemy(pos.x, pos.y, 25);
             e.tutorialRoomIndex = pos.roomIndex;
-            e.fireImmune = true;
-            e._fireMark = this.spawnFireMark(e);
+            this._tagResist(e, 'fire');
         }
         for (let pos of room1Inhibitors) {
             const e = this.createEnemy(pos.x, pos.y, 35);
@@ -1105,8 +1071,7 @@ class TutorialManager {
         for (let pos of room2IceElemental) {
             const e = this.createEnemy(pos.x, pos.y, 60);
             e.tutorialRoomIndex = pos.roomIndex;
-            e.iceImmune = true;   // only hurt by shatter (damageEnemyIce when frozen)
-            e._iceMark = this.spawnIceMark(e);
+            this._tagResist(e, 'fire');   // the ice tutorial's lesson: fire barely touches these, ice does
         }
 
         // Room 3: ice ult gate — 10 snipers spread across the room.
@@ -1137,11 +1102,11 @@ class TutorialManager {
         }
         for (let pos of room5FireImmune) {
             const e = this.createEnemy(pos.x, pos.y, 25);
-            e.tutorialRoomIndex = 5; e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
+            e.tutorialRoomIndex = 5; this._tagResist(e, 'fire');
         }
         for (let pos of room5IceElemental) {
             const e = this.createEnemy(pos.x, pos.y, 60);
-            e.tutorialRoomIndex = 5; e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
+            e.tutorialRoomIndex = 5; this._tagResist(e, 'fire');   // the ice tutorial's lesson: fire barely touches these, ice does
         }
 
         // Spawn traps in room 4
@@ -1159,11 +1124,11 @@ class TutorialManager {
         ];
         for (const pos of room6FireImmune) {
             const e = this.createEnemy(pos.x, pos.y, 30); e.tutorialRoomIndex = 6;
-            e.fireImmune = true; e._fireMark = this.spawnFireMark(e);
+            this._tagResist(e, 'fire');
         }
         for (const pos of room6IceElemental) {
             const e = this.createEnemy(pos.x, pos.y, 60); e.tutorialRoomIndex = 6;
-            e.iceImmune = true; e._iceMark = this.spawnIceMark(e);
+            this._tagResist(e, 'fire');   // the ice tutorial's lesson: fire barely touches these, ice does
         }
         for (const pos of room6Ranged) {
             this.createRangedEnemy(pos.x, pos.y, 6);
@@ -1173,7 +1138,6 @@ class TutorialManager {
         this.spawnPortal(53, 80, 6);
     }
 
-    // spawnFireMark, spawnIceMark moved to LevelManager — generic visual helpers
     // already used by Level 2/3's elemental-immune enemies, not tutorial-exclusive
 
     // ─── FLOOR TRAPS ───────────────────────────────────────────────────────────

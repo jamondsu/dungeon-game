@@ -40,10 +40,19 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-
     create(data) {
         this.currentLevelIndex = data?.levelIndex ?? 0;
+        // Kept so later setup can read the launch flags (continueRun, tutorialStage)
+        // without threading `data` down through every init helper.
+        this._sceneData = data || {};
         this.tutorialStage = data?.tutorialStage ?? 0;
+        // Water lives on the scene object, which outlives a restart: the Cistern's (or a flooded
+        // Tower floor's) tiles were still there, unseen, on the next level.
+        this.waterTiles = null; this.steamTiles = null;
+        // A Tower run (Tower.js): which floor, and what the run carries up from the last one
+        this.towerRun = data?.tower ? { ...data.tower } : null;
+        this.trainingRun = !!data?.training;   // Training.js: the Training Ground
+        this._train = null;
 
         // ── MANDATORY STATE RESET — must run before anything else ────────────
         if (this.input?.keyboard) this.input.keyboard.enabled = true;
@@ -53,7 +62,17 @@ class GameScene extends Phaser.Scene {
 
         // Reset death/pause flags — these block input if left over from previous run
         this._deathScreenActive = false;
+        // The scene clock outlives a restart: leaving through the pause menu (restart, main menu, then back into
+        // any level) used to start the next game with time still frozen (timers held, cooldowns stuck after one
+        // shot, the run clock still) until Esc paused and unpaused it. Thaw it first.
+        if (this.time?._heldNow != null) { this._frozenTweens = null; this._freezeClock?.(false); }   // (its frozen tweens died with the old level)
         this._pauseMenuOpen     = false;
+        this._bannerActive = false; this._bannerClosing = null; this._encounterQueue = [];   // nor a first-encounter card left open
+        // Poison and roots end on timers that a restart throws away: a run that ended poisoned
+        // left traps unable to poison again, and one that ended rooted left you unable to walk
+        // on any level that does not clear roots itself.
+        this.playerPoisoned = false; this._poisonTickCount = 0;
+        this._playerRooted  = false; this._playerRootUntil = 0; this._ccImmuneUntil = 0;
 
         // Remove any extra cameras added by the death screen
         this.cameras.cameras.slice(1).forEach(c => this.cameras.remove(c));
@@ -99,11 +118,21 @@ class GameScene extends Phaser.Scene {
         this.isLevel2                = false;
         this.isLevel3                = false;
         this.isLevel4                = false;
+        this.isLevel6                = false;
         this._roomHadEnemies         = {};
         this._ultNagShown            = false;
         this._iceUltUsed             = false;
         this._lightningUltUsed       = false;
         this.voltslimeBoss           = null;
+        this.voidSovereignBoss       = null;
+        this.fractureCore            = null;
+        this._glide                  = null;
+        this.fractureCoreActive      = false;   // a retried level 4 spawns its core again
+        if (typeof Music !== 'undefined') Music.rate = 1;   // (the Fracture may have left the music quickened)
+        this._fractureCoreReady      = false;
+        this._debrisTiles            = [];
+        this._debrisWarnings         = [];
+        this._fractureWeakPoints     = [];
         this.lightningUltActive      = false;
         this.lightningUltInvuln      = false;
         this.lightningUltEndTime     = 0;
@@ -152,7 +181,10 @@ class GameScene extends Phaser.Scene {
         };
 
         this.damageLevel = 1;
-        this.damageScaling = 1.0;
+        this.damageScaling = 1.0;     // PLAYER weapon output. Not a difficulty knob --
+                                      // 65 weapon sites read it. See applyFloorScaling.
+        this.enemyHealthScale = 1.0;  // set per floor in create(), before enemies spawn
+        this.enemyDamageScale = 1.0;
 
         // Ult stages — loaded from shop
         this.ultStage_fire      = parseInt(localStorage.getItem('ultStage_fire')      || '1');
@@ -163,6 +195,10 @@ class GameScene extends Phaser.Scene {
         this._iceUltDetonate      = null;
         this._iceUltSweepsFired   = 0;
         this._lightningUltSentries = null;
+        this._thunderheadTimerText = null; // stale references survive scene restarts otherwise
+        this._thunderheadAura      = null;
+        this._thunderheadOuterRing = null;
+        this._cloudSprite          = null;
         this._level3KeysCollected  = 0;
         this._voidKeys             = [];
         this._bossDoor             = null;
@@ -182,7 +218,7 @@ class GameScene extends Phaser.Scene {
         this.combustionBurstMultiplier = 8.0;
         this.ignitionActive = false;
         this.ignitionEndTime = 0;
-        this.ignitionDuration = 5000;
+        this.ignitionDuration = 8000;
         this.ignitionPierceTrails = [];
         this.ignitionTrailDuration = 2000;
 
@@ -198,8 +234,8 @@ class GameScene extends Phaser.Scene {
         this.tsunamiPuddles = [];
         this.tsunamiFrozenEnemies = [];
         this.tsunamiMaxRadius = 18;
-        this.tsunamiWaveDuration = 2200;
-        this.tsunamiFreezeDuration = 3000;
+        this.tsunamiWaveDuration = 1000;    // the ice ult's wave going out (was 2.2s)
+        this.tsunamiFreezeDuration = 3120;   // (2026-10-19: the opening freeze shatters itself 3s in; was 4000)  // the ice ult holds everything this long, then it shatters
         this.tsunamiFreezeMultiplier = 1.5;
         this.tsunamiPuddleDuration = 9000;
         this.tsunamiPuddleSlowDuration = 900;
@@ -217,6 +253,13 @@ class GameScene extends Phaser.Scene {
         this.thunderheadGlideX = 0;
         this.thunderheadGlideY = 0;
 
+        // Every ult's state (the scene object outlives a restart: dying mid-ult carried it into the next run,
+        // and its per-frame watchers with it, since they run while these say the ult is up)
+        this.ignitionActive = false; this._barrageOn = false; this._scorchHealt = 0;
+        this._iceFrostUntil = 0; this._iceFrostAt = 0; this._iceShellUntil = 0; this._iceZoomed = false; this._coldEdge = null;
+        this.tsunamiActive = false; this._iceUltDomainActive = false; this._iceUltDetonate = null;
+        this._forkStop = false; this._forkAfter = null; this._forkSnapped = false;
+        this._ultArmor = null; this._overflowBonus = {}; this._ultHit = null;
         // LIGHTNING ULT state
         this.lightningUltActive = false;
         this.lightningUltInvuln = false;
@@ -226,16 +269,43 @@ class GameScene extends Phaser.Scene {
         this.voltslimeBoss = null;
 
         // game state
-        this.maxHealth = 100;
+        // The stats bought at Glurp's (Stats.js): max HP here, damage and armor read by
+        // CombatSystem (_dmgOutMult, takeDamage).
+        this.maxHealth = PlayerStats.maxHealth();
         this.health = this.maxHealth;
+        this.statDamageMult = PlayerStats.damageMult();
+        this.statTakenMult = PlayerStats.takenMult();
+        PlayerStats.startRun(this);   // the talents every 5th stat level grants (this._tal)
+        // Relics.js: what the worn relics trade. _mods is what the game reads (a Tower run adds its boons to it)
+        this._relicMods = Relics.mods();
+        this.statDamageMult *= this._relicMods.dmg;
+        this.statTakenMult *= this._relicMods.taken;
+        this.maxHealth = Math.max(10, this.maxHealth + this._relicMods.hp);
+        this.health = this.maxHealth;
+        this._mods = this._relicMods;
         this.lastPlayerDamageTime = 0;
         this.playerDamageCooldown = 150;
 
-        const seed = 12345;
+        const seed = this.towerRun ? (this.towerRun.seed + this.towerRun.floor * 7919) % 2147483647 : 12345;
         this.rng = this.createRng(seed);
+        // Floor scaling must land before anything spawns: enemy HP is baked in at
+        // creation, so setting it afterwards would leave the current floor unscaled.
+        this.applyFloorScaling();
+
         this.world = this.generateWorld();
 
-        this.renderWorld();
+        this._vfxVoidVeil = null;   // set again by a backdrop that wants the dark lifted off the void
+        this._vfxRenderWorld();   // Visuals.js: generated stone and brick (WorldGen.renderWorld is TD's now)
+
+        // Atmosphere behind the tiles. Transitions.atmosphere was written for exactly this
+        // and only ever wired into the level-select carousel, so during play every level
+        // rendered its void as flat black. The Cistern is underwater, so it gets the flood
+        // field -- scrollFactor 0 at depth -9..-5, i.e. behind every tile.
+        if (this.isLevel6 && typeof MenuArt !== 'undefined' && MenuArt.cistern) {
+            this._atmoObjs = MenuArt.cistern(this);   // Menus.js: a drowned hall, caustics, light
+        } else if (this.isLevel6 && typeof Transitions !== 'undefined' && Transitions.atmosphere) {
+            this._atmoObjs = Transitions.atmosphere(this, 'flood', 0x3fb6e8);
+        }
         this.placePlayer();
 
         // create animations BEFORE spawning enemies
@@ -284,6 +354,7 @@ class GameScene extends Phaser.Scene {
         this.groundDrops = [];
         this.enemyProjectiles = [];
         this.spawnEnemies();
+        this._spreadResistance();   // a share of every level's enemies resist an element (LevelManager)
         if (this.isLevel4) this._renderCrumbleZones();
 
         // create fireball graphic
@@ -314,6 +385,21 @@ class GameScene extends Phaser.Scene {
         if (localStorage.getItem('unlocked_cosmic') === 'true') this.unlockedElements.add('cosmic');
 
         // Weapon loadout - load from localStorage
+        // MIGRATION. Saves predating the rework hold 'engineering_degree' in equip_lightning
+        // and in unlockedWeapons. That id no longer dispatches to anything, so the weapon
+        // switch would fall through to its default and a player who had bought and equipped
+        // it would silently be holding Flame Fists on lightning. Rewrite it on load.
+        try {
+            if (localStorage.getItem('equip_lightning') === 'engineering_degree') {
+                localStorage.setItem('equip_lightning', 'ball_lightning');
+            }
+            const owned = JSON.parse(localStorage.getItem('unlockedWeapons') || '[]');
+            if (Array.isArray(owned) && owned.includes('engineering_degree')) {
+                const migrated = owned.map(w => w === 'engineering_degree' ? 'ball_lightning' : w);
+                localStorage.setItem('unlockedWeapons', JSON.stringify(migrated));
+            }
+        } catch (e) { /* corrupt storage must not block the level from loading */ }
+
         this.equippedWeapons = {
             fire: localStorage.getItem('equip_fire') || 'flame_fists',
             ice: localStorage.getItem('equip_ice') || 'ice_fists',
@@ -344,27 +430,25 @@ class GameScene extends Phaser.Scene {
         this.lightningCooldown = 600;
         this.lightningMaxRange = 20;
 
-        // CONDUCTOR NODE SYSTEM
-        this.lightningNodes = [];
-        this.lightningNodeMax = 3;
-        this.lightningNodeRadius = 5;
-        this.lightningNodeChainRange = 16;
-        this.lightningNodeDamage = 1.5;
-        this.lightningNodeZapInterval = 600;
-        this.lightningNodeDuration = 18000;  // 18s — long enough to be strategic
+        // Engineering Degree towers
+        this.engineerTowers = [];
+        this.engineerTowersCrafting = [];
+        this.teslaBolts = [];      // Tesla Coil traveling chain bolts
+        this.engineerBullets = []; // Machine Gun / Sniper Tower traveling bullets
 
-        // Node battery stages — each bolt hit charges one stage
-        this.lightningNodeMaxStage = 3;
-        this.lightningNodeBaseRadius   = [0, 3, 4, 5];   // normal enemy range per stage (tiles)
-        this.lightningNodeExtendRadius = [0, 0, 6, 8];   // superconducted range per stage
-        this.lightningNodeStageColors  = [0x334455, 0xff2200, 0xff8800, 0xfff0aa]; // dormant/red/orange/gold-white
-
-        this.lightningNodePreview = null;
-        this.lightningNodesCrafting = [];
-
-        // Orb scraps — currency for nodes
+        // Orb scraps — currency for nodes.
+        // A fresh entry starts the run and wipes the bank; only an explicit
+        // `continueRun: true` in the scene data carries it over. Nothing passes that yet,
+        // so today the bank spans the rooms of one level, which is the span that matters:
+        // bank through the early rooms, spend in the hard ones at the end. When floor
+        // chaining lands it passes the flag and the bank follows the player down.
         this.orbScraps = 0;
-        this.orbNodeCost = 5;
+        if (typeof this.beginScrapRun === 'function') {
+            if (this._sceneData?.continueRun) this.loadScrapBank();
+            else this.beginScrapRun();
+        }
+        // Gadgets: the two you carry, every one ready at the start of a level (FieldKit.js).
+        this.beginGadgetRun();
         this.orbRefundPct = 0.4;
         this.orbDropChance = 0.08;
         this.orbPickupRadius = 3;      // tiles
@@ -379,7 +463,7 @@ class GameScene extends Phaser.Scene {
         this.nodeChannelVisual = null;
 
         // Superconductor mechanic
-        this.superConductDuration = 10000;
+        this.superConductDuration = 5000;   // the orb's tuned 5s (this 10s was read only by unused code)
 
         this.stormCloud = null;
         this.stormCloudRadius = 8;
@@ -409,7 +493,7 @@ class GameScene extends Phaser.Scene {
         this.cosmicChannelSecondsPerCharge = 2; // seconds of channeling per charge
         this.cosmicChannelLastCharge = 0;         // last time a charge was earned
         this.cosmicChannelVisual = null;
-        this.cosmicDropChance = 0.5; // 50% chance on enemy death
+        this.cosmicDropChance = 0;   // Cosmic.js: the cosmic gem fills with time; kills drop nothing
 
         this.cosmicCharging = false;
         this.cosmicChargeStartTime = 0;
@@ -427,9 +511,9 @@ class GameScene extends Phaser.Scene {
         // Black hole ult
         this.cosmicBlackHole = null;
         this.cosmicBlackHoleProjectile = null;
-        this.cosmicBlackHoleDuration = 7000; // 5 seconds
+        this.cosmicBlackHoleDuration = 4000; // then it collapses (ElementSystem._cosmicCollapse)
         this.cosmicBlackHoleRadius = 6; // tiles
-        this.cosmicBlackHoleMarkInterval = 1500;
+        this.cosmicBlackHoleMarkInterval = 1000;  // 3 marks over the 4s pull (the cap)
         this.cosmicBlackHoleSpeed = 50; // projectile speed
         this.cosmicInfiniteBeamActive = false;
         this.cosmicInfiniteBeamEndTime = 0;
@@ -444,6 +528,14 @@ class GameScene extends Phaser.Scene {
         this.lastCosmicDashTime = 0;
         this.cosmicDashStunDuration = 800; // 0.8s stun
         this.cosmicDashDamage = 3.0; // damage per enemy hit
+        // Dash (Space, any element): ElementSystem.playerDash
+        this.DASH_TILES = 3;
+        this.DASH_COOLDOWN = 1100;   // ms
+        this.DASH_IFRAMES = 220;     // ms untouchable from the start of a dash
+        this.FIRE_DASH = { RUSH: 12, STAGGER: 300, OPEN_MS: 600, ERUPT: 16 };   // its hit going through, the stagger, the fissure's wait, each eruption's burst (x damageScaling)
+        this._dashReadyAt = 0;
+        this._dashInvulnUntil = 0;
+        this._lastMoveDir = { x: 0, y: 1 };
 
         // Visual battery display
         this.cosmicBatteryDisplay = null;
@@ -458,21 +550,10 @@ class GameScene extends Phaser.Scene {
             }
         });
 
-        this.input.keyboard.on('keydown-ONE', () => {
-            this.switchToElement('fire');
-        });
-
-        this.input.keyboard.on('keydown-TWO', () => {
-            this.switchToElement('ice');
-        });
-
-        this.input.keyboard.on('keydown-THREE', () => {
-            this.switchToElement('lightning');
-        });
-
-        this.input.keyboard.on('keydown-FOUR', () => {
-            this.switchToElement('cosmic');
-        });
+        // Every binding comes from Settings.js (the lobby's settings panel rebinds them).
+        for (const el of ['fire', 'ice', 'lightning', 'cosmic']) {
+            this.input.keyboard.on('keydown-' + Settings.key(el), () => this.switchToElement(el));
+        }
 
         // Element ultimate abilities
         this.ultActive = false;
@@ -480,7 +561,16 @@ class GameScene extends Phaser.Scene {
         // ULT CHARGE METER (replaces per-element cooldowns)
         this.ultCharge = 0;
         this.ultChargeMax = 100;
-        this.ultChargeSwitchPenalty = 25;
+        this.ultChargeSwitchPenalty = 25;   // no longer applied: see switchToElement
+
+        // FOUR ULT GEMS, one per element (see ElementSystem.activateUlt and _ultCfg). Each is
+        // ultChargeMax deep. ultCharge above just mirrors the gem of the element you hold, for
+        // anything that still reads it.
+        this.ultGems = { fire: 0, ice: 0, lightning: 0, cosmic: 0 };
+        this._ultLockUntil = 0;          // shared cooldown between casts
+        this._ultNoChargeUntil = {};     // per element: sealed while its own ult is still working
+        this._lastUltHit = null;         // set by the damage choke points, read by gainUltCharge
+        this._ultReadyAt = {}; this._ultDenyAt = {}; this._ultCastAt = {}; this._ultFlashUntil = {};
 
         // Active ult drain tracking
         this.ultDrainActive = false;
@@ -511,6 +601,21 @@ class GameScene extends Phaser.Scene {
         this._magmaRippleMaxCharge = 12000; // 12 seconds
         this._magmaRippleReady     = false;
         this._magmaStaffFireballCount = undefined;
+        // Heat is per-RUN state. Without an explicit reset it would survive a restart on
+        // the scene object and you would start a fresh run at whatever tier you died on —
+        // the same class of leak as the wisp upgrade fields.
+        this._magmaHeat     = 0;
+        this._magmaLastHit  = 0;
+        this._magmaHeatPrev = 0;
+        // Kindling state is per-run for the same reason. _kindleMarked especially: it
+        // holds enemy references, so carrying it across a restart would keep destroyed
+        // objects alive and leave their meters to be swept against a dead scene.
+        this._lastKindleTime     = 0;
+        this._kindleIgniteUntil  = 0;
+        this._kindleIgniteReady  = 0;
+        this._kindleBullets      = [];
+        this._kindleMarked       = null;
+        this._kindleTarget       = null;
         this._magmaRippleBarBg     = null;
         this._magmaRippleBarFill   = null;
         this._magmaRippleLabel     = null;
@@ -518,54 +623,69 @@ class GameScene extends Phaser.Scene {
         this._magmaOrbCount        = 0;
 
         // E key to activate ult
-        this.input.keyboard.on('keydown-E', () => {
+        this.input.keyboard.on('keydown-' + Settings.key('ult'), () => {
             // If black hole projectile is in flight, E detonates it
             if (this.cosmicBlackHoleProjectile) {
                 this.detonateCosmicBomb();
                 return;
             }
-            // Ice domain E detonation (stage 2+)
-            const iceUltStage = parseInt(localStorage.getItem('ultStage_ice') || '1');
-            if (this.currentElement === 'ice' && this._iceUltDomainActive && this._iceUltDetonate && iceUltStage >= 2) {
-                this._iceUltDetonate();
-                return;
-            }
+            // A second ice press shatters everything the ice ult froze (any stage now)
+            if (this.currentElement === 'ice' && this._iceFrostEarly()) return;   // ends the ice ult early
             this.activateUlt();
 
-            // Tutorial room 1 (fire tutorial only): track ult usage, then unlock element switching
-            if (this.isTutorial && !this.isIceTutorial && this.getCurrentPlayerRoom() === 1) {
-                this._ultUsedInRoom2 = true;
-                this.tutorialWeaponLocked = false;
-                const room1Enemies = this.enemies.filter(e => e.tutorialRoomIndex === 1);
-                if (room1Enemies.length === 0 && this._roomHadEnemies?.[1]) {
-                    this.onTutorialRoomClear(1);
-                }
-            }
-            // Ice tutorial room 3: track ice ult usage
-            if (this.isIceTutorial && this.currentElement === 'ice' && this.getCurrentPlayerRoom() === 3) {
-                this._iceUltUsed = true;
-                const room3Enemies = this.enemies.filter(e => e.tutorialRoomIndex === 3);
-                if (room3Enemies.length === 0 && this._roomHadEnemies?.[3]) {
-                    this.onTutorialRoomClear(3);
-                }
-            }
+            // The two tutorial rooms that ask for an ult (shared with Z/X/C/V, see castUlt).
+            // Pressing E counts whether or not the ult went off, as it always did.
+            this._tutorialUltGate(this.currentElement);
         });
 
-        // SPACE key — continuous laser only when cosmic ult is active
-        this.input.keyboard.on('keydown-SPACE', () => { /* cosmic beam sidelined */ });
+        // Z/X/C/V: cast the fire / ice / lightning / cosmic ult from whatever element you're
+        // holding (E still casts the held element's). See ElementSystem.castUlt.
+        for (const [key, el] of [[Settings.key('ultFire'), 'fire'], [Settings.key('ultIce'), 'ice'], [Settings.key('ultLightning'), 'lightning'], [Settings.key('ultCosmic'), 'cosmic']]) {
+            this.input.keyboard.on('keydown-' + key, () => {
+                if (el === 'cosmic' && this._csVDown?.()) return;   // Cosmic.js stage 2: tap vs hold
+                this.castUlt(el);
+            });
+        }
+        this.input.keyboard.on('keyup-' + Settings.key('ultCosmic'), () => this._csVUp?.());
 
-        // Cosmic dash: hold Shift to charge, release to dash in last moved direction
-        this.shiftKey = this.input.keyboard.addKey('SHIFT');
+        // SPACE — dash, any element. Queued here and spent in update (so it reads the movement
+        // keys' direction there). Not polled with JustDown: a tap whose down and up land in the
+        // same frame clears Key._justDown before update ever sees it, and the dash is lost.
+        this.spaceKey = this.input.keyboard.addKey(Settings.key('dash'));
+        this.input.keyboard.on('keydown-' + Settings.key('dash'), () => { this._dashQueued = true; });
 
-        this.input.keyboard.on('keyup-SPACE', () => { /* cosmic beam sidelined */ });
+        // Cosmic dash: Shift dashes toward the mouse (Space, holding cosmic, dashes the way you move)
+        this.shiftKey = this.input.keyboard.addKey(Settings.key('cosmicDash'));
+
+        // M — mute / unmute every sound (Sound.js; remembered between sessions)
+        this.input.keyboard.on('keydown-' + Settings.key('mute'), () => {
+            const m = Sfx.toggleMute();
+            this.showStatusText(this.player.x, this.player.y - 28, m ? 'SOUND OFF' : 'SOUND ON', '#d2bf98');
+        });
 
         // F key — cosmic charge channeling (sidelined)
-        this.input.keyboard.on('keydown-F', () => { /* cosmic channeling sidelined */ });
+        // F — the second gadget slot (Q is the first; FieldKit.useGadget)
+        this.input.keyboard.on('keydown-' + Settings.key('gadget2'), () => {
+            if (this._pauseMenuOpen || this._deathScreenActive) return;
+            this.useGadget(1, this.pointerX, this.pointerY);
+        });
         this.input.keyboard.on('keyup-F', () => { /* cosmic channeling sidelined */ });
         this.cameras.main.setBounds(0, 0, this.WORLD_WIDTH * this.TILE_SIZE, this.WORLD_HEIGHT * this.TILE_SIZE);
 
         // create HUD
         this.createHUD();
+        // What the death screen's run summary reads (HUD._deathSummary). The Tower adds
+        // this.towerRun = { floor, best } when it starts a run.
+        this._runStats = { t0: this.time.now, kills: 0, glorps0: this.totalGlorps || 0, dmg: {}, elTime: {}, tEnd: 0 };
+        this._lastCombatAt = -1e9;
+        if (!this.trainingRun) Telemetry.begin(this); else this._tele = null;   // the run's record (Telemetry.js)
+        this.events.once('shutdown', () => Telemetry.end(this, 'quit'));   // left mid-level
+        this._fragsThisLevel = 0;   // fragments paid this level (Progress.announce)
+        this.allies = [];           // the decoy now, voidlets later (CombatSystem._addAlly)
+        this._musicCheckAt = 0;     // HUD._updateMusic (the scene object outlives a restart)
+        this._frostShieldUntil = 0; // the Icicle Cannon's Frost Shield
+        this._frostHazeMult = 1;    // a Frostborn's haze (LevelManager._frostUpdate)
+        this._ultCfgCache = null;   // its key labels follow the keybinds (Settings.js)
 
         // ── DEV MODE ──────────────────────────────────────────────────────
         // Enable via: localStorage.setItem('devMode', 'true')
@@ -580,7 +700,16 @@ class GameScene extends Phaser.Scene {
         // for mobile
         this.createTouchControls();
 
-        this.keys = this.input.keyboard.addKeys('W,A,S,D');
+        // named W/A/S/D throughout the code, whatever they're bound to
+        this.keys = { W: this.input.keyboard.addKey(Settings.key('up')), A: this.input.keyboard.addKey(Settings.key('left')),
+                      S: this.input.keyboard.addKey(Settings.key('down')), D: this.input.keyboard.addKey(Settings.key('right')) };
+        // Screen shake, scaled (or switched off) by the setting
+        const _cam = this.cameras.main;
+        if (!_cam._shakeScaled) {
+            _cam._shakeScaled = true;
+            const _shake = _cam.shake.bind(_cam);
+            _cam.shake = (d, i, ...r) => { const m = Settings.shake(); return m > 0 ? _shake(d, (i ?? 0.05) * m, ...r) : _cam; };
+        }
 
         // fireball projectiles
         this.fireballs = [];
@@ -593,41 +722,61 @@ class GameScene extends Phaser.Scene {
         this.iceballCooldown = 600;
         this.fireballMaxRange = 30;
 
-
         // hold mouse to shoot fireballs continuously
         this.isPointerDown = false;
+        this._jetLit = false; this._fuel = 1; this._fuelDryUntil = 0;   // Ignition's flamethrower starts each run out, on a full tank
         this.pointerX = 0;
         this.pointerY = 0;
 
-        // Q toggles lightning node placement mode
-        this.lightningNodeMode = false;
-        this._nodePlacementRing = null; // circle showing placement range around player
-        this.input.keyboard.on('keydown-Q', () => {
-            if (this.currentElement !== 'lightning') return;
-            this.lightningNodeMode = !this.lightningNodeMode;
-            if (this.lightningNodeMode) {
-                this.showNodePlacementRing();
-            } else {
-                this.clearNodeMode();
-            }
+        // ── FIELD KIT INPUT ──────────────────────────────────────────────────
+        // Q used to toggle Engineering Degree's tower build mode, gated on lightning being
+        // the active element AND Engineering Degree being the equipped lightning weapon.
+        // Both gates are gone: the Field Kit is a passive, so its controls work in every
+        // element and cost no weapon slot. The tower build mode itself is unhooked here
+        // rather than deleted -- TowerDefenseScene proxies into the same implementation in
+        // ElementSystem, and removing it would black-screen that mode.
+        //
+        // Q throws the selected gadget, B opens the purchase menu, the wheel cycles (the
+        // wheel was the tower selector, so it is free now).
+        this.engineerBuildMode = false;          // kept false: update loops still read it
+        this.engineerSelectedTowerType = 'tesla_coil';
+        this._engineerBuildRing = null;
+
+        // Q — the first gadget slot (F is the second)
+        this.input.keyboard.on('keydown-' + Settings.key('detonate'), () => {   // Ignition: every kindled mark goes off now
+            if (this._pauseMenuOpen || this._deathScreenActive || this._encased?.()) return;
+            this._kindleDetonateAll?.();
+        });
+        this.input.keyboard.on('keydown-' + Settings.key('gadget1'), () => {
+            if (this._pauseMenuOpen || this._deathScreenActive) return;
+            this.useGadget(0, this.pointerX, this.pointerY);
         });
 
+        this.input.mouse?.disableContextMenu();   // right-click is a game input (the Twin Collapse anchor)
         this.input.on('pointerdown', (pointer) => {
             if (this._pauseMenuOpen || this._deathScreenActive) return;
+            if (this._dialogueObjects) return;   // a click on Glerp's box only moves the talk on
+            if (this._towerPicking) return;      // Tower.js: choosing a pick
+            if (this._train && Training.overPanel(this, pointer)) return;   // Training.js: a click on its panel
+            if (pointer.button === 2 && this._cs?.tf) { this._csPointerDown?.(pointer); return; }   // Cosmic.js: right-click moves the Twin Collapse anchor
             if (pointer.button !== 0) return;
+            // A held Displacer group consumes the next click. Checked before everything else
+            // -- including the level-4 weak point and the storm cloud -- because leaving the
+            // group in limbo to fire a weapon is never what the player meant.
+            if (this.displacerPending()) { const _a = this._aim(pointer); this.placeDisplaced(_a.x, _a.y); return; }
+            // Cosmic.js stage 2: while transforming, clicks aim the drop or throw Twin Collapse
+            if (this._csPointerDown?.(pointer)) return;
             if (this._devTeleportMode) return; // teleport mode consumes left-click
 
-            // Level 4 — during surface window, clicks ON the active weak point route to
-            // the rhythm system. Clicks elsewhere fall through to normal weapon fire.
-            if (this.isLevel4 && this.fractureCore?._surfaced && this._fractureWeakPoints?.length) {
-                const worldX = pointer.x + this.cameras.main.scrollX;
-                const worldY = pointer.y + this.cameras.main.scrollY;
-                if (this._isClickOnActiveWeakPoint(worldX, worldY)) {
-                    this._tryHitCurrentWeakPoint(worldX, worldY);
-                    return;
-                }
-                // not on the weak point — fall through to normal combat below
+            // Level 4: while the Fracture Core's rhythm plays, clicks hit its notes (LevelManager._tryHitCurrentWeakPoint).
+            if (this.isLevel4 && this.fractureCore?.state === 'rhythm') {   // the rhythm: a click is for the notes, not the weapon
+                const _a = this._aim(pointer);
+                this._tryHitCurrentWeakPoint(_a.x + this.cameras.main.scrollX, _a.y + this.cameras.main.scrollY);
+                this.isPointerDown = true;   // (held, for the slides)
+                return;
             }
+
+            // (Ignition's marks go off on a key now, Settings 'detonate': a click only fires)
 
             if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
                 this.throwLightning();
@@ -635,55 +784,89 @@ class GameScene extends Phaser.Scene {
             }
 
             if (this.currentElement === 'lightning') {
-                if (this.lightningNodeMode) {
-                    const worldX = pointer.x + this.cameras.main.scrollX;
-                    const worldY = pointer.y + this.cameras.main.scrollY;
-                    const tileX = Math.floor(worldX / this.TILE_SIZE);
-                    const tileY = Math.floor(worldY / this.TILE_SIZE);
-                    this.placeLightningNode(tileX, tileY);
-                } else if ((this.equippedWeapons?.lightning || 'lightning_fists') === 'lightning_fists') {
+                // The engineerBuildMode branch that used to sit here placed a tower on
+                // left-click. Towers are no longer buildable in the overworld, so a click
+                // on lightning is always just the weapon firing.
+                if ((this.equippedWeapons?.lightning || 'lightning_fists') === 'lightning_fists') {
                     this.isPointerDown = true;
-                    this.pointerX = pointer.x;
-                    this.pointerY = pointer.y;
-                    this.fireEquippedWeapon(pointer.x, pointer.y);
+                    const _a = this._aim(pointer);
+                    this.pointerX = _a.x;
+                    this.pointerY = _a.y;
+                    this.fireEquippedWeapon(_a.x, _a.y);
                 } else {
                     this.isPointerDown = true;
-                    this.pointerX = pointer.x;
-                    this.pointerY = pointer.y;
-                    this.fireEquippedWeapon(pointer.x, pointer.y);
+                    const _a = this._aim(pointer);
+                    this.pointerX = _a.x;
+                    this.pointerY = _a.y;
+                    this.fireEquippedWeapon(_a.x, _a.y);
                 }
+                return;
+            }
+
+            // Cosmic.js: every cosmic weapon casts on a click (or a hold); Collapse mode is retired.
+            if (this.currentElement === 'cosmic' && this._csCast) {
+                this.isPointerDown = true;
+                const _a = this._aim(pointer);
+                this.pointerX = _a.x;
+                this.pointerY = _a.y;
+                this._csClickAt = this.time.now;
+                this.fireEquippedWeapon(_a.x, _a.y);
                 return;
             }
 
             // Collapse decay phase — click launches orbs instead of firing
             if (this._collapseDecaying &&
                 (this.equippedWeapons?.cosmic || 'cosmic_fists') === 'singularity_staff') {
-                this.singularityCollapseRelease(pointer.x, pointer.y);
+                { const _a = this._aim(pointer); this.singularityCollapseRelease(_a.x, _a.y); }
                 return;
             }
 
+            // Singularity staff base attack is now Collapse (was orb fire) —
+            // trigger on click, not held-fire, so we handle it here before
+            // setting isPointerDown
+            if (this.currentElement === 'cosmic' &&
+                (this.equippedWeapons?.cosmic || 'cosmic_fists') === 'singularity_staff' &&
+                !this._collapseDecaying) {
+                this.singularityCollapseActivate();
+                return;
+            }
+
+            if (this._jetHeld()) {   // the flamethrower: a click toggles it (not while it's run dry)
+                if (!this._jetLit && this.time.now < (this._fuelDryUntil || 0)) { Sfx.play(this, 'click'); return; }
+                this._jetLit = !this._jetLit; return;
+            }
+
             this.isPointerDown = true;
-            this.pointerX = pointer.x;
-            this.pointerY = pointer.y;
-            this.fireEquippedWeapon(pointer.x, pointer.y);
+            const _a = this._aim(pointer);
+            this.pointerX = _a.x;
+            this.pointerY = _a.y;
+            this.fireEquippedWeapon(_a.x, _a.y);
         });
 
         this.input.on('pointerup', (pointer) => {
             this.isPointerDown = false;
+            this._csRelease?.();   // Cosmic.js: a charged Void Blade slashes on release
+            this._csPointerUp?.();  // ...and a Twin Collapse drag throws
         });
 
+        // TAB used to cycle the selected gadget; with two fixed slots (Q, F) there is nothing
+        // to cycle. Still swallowed so it can't move focus off the canvas.
+        this.input.keyboard.on('keydown-TAB', (event) => event.preventDefault());
+
         this.input.on('pointermove', (pointer) => {
-            this.pointerX = pointer.x;
-            this.pointerY = pointer.y;
-            if (this.currentElement === 'lightning' && this.lightningNodeMode) {
-                const worldX = pointer.x + this.cameras.main.scrollX;
-                const worldY = pointer.y + this.cameras.main.scrollY;
-                this.updateNodePreview(
+            const _a = this._aim(pointer);
+            this.pointerX = _a.x;
+            this.pointerY = _a.y;
+            this._csPointerMove?.();
+            if (this.currentElement === 'lightning' && this.engineerBuildMode) {
+                const worldX = _a.x + this.cameras.main.scrollX;
+                const worldY = _a.y + this.cameras.main.scrollY;
+                this.updateEngineerTowerPreview(
                     Math.floor(worldX / this.TILE_SIZE),
                     Math.floor(worldY / this.TILE_SIZE)
                 );
             } else {
-                this.clearNodePreview();
+                this.clearEngineerTowerPreview();
             }
         });
 
@@ -701,27 +884,33 @@ class GameScene extends Phaser.Scene {
             }
         });
 
-        // R key — remove lightning nodes OR fire magma staff ripple
-        this.input.keyboard.on('keydown-R', () => {
-            if (this.currentElement === 'lightning' && this.lightningNodeMode) {
+        // R key — remove engineer towers OR lightning nodes OR fire magma staff ripple
+        this.input.keyboard.on('keydown-' + Settings.key('surge'), () => {
+            if (this.currentElement === 'lightning' && this.engineerBuildMode) {
                 const worldX = this.pointerX + this.cameras.main.scrollX;
                 const worldY = this.pointerY + this.cameras.main.scrollY;
                 const tileX = Math.floor(worldX / this.TILE_SIZE);
                 const tileY = Math.floor(worldY / this.TILE_SIZE);
-                if (!this.removeLightningNodeAt(tileX, tileY)) {
+                if (!this.removeEngineerTowerAt(tileX, tileY)) {
                     let best = null, bestDist = 3;
-                    for (const n of [...this.lightningNodes, ...this.lightningNodesCrafting]) {
-                        const d = Math.abs(n.tileX - tileX) + Math.abs(n.tileY - tileY);
-                        if (d < bestDist) { bestDist = d; best = n; }
+                    for (const t of [...(this.engineerTowers || []), ...(this.engineerTowersCrafting || [])]) {
+                        const d = Math.abs(t.tileX - tileX) + Math.abs(t.tileY - tileY);
+                        if (d < bestDist) { bestDist = d; best = t; }
                     }
-                    if (best) this.removeLightningNodeAt(best.tileX, best.tileY);
+                    if (best) this.removeEngineerTowerAt(best.tileX, best.tileY);
                 }
                 return;
             }
-            // Singularity staff collapse
+            if (this.currentElement === 'cosmic' && this._csCast) return;   // Cosmic.js: no R on cosmic
+            // Singularity staff R-attack is now orb fire (was Collapse)
+            // Only fires when the passive charge bar is full
             if (this.currentElement === 'cosmic' &&
                 (this.equippedWeapons?.cosmic || 'cosmic_fists') === 'singularity_staff') {
-                this.singularityCollapseActivate();
+                if ((this._singOrbCharge || 0) >= 1) {
+                    this.singularityStaffFire(this.pointerX, this.pointerY);
+                } else {
+                    this.showStatusText(this.player.x, this.player.y - 28, 'ORB NOT READY', '#cc44ff');
+                }
                 return;
             }
             // Magma staff surge
@@ -730,18 +919,24 @@ class GameScene extends Phaser.Scene {
                 this.magmaStaffRipple();
                 return;
             }
-            // Icicle cannon heal mode — toggle on/off if charge bar is full
+            // Ignition — burst fire mode
+            if (this.currentElement === 'fire' &&
+                (this.equippedWeapons?.fire || 'flame_fists') === 'ignition') {
+                this.kindlingIgnitionMode();
+                return;
+            }
+            // Icicle Cannon: a full charge raises the Frost Shield (CombatSystem._frostShieldHit)
             if (this.currentElement === 'ice' &&
                 (this.equippedWeapons?.ice || 'ice_fists') === 'icicle_cannon') {
                 const HITS_TO_CHARGE = 28;
                 if ((this._icicleHitCounter || 0) >= HITS_TO_CHARGE) {
-                    this._icicleHealModeActive = !this._icicleHealModeActive;
-                    if (this._icicleHealModeActive) {
-                        this.showStatusText(this.player.x, this.player.y - 30, '✦ HEAL READY', '#00ff88');
-                        this.cameras.main.shake(40, 0.002);
-                    } else {
-                        this.showStatusText(this.player.x, this.player.y - 30, 'HEAL OFF', '#336655');
-                    }
+                    this._icicleHitCounter = 0;
+                    this._frostShieldUntil = this.time.now + 5000;
+                    this._frostShieldFx?.();
+                    this.showStatusText(this.player.x, this.player.y - 30, '❄ FROST SHIELD', '#bff4ff');
+                    this._vfxBursts?.ice?.explode(20, this.player.x, this.player.y);
+                    Sfx.play(this, 'freeze');
+                    this.cameras.main.shake(40, 0.002);
                     this._updateIcicleChargeBar();
                 }
             }
@@ -754,11 +949,85 @@ class GameScene extends Phaser.Scene {
         this.idleDelay = 500;
         this.isIdling = false;
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+        this._vfxInit();   // Visuals.js: zoom, the HUD camera, light, the void
+        this._cfxInit();   // Creatures.js: faces, status effects, pickups
+        this._csInit();    // Cosmic.js: boons, the cosmic gem, the boon tray
+        this._bfxInit();   // Bosses.js: the bosses, their attacks, every enemy shot
+        if (this.towerRun) this._towerBegin();   // Tower.js: the floor's waves, label and carried HP
+        if (this.trainingRun) Training.begin(this);   // Training.js: the arena, its panel
     }
 
+    // Cosmic's dash toward (dirX, dirY), and the bookkeeping that rides on it: each tile
+    // crossed feeds Void Fists' momentum and the Singularity Staff. Shift and Space both land here.
+    // Cosmic's dash: two hops, HOP_GAP apart, each to the open tile nearest the cursor within reach, at any angle
+    // (ElementSystem.cosmicDashAim). The second aims again, so you can bend the pair, but you can't walk in between.
+    // The cooldown runs from the second.
+    // While an ult runs, your step: the fire ult's heat drives you (about 1.8x faster), the ice ult's cold weighs
+    // you down (about 1.9x slower: you've gone dangerously cold, and move like it until it thaws).
+    _iceShellBegin(...a) { return ElementSystem.prototype._iceShellBegin.call(this, ...a); }
+    _deepCreak(...a) { return ElementSystem.prototype._deepCreak.call(this, ...a); }
+    _deepShatterFx(...a) { return ElementSystem.prototype._deepShatterFx.call(this, ...a); }
+    _iceFrostEarly(...a) { return ElementSystem.prototype._iceFrostEarly.call(this, ...a); }
+    _forkCfg(...a) { return ElementSystem.prototype._forkCfg.call(this, ...a); }
+    _forkTargets(...a) { return ElementSystem.prototype._forkTargets.call(this, ...a); }
+    _forkThump(...a) { return ElementSystem.prototype._forkThump.call(this, ...a); }
+    _forkAim(...a) { return ElementSystem.prototype._forkAim.call(this, ...a); }
+    _forkBolt(...a) { return ElementSystem.prototype._forkBolt.call(this, ...a); }
+    _forkBegin(...a) { return ElementSystem.prototype._forkBegin.call(this, ...a); }
+    _forkIgnite(...a) { return ElementSystem.prototype._forkIgnite.call(this, ...a); }
+    _encased(...a) { return ElementSystem.prototype._encased.call(this, ...a); }
+    _iceShellTex(...a) { return ElementSystem.prototype._iceShellTex.call(this, ...a); }
+    _iceShellEnd(...a) { return ElementSystem.prototype._iceShellEnd.call(this, ...a); }
+    _galeSpawn(...a) { return ElementSystem.prototype._galeSpawn.call(this, ...a); }
+    _iceFrostCfg(...a) { return ElementSystem.prototype._iceFrostCfg.call(this, ...a); }
+    _iceFrostBegin(...a) { return ElementSystem.prototype._iceFrostBegin.call(this, ...a); }
+    _ultMoveMult() {   // (a move delay multiplier: the ice ult's cold starts at 1.9 and wears off to 1 over its SLOW_MS)
+        if (this.ignitionActive) return 0.55;
+        if (this._forkAfter && this.time.now < this._forkAfter.until) return this._forkCfg().SPEED_MULT;   // Fork's aftermath: fast
+        const now = this.time.now, f = now < (this._iceFrostUntil || 0) ? Math.max(0, 1 - (now - (this._iceFrostAt || 0)) / this._iceFrostCfg().SLOW_MS) : this.tsunamiActive ? 1 : 0;
+        return 1 + 0.9 * f;
+    }
+
+    _cosmicDashToward() {
+        const now = this.time.now, HOP_GAP = 400;
+        if (this._cosmicHops || now - (this.lastCosmicDashTime || 0) < this.cosmicDashCooldown) return;
+        this._cosmicHops = true;
+        this._glideUntil = now + HOP_GAP + 150;   // the catch: you can't walk during it, from the first hop until just after the second
+        this._cosmicHop();
+        this.time.delayedCall(HOP_GAP, () => {
+            this._cosmicHops = false; this.lastCosmicDashTime = this.time.now;
+            if (this.currentElement === 'cosmic' && !this._deathScreenActive && !this._csRooted?.()) this._cosmicHop();
+        });
+    }
+    _cosmicHop() {
+        const preDashX = this.playerX, preDashY = this.playerY;
+        if (!this.cosmicDashAim()) return;
+        const tilesMoved = Math.max(Math.abs(this.playerX - preDashX), Math.abs(this.playerY - preDashY));
+        Sfx.play(this, 'dash');
+        PlayerStats.onDash(this);   // Rolling Guard
+        if (!this._cosmicDashTilesLog) this._cosmicDashTilesLog = [];
+        const now = this.time.now;
+        for (let t = 0; t < tilesMoved; t++) this._cosmicDashTilesLog.push({ time: now });
+        this._cosmicDashTilesLog = this._cosmicDashTilesLog.filter(e => now - e.time < 2000);
+        this._singTilesTraversed = (this._singTilesTraversed || 0) + tilesMoved;
+        this._csOnDash?.(tilesMoved);   // Cosmic.js: Void Fists' Momentum
+        this._relicDashTrail?.(preDashX, preDashY, this.playerX, this.playerY);   // Trailblazer (a relic)
+    }
+
+    // Ignition in hand, and the click is its own (Meteor Strike has it during Scorch)
+    _jetHeld() { return this.currentElement === 'fire' && this.equippedWeapons?.fire === 'ignition' && !(this._barrageOn && this.ignitionActive); }
+
     update(time, delta) {
+        // Everything below runs on the SCENE clock. Phaser hands update the loop's time, but every stamp the game keeps
+        // (chill, staggers, cooldowns) is this.time.now, and the two part after a pause or a first-encounter card:
+        // chill then decayed the frame it landed, and the ice shell's hold ended at once.
+        time = this.time.now;
         // Pause / death — freeze everything
         if (this._pauseMenuOpen || this._deathScreenActive) return;
+        // A first-encounter card holds the whole game until it is dismissed.
+        if (this._bannerActive) return;
+        if (this._forkStop) return;   // Fork: time has stopped
+        this._firstEncounterCheck();
 
         // Tutorial system
         if (this.isTutorial) {
@@ -786,43 +1055,70 @@ class GameScene extends Phaser.Scene {
         if (this.voltslimeBoss?.active) {
             this.updateVoltslimeBoss(time, delta);
         }
+        if (this.towerRun) {
+            try { this._towerUpdate(time); }
+            catch (e) { console.error('Tower error:', e); }
+        }
+        if (this.trainingRun) { try { Training.update(this, time); } catch (e) { console.error('Training error:', e); } }
 
         const preUpdatePlayerX = this.playerX;
         const preUpdatePlayerY = this.playerY;
 
-        if (this.currentElement === 'cosmic' && this.shiftKey.isDown && !this.shiftWasDown) {
+        if (this.currentElement === 'cosmic' && this.shiftKey.isDown && !this.shiftWasDown && !this._csRooted?.()) {
             // Use stored pointer + scroll for guaranteed world coords
             const mouseWorldX = this.pointerX + this.cameras.main.scrollX;
             const mouseWorldY = this.pointerY + this.cameras.main.scrollY;
             const playerCenterX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
             const playerCenterY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-            const ddx = mouseWorldX - playerCenterX;
-            const ddy = mouseWorldY - playerCenterY;
-
-            let dirX = 0, dirY = 0;
-            if (Math.abs(ddx) > Math.abs(ddy)) dirX = ddx > 0 ? 1 : -1;
-            else dirY = ddy > 0 ? 1 : -1;
-
-            const preDashX = this.playerX, preDashY = this.playerY;
-            this.cosmicDash(dirX, dirY, preUpdatePlayerX, preUpdatePlayerY);
-
-            // Log each tile traversed for cosmic fists momentum
-            const tilesMoved = Math.abs(this.playerX - preDashX) + Math.abs(this.playerY - preDashY);
-            if (!this._cosmicDashTilesLog) this._cosmicDashTilesLog = [];
-            const now = this.time.now;
-            for (let t = 0; t < tilesMoved; t++) this._cosmicDashTilesLog.push({ time: now });
-            this._cosmicDashTilesLog = this._cosmicDashTilesLog.filter(e => now - e.time < 2000);
-                this._singTilesTraversed = (this._singTilesTraversed || 0) + tilesMoved;
-        }
+            this._cosmicDashToward();   // two hops toward the cursor, any angle
+        } else if (this.shiftKey.isDown && !this.shiftWasDown) this._dashQueued = true;   // any other element: Shift dashes like Space
         this.shiftWasDown = this.shiftKey.isDown;
 
-        if (time - this.lastMoveTime >= this.moveCooldown) {
+        this._updateGlide(this.time.now);   // a dash in progress (ElementSystem.js). The scene clock, as the dash set it: after a pause
+        // the frame's `time` runs ahead of it by the pause, and the glide finished on its first frame
+        // Dash: the way the movement keys point, or the way you last moved.
+        if (this._dashQueued && (this._csRooted?.() || this._iceShellUntil > this.time.now)) this._dashQueued = false;   // transforming or encased: no dash
+        if (this._dashQueued) {
+            this._dashQueued = false;
+            let ddx = 0, ddy = 0;
+            if (this.keys.W.isDown) ddy = -1;
+            else if (this.keys.S.isDown) ddy = 1;
+            else if (this.keys.A.isDown) ddx = -1;
+            else if (this.keys.D.isDown) ddx = 1;
+            if (!ddx && !ddy) {
+                // standing still: toward the cursor (the way you last moved was often nowhere yet,
+                // so Space did nothing until you'd taken a step)
+                const ap = this._aim(this.input.activePointer), cam = this.cameras.main, T = this.TILE_SIZE;
+                const mx = ap.x + cam.scrollX - (this.playerX * T + T / 2), my = ap.y + cam.scrollY - (this.playerY * T + T / 2);
+                if (Math.abs(mx) + Math.abs(my) > 4) { if (Math.abs(mx) > Math.abs(my)) ddx = Math.sign(mx); else ddy = Math.sign(my); }
+                else { ddx = this._lastMoveDir.x; ddy = this._lastMoveDir.y; }
+            }
+            if (this.currentElement === 'cosmic') this._cosmicDashToward();
+            else this.playerDash(ddx, ddy);
+        }
+
+        // Water changes what a step costs. playerWaterMult is 1 on dry ground, so this
+        // is inert on every level that never calls generateWaterBlobs.
+        const _waterMult = (typeof this.playerWaterMult === 'function') ? this.playerWaterMult() : 1;
+        // The step glide, by hand each frame: a tween does nothing on its first frame, so one per tile left a dead frame every
+        // step. Anything else moving the slime (a dash, a knock, a teleport) leaves it somewhere we didn't put it: the glide stops.
+        const _st = this._step;
+        if (_st) {
+            if (this.player.x !== _st.lx || this.player.y !== _st.ly) this._step = null;
+            else {
+                const u = Math.min(1, (this.time.now - _st.t0) / _st.dur), k = 0.25 * u + 0.75 * (0.5 - 0.5 * Math.cos(Math.PI * u));   // mostly a hop (it nearly settles each tile), a little even so it never stops
+                this.player.setPosition(_st.lx = _st.fx + (_st.tx - _st.fx) * k, _st.ly = _st.fy + (_st.ty - _st.fy) * k);
+                if (u >= 1) this._step = null;
+            }
+        }
+        const stepMs = this.moveCooldown * _waterMult * (this._csMoveMult?.() ?? 1) * (this._frostHazeMult || 1) * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]) * (this._chaosMove?.() ?? 1) * this._ultMoveMult();
+        if (time - this.lastMoveTime >= stepMs && this.time.now >= (this._staggerUntil || 0) && this.time.now >= (this._glideUntil || 0)) {   // (scene clock, not the loop's `time`: they part after a pause)   // Leaden: a corrupted book's curse; the Wheel of Fate; Double or Nothing's stagger
             let dx = 0, dy = 0;
 
             const isCosmicCharging = this.currentElement === 'cosmic' && this.cosmicCharging;
 
-            if (!isCosmicCharging && !this.thunderheadActive && !this._playerRooted) {
+            if (!isCosmicCharging && !this.thunderheadActive && !this._playerRooted && !this._csRooted?.()) {
                 if (this.keys.W.isDown) dy = -1;
                 else if (this.keys.S.isDown) dy = 1;
                 else if (this.keys.A.isDown) dx = -1;
@@ -842,7 +1138,9 @@ class GameScene extends Phaser.Scene {
 
                 const enemyAtTarget = this.getEnemyAt(newX, newY);
                 if (enemyAtTarget && !this.thunderheadActive) {
-                    this.takeDamage(1);
+                    // Walking into an enemy hurts you, unless Ironhide's Spiked Hide turns it round.
+                    if (PlayerStats.has(this, 'spiked')) this.damageEnemy(enemyAtTarget, 8 * this.damageScaling, this.currentElement);
+                    else this.takeDamage(1);
                     this.lastMoveTime = time;
                     return;
                 }
@@ -850,21 +1148,20 @@ class GameScene extends Phaser.Scene {
                 if (newX >= 0 && newX < this.WORLD_WIDTH &&
                     newY >= 0 && newY < this.WORLD_HEIGHT &&
                     this.world[newX][newY] === this.FLOOR &&
-                    !this.isNodeAt(newX, newY)) {
+                    !this.isNodeAt(newX, newY) && !this._csOutsideDomain?.(newX, newY)) {
 
-                    // Level 4 — crack tiles are impassable for the player while dormant
-                    if (this.isLevel4 && this._cracks?.length && this.fractureCore?.active && !this.fractureCore._surfaced) {
+                    // Level 4 — debris tiles are impassable for the player
+                    if (this.isLevel4 && this._debrisTiles?.length && this.fractureCore?.active) {
                         const targetWx = newX * this.TILE_SIZE + this.TILE_SIZE / 2;
                         const targetWy = newY * this.TILE_SIZE + this.TILE_SIZE / 2;
                         if (this._isInCrack(targetWx, targetWy)) {
-                            this.showStatusText(this.player.x, this.player.y - 28, 'IMPASSABLE', '#ff8844');
                             this.lastMoveTime = time;
                             return;
                         }
                     }
 
                     // Tutorial: if the target tile is a sealed door tile, block and flash it
-                    if ((this.isTutorial || this.isLevel2 || this.isLevel3 || this.isLevel4) && this.lockedDoorTiles) {
+                    if (this._roomGated() && this.lockedDoorTiles) {
                         const sealedDoor = this.lockedDoorTiles.find(t => t.x === newX && t.y === newY);
                         if (sealedDoor) {
                             if (this.lockedDoorSprites && !this._doorFlashing) {
@@ -887,16 +1184,17 @@ class GameScene extends Phaser.Scene {
 
                     this.playerX = newX;
                     this.playerY = newY;
+                    const _kc = Enchants.n(this.equippedWeapons?.[this.currentElement], 'kinetic_core');   // Kinetic Core: every 10 tiles charge the ult
+                    if (_kc && (this._kinSteps = (this._kinSteps || 0) + 1) % 10 === 0) this.gainUltCharge(this.ultChargeMax * _kc / 100, this.currentElement, true);
+                    if (this._mods?.momentum) { (this._moveLog ||= []).push(time); if (this._moveLog.length > 40) this._moveLog.splice(0, 20); }   // Racing Heart
+                    this._lastMoveDir = { x: dx, y: dy };
                     this._singTilesTraversed = (this._singTilesTraversed || 0) + 1;
                     const targetX = newX * this.TILE_SIZE + this.TILE_SIZE / 2;
                     const targetY = newY * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
-                    this.tweens.add({
-                        targets: this.player,
-                        x: targetX,
-                        y: targetY,
-                        duration: 100,
-                        ease: 'Power2'
-                    });
+                    // the glide (above) lasts the whole step at an even speed, a little over so held keys never pause between tiles
+                    // (it was a 100ms eased-out tween inside a 200ms step: a lurch and a stop every tile)
+                    this._step = { fx: this.player.x, fy: this.player.y, lx: this.player.x, ly: this.player.y, tx: targetX, ty: targetY, t0: this.time.now, dur: Math.min(320, stepMs + 20) };
+                    this._vfxHop(this.player, undefined, Math.min(320, stepMs + 20));   // squash and stretch over the step (Visuals.js)
 
                     this.lastMoveTime = time;
                     this.player.stop();
@@ -906,6 +1204,7 @@ class GameScene extends Phaser.Scene {
                     this.updateHUD();
                     this._checkRoomNameDisplay();
                     if (this.isLevel4) this._onPlayerStepCrumble(this.playerX, this.playerY);
+                    this._onPlayerStepWater(this.playerX, this.playerY, time);
                 }
             }
         }
@@ -946,6 +1245,7 @@ class GameScene extends Phaser.Scene {
                     this.updateHUD();
                     this._checkRoomNameDisplay();
                     if (this.isLevel4) this._onPlayerStepCrumble(this.playerX, this.playerY);
+                    this._onPlayerStepWater(this.playerX, this.playerY, time);
                 }
             }
         }
@@ -959,31 +1259,24 @@ class GameScene extends Phaser.Scene {
             this.isIdling = true;
         }
 
-        if (this.isPointerDown) {
-            if (this.currentElement === 'lightning' && !this.lightningNodeMode &&
-                (this.equippedWeapons?.lightning || 'lightning_fists') !== 'lightning_fists') {
-                this.fireEquippedWeapon(this.pointerX, this.pointerY);
-            } else {
-                this.fireEquippedWeapon(this.pointerX, this.pointerY);
-            }
+        // Ignition is a flamethrower: a click lights it or puts it out (_jetLit), the cursor only aims it; it runs on fuel
+        this._jetFuelTick(delta);
+        const jetOn = this._jetLit && this._jetHeld();
+        if (this.isPointerDown || jetOn) {
+            this.fireEquippedWeapon(this.pointerX, this.pointerY);
         }
         this.updateFireballs(delta);
+        this._ultHit = null;   // updateFireballs marks the ult's own
         this.updateLightningOrbs(delta);
         this.updateSingularityStaff(delta);
+        this.updateSingOrbCharge(delta);
         this.updateCollapseMode(delta);
 
-        // Magma staff ripple charge — only accrues when staff is equipped on fire
+        // Magma Surge readiness (it runs on the staff's heat) — only while the staff is out on fire
         if (this.currentElement === 'fire' &&
             (this.equippedWeapons?.fire || 'flame_fists') === 'magma_staff') {
-            if (!this._magmaRippleReady) {
-                this._magmaRippleCharge = Math.min(
-                    this._magmaRippleMaxCharge,
-                    (this._magmaRippleCharge || 0) + delta
-                );
-                if (this._magmaRippleCharge >= this._magmaRippleMaxCharge) {
-                    this._magmaRippleReady = true;
-                }
-            }
+            // the Surge spends the staff's heat: ready once there's enough of it to dump
+            this._magmaRippleReady = (this._magmaHeat || 0) >= WeaponSystem.SURGE_MIN_HEAT && this.time.now >= (this._magmaSurgeCdUntil || 0);
             this._updateMagmaRippleBar();
         } else {
             // Clean up bar if not on fire/staff
@@ -995,16 +1288,33 @@ class GameScene extends Phaser.Scene {
         this.updateUltAbsorbers(time);
         this.updateBurnEffects(time);
         this.updateIgnitionTrails(time);
+        this._updateMagmaHeat(time);
+        this._updateKindling(time, delta);
+        this.updateWater(time);
+        this.updatePipes(time);
+        this.updateFieldKit(time);
+        PlayerStats.tick(this, time, delta);   // Mending
+        this._updateAllies(time);
+        this._updateMusic(time);
+        this._tickRunStats(time, delta);
+        this._followResistMarks();
+        this.updateIceCubes(time);
+        this._updateKindleIgniteBar();
+        this.updateBallLightnings(time, delta);
+        this.updateBallSeekers(time, delta);
+        this._cisternRoomCheck();
+        this._updateCisternEnemies(time, delta);
         this.updateIceShards(delta);
         this.updateBrittleDecay(time);
-        this.updateLightningNodes(time);
+        this.updateEngineerTowers(time);
+        this.updateTeslaBolts(delta);
+        this.updateEngineerBullets(delta);
         this.updateRangedEnemies(time);
         this.updateEnemyProjectiles(delta);
         this.updateFloorTraps(time);
         this.updateGroundDrops();
         this.updatePortals(time);
         this.updateSuperConductors(time);
-        this.updateNodeCrafting(time);
         this.updateNodeChannel(time);
         this.updateOrbScraps();
 
@@ -1028,21 +1338,30 @@ class GameScene extends Phaser.Scene {
             }
         }
         // Keep placement ring following player every frame
-        if (this.lightningNodeMode && this._nodePlacementRing) {
-            this._redrawPlacementRing();
+        if (this.engineerBuildMode && this._engineerBuildRing) {
+            this._redrawEngineerBuildRing();
         }
         this.updateTsunami(time);
         this.updateStormCloud(time);
         this.updateStormField(time);
         this.updateThunderhead(time, delta);
 
-        // Level 2 boss
-        if (this.voltslimeBoss) this.updateVoltslimeBoss(time, delta);
+        // Level 2 boss: updated once a frame, above. It was updated here a second time, so its
+        // shots flew and turned at double their numbers; those are doubled where they are set.
         this.updateCosmicChanneling(time);
         this.updateCosmicCharge(time);
         // Black hole projectile removed - using laser ult instead
         this.updateCosmicBlackHoleProjectile(delta);
         this.updateCosmicBlackHole(time);
+
+        // Ult gems animate every frame (pulse, lockout sweep, ready ping).
+        this._drawUltGems();
+        this._chaosTick?.(time);   // the Wheel of Fate (Relics.js, the Chaos shelf)
+        this._vfxUpdate(time, delta);
+        this._cfxUpdate(time, delta);
+        this._csUpdate(time, delta);
+        this._stackStatusIcons();   // after everything that places them (HUD.js)
+        this._bfxUpdate(time, delta);
 
         // Update HUD every frame for smooth ult drain bar and node count
         if (this.ultDrainActive || this.currentElement === 'cosmic' || this.currentElement === 'lightning') {
@@ -1055,7 +1374,6 @@ class GameScene extends Phaser.Scene {
             this.player.clearTint();
         }
     }
-
 
     createTouchControls() {
         this.isMobile = !this.sys.game.device.os.desktop;
@@ -1102,7 +1420,6 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-
     // ─── METHOD PROXIES ─────────────────────────────────────────────────────────
     // Each method body lives in its module file. These one-liners delegate via .call()
     // so all module code still runs with `this` = the GameScene instance.
@@ -1115,6 +1432,7 @@ class GameScene extends Phaser.Scene {
     generateLevel2(...a) { return WorldGen.prototype.generateLevel2.call(this, ...a); }
     generateLevel3(...a) { return WorldGen.prototype.generateLevel3.call(this, ...a); }
     generateLevel4(...a) { return WorldGen.prototype.generateLevel4.call(this, ...a); }
+    generateLevel6(...a) { return WorldGen.prototype.generateLevel6.call(this, ...a); }
     canPlaceRoom(...a) { return WorldGen.prototype.canPlaceRoom.call(this, ...a); }
     carveRoom(...a) { return WorldGen.prototype.carveRoom.call(this, ...a); }
     connectRoomsMST(...a) { return WorldGen.prototype.connectRoomsMST.call(this, ...a); }
@@ -1133,6 +1451,11 @@ class GameScene extends Phaser.Scene {
     updateTutorial(...a) { return TutorialManager.prototype.updateTutorial.call(this, ...a); }
     // LevelManager proxies
     updateLevel2(...a)          { return LevelManager.prototype.updateLevel2.call(this, ...a); }
+    _poolTilesAt(...a) { return LevelManager.prototype._poolTilesAt.call(this, ...a); }
+    enemiesSharingPool(...a) { return LevelManager.prototype.enemiesSharingPool.call(this, ...a); }
+    _energizeCfg(...a) { return LevelManager.prototype._energizeCfg.call(this, ...a); }
+    _energizePool(...a) { return LevelManager.prototype._energizePool.call(this, ...a); }
+    _energizeFlash(...a) { return LevelManager.prototype._energizeFlash.call(this, ...a); }
     _level2RoomClear(...a)      { return LevelManager.prototype._level2RoomClear.call(this, ...a); }
     spawnLevel2Enemies(...a)    { return LevelManager.prototype.spawnLevel2Enemies.call(this, ...a); }
     _spawnLevel2ChestRooms(...a){ return LevelManager.prototype._spawnLevel2ChestRooms.call(this, ...a); }
@@ -1141,40 +1464,43 @@ class GameScene extends Phaser.Scene {
     // Level 4 proxies
     updateLevel4(...a)           { return LevelManager.prototype.updateLevel4.call(this, ...a); }
     spawnLevel4Enemies(...a)     { return LevelManager.prototype.spawnLevel4Enemies.call(this, ...a); }
+    spawnLevel6Enemies(...a) { return LevelManager.prototype.spawnLevel6Enemies.call(this, ...a); }
     _spawnLevel4ChestRooms(...a) { return LevelManager.prototype._spawnLevel4ChestRooms.call(this, ...a); }
     _level4RoomClear(...a)       { return LevelManager.prototype._level4RoomClear.call(this, ...a); }
     spawnFractureCoreStub(...a)  { return LevelManager.prototype.spawnFractureCoreStub.call(this, ...a); }
     _spawnFractureCore(...a)     { return LevelManager.prototype._spawnFractureCore.call(this, ...a); }
     _updateFractureCore(...a)    { return LevelManager.prototype._updateFractureCore.call(this, ...a); }
     damageFractureCore(...a)     { return LevelManager.prototype.damageFractureCore.call(this, ...a); }
-    _updateCracks(...a)          { return LevelManager.prototype._updateCracks.call(this, ...a); }
+
     _isInCrack(...a)             { return LevelManager.prototype._isInCrack.call(this, ...a); }
-    _closestPointOnCrack(...a)   { return LevelManager.prototype._closestPointOnCrack.call(this, ...a); }
-    _crackMidpoint(...a)         { return LevelManager.prototype._crackMidpoint.call(this, ...a); }
-    _generateCrackPoints(...a)   { return LevelManager.prototype._generateCrackPoints.call(this, ...a); }
+
     _drawWeakPointInner(...a)     { return LevelManager.prototype._drawWeakPointInner.call(this, ...a); }
     _drawWeakPointRing(...a)      { return LevelManager.prototype._drawWeakPointRing.call(this, ...a); }
     _drawWeakPointRing2(...a)     { return LevelManager.prototype._drawWeakPointRing2.call(this, ...a); }
     _activateWeakPoint(...a)      { return LevelManager.prototype._activateWeakPoint.call(this, ...a); }
     _updateWeakPointBar(...a)     { return LevelManager.prototype._updateWeakPointBar.call(this, ...a); }
-    _shrinkCrack(...a)            { return LevelManager.prototype._shrinkCrack.call(this, ...a); }
-    _crackWiden(...a)              { return LevelManager.prototype._crackWiden.call(this, ...a); }
-    _tryBreakCrackPulse(...a)     { return LevelManager.prototype._tryBreakCrackPulse.call(this, ...a); }
+
+    _checkProjectileCrackShrink(...a) { return LevelManager.prototype._checkProjectileCrackShrink.call(this, ...a); }
+    spawnLevel4Enemy(...a)        { return LevelManager.prototype.spawnLevel4Enemy.call(this, ...a); }
     _hitFractureWeakPoint(...a)   { return LevelManager.prototype._hitFractureWeakPoint.call(this, ...a); }
     _tryHitCurrentWeakPoint(...a) { return LevelManager.prototype._tryHitCurrentWeakPoint.call(this, ...a); }
     _isClickOnActiveWeakPoint(...a) { return LevelManager.prototype._isClickOnActiveWeakPoint.call(this, ...a); }
-    _crackPhaseUp(...a)           { return LevelManager.prototype._crackPhaseUp.call(this, ...a); }
-    _pushPlayerOutOfCracks(...a)  { return LevelManager.prototype._pushPlayerOutOfCracks.call(this, ...a); }
-    _initCracks(...a)             { return LevelManager.prototype._initCracks.call(this, ...a); }
-    _addCrack(...a)               { return LevelManager.prototype._addCrack.call(this, ...a); }
-    _crackPulseWave(...a)         { return LevelManager.prototype._crackPulseWave.call(this, ...a); }
-    _tickCrackPulses(...a)        { return LevelManager.prototype._tickCrackPulses.call(this, ...a); }
-    _crackSpawnBurst(...a)        { return LevelManager.prototype._crackSpawnBurst.call(this, ...a); }
+    _initDebris(...a)              { return LevelManager.prototype._initDebris.call(this, ...a); }
+    _triggerCeilingWarning(...a)   { return LevelManager.prototype._triggerCeilingWarning.call(this, ...a); }
+    _dropDebris(...a)              { return LevelManager.prototype._dropDebris.call(this, ...a); }
+    _redrawDebrisTile(...a)        { return LevelManager.prototype._redrawDebrisTile.call(this, ...a); }
+    _updateDebris(...a)            { return LevelManager.prototype._updateDebris.call(this, ...a); }
+    _pushPlayerOutOfDebris(...a)   { return LevelManager.prototype._pushPlayerOutOfDebris.call(this, ...a); }
+    _debrisSpawnBurst(...a)        { return LevelManager.prototype._debrisSpawnBurst.call(this, ...a); }
+    _findSpawnTileNear(...a)       { return LevelManager.prototype._findSpawnTileNear.call(this, ...a); }
+    _clusterTiles(...a) { return LevelManager.prototype._clusterTiles.call(this, ...a); }
+    spawnCluster(...a) { return LevelManager.prototype.spawnCluster.call(this, ...a); }
+    _densestPointInRoom(...a) { return LevelManager.prototype._densestPointInRoom.call(this, ...a); }
+    _placeSupportInCluster(...a) { return LevelManager.prototype._placeSupportInCluster.call(this, ...a); }
+    _cleanupDebris(...a)           { return LevelManager.prototype._cleanupDebris.call(this, ...a); }
     _fractureCoreSurface(...a)    { return LevelManager.prototype._fractureCoreSurface.call(this, ...a); }
     _updateSurfaceWindow(...a)    { return LevelManager.prototype._updateSurfaceWindow.call(this, ...a); }
-    _spawnNewCrack(...a)          { return LevelManager.prototype._spawnNewCrack.call(this, ...a); }
     _voidMawHop(...a)             { return LevelManager.prototype._voidMawHop.call(this, ...a); }
-    _drawCrackPulseWave(...a)     { return LevelManager.prototype._drawCrackPulseWave.call(this, ...a); }
     _showRhythmSessionBanner(...a){ return LevelManager.prototype._showRhythmSessionBanner.call(this, ...a); }
     _gradeColor(...a)             { return LevelManager.prototype._gradeColor.call(this, ...a); }
     _worseGrade(...a)             { return LevelManager.prototype._worseGrade.call(this, ...a); }
@@ -1183,11 +1509,30 @@ class GameScene extends Phaser.Scene {
     _fractureCoreSurfaceAbort(...a){ return LevelManager.prototype._fractureCoreSurfaceAbort.call(this, ...a); }
     _gradeWeight(...a)             { return LevelManager.prototype._gradeWeight.call(this, ...a); }
     _fractureCoreSubmerge(...a)   { return LevelManager.prototype._fractureCoreSubmerge.call(this, ...a); }
-    _fractureCoreNextAttack(...a){ return LevelManager.prototype._fractureCoreNextAttack.call(this, ...a); }
-    _fractureCoreDoAttack(...a)  { return LevelManager.prototype._fractureCoreDoAttack.call(this, ...a); }
-    _fractureCorePhase2Transition(...a){ return LevelManager.prototype._fractureCorePhase2Transition.call(this, ...a); }
-    _fractureCorePhase3Transition(...a){ return LevelManager.prototype._fractureCorePhase3Transition.call(this, ...a); }
+
     _fractureCoreKill(...a)      { return LevelManager.prototype._fractureCoreKill.call(this, ...a); }
+    _fcCfg(...a) { return LevelManager.prototype._fcCfg.call(this, ...a); }
+    _fcFree(...a) { return LevelManager.prototype._fcFree.call(this, ...a); }
+    _fcPile(...a) { return LevelManager.prototype._fcPile.call(this, ...a); }
+    _fcRocks(...a) { return LevelManager.prototype._fcRocks.call(this, ...a); }
+    _fcCrumble(...a) { return LevelManager.prototype._fcCrumble.call(this, ...a); }
+    _fcPhaseOf(...a) { return LevelManager.prototype._fcPhaseOf.call(this, ...a); }
+    _fcHide(...a) { return LevelManager.prototype._fcHide.call(this, ...a); }
+    _fcHurt(...a) { return LevelManager.prototype._fcHurt.call(this, ...a); }
+    _fcOpenFissure(...a) { return LevelManager.prototype._fcOpenFissure.call(this, ...a); }
+    _fcOnScreen(...a) { return LevelManager.prototype._fcOnScreen.call(this, ...a); }
+    _fcArrows(...a) { return LevelManager.prototype._fcArrows.call(this, ...a); }
+    _fcStage(...a) { return LevelManager.prototype._fcStage.call(this, ...a); }
+    _fcTempo(...a) { return LevelManager.prototype._fcTempo.call(this, ...a); }
+    _fcDrawFissure(...a) { return LevelManager.prototype._fcDrawFissure.call(this, ...a); }
+    _fcHitFissure(...a) { return LevelManager.prototype._fcHitFissure.call(this, ...a); }
+    _fcSeal(...a) { return LevelManager.prototype._fcSeal.call(this, ...a); }
+    _fcHitFissureTile(...a) { return LevelManager.prototype._fcHitFissureTile.call(this, ...a); }
+    _fcRhythmStart(...a) { return LevelManager.prototype._fcRhythmStart.call(this, ...a); }
+    _fcGrade(...a) { return LevelManager.prototype._fcGrade.call(this, ...a); }
+    _fcJudge(...a) { return LevelManager.prototype._fcJudge.call(this, ...a); }
+    _fcRhythmTick(...a) { return LevelManager.prototype._fcRhythmTick.call(this, ...a); }
+    _fcRhythmEnd(...a) { return LevelManager.prototype._fcRhythmEnd.call(this, ...a); }
     createMortar(...a)           { return EnemyManager.prototype.createMortar.call(this, ...a); }
     createSplitter(...a)         { return EnemyManager.prototype.createSplitter.call(this, ...a); }
     createRooter(...a)           { return EnemyManager.prototype.createRooter.call(this, ...a); }
@@ -1221,15 +1566,16 @@ class GameScene extends Phaser.Scene {
     _vsAttackSingularitySlimes(...a) { return LevelManager.prototype._vsAttackSingularitySlimes.call(this, ...a); }
     _spawnVoidMark(...a)         { return LevelManager.prototype._spawnVoidMark.call(this, ...a); }
     createBerserker(...a)        { return EnemyManager.prototype.createBerserker.call(this, ...a); }
+    _setSpeedIndicator(...a)     { return EnemyManager.prototype._setSpeedIndicator.call(this, ...a); }
     _startSpeedIndicator(...a)   { return EnemyManager.prototype._startSpeedIndicator.call(this, ...a); }
     _spawnSpeedArrow(...a)       { return EnemyManager.prototype._spawnSpeedArrow.call(this, ...a); }
     _berserkerSwing(...a)        { return EnemyManager.prototype._berserkerSwing.call(this, ...a); }
     createQueenSlimePortal(...a) { return LevelManager.prototype.createQueenSlimePortal.call(this, ...a); }
     _rootPlayer(...a)            { return LevelManager.prototype._rootPlayer.call(this, ...a); }
+    _ccGate(...a) { return LevelManager.prototype._ccGate.call(this, ...a); }
     _voidSovereignNextAttack(...a){ return LevelManager.prototype._voidSovereignNextAttack.call(this, ...a); }
     _voidSovereignDoAttack(...a) { return LevelManager.prototype._voidSovereignDoAttack.call(this, ...a); }
     _vsAttackVoidMines(...a)     { return LevelManager.prototype._vsAttackVoidMines.call(this, ...a); }
-    _vsAttackSingularitySlimes(...a) { return LevelManager.prototype._vsAttackSingularitySlimes.call(this, ...a); }
     _vsAttackLaserCross(...a)    { return LevelManager.prototype._vsAttackLaserCross.call(this, ...a); }
     _vsAttackDarkFragments(...a) { return LevelManager.prototype._vsAttackDarkFragments.call(this, ...a); }
     _vsAttackStomp(...a)         { return LevelManager.prototype._vsAttackStomp.call(this, ...a); }
@@ -1257,6 +1603,10 @@ class GameScene extends Phaser.Scene {
     _voltslimeRicochet(...a)    { return LevelManager.prototype._voltslimeRicochet.call(this, ...a); }
     freezeVoltslime(...a)       { return LevelManager.prototype.freezeVoltslime.call(this, ...a); }
     _thawVoltslime(...a)        { return LevelManager.prototype._thawVoltslime.call(this, ...a); }
+    _bossCube(...a) { return LevelManager.prototype._bossCube.call(this, ...a); }
+    _bossCubeShatter(...a) { return LevelManager.prototype._bossCubeShatter.call(this, ...a); }
+    _bossIceWatch(...a) { return LevelManager.prototype._bossIceWatch.call(this, ...a); }
+    _bossBrittle(...a) { return CombatSystem.prototype._bossBrittle.call(this, ...a); }
     freezeBossFromIceWeapon(...a) { return LevelManager.prototype.freezeBossFromIceWeapon.call(this, ...a); }
     spawnFinalLevelChest(...a)  { return LevelManager.prototype.spawnFinalLevelChest.call(this, ...a); }
     openFinalLevelChest(...a)   { return LevelManager.prototype.openFinalLevelChest.call(this, ...a); }
@@ -1264,6 +1614,34 @@ class GameScene extends Phaser.Scene {
     onGlorpsCollected(...a) { return TutorialManager.prototype.onGlorpsCollected.call(this, ...a); }
     isInLockedRoom(...a) { return LevelManager.prototype.isInLockedRoom.call(this, ...a); }
     getCurrentPlayerRoom(...a) { return LevelManager.prototype.getCurrentPlayerRoom.call(this, ...a); }
+    _floorCfg(...a)          { return LevelManager.prototype._floorCfg.call(this, ...a); }
+    _tagResist(...a)         { return LevelManager.prototype._tagResist.call(this, ...a); }
+    _spreadResistance(...a)  { return LevelManager.prototype._spreadResistance.call(this, ...a); }
+    _buildResistAura(...a)   { return LevelManager.prototype._buildResistAura.call(this, ...a); }
+    _showResistShield(...a)  { return CombatSystem.prototype._showResistShield.call(this, ...a); }
+    addChillStacks(...a) { return CombatSystem.prototype.addChillStacks.call(this, ...a); }
+    applyChill(...a) { return CombatSystem.prototype.applyChill.call(this, ...a); }
+    _chillCfg(...a) { return CombatSystem.prototype._chillCfg.call(this, ...a); }
+    _iceCubeCfg(...a) { return CombatSystem.prototype._iceCubeCfg.call(this, ...a); }
+    makeIceCube(...a) { return CombatSystem.prototype.makeIceCube.call(this, ...a); }
+    _drawIceCube(...a) { return CombatSystem.prototype._drawIceCube.call(this, ...a); }
+    _clearIceCubeVisual(...a) { return CombatSystem.prototype._clearIceCubeVisual.call(this, ...a); }
+    shatterIceCube(...a) { return CombatSystem.prototype.shatterIceCube.call(this, ...a); }
+    updateIceCubes(...a) { return CombatSystem.prototype.updateIceCubes.call(this, ...a); }
+    applyFloorScaling(...a)  { return LevelManager.prototype.applyFloorScaling.call(this, ...a); }
+    _waterCfg(...a) { return LevelManager.prototype._waterCfg.call(this, ...a); }
+    initWater(...a) { return LevelManager.prototype.initWater.call(this, ...a); }
+    _wKey(...a) { return LevelManager.prototype._wKey.call(this, ...a); }
+    isWaterAt(...a) { return LevelManager.prototype.isWaterAt.call(this, ...a); }
+    isSteamAt(...a) { return LevelManager.prototype.isSteamAt.call(this, ...a); }
+    addWater(...a) { return LevelManager.prototype.addWater.call(this, ...a); }
+    evaporateWater(...a) { return LevelManager.prototype.evaporateWater.call(this, ...a); }
+    _steamPuff(...a) { return LevelManager.prototype._steamPuff.call(this, ...a); }
+    updateWater(...a) { return LevelManager.prototype.updateWater.call(this, ...a); }
+    _bakeWater(...a) { return LevelManager.prototype._bakeWater.call(this, ...a); }
+    _redrawWater(...a) { return LevelManager.prototype._redrawWater.call(this, ...a); }
+    generateWaterBlobs(...a) { return LevelManager.prototype.generateWaterBlobs.call(this, ...a); }
+    playerWaterMult(...a) { return LevelManager.prototype.playerWaterMult.call(this, ...a); }
     onTutorialRoomEnter(...a) { return TutorialManager.prototype.onTutorialRoomEnter.call(this, ...a); }
     _onIceTutorialRoomEnter(...a) { return TutorialManager.prototype._onIceTutorialRoomEnter.call(this, ...a); }
     _triggerIceImmuneGlerpReaction(...a) { return TutorialManager.prototype._triggerIceImmuneGlerpReaction.call(this, ...a); }
@@ -1274,7 +1652,60 @@ class GameScene extends Phaser.Scene {
     _buildGlorpContainer(...a) { return TutorialManager.prototype._buildGlorpContainer.call(this, ...a); }
     onTutorialRoomClear(...a) { return TutorialManager.prototype.onTutorialRoomClear.call(this, ...a); }
     isInCurrentRoom(...a) { return LevelManager.prototype.isInCurrentRoom.call(this, ...a); }
+    _roomGated(...a) { return LevelManager.prototype._roomGated.call(this, ...a); }
+    _cisternRoomCheck(...a) { return LevelManager.prototype._cisternRoomCheck.call(this, ...a); }
+    _onPlayerStepWater(...a) { return LevelManager.prototype._onPlayerStepWater.call(this, ...a); }
+    _updateCisternEnemies(...a) { return LevelManager.prototype._updateCisternEnemies.call(this, ...a); }
+    _cisternMark(...a)       { return LevelManager.prototype._cisternMark.call(this, ...a); }
+    _drownSubmergePlayer(...a){ return LevelManager.prototype._drownSubmergePlayer.call(this, ...a); }
+    _drownSurfacePlayer(...a){ return LevelManager.prototype._drownSurfacePlayer.call(this, ...a); }
+    _pipeCfg(...a)           { return LevelManager.prototype._pipeCfg.call(this, ...a); }
+    initPipes(...a)          { return LevelManager.prototype.initPipes.call(this, ...a); }
+    _pipeTiles(...a)         { return LevelManager.prototype._pipeTiles.call(this, ...a); }
+    _drawPipeMouths(...a)    { return LevelManager.prototype._drawPipeMouths.call(this, ...a); }
+    _startPipeDrips(...a)    { return LevelManager.prototype._startPipeDrips.call(this, ...a); }
+    updatePipes(...a)        { return LevelManager.prototype.updatePipes.call(this, ...a); }
+    _pipeTrickle(...a)       { return LevelManager.prototype._pipeTrickle.call(this, ...a); }
+    _drownWeeds(...a)        { return LevelManager.prototype._drownWeeds.call(this, ...a); }
+    _drownLockMark(...a)     { return LevelManager.prototype._drownLockMark.call(this, ...a); }
+    _clearCisternGfx(...a)   { return LevelManager.prototype._clearCisternGfx.call(this, ...a); }
+    createTidalGuard(...a)   { return LevelManager.prototype.createTidalGuard.call(this, ...a); }
+    _tgTiles(...a)           { return LevelManager.prototype._tgTiles.call(this, ...a); }
+    _tgAimAt(...a)           { return LevelManager.prototype._tgAimAt.call(this, ...a); }
+    _tgDrawAim(...a)         { return LevelManager.prototype._tgDrawAim.call(this, ...a); }
+    _tgFire(...a)            { return LevelManager.prototype._tgFire.call(this, ...a); }
+    _dripCfg(...a)           { return LevelManager.prototype._dripCfg.call(this, ...a); }
+    _applyDripping(...a)     { return LevelManager.prototype._applyDripping.call(this, ...a); }
+    _updateDripping(...a)    { return LevelManager.prototype._updateDripping.call(this, ...a); }
+    createWishingWell(...a)  { return LevelManager.prototype.createWishingWell.call(this, ...a); }
+    _wwBlob(...a)            { return LevelManager.prototype._wwBlob.call(this, ...a); }
+    _wwLob(...a)             { return LevelManager.prototype._wwLob.call(this, ...a); }
+    _wwPulse(...a)           { return LevelManager.prototype._wwPulse.call(this, ...a); }
+    _enemyWet(...a)          { return LevelManager.prototype._enemyWet.call(this, ...a); }
+    _drownWarn(...a)         { return LevelManager.prototype._drownWarn.call(this, ...a); }
+    _fireRippleVolley(...a)  { return LevelManager.prototype._fireRippleVolley.call(this, ...a); }
+    _rippleDetonate(...a)    { return LevelManager.prototype._rippleDetonate.call(this, ...a); }
+    _updateRippleOrbs(...a)  { return LevelManager.prototype._updateRippleOrbs.call(this, ...a); }
+    _waveTell(...a)          { return LevelManager.prototype._waveTell.call(this, ...a); }
+    _waveClearTell(...a)     { return LevelManager.prototype._waveClearTell.call(this, ...a); }
+    _updateWaveCharge(...a)  { return LevelManager.prototype._updateWaveCharge.call(this, ...a); }
+    _enemyTypeKey(...a)        { return LevelManager.prototype._enemyTypeKey.call(this, ...a); }
+    _enemyCodex(...a)          { return LevelManager.prototype._enemyCodex.call(this, ...a); }
+    _seenEnemies(...a)         { return LevelManager.prototype._seenEnemies.call(this, ...a); }
+    _markEnemySeen(...a)       { return LevelManager.prototype._markEnemySeen.call(this, ...a); }
+    _firstEncounterCheck(...a) { return LevelManager.prototype._firstEncounterCheck.call(this, ...a); }
+    _showEnemyBanner(...a)     { return LevelManager.prototype._showEnemyBanner.call(this, ...a); }
+    createDrowner(...a)      { return LevelManager.prototype.createDrowner.call(this, ...a); }
+    createRipplerunner(...a) { return LevelManager.prototype.createRipplerunner.call(this, ...a); }
+    createTidecaller(...a)   { return LevelManager.prototype.createTidecaller.call(this, ...a); }
+    createWaveRider(...a)    { return LevelManager.prototype.createWaveRider.call(this, ...a); }
+    createConduit(...a)      { return LevelManager.prototype.createConduit.call(this, ...a); }
     getPortalAt(...a) { return LevelManager.prototype.getPortalAt.call(this, ...a); }
+    // Required: getPortalAt is proxied with .call(this), so `this` is the SCENE and its
+    // internal this._portalCoversTile(...) resolves here, not on LevelManager.prototype.
+    // Without this stub every portal hit test throws instead of missing.
+    _portalCoversTile(...a) { return LevelManager.prototype._portalCoversTile.call(this, ...a); }
+    _queenPulse(...a) { return LevelManager.prototype._queenPulse.call(this, ...a); }
     lockTutorialDoors(...a) { return LevelManager.prototype.lockTutorialDoors.call(this, ...a); }
     unlockTutorialDoors(...a) { return LevelManager.prototype.unlockTutorialDoors.call(this, ...a); }
     spawnTutorialChest(...a) { return TutorialManager.prototype.spawnTutorialChest.call(this, ...a); }
@@ -1285,12 +1716,14 @@ class GameScene extends Phaser.Scene {
     playVoidFallScene(...a) { return TutorialManager.prototype.playVoidFallScene.call(this, ...a); }
     endTutorialReturnToMenu(...a) { return TutorialManager.prototype.endTutorialReturnToMenu.call(this, ...a); }
     showTutorialDialogue(...a) { return TutorialManager.prototype.showTutorialDialogue.call(this, ...a); }
+    _tutSay(...a) { return TutorialManager.prototype._tutSay.call(this, ...a); }
+    _k(...a) { return TutorialManager.prototype._k.call(this, ...a); }
+    _tutObjective(...a) { return TutorialManager.prototype._tutObjective.call(this, ...a); }
+    _tutTips(...a) { return TutorialManager.prototype._tutTips.call(this, ...a); }
     clearTutorialDialogue(...a) { return TutorialManager.prototype.clearTutorialDialogue.call(this, ...a); }
     spawnEnemies(...a) { return LevelManager.prototype.spawnEnemies.call(this, ...a); }
     spawnTutorialEnemies(...a) { return TutorialManager.prototype.spawnTutorialEnemies.call(this, ...a); }
     spawnIceTutorialEnemies(...a) { return TutorialManager.prototype.spawnIceTutorialEnemies.call(this, ...a); }
-    spawnFireMark(...a) { return LevelManager.prototype.spawnFireMark.call(this, ...a); }
-    spawnIceMark(...a) { return LevelManager.prototype.spawnIceMark.call(this, ...a); }
     createRangedEnemy(...a) { return EnemyManager.prototype.createRangedEnemy.call(this, ...a); }
     _applyUltAbsorberVisual(...a) { return TutorialManager.prototype._applyUltAbsorberVisual.call(this, ...a); }
     spawnIceTraps(...a) { return TutorialManager.prototype.spawnIceTraps.call(this, ...a); }
@@ -1336,19 +1769,41 @@ class GameScene extends Phaser.Scene {
 
     // WeaponSystem
     shootAttack(...a) { return WeaponSystem.prototype.shootAttack.call(this, ...a); }
+    _updateKindleIgniteBar(...a) { return WeaponSystem.prototype._updateKindleIgniteBar.call(this, ...a); }
+    _destroyKindleIgniteBar(...a) { return WeaponSystem.prototype._destroyKindleIgniteBar.call(this, ...a); }
+    _cascadeForks(...a) { return WeaponSystem.prototype._cascadeForks.call(this, ...a); }
+    _embedBall(...a) { return WeaponSystem.prototype._embedBall.call(this, ...a); }
+    _updateEmbeddedBall(...a) { return WeaponSystem.prototype._updateEmbeddedBall.call(this, ...a); }
+    _detonateEmbedded(...a) { return WeaponSystem.prototype._detonateEmbedded.call(this, ...a); }
+    _strokeFork(...a) { return WeaponSystem.prototype._strokeFork.call(this, ...a); }
+    _arcPath(...a) { return WeaponSystem.prototype._arcPath.call(this, ...a); }
+    _strokeArc(...a) { return WeaponSystem.prototype._strokeArc.call(this, ...a); }
+    engineeringDegreeAttack(...a) { return WeaponSystem.prototype.engineeringDegreeAttack.call(this, ...a); }
+    _throwWrenchArc(...a) { return WeaponSystem.prototype._throwWrenchArc.call(this, ...a); }
+    _wrenchImpact(...a) { return WeaponSystem.prototype._wrenchImpact.call(this, ...a); }
+    _drawWrenchGfx(...a) { return WeaponSystem.prototype._drawWrenchGfx.call(this, ...a); }
+    _blCfg(...a) { return WeaponSystem.prototype._blCfg.call(this, ...a); }
+    ballLightningAttack(...a) { return WeaponSystem.prototype.ballLightningAttack.call(this, ...a); }
+    _drawBallGfx(...a) { return WeaponSystem.prototype._drawBallGfx.call(this, ...a); }
+    updateBallLightnings(...a) { return WeaponSystem.prototype.updateBallLightnings.call(this, ...a); }
+    _ballDischarge(...a) { return WeaponSystem.prototype._ballDischarge.call(this, ...a); }
+    _burstBallLightning(...a) { return WeaponSystem.prototype._burstBallLightning.call(this, ...a); }
+    updateBallSeekers(...a) { return WeaponSystem.prototype.updateBallSeekers.call(this, ...a); }
+    _seekerHit(...a) { return WeaponSystem.prototype._seekerHit.call(this, ...a); }
     fireEquippedWeapon(...a) { return WeaponSystem.prototype.fireEquippedWeapon.call(this, ...a); }
     flameFistsAttack(...a) { return WeaponSystem.prototype.flameFistsAttack.call(this, ...a); }
     lightningFistsAttack(...a) { return WeaponSystem.prototype.lightningFistsAttack.call(this, ...a); }
     iceFistsAttack(...a) { return WeaponSystem.prototype.iceFistsAttack.call(this, ...a); }
     icicleStaffAttack(...a) { return WeaponSystem.prototype.icicleStaffAttack.call(this, ...a); }
     _fireIcicleNovaBurst(...a) { return WeaponSystem.prototype._fireIcicleNovaBurst.call(this, ...a); }
-    _fireHealIcicle(...a)   { return WeaponSystem.prototype._fireHealIcicle.call(this, ...a); }
-    _triggerHealIcicleSplit(...a) { return WeaponSystem.prototype._triggerHealIcicleSplit.call(this, ...a); }
+
     applyIceFistsHit(...a)     { return WeaponSystem.prototype.applyIceFistsHit.call(this, ...a); }
     applyIcicleCannonHit(...a)   { return WeaponSystem.prototype.applyIcicleCannonHit.call(this, ...a); }
     applyFractalShardHit(...a)   { return WeaponSystem.prototype.applyFractalShardHit.call(this, ...a); }
     _updateChillIndicator(...a) { return WeaponSystem.prototype._updateChillIndicator.call(this, ...a); }
     _destroyChillIndicator(...a) { return WeaponSystem.prototype._destroyChillIndicator.call(this, ...a); }
+    _showStunIndicator(...a) { return WeaponSystem.prototype._showStunIndicator.call(this, ...a); }
+    _clearStunIndicator(...a) { return WeaponSystem.prototype._clearStunIndicator.call(this, ...a); }
     _applyGoldMark(...a)         { return WeaponSystem.prototype._applyGoldMark.call(this, ...a); }
     _applyPurpleMark(...a)       { return WeaponSystem.prototype._applyPurpleMark.call(this, ...a); }
     _clearShatterMark(...a)      { return WeaponSystem.prototype._clearShatterMark.call(this, ...a); }
@@ -1362,10 +1817,48 @@ class GameScene extends Phaser.Scene {
     magmaStaffAttack(...a)  { return WeaponSystem.prototype.magmaStaffAttack.call(this, ...a); }
     magmaStaffRipple(...a)  { return WeaponSystem.prototype.magmaStaffRipple.call(this, ...a); }
     _updateMagmaRippleBar(...a) { return WeaponSystem.prototype._updateMagmaRippleBar.call(this, ...a); }
+    _magmaCfg(...a)        { return WeaponSystem.prototype._magmaCfg.call(this, ...a); }
+    _magmaTier(...a)       { return WeaponSystem.prototype._magmaTier.call(this, ...a); }
+    _addMagmaHeat(...a)    { return WeaponSystem.prototype._addMagmaHeat.call(this, ...a); }
+    _updateMagmaHeat(...a) { return WeaponSystem.prototype._updateMagmaHeat.call(this, ...a); }
+    _kindlingCfg(...a)         { return WeaponSystem.prototype._kindlingCfg.call(this, ...a); }
+    _kindlingPayout(...a)      { return WeaponSystem.prototype._kindlingPayout.call(this, ...a); }
+    _jetFx(...a) { return WeaponSystem.prototype._jetFx.call(this, ...a); }
+    kindlingBrandAttack(...a)  { return WeaponSystem.prototype.kindlingBrandAttack.call(this, ...a); }
+    kindlingIgnitionMode(...a) { return WeaponSystem.prototype.kindlingIgnitionMode.call(this, ...a); }
+    _brandEnemy(...a)          { return WeaponSystem.prototype._brandEnemy.call(this, ...a); }
+    _kindleOverMult(...a) { return WeaponSystem.prototype._kindleOverMult.call(this, ...a); }
+    _jetFuelTick(...a) { return WeaponSystem.prototype._jetFuelTick.call(this, ...a); }
+    _kindleDetonateAll(...a) { return WeaponSystem.prototype._kindleDetonateAll.call(this, ...a); }
+    _kindlePassOn(...a)        { return WeaponSystem.prototype._kindlePassOn.call(this, ...a); }
+    _updateKindling(...a)      { return WeaponSystem.prototype._updateKindling.call(this, ...a); }
+    _drawKindleMark(...a) { return WeaponSystem.prototype._drawKindleMark.call(this, ...a); }
+    _kindleBlast(...a) { return WeaponSystem.prototype._kindleBlast.call(this, ...a); }
+    _kindleIgniteFx(...a) { return WeaponSystem.prototype._kindleIgniteFx.call(this, ...a); }
+    _kindleClickDetonate(...a) { return WeaponSystem.prototype._kindleClickDetonate.call(this, ...a); }
+    _detonateKindling(...a)    { return WeaponSystem.prototype._detonateKindling.call(this, ...a); }
+    _clearKindle(...a)         { return WeaponSystem.prototype._clearKindle.call(this, ...a); }
+    _updateKindleIndicator(...a){ return WeaponSystem.prototype._updateKindleIndicator.call(this, ...a); }
+    _fireKindleRound(...a)     { return WeaponSystem.prototype._fireKindleRound.call(this, ...a); }
+    _evaporate(...a) { return WeaponSystem.prototype._evaporate.call(this, ...a); }
+    _kindleBrandables(...a) { return WeaponSystem.prototype._kindleBrandables.call(this, ...a); }
+    _kindlePos(...a) { return WeaponSystem.prototype._kindlePos.call(this, ...a); }
+    _kindleAlive(...a) { return WeaponSystem.prototype._kindleAlive.call(this, ...a); }
+    _kindleDamage(...a) { return WeaponSystem.prototype._kindleDamage.call(this, ...a); }
+    _updateKindleBullets(...a) { return WeaponSystem.prototype._updateKindleBullets.call(this, ...a); }
+    _kindleMuzzle(...a) { return WeaponSystem.prototype._kindleMuzzle.call(this, ...a); }
+    _kindleSpark(...a) { return WeaponSystem.prototype._kindleSpark.call(this, ...a); }
+    _kindleHeatColor(...a) { return WeaponSystem.prototype._kindleHeatColor.call(this, ...a); }
+    _clearKindleBullets(...a) { return WeaponSystem.prototype._clearKindleBullets.call(this, ...a); }
     _updateMagmaOrbs(...a)     { return WeaponSystem.prototype._updateMagmaOrbs.call(this, ...a); }
+    applyBlueBurn(...a) { return WeaponSystem.prototype.applyBlueBurn.call(this, ...a); }
+    _blueBurnPop(...a) { return WeaponSystem.prototype._blueBurnPop.call(this, ...a); }
     applyBurnStack(...a)    { return WeaponSystem.prototype.applyBurnStack.call(this, ...a); }
     applyBurnStackBoss(...a){ return WeaponSystem.prototype.applyBurnStackBoss.call(this, ...a); }
     _burnTierStats(...a)    { return WeaponSystem.prototype._burnTierStats.call(this, ...a); }
+    _burnCfg(...a)          { return WeaponSystem.prototype._burnCfg.call(this, ...a); }
+    _burnDecay(...a)        { return WeaponSystem.prototype._burnDecay.call(this, ...a); }
+    _burnBossTicker(...a)   { return WeaponSystem.prototype._burnBossTicker.call(this, ...a); }
     _applyBurnDoTVoidSovereign(...a){ return WeaponSystem.prototype._applyBurnDoTVoidSovereign.call(this, ...a); }
     _recalcMagmaFireballCount(...a) { return WeaponSystem.prototype._recalcMagmaFireballCount.call(this, ...a); }
     _applyBurnDoT(...a)     { return WeaponSystem.prototype._applyBurnDoT.call(this, ...a); }
@@ -1382,7 +1875,6 @@ class GameScene extends Phaser.Scene {
     spawnBounceImpact(...a) { return WeaponSystem.prototype.spawnBounceImpact.call(this, ...a); }
     destroyIceShard(...a) { return WeaponSystem.prototype.destroyIceShard.call(this, ...a); }
     updateFireballs(...a) { return WeaponSystem.prototype.updateFireballs.call(this, ...a); }
-    _checkProjectileCrackShrink(...a) { return WeaponSystem.prototype._checkProjectileCrackShrink.call(this, ...a); }
     updateLightningOrbs(...a) { return WeaponSystem.prototype.updateLightningOrbs.call(this, ...a); }
     cosmicFistsAttack(...a)  { return WeaponSystem.prototype.cosmicFistsAttack.call(this, ...a); }
     singularityStaffFire(...a)        { return WeaponSystem.prototype.singularityStaffFire.call(this, ...a); }
@@ -1390,6 +1882,9 @@ class GameScene extends Phaser.Scene {
     _singularityExplode(...a)         { return WeaponSystem.prototype._singularityExplode.call(this, ...a); }
     singularityCollapseActivate(...a) { return WeaponSystem.prototype.singularityCollapseActivate.call(this, ...a); }
     singularityCollapseRelease(...a)  { return WeaponSystem.prototype.singularityCollapseRelease.call(this, ...a); }
+    updateSingOrbCharge(...a)         { return WeaponSystem.prototype.updateSingOrbCharge.call(this, ...a); }
+    _updateSingOrbBar(...a)           { return WeaponSystem.prototype._updateSingOrbBar.call(this, ...a); }
+    _destroySingOrbBar(...a)          { return WeaponSystem.prototype._destroySingOrbBar.call(this, ...a); }
     updateCollapseMode(...a)          { return WeaponSystem.prototype.updateCollapseMode.call(this, ...a); }
     _updateLaunchingOrbs(...a)        { return WeaponSystem.prototype._updateLaunchingOrbs.call(this, ...a); }
     _spawnCollapseOrb(...a)           { return WeaponSystem.prototype._spawnCollapseOrb.call(this, ...a); }
@@ -1402,6 +1897,7 @@ class GameScene extends Phaser.Scene {
     _updateCollapseBar(...a)          { return WeaponSystem.prototype._updateCollapseBar.call(this, ...a); }
     orbEmitterAttack(...a)            { return WeaponSystem.prototype.orbEmitterAttack.call(this, ...a); }
     _drawOrbEmitterGfx(...a) { return WeaponSystem.prototype._drawOrbEmitterGfx.call(this, ...a); }
+    _superconduct(...a) { return WeaponSystem.prototype._superconduct.call(this, ...a); }
     _orbHitEnemy(...a) { return WeaponSystem.prototype._orbHitEnemy.call(this, ...a); }
     spawnFireballLavaPool(...a)  { return WeaponSystem.prototype.spawnFireballLavaPool.call(this, ...a); }
     fractalShardAttack(...a)    { return WeaponSystem.prototype.fractalShardAttack.call(this, ...a); }
@@ -1409,7 +1905,7 @@ class GameScene extends Phaser.Scene {
     _spawnFrostTotem(...a)      { return WeaponSystem.prototype._spawnFrostTotem.call(this, ...a); }
     _spawnSplitterShard(...a)   { return WeaponSystem.prototype._spawnSplitterShard.call(this, ...a); }
     _triggerSplitterSplit(...a) { return WeaponSystem.prototype._triggerSplitterSplit.call(this, ...a); }
-    _updateIciclePips(...a)       { return WeaponSystem.prototype._updateIciclePips.call(this, ...a); }
+
     _updateIcicleChargeBar(...a)  { return WeaponSystem.prototype._updateIcicleChargeBar.call(this, ...a); }
     _updateIcicleAccuracyCircle(...a) { return WeaponSystem.prototype._updateIcicleAccuracyCircle.call(this, ...a); }
     _fireIcicleHealShard(...a)    { return WeaponSystem.prototype._fireIcicleHealShard.call(this, ...a); }
@@ -1417,12 +1913,17 @@ class GameScene extends Phaser.Scene {
     // CombatSystem
     showCannotSwitchText(...a) { return CombatSystem.prototype.showCannotSwitchText.call(this, ...a); }
     showStatusText(...a) { return CombatSystem.prototype.showStatusText.call(this, ...a); }
+    _dmgNote(...a) { return CombatSystem.prototype._dmgNote.call(this, ...a); }
     showDamageNumber(...a) { return CombatSystem.prototype.showDamageNumber.call(this, ...a); }
     damageEnemy(...a) { return CombatSystem.prototype.damageEnemy.call(this, ...a); }
     killEnemy(...a) { return CombatSystem.prototype.killEnemy.call(this, ...a); }
     takeDamage(...a) { if (this._devGodMode) return; return CombatSystem.prototype.takeDamage.call(this, ...a); }
+    _frostShieldFx(...a) { return CombatSystem.prototype._frostShieldFx.call(this, ...a); }
+    _frostShieldHit(...a) { return CombatSystem.prototype._frostShieldHit.call(this, ...a); }
     damageBossAtTile(...a) { return CombatSystem.prototype.damageBossAtTile.call(this, ...a); }
     gainUltCharge(...a) { return CombatSystem.prototype.gainUltCharge.call(this, ...a); }
+    _noteUltHit(...a)   { return CombatSystem.prototype._noteUltHit.call(this, ...a); }
+    _ultStatusOf(...a)  { return CombatSystem.prototype._ultStatusOf.call(this, ...a); }
     switchToElement(...a) { return CombatSystem.prototype.switchToElement.call(this, ...a); }
     updateUltAbsorbers(...a) { return CombatSystem.prototype.updateUltAbsorbers.call(this, ...a); }
     updateBurnEffects(...a) { return CombatSystem.prototype.updateBurnEffects.call(this, ...a); }
@@ -1435,6 +1936,10 @@ class GameScene extends Phaser.Scene {
     updateSlowEffect(...a) { return CombatSystem.prototype.updateSlowEffect.call(this, ...a); }
     spawnIceSplinter(...a) { return CombatSystem.prototype.spawnIceSplinter.call(this, ...a); }
     snapToNearestFloor(...a) { return CombatSystem.prototype.snapToNearestFloor.call(this, ...a); }
+    resolveElementalHit(...a) { return CombatSystem.prototype.resolveElementalHit.call(this, ...a); }
+    _brittleMult(...a) { return CombatSystem.prototype._brittleMult.call(this, ...a); }
+    _cubeNote(...a) { return CombatSystem.prototype._cubeNote.call(this, ...a); }
+    _phasedOut(...a) { return CombatSystem.prototype._phasedOut.call(this, ...a); }
     damageEnemyIce(...a) { return CombatSystem.prototype.damageEnemyIce.call(this, ...a); }
     createFreezeVisual(...a) { return CombatSystem.prototype.createFreezeVisual.call(this, ...a); }
     showShieldBlock(...a) { return CombatSystem.prototype.showShieldBlock.call(this, ...a); }
@@ -1446,7 +1951,69 @@ class GameScene extends Phaser.Scene {
 
     // ElementSystem
     activateUlt(...a) { return ElementSystem.prototype.activateUlt.call(this, ...a); }
+    castUlt(...a)            { return ElementSystem.prototype.castUlt.call(this, ...a); }
+    _tutorialUltGate(...a)   { return ElementSystem.prototype._tutorialUltGate.call(this, ...a); }
+    _ultCfg(...a)            { return ElementSystem.prototype._ultCfg.call(this, ...a); }
+    _ultDeny(...a)           { return ElementSystem.prototype._ultDeny.call(this, ...a); }
+    _ultCastFx(...a)         { return ElementSystem.prototype._ultCastFx.call(this, ...a); }
+    _ultReactionSpark(...a)  { return ElementSystem.prototype._ultReactionSpark.call(this, ...a); }
+    _maybeDropScrap(...a) { return ElementSystem.prototype._maybeDropScrap.call(this, ...a); }
+    // ── FIELD KIT ────────────────────────────────────────────────────────────
+    _smiteBoltPath(...a) { return FieldKit.prototype._smiteBoltPath.call(this, ...a); }
+    _smiteStrike(...a) { return FieldKit.prototype._smiteStrike.call(this, ...a); }
+    _decayEmpSlows(...a) { return FieldKit.prototype._decayEmpSlows.call(this, ...a); }
+    _empShockwave(...a) { return FieldKit.prototype._empShockwave.call(this, ...a); }
+    _fkClearHeldPrompt(...a) { return FieldKit.prototype._fkClearHeldPrompt.call(this, ...a); }
+    _fkDrawHeldPrompt(...a) { return FieldKit.prototype._fkDrawHeldPrompt.call(this, ...a); }
+    _fkNearestFloor(...a) { return FieldKit.prototype._fkNearestFloor.call(this, ...a); }
+    _fkUpdateHeldPrompt(...a) { return FieldKit.prototype._fkUpdateHeldPrompt.call(this, ...a); }
+    _fkVanishPuff(...a) { return FieldKit.prototype._fkVanishPuff.call(this, ...a); }
+    _gadgetEmp(...a) { return FieldKit.prototype._gadgetEmp.call(this, ...a); }
+    _releaseDisplaced(...a) { return FieldKit.prototype._releaseDisplaced.call(this, ...a); }
+    _smiteBolt(...a) { return FieldKit.prototype._smiteBolt.call(this, ...a); }
+    _timeoutDisplaced(...a) { return FieldKit.prototype._timeoutDisplaced.call(this, ...a); }
+    displacerPending(...a) { return FieldKit.prototype.displacerPending.call(this, ...a); }
+    placeDisplaced(...a) { return FieldKit.prototype.placeDisplaced.call(this, ...a); }
+    updateFieldKit(...a) { return FieldKit.prototype.updateFieldKit.call(this, ...a); }
+    gadgetLoadout(...a) { return FieldKit.prototype.gadgetLoadout.call(this, ...a); }
+    setGadgetSlot(...a) { return FieldKit.prototype.setGadgetSlot.call(this, ...a); }
+    beginGadgetRun(...a) { return FieldKit.prototype.beginGadgetRun.call(this, ...a); }
+    gadgetCooldownLeft(...a) { return FieldKit.prototype.gadgetCooldownLeft.call(this, ...a); }
+    useGadget(...a) { return FieldKit.prototype.useGadget.call(this, ...a); }
+    _gadgetMend(...a) { return FieldKit.prototype._gadgetMend.call(this, ...a); }
+    _fkUpdateMend(...a) { return FieldKit.prototype._fkUpdateMend.call(this, ...a); }
+    _gadgetBulwark(...a) { return FieldKit.prototype._gadgetBulwark.call(this, ...a); }
+    _fkDrawSockets(...a) { return FieldKit.prototype._fkDrawSockets.call(this, ...a); }
+    _availableGadgets(...a) { return FieldKit.prototype._availableGadgets.call(this, ...a); }
+    gadgetUnlocked(...a) { return FieldKit.prototype.gadgetUnlocked.call(this, ...a); }
+    unlockGadget(...a) { return FieldKit.prototype.unlockGadget.call(this, ...a); }
+    unlockedGadgets(...a) { return FieldKit.prototype.unlockedGadgets.call(this, ...a); }
+    _unlockStoreKey(...a) { return FieldKit.prototype._unlockStoreKey.call(this, ...a); }
+    _fkBurst(...a) { return FieldKit.prototype._fkBurst.call(this, ...a); }
+    _fkCfg(...a) { return FieldKit.prototype._fkCfg.call(this, ...a); }
+    _fkEnemiesIn(...a) { return FieldKit.prototype._fkEnemiesIn.call(this, ...a); }
+    _fkThrowArc(...a) { return FieldKit.prototype._fkThrowArc.call(this, ...a); }
+    _gadgetDefs(...a) { return FieldKit.prototype._gadgetDefs.call(this, ...a); }
+    _gadgetDisplacer(...a) { return FieldKit.prototype._gadgetDisplacer.call(this, ...a); }
+    _gadgetGrounding(...a) { return FieldKit.prototype._gadgetGrounding.call(this, ...a); }
+    _gadgetOrder(...a) { return FieldKit.prototype._gadgetOrder.call(this, ...a); }
+    _gadgetSmite(...a) { return FieldKit.prototype._gadgetSmite.call(this, ...a); }
+    _resolveGadget(...a) { return FieldKit.prototype._resolveGadget.call(this, ...a); }
+    _scrapCfg(...a) { return ElementSystem.prototype._scrapCfg.call(this, ...a); }
+    beginScrapRun(...a) { return ElementSystem.prototype.beginScrapRun.call(this, ...a); }
+    _scrapStore(...a) { return ElementSystem.prototype._scrapStore.call(this, ...a); }
+    loadScrapBank(...a) { return ElementSystem.prototype.loadScrapBank.call(this, ...a); }
+    saveScrapBank(...a) { return ElementSystem.prototype.saveScrapBank.call(this, ...a); }
+    _scorchAura(...a) { return ElementSystem.prototype._scorchAura.call(this, ...a); }
     activateFireScorch(...a) { return ElementSystem.prototype.activateFireScorch.call(this, ...a); }
+    _scorchCfg(...a) { return ElementSystem.prototype._scorchCfg.call(this, ...a); }
+    _scorchMeteor(...a) { return ElementSystem.prototype._scorchMeteor.call(this, ...a); }
+    _scorchImpact(...a) { return ElementSystem.prototype._scorchImpact.call(this, ...a); }
+    _superBurnCfg(...a) { return WeaponSystem.prototype._superBurnCfg.call(this, ...a); }
+    applySuperBurn(...a) { return WeaponSystem.prototype.applySuperBurn.call(this, ...a); }
+    _superBurnDecay(...a) { return WeaponSystem.prototype._superBurnDecay.call(this, ...a); }
+    _scorchHeal(...a) { return WeaponSystem.prototype._scorchHeal.call(this, ...a); }
+    _deepFreezeFx(...a) { return ElementSystem.prototype._deepFreezeFx.call(this, ...a); }
     _fireShotgunBurst(...a) { return ElementSystem.prototype._fireShotgunBurst.call(this, ...a); }
     _applyIgnitionMark(...a) { return WeaponSystem.prototype._applyIgnitionMark.call(this, ...a); }
     activateIceBlizzard(...a) { return ElementSystem.prototype.activateIceBlizzard.call(this, ...a); }
@@ -1467,26 +2034,40 @@ class GameScene extends Phaser.Scene {
     applySuperConduct(...a) { return ElementSystem.prototype.applySuperConduct.call(this, ...a); }
     clearSuperConduct(...a) { return ElementSystem.prototype.clearSuperConduct.call(this, ...a); }
     updateSuperConductors(...a) { return ElementSystem.prototype.updateSuperConductors.call(this, ...a); }
-    placeLightningNode(...a) { return ElementSystem.prototype.placeLightningNode.call(this, ...a); }
-    removeLightningNodeAt(...a) { return ElementSystem.prototype.removeLightningNodeAt.call(this, ...a); }
     cancelNodeChannel(...a) { return ElementSystem.prototype.cancelNodeChannel.call(this, ...a); }
+    placeEngineerTower(...a) { return ElementSystem.prototype.placeEngineerTower.call(this, ...a); }
+    removeEngineerTowerAt(...a) { return ElementSystem.prototype.removeEngineerTowerAt.call(this, ...a); }
+    _engineerTowerDefs(...a) { return ElementSystem.prototype._engineerTowerDefs.call(this, ...a); }
+    finishPlacingEngineerTower(...a) { return ElementSystem.prototype.finishPlacingEngineerTower.call(this, ...a); }
+    _drawEngineerTowerBody(...a) { return ElementSystem.prototype._drawEngineerTowerBody.call(this, ...a); }
+    destroyEngineerTower(...a) { return ElementSystem.prototype.destroyEngineerTower.call(this, ...a); }
+    damageEngineerTower(...a) { return ElementSystem.prototype.damageEngineerTower.call(this, ...a); }
+    _damageTowersInTileRadius(...a) { return ElementSystem.prototype._damageTowersInTileRadius.call(this, ...a); }
+    _damageTowersInPixelRadius(...a) { return ElementSystem.prototype._damageTowersInPixelRadius.call(this, ...a); }
+    updateEngineerTowers(...a) { return ElementSystem.prototype.updateEngineerTowers.call(this, ...a); }
+    _flashEngineerTower(...a) { return ElementSystem.prototype._flashEngineerTower.call(this, ...a); }
+    _magnetizerPull(...a) { return ElementSystem.prototype._magnetizerPull.call(this, ...a); }
+    _fireTeslaCoil(...a) { return ElementSystem.prototype._fireTeslaCoil.call(this, ...a); }
+    _spawnTeslaBolt(...a) { return ElementSystem.prototype._spawnTeslaBolt.call(this, ...a); }
+    updateTeslaBolts(...a) { return ElementSystem.prototype.updateTeslaBolts.call(this, ...a); }
+    _fireMachineGunBullet(...a) { return ElementSystem.prototype._fireMachineGunBullet.call(this, ...a); }
+    updateEngineerBullets(...a) { return ElementSystem.prototype.updateEngineerBullets.call(this, ...a); }
+    _updateSniperTower(...a) { return ElementSystem.prototype._updateSniperTower.call(this, ...a); }
+    _spawnSniperTowerWarning(...a) { return ElementSystem.prototype._spawnSniperTowerWarning.call(this, ...a); }
+    _drawSniperTowerBeam(...a) { return ElementSystem.prototype._drawSniperTowerBeam.call(this, ...a); }
+    _clearSniperTowerWarning(...a) { return ElementSystem.prototype._clearSniperTowerWarning.call(this, ...a); }
+    _fireSniperTowerBullet(...a) { return ElementSystem.prototype._fireSniperTowerBullet.call(this, ...a); }
+    showEngineerBuildUI(...a) { return ElementSystem.prototype.showEngineerBuildUI.call(this, ...a); }
+    updateEngineerBuildUI(...a) { return ElementSystem.prototype.updateEngineerBuildUI.call(this, ...a); }
+    clearEngineerBuildRing(...a) { return ElementSystem.prototype.clearEngineerBuildRing.call(this, ...a); }
+    clearEngineerBuildMode(...a) { return ElementSystem.prototype.clearEngineerBuildMode.call(this, ...a); }
+    _redrawEngineerBuildRing(...a) { return ElementSystem.prototype._redrawEngineerBuildRing.call(this, ...a); }
+    updateEngineerTowerPreview(...a) { return ElementSystem.prototype.updateEngineerTowerPreview.call(this, ...a); }
+    clearEngineerTowerPreview(...a) { return ElementSystem.prototype.clearEngineerTowerPreview.call(this, ...a); }
     updateNodeChannel(...a) { return ElementSystem.prototype.updateNodeChannel.call(this, ...a); }
     spawnOrbScrap(...a) { return ElementSystem.prototype.spawnOrbScrap.call(this, ...a); }
     updateOrbScraps(...a) { return ElementSystem.prototype.updateOrbScraps.call(this, ...a); }
-    updateNodeCrafting(...a) { return ElementSystem.prototype.updateNodeCrafting.call(this, ...a); }
-    finishPlacingNode(...a) { return ElementSystem.prototype.finishPlacingNode.call(this, ...a); }
-    activateLightningNode(...a) { return ElementSystem.prototype.activateLightningNode.call(this, ...a); }
-    destroyLightningNode(...a) { return ElementSystem.prototype.destroyLightningNode.call(this, ...a); }
-    updateLightningNodes(...a) { return ElementSystem.prototype.updateLightningNodes.call(this, ...a); }
-    deactivateLightningNode(...a) { return ElementSystem.prototype.deactivateLightningNode.call(this, ...a); }
-    drawNodeArc(...a) { return ElementSystem.prototype.drawNodeArc.call(this, ...a); }
-    showNodePlacementRing(...a) { return ElementSystem.prototype.showNodePlacementRing.call(this, ...a); }
-    clearNodePlacementRing(...a) { return ElementSystem.prototype.clearNodePlacementRing.call(this, ...a); }
-    clearNodeMode(...a) { return ElementSystem.prototype.clearNodeMode.call(this, ...a); }
-    updateNodePreview(...a) { return ElementSystem.prototype.updateNodePreview.call(this, ...a); }
-    _redrawPlacementRing(...a) { return ElementSystem.prototype._redrawPlacementRing.call(this, ...a); }
-    clearNodePreview(...a) { return ElementSystem.prototype.clearNodePreview.call(this, ...a); }
-    drawOrbProjectile(...a) { return ElementSystem.prototype.drawOrbProjectile.call(this, ...a); }
+
     shootChainLightning(...a) { return ElementSystem.prototype.shootChainLightning.call(this, ...a); }
     performChainLightning(...a) { return ElementSystem.prototype.performChainLightning.call(this, ...a); }
     drawLightningBolt(...a) { return ElementSystem.prototype.drawLightningBolt.call(this, ...a); }
@@ -1507,21 +2088,363 @@ class GameScene extends Phaser.Scene {
     updateCosmicBlackHoleProjectile(...a) { return ElementSystem.prototype.updateCosmicBlackHoleProjectile.call(this, ...a); }
     deployCosmicBlackHole(...a) { return ElementSystem.prototype.deployCosmicBlackHole.call(this, ...a); }
     updateCosmicBlackHole(...a) { return ElementSystem.prototype.updateCosmicBlackHole.call(this, ...a); }
+    _cosmicCollapse(...a) { return ElementSystem.prototype._cosmicCollapse.call(this, ...a); }
     updateCosmicMarkVisual(...a) { return ElementSystem.prototype.updateCosmicMarkVisual.call(this, ...a); }
     cosmicDash(...a) { return ElementSystem.prototype.cosmicDash.call(this, ...a); }
+    cosmicDashAim(...a) { return ElementSystem.prototype.cosmicDashAim.call(this, ...a); }
+    _dashDazeFx(...a) { return ElementSystem.prototype._dashDazeFx.call(this, ...a); }
+    _updateGlide(...a) { return ElementSystem.prototype._updateGlide.call(this, ...a); }
+    _relicDashTrail(...a) { return ElementSystem.prototype._relicDashTrail.call(this, ...a); }
+    playerDash(...a) { return ElementSystem.prototype.playerDash.call(this, ...a); }
+    _dashFx(...a) { return ElementSystem.prototype._dashFx.call(this, ...a); }
+    _dashCanEnter(...a) { return ElementSystem.prototype._dashCanEnter.call(this, ...a); }
+    _deathSummary(...a) { return HUD.prototype._deathSummary.call(this, ...a); }
+    _deathFx(...a) { return HUD.prototype._deathFx.call(this, ...a); }
 
     // HUD
     createHUD(...a) { return HUD.prototype.createHUD.call(this, ...a); }
     updateHUD(...a) { return HUD.prototype.updateHUD.call(this, ...a); }
+    _buildUltGems(...a) { return HUD.prototype._buildUltGems.call(this, ...a); }
+    _drawUltGems(...a)  { return HUD.prototype._drawUltGems.call(this, ...a); }
+    // ── CosmicSystem (Cosmic.js) ──
+    _csCfg(...a) { return CosmicSystem.prototype._csCfg.call(this, ...a); }
+    _csInit(...a) { return CosmicSystem.prototype._csInit.call(this, ...a); }
+    _csTeardown(...a) { return CosmicSystem.prototype._csTeardown.call(this, ...a); }
+    _csUnlockedNow(...a) { return CosmicSystem.prototype._csUnlockedNow.call(this, ...a); }
+    _csWeapon(...a) { return CosmicSystem.prototype._csWeapon.call(this, ...a); }
+    _csAscending(...a) { return CosmicSystem.prototype._csAscending.call(this, ...a); }
+    _csMomentum(...a) { return CosmicSystem.prototype._csMomentum.call(this, ...a); }
+    _csDmgMult(...a) { return CosmicSystem.prototype._csDmgMult.call(this, ...a); }
+    _dmgOutMult(...a) { return CombatSystem.prototype._dmgOutMult.call(this, ...a); }
+    _luckNow(...a) { return CombatSystem.prototype._luckNow.call(this, ...a); }
+    _dieFx(...a) { return CombatSystem.prototype._dieFx.call(this, ...a); }
+    _chaosTick(...a) { return CombatSystem.prototype._chaosTick.call(this, ...a); }
+    _wheel(...a) { return CombatSystem.prototype._wheel.call(this, ...a); }
+    _chaosMove(...a) { return CombatSystem.prototype._chaosMove.call(this, ...a); }
+    _asUlt(...a) { return CombatSystem.prototype._asUlt.call(this, ...a); }
+    _hitRoll(...a)    { return CombatSystem.prototype._hitRoll.call(this, ...a); }
+    _afterHit(...a)   { return CombatSystem.prototype._afterHit.call(this, ...a); }
+    _critEffect(...a) { return CombatSystem.prototype._critEffect.call(this, ...a); }
+    _addAlly(...a) { return CombatSystem.prototype._addAlly.call(this, ...a); }
+    _updateMusic(...a) { return HUD.prototype._updateMusic.call(this, ...a); }
+    _tickRunStats(...a) { return HUD.prototype._tickRunStats.call(this, ...a); }
+    _stackStatusIcons(...a) { return HUD.prototype._stackStatusIcons.call(this, ...a); }
+    _showWinScreen(...a) { return HUD.prototype._showWinScreen.call(this, ...a); }
+    _tallyDamage(...a) { return CombatSystem.prototype._tallyDamage.call(this, ...a); }
+    _volleyMult(...a) { return CombatSystem.prototype._volleyMult.call(this, ...a); }
+    _bossVolleyKey(...a) { return CombatSystem.prototype._bossVolleyKey.call(this, ...a); }
+    _followResistMarks(...a) { return LevelManager.prototype._followResistMarks.call(this, ...a); }
+    _frostCfg(...a) { return LevelManager.prototype._frostCfg.call(this, ...a); }
+    createFrostSlime(...a) { return LevelManager.prototype.createFrostSlime.call(this, ...a); }
+    _frostEncase(...a) { return LevelManager.prototype._frostEncase.call(this, ...a); }
+    _encCfg(...a) { return LevelManager.prototype._encCfg.call(this, ...a); }
+    createEncasedSlime(...a) { return LevelManager.prototype.createEncasedSlime.call(this, ...a); }
+    _encEncase(...a) { return LevelManager.prototype._encEncase.call(this, ...a); }
+    _encUpdate(...a) { return LevelManager.prototype._encUpdate.call(this, ...a); }
+    _encReborn(...a) { return LevelManager.prototype._encReborn.call(this, ...a); }
+    _encCast(...a) { return LevelManager.prototype._encCast.call(this, ...a); }
+    _encAtkTick(...a) { return LevelManager.prototype._encAtkTick.call(this, ...a); }
+    _encAtkEnd(...a) { return LevelManager.prototype._encAtkEnd.call(this, ...a); }
+    _encCleanup(...a) { return LevelManager.prototype._encCleanup.call(this, ...a); }
+    _frostUpdate(...a) { return LevelManager.prototype._frostUpdate.call(this, ...a); }
+    _frostHatch(...a) { return LevelManager.prototype._frostHatch.call(this, ...a); }
+    _tauntBegin(...a) { return CombatSystem.prototype._tauntBegin.call(this, ...a); }
+    _tauntEnd(...a) { return CombatSystem.prototype._tauntEnd.call(this, ...a); }
+    _tauntBlocks(...a) { return CombatSystem.prototype._tauntBlocks.call(this, ...a); }
+    _updateAllies(...a) { return CombatSystem.prototype._updateAllies.call(this, ...a); }
+    _gadgetDecoy(...a) { return FieldKit.prototype._gadgetDecoy.call(this, ...a); }
+    _csTakenMult(...a) { return CosmicSystem.prototype._csTakenMult.call(this, ...a); }
+    _csMoveMult(...a) { return CosmicSystem.prototype._csMoveMult.call(this, ...a); }
+    _meteorBarrage(...a) { return ElementSystem.prototype._meteorBarrage.call(this, ...a); }
+    _barrageMeteor(...a) { return ElementSystem.prototype._barrageMeteor.call(this, ...a); }
+    _csHpBoost(...a) { return CosmicSystem.prototype._csHpBoost.call(this, ...a); }
+    _csHpBoostEnd(...a) { return CosmicSystem.prototype._csHpBoostEnd.call(this, ...a); }
+    _csDomainRect(...a) { return CosmicSystem.prototype._csDomainRect.call(this, ...a); }
+    _csDomainLine(...a) { return CosmicSystem.prototype._csDomainLine.call(this, ...a); }
+    _csDomainBegin(...a) { return CosmicSystem.prototype._csDomainBegin.call(this, ...a); }
+    _csDomainTide(...a) { return CosmicSystem.prototype._csDomainTide.call(this, ...a); }
+    _csDomainFlood(...a) { return CosmicSystem.prototype._csDomainFlood.call(this, ...a); }
+    _csOutsideDomain(...a) { return CosmicSystem.prototype._csOutsideDomain.call(this, ...a); }
+    _csDomainEnd(...a) { return CosmicSystem.prototype._csDomainEnd.call(this, ...a); }
+    _csFluidTile(...a) { return CosmicSystem.prototype._csFluidTile.call(this, ...a); }
+    _csAscendBlast(...a) { return CosmicSystem.prototype._csAscendBlast.call(this, ...a); }
+    _csAscendWave(...a) { return CosmicSystem.prototype._csAscendWave.call(this, ...a); }
+    _csSwitchMult(...a) { return CosmicSystem.prototype._csSwitchMult.call(this, ...a); }
+    _csMark(...a) { return CosmicSystem.prototype._csMark.call(this, ...a); }
+    _csOnHit(...a) { return CosmicSystem.prototype._csOnHit.call(this, ...a); }
+    _csOnDash(...a) { return CosmicSystem.prototype._csOnDash.call(this, ...a); }
+    _csAddMomentum(...a) { return CosmicSystem.prototype._csAddMomentum.call(this, ...a); }
+    _csOnHurt(...a) { return CosmicSystem.prototype._csOnHurt.call(this, ...a); }
+    _csHex(...a) { return CosmicSystem.prototype._csHex.call(this, ...a); }
+    _csWardCatch(...a) { return CosmicSystem.prototype._csWardCatch.call(this, ...a); }
+    _csWardEat(...a) { return CosmicSystem.prototype._csWardEat.call(this, ...a); }
+    _csCast(...a) { return CosmicSystem.prototype._csCast.call(this, ...a); }
+    _csPunch(...a) { return CosmicSystem.prototype._csPunch.call(this, ...a); }
+    _csBarrier(...a) { return CosmicSystem.prototype._csBarrier.call(this, ...a); }
+    _csRaiseWards(...a) { return CosmicSystem.prototype._csRaiseWards.call(this, ...a); }
+    _csAstrolabe(...a) { return CosmicSystem.prototype._csAstrolabe.call(this, ...a); }
+    _csWell(...a) { return CosmicSystem.prototype._csWell.call(this, ...a); }
+    _csWellEnd(...a) { return CosmicSystem.prototype._csWellEnd.call(this, ...a); }
+    _csUpdateWellBeam(...a) { return CosmicSystem.prototype._csUpdateWellBeam.call(this, ...a); }
+    _csWellOpen(...a) { return CosmicSystem.prototype._csWellOpen.call(this, ...a); }
+    _csBlade(...a) { return CosmicSystem.prototype._csBlade.call(this, ...a); }
+    _csAscend(...a) { return CosmicSystem.prototype._csAscend.call(this, ...a); }
+    _csSupernova(...a) { return CosmicSystem.prototype._csSupernova.call(this, ...a); }
+    _csUpdate(...a) { return CosmicSystem.prototype._csUpdate.call(this, ...a); }
+    _csSweepProjectiles(...a) { return CosmicSystem.prototype._csSweepProjectiles.call(this, ...a); }
+    _csUpdateStars(...a) { return CosmicSystem.prototype._csUpdateStars.call(this, ...a); }
+    _csStarFall(...a) { return CosmicSystem.prototype._csStarFall.call(this, ...a); }
+    _csSpendStars(...a) { return CosmicSystem.prototype._csSpendStars.call(this, ...a); }
+    _csAstroFoes(...a) { return CosmicSystem.prototype._csAstroFoes.call(this, ...a); }
+    _csAstralPop(...a) { return CosmicSystem.prototype._csAstralPop.call(this, ...a); }
+    _csPopFx(...a) { return CosmicSystem.prototype._csPopFx.call(this, ...a); }
+    _csUpdateAstral(...a) { return CosmicSystem.prototype._csUpdateAstral.call(this, ...a); }
+    _csBladeCharge(...a) { return CosmicSystem.prototype._csBladeCharge.call(this, ...a); }
+    _csBladeShape(...a) { return CosmicSystem.prototype._csBladeShape.call(this, ...a); }
+    _csBladeTiles(...a) { return CosmicSystem.prototype._csBladeTiles.call(this, ...a); }
+    _csUpdateBlade(...a) { return CosmicSystem.prototype._csUpdateBlade.call(this, ...a); }
+    _csRelease(...a) { return CosmicSystem.prototype._csRelease.call(this, ...a); }
+    _csWardShove(...a) { return CosmicSystem.prototype._csWardShove.call(this, ...a); }
+    _csDragToward(...a) { return CosmicSystem.prototype._csDragToward.call(this, ...a); }
+    _csArena(...a) { return CosmicSystem.prototype._csArena.call(this, ...a); }
+    _csHidePreview(...a) { return CosmicSystem.prototype._csHidePreview.call(this, ...a); }
+    _csVoidbeam(...a) { return CosmicSystem.prototype._csVoidbeam.call(this, ...a); }
+    _csBladeF(...a) { return CosmicSystem.prototype._csBladeF.call(this, ...a); }
+    _csBladeDrop(...a) { return CosmicSystem.prototype._csBladeDrop.call(this, ...a); }
+    _csUpdateFluid(...a) { return CosmicSystem.prototype._csUpdateFluid.call(this, ...a); }
+    _csStage(...a) { return CosmicSystem.prototype._csStage.call(this, ...a); }
+    _csTf(...a) { return CosmicSystem.prototype._csTf.call(this, ...a); }
+    _csRooted(...a) { return CosmicSystem.prototype._csRooted.call(this, ...a); }
+    _csFormLock(...a) { return CosmicSystem.prototype._csFormLock.call(this, ...a); }
+    _csVDown(...a) { return CosmicSystem.prototype._csVDown.call(this, ...a); }
+    _csVUp(...a) { return CosmicSystem.prototype._csVUp.call(this, ...a); }
+    _csMaxLayers(...a) { return CosmicSystem.prototype._csMaxLayers.call(this, ...a); }
+    _csLayers(...a) { return CosmicSystem.prototype._csLayers.call(this, ...a); }
+    _csSetLayers(...a) { return CosmicSystem.prototype._csSetLayers.call(this, ...a); }
+    _csGainCharge(...a) { return CosmicSystem.prototype._csGainCharge.call(this, ...a); }
+    _csChargeAt(...a) { return CosmicSystem.prototype._csChargeAt.call(this, ...a); }
+    _csUpdateCharge(...a) { return CosmicSystem.prototype._csUpdateCharge.call(this, ...a); }
+    _csChargeEnd(...a) { return CosmicSystem.prototype._csChargeEnd.call(this, ...a); }
+    _csDrawCharge(...a) { return CosmicSystem.prototype._csDrawCharge.call(this, ...a); }
+    _csSkinBuild(...a) { return CosmicSystem.prototype._csSkinBuild.call(this, ...a); }
+    _csSkinSync(...a) { return CosmicSystem.prototype._csSkinSync.call(this, ...a); }
+    _csSkinDrop(...a) { return CosmicSystem.prototype._csSkinDrop.call(this, ...a); }
+    _csTfBegin(...a) { return CosmicSystem.prototype._csTfBegin.call(this, ...a); }
+    _csTfTarget(...a) { return CosmicSystem.prototype._csTfTarget.call(this, ...a); }
+    _csTfUpdate(...a) { return CosmicSystem.prototype._csTfUpdate.call(this, ...a); }
+    _csTfDrop(...a) { return CosmicSystem.prototype._csTfDrop.call(this, ...a); }
+    _csTfSlam(...a) { return CosmicSystem.prototype._csTfSlam.call(this, ...a); }
+    _csTfEnd(...a) { return CosmicSystem.prototype._csTfEnd.call(this, ...a); }
+    _csHitBosses(...a) { return CosmicSystem.prototype._csHitBosses.call(this, ...a); }
+    _csPointerDown(...a) { return CosmicSystem.prototype._csPointerDown.call(this, ...a); }
+    _csPointerMove(...a) { return CosmicSystem.prototype._csPointerMove.call(this, ...a); }
+    _csSetAnchor(...a) { return CosmicSystem.prototype._csSetAnchor.call(this, ...a); }
+    _csAnchorPair(...a) { return CosmicSystem.prototype._csAnchorPair.call(this, ...a); }
+    _csPointerUp(...a) { return CosmicSystem.prototype._csPointerUp.call(this, ...a); }
+    _csCollapsePlan(...a) { return CosmicSystem.prototype._csCollapsePlan.call(this, ...a); }
+    _csCollapsePreview(...a) { return CosmicSystem.prototype._csCollapsePreview.call(this, ...a); }
+    _csCollapseFire(...a) { return CosmicSystem.prototype._csCollapseFire.call(this, ...a); }
+    _csUpdateCollapses(...a) { return CosmicSystem.prototype._csUpdateCollapses.call(this, ...a); }
+    _csCollapseImpact(...a) { return CosmicSystem.prototype._csCollapseImpact.call(this, ...a); }
+    _csSpawnVoidlets(...a) { return CosmicSystem.prototype._csSpawnVoidlets.call(this, ...a); }
+    _csUpdateVoidlets(...a) { return CosmicSystem.prototype._csUpdateVoidlets.call(this, ...a); }
+    _csUpdateWell(...a) { return CosmicSystem.prototype._csUpdateWell.call(this, ...a); }
+    _csPull(...a) { return CosmicSystem.prototype._csPull.call(this, ...a); }
+    _csUpdateMarks(...a) { return CosmicSystem.prototype._csUpdateMarks.call(this, ...a); }
+    _csDrawFx(...a) { return CosmicSystem.prototype._csDrawFx.call(this, ...a); }
+    _csLights(...a) { return CosmicSystem.prototype._csLights.call(this, ...a); }
+    _csBuildTray(...a) { return CosmicSystem.prototype._csBuildTray.call(this, ...a); }
+    _csTrayState(...a) { return CosmicSystem.prototype._csTrayState.call(this, ...a); }
+    _csDrawTray(...a) { return CosmicSystem.prototype._csDrawTray.call(this, ...a); }
+    _csCastFx(...a) { return CosmicSystem.prototype._csCastFx.call(this, ...a); }
+    _csBurst(...a) { return CosmicSystem.prototype._csBurst.call(this, ...a); }
+    _csBanner(...a) { return CosmicSystem.prototype._csBanner.call(this, ...a); }
+    // ── BossFX (Bosses.js) ──
+    _bfxCfg(...a) { return BossFX.prototype._bfxCfg.call(this, ...a); }
+    _bfxInit(...a) { return BossFX.prototype._bfxInit.call(this, ...a); }
+    _bfxUpdate(...a) { return BossFX.prototype._bfxUpdate.call(this, ...a); }
+    _bfxSwap(...a) { return BossFX.prototype._bfxSwap.call(this, ...a); }
+    _bfxVoltShot(...a) { return BossFX.prototype._bfxVoltShot.call(this, ...a); }
+    _bfxFragTick(...a) { return BossFX.prototype._bfxFragTick.call(this, ...a); }
+    _bfxTrails(...a) { return BossFX.prototype._bfxTrails.call(this, ...a); }
+    _bfxLights(...a) { return BossFX.prototype._bfxLights.call(this, ...a); }
+    _bfxCallout(...a) { return BossFX.prototype._bfxCallout.call(this, ...a); }
+    _bfxBosses(...a) { return BossFX.prototype._bfxBosses.call(this, ...a); }
+    _bfxBossBar(...a) { return BossFX.prototype._bfxBossBar.call(this, ...a); }
+    _bfxHideBars(...a) { return BossFX.prototype._bfxHideBars.call(this, ...a); }
+    _bfxCrisp(...a) { return BossFX.prototype._bfxCrisp.call(this, ...a); }
+    _bfxBossIce(...a) { return BossFX.prototype._bfxBossIce.call(this, ...a); }
+    _bfxHitFlash(...a) { return BossFX.prototype._bfxHitFlash.call(this, ...a); }
+    _bfxVoltDress(...a) { return BossFX.prototype._bfxVoltDress.call(this, ...a); }
+    _bfxVoltTick(...a) { return BossFX.prototype._bfxVoltTick.call(this, ...a); }
+    _bfxSlamWarn(...a) { return BossFX.prototype._bfxSlamWarn.call(this, ...a); }
+    _bfxSlamHit(...a) { return BossFX.prototype._bfxSlamHit.call(this, ...a); }
+    _bfxVoltZap(...a) { return BossFX.prototype._bfxVoltZap.call(this, ...a); }
+    _bfxVoltDeath(...a) { return BossFX.prototype._bfxVoltDeath.call(this, ...a); }
+    _bfxVoidDress(...a) { return BossFX.prototype._bfxVoidDress.call(this, ...a); }
+    _bfxVoidTick(...a) { return BossFX.prototype._bfxVoidTick.call(this, ...a); }
+    _bfxDrawMine(...a) { return BossFX.prototype._bfxDrawMine.call(this, ...a); }
+    _bfxMineBlast(...a) { return BossFX.prototype._bfxMineBlast.call(this, ...a); }
+    _bfxBeams(...a) { return BossFX.prototype._bfxBeams.call(this, ...a); }
+    _bfxFragment(...a) { return BossFX.prototype._bfxFragment.call(this, ...a); }
+    _bfxShatter(...a) { return BossFX.prototype._bfxShatter.call(this, ...a); }
+    _bfxStompTrack(...a) { return BossFX.prototype._bfxStompTrack.call(this, ...a); }
+    _bfxStompLand(...a) { return BossFX.prototype._bfxStompLand.call(this, ...a); }
+    _bfxRift(...a) { return BossFX.prototype._bfxRift.call(this, ...a); }
+    _bfxRiftClose(...a) { return BossFX.prototype._bfxRiftClose.call(this, ...a); }
+    _bfxDrawRifts(...a) { return BossFX.prototype._bfxDrawRifts.call(this, ...a); }
+    _bfxDrawRift(...a) { return BossFX.prototype._bfxDrawRift.call(this, ...a); }
+    _bfxSniperRift(...a) { return BossFX.prototype._bfxSniperRift.call(this, ...a); }
+    _bfxSniperRiftClose(...a) { return BossFX.prototype._bfxSniperRiftClose.call(this, ...a); }
+    _bfxCoreDraw(...a) { return BossFX.prototype._bfxCoreDraw.call(this, ...a); }
+    _bfxCoreLayout(...a) { return BossFX.prototype._bfxCoreLayout.call(this, ...a); }
+    _bfxCoreTick(...a) { return BossFX.prototype._bfxCoreTick.call(this, ...a); }
+    _bfxCoreKick(...a) { return BossFX.prototype._bfxCoreKick.call(this, ...a); }
+    _bfxCoreDeath(...a) { return BossFX.prototype._bfxCoreDeath.call(this, ...a); }
+    _bfxDust(...a) { return BossFX.prototype._bfxDust.call(this, ...a); }
+    _bfxQueenDress(...a) { return BossFX.prototype._bfxQueenDress.call(this, ...a); }
+    _bfxQueenTick(...a) { return BossFX.prototype._bfxQueenTick.call(this, ...a); }
+    _bfxQueenPulse(...a) { return BossFX.prototype._bfxQueenPulse.call(this, ...a); }
+    _bfxQueenDeath(...a) { return BossFX.prototype._bfxQueenDeath.call(this, ...a); }
+    _bfxDrawVine(...a) { return BossFX.prototype._bfxDrawVine.call(this, ...a); }
+    _bfxVineSnap(...a) { return BossFX.prototype._bfxVineSnap.call(this, ...a); }
+    _bfxThump(...a) { return BossFX.prototype._bfxThump.call(this, ...a); }
+    _bfxRootFx(...a) { return BossFX.prototype._bfxRootFx.call(this, ...a); }
+    _bfxSings(...a) { return BossFX.prototype._bfxSings.call(this, ...a); }
+    _bfxCollapseStart(...a) { return BossFX.prototype._bfxCollapseStart.call(this, ...a); }
+    _bfxCollapseTick(...a) { return BossFX.prototype._bfxCollapseTick.call(this, ...a); }
+    _bfxCollapseEnd(...a) { return BossFX.prototype._bfxCollapseEnd.call(this, ...a); }
+    _bfxHorizonRing(...a) { return BossFX.prototype._bfxHorizonRing.call(this, ...a); }
+    _bfxHorizonPulse(...a) { return BossFX.prototype._bfxHorizonPulse.call(this, ...a); }
+    _bfxCrumble(...a) { return BossFX.prototype._bfxCrumble.call(this, ...a); }
+    _bfxTileFrame(...a) { return BossFX.prototype._bfxTileFrame.call(this, ...a); }
+    _bfxVoidDeath(...a) { return BossFX.prototype._bfxVoidDeath.call(this, ...a); }
+    // ── TowerFloors (Tower.js) ──
+    towerScaling(...a)       { return TowerFloors.prototype.towerScaling.call(this, ...a); }
+    generateTowerArena(...a) { return TowerFloors.prototype.generateTowerArena.call(this, ...a); }
+    _towerBlocks(...a) { return TowerFloors.prototype._towerBlocks.call(this, ...a); }
+    _towerShift(...a) { return TowerFloors.prototype._towerShift.call(this, ...a); }
+    _towerConnected(...a)    { return TowerFloors.prototype._towerConnected.call(this, ...a); }
+    _towerBegin(...a)        { return TowerFloors.prototype._towerBegin.call(this, ...a); }
+    _towerLeaveFx(...a) { return TowerFloors.prototype._towerLeaveFx.call(this, ...a); }
+    _towerArriveFx(...a) { return TowerFloors.prototype._towerArriveFx.call(this, ...a); }
+    _towerLabel(...a)        { return TowerFloors.prototype._towerLabel.call(this, ...a); }
+    _towerBanner(...a)       { return TowerFloors.prototype._towerBanner.call(this, ...a); }
+    _towerUpdate(...a)       { return TowerFloors.prototype._towerUpdate.call(this, ...a); }
+    _towerWave(...a)         { return TowerFloors.prototype._towerWave.call(this, ...a); }
+    _towerSpots(...a)        { return TowerFloors.prototype._towerSpots.call(this, ...a); }
+    _towerTelegraph(...a)    { return TowerFloors.prototype._towerTelegraph.call(this, ...a); }
+    _towerSpawn(...a)        { return TowerFloors.prototype._towerSpawn.call(this, ...a); }
+    _towerBoss(...a)         { return TowerFloors.prototype._towerBoss.call(this, ...a); }
+    _towerClear(...a)        { return TowerFloors.prototype._towerClear.call(this, ...a); }
+    _towerNext(...a)         { return TowerFloors.prototype._towerNext.call(this, ...a); }
+    _towerOpenExit(...a)     { return TowerFloors.prototype._towerOpenExit.call(this, ...a); }
+    _towerApplyMods(...a)    { return TowerFloors.prototype._towerApplyMods.call(this, ...a); }
+    _towerOffer(...a)        { return TowerFloors.prototype._towerOffer.call(this, ...a); }
+    _towerPickScreen(...a)   { return TowerFloors.prototype._towerPickScreen.call(this, ...a); }
+    _towerDraft(...a)        { return TowerFloors.prototype._towerDraft.call(this, ...a); }
+    // ── CreatureFX (Creatures.js) ──
+    _cfxCfg(...a) { return CreatureFX.prototype._cfxCfg.call(this, ...a); }
+    _cfxInit(...a) { return CreatureFX.prototype._cfxInit.call(this, ...a); }
+    _cfxUpdate(...a) { return CreatureFX.prototype._cfxUpdate.call(this, ...a); }
+    _cfxDress(...a) { return CreatureFX.prototype._cfxDress.call(this, ...a); }
+    _cfxMarks(...a) { return CreatureFX.prototype._cfxMarks.call(this, ...a); }
+    _cfxGem(...a) { return CreatureFX.prototype._cfxGem.call(this, ...a); }
+    _cfxStatus(...a) { return CreatureFX.prototype._cfxStatus.call(this, ...a); }
+    _cfxBody(...a) { return CreatureFX.prototype._cfxBody.call(this, ...a); }
+    _cfxChillBar(...a) { return CreatureFX.prototype._cfxChillBar.call(this, ...a); }
+    _cfxSparks(...a) { return CreatureFX.prototype._cfxSparks.call(this, ...a); }
+    _cfxClear(...a) { return CreatureFX.prototype._cfxClear.call(this, ...a); }
+    _cfxBosses(...a) { return CreatureFX.prototype._cfxBosses.call(this, ...a); }
+    _cfxDrops(...a) { return CreatureFX.prototype._cfxDrops.call(this, ...a); }
+    _cfxPuppet(...a) { return CreatureFX.prototype._cfxPuppet.call(this, ...a); }
+    _cfxPuppetSync(...a) { return CreatureFX.prototype._cfxPuppetSync.call(this, ...a); }
+    _cfxPuppetOne(...a) { return CreatureFX.prototype._cfxPuppetOne.call(this, ...a); }
+    _cfxSpeedArrow(...a) { return CreatureFX.prototype._cfxSpeedArrow.call(this, ...a); }
+    _cfxShieldBlock(...a) { return CreatureFX.prototype._cfxShieldBlock.call(this, ...a); }
+    _cfxPortrait(...a) { return CreatureFX.prototype._cfxPortrait.call(this, ...a); }
+    _cfxLights(...a) { return CreatureFX.prototype._cfxLights.call(this, ...a); }
+    // ── VisualFX (Visuals.js) ──
+    _vfxWallLift(...a) { return VisualFX.prototype._vfxWallLift.call(this, ...a); }
+    _vfxTileEmitters(...a) { return VisualFX.prototype._vfxTileEmitters.call(this, ...a); }
+    _vfxTileFx(...a) { return VisualFX.prototype._vfxTileFx.call(this, ...a); }
+    _vfxSteamPuff(...a) { return VisualFX.prototype._vfxSteamPuff.call(this, ...a); }
+    _vfxCfg(...a) { return VisualFX.prototype._vfxCfg.call(this, ...a); }
+    _vfxTheme(...a) { return VisualFX.prototype._vfxTheme.call(this, ...a); }
+    _vfxInit(...a) { return VisualFX.prototype._vfxInit.call(this, ...a); }
+    _vfxWrapPlayerTint(...a) { return VisualFX.prototype._vfxWrapPlayerTint.call(this, ...a); }
+    _vfxBuildBloom(...a) { return VisualFX.prototype._vfxBuildBloom.call(this, ...a); }
+    _vfxQueueObj(...a) { return VisualFX.prototype._vfxQueueObj.call(this, ...a); }
+    _vfxFlush(...a) { return VisualFX.prototype._vfxFlush.call(this, ...a); }
+    _vfxSort(...a) { return VisualFX.prototype._vfxSort.call(this, ...a); }
+    _vfxUnsort(...a) { return VisualFX.prototype._vfxUnsort.call(this, ...a); }
+    _vfxFadeOut(...a) { return VisualFX.prototype._vfxFadeOut.call(this, ...a); }
+    _vfxFadeIn(...a) { return VisualFX.prototype._vfxFadeIn.call(this, ...a); }
+    _aim(...a) { return VisualFX.prototype._aim.call(this, ...a); }
+    _scrX(...a) { return VisualFX.prototype._scrX.call(this, ...a); }
+    _scrY(...a) { return VisualFX.prototype._scrY.call(this, ...a); }
+    _vfxUpdate(...a) { return VisualFX.prototype._vfxUpdate.call(this, ...a); }
+    _vfxTrails(...a) { return VisualFX.prototype._vfxTrails.call(this, ...a); }
+    _vfxAtlas(...a) { return VisualFX.prototype._vfxAtlas.call(this, ...a); }
+    _vfxFrame(...a) { return VisualFX.prototype._vfxFrame.call(this, ...a); }
+    _vfxRng(...a) { return VisualFX.prototype._vfxRng.call(this, ...a); }
+    _vfxSoftTextures(...a) { return VisualFX.prototype._vfxSoftTextures.call(this, ...a); }
+    _vfxRenderWorld(...a) { return VisualFX.prototype._vfxRenderWorld.call(this, ...a); }
+    _vfxPaintFloor(...a) { return VisualFX.prototype._vfxPaintFloor.call(this, ...a); }
+    _vfxPaintAO(...a) { return VisualFX.prototype._vfxPaintAO.call(this, ...a); }
+    _vfxTileFrame(...a) { return VisualFX.prototype._vfxTileFrame.call(this, ...a); }
+    _vfxPlaceDecals(...a) { return VisualFX.prototype._vfxPlaceDecals.call(this, ...a); }
+    _vfxPaintDecal(...a) { return VisualFX.prototype._vfxPaintDecal.call(this, ...a); }
+    _vfxPlaceTorches(...a) { return VisualFX.prototype._vfxPlaceTorches.call(this, ...a); }
+    _vfxPaintSconce(...a) { return VisualFX.prototype._vfxPaintSconce.call(this, ...a); }
+    _vfxUpdateTorches(...a) { return VisualFX.prototype._vfxUpdateTorches.call(this, ...a); }
+    _vfxWard(...a) { return VisualFX.prototype._vfxWard.call(this, ...a); }
+    _vfxPaintWard(...a) { return VisualFX.prototype._vfxPaintWard.call(this, ...a); }
+    _vfxSludgeTile(...a) { return VisualFX.prototype._vfxSludgeTile.call(this, ...a); }
+    _vfxPaintSludge(...a) { return VisualFX.prototype._vfxPaintSludge.call(this, ...a); }
+    _vfxIceTile(...a) { return VisualFX.prototype._vfxIceTile.call(this, ...a); }
+    _vfxPaintIce(...a) { return VisualFX.prototype._vfxPaintIce.call(this, ...a); }
+    _vfxBuildAir(...a) { return VisualFX.prototype._vfxBuildAir.call(this, ...a); }
+    _vfxUpdateRune(...a) { return VisualFX.prototype._vfxUpdateRune.call(this, ...a); }
+    _vfxBuildLight(...a) { return VisualFX.prototype._vfxBuildLight.call(this, ...a); }
+    _vfxFlash(...a) { return VisualFX.prototype._vfxFlash.call(this, ...a); }
+    _vfxLights(...a) { return VisualFX.prototype._vfxLights.call(this, ...a); }
+    _vfxUpdateLight(...a) { return VisualFX.prototype._vfxUpdateLight.call(this, ...a); }
+    _vfxBuildBursts(...a) { return VisualFX.prototype._vfxBuildBursts.call(this, ...a); }
+    _vfxSpawn(...a) { return VisualFX.prototype._vfxSpawn.call(this, ...a); }
+    _vfxHit(...a) { return VisualFX.prototype._vfxHit.call(this, ...a); }
+    _vfxDeath(...a) { return VisualFX.prototype._vfxDeath.call(this, ...a); }
+    _vfxUnitColor(...a) { return VisualFX.prototype._vfxUnitColor.call(this, ...a); }
+    _vfxPlayerHurt(...a) { return VisualFX.prototype._vfxPlayerHurt.call(this, ...a); }
+    _vfxUltBanner(...a) { return VisualFX.prototype._vfxUltBanner.call(this, ...a); }
+    _vfxFreezeBanner(...a) { return VisualFX.prototype._vfxFreezeBanner.call(this, ...a); }
+    _vfxDamageNumber(...a) { return VisualFX.prototype._vfxDamageNumber.call(this, ...a); }
+    _vfxStatusText(...a) { return VisualFX.prototype._vfxStatusText.call(this, ...a); }
+    _vfxStatusFloat(...a) { return VisualFX.prototype._vfxStatusFloat.call(this, ...a); }
+    _vfxFloat(...a) { return VisualFX.prototype._vfxFloat.call(this, ...a); }
+    _vfxLavaTile(...a) { return VisualFX.prototype._vfxLavaTile.call(this, ...a); }
+    _vfxPaintLava(...a) { return VisualFX.prototype._vfxPaintLava.call(this, ...a); }
+    _vfxWaterImg(...a) { return VisualFX.prototype._vfxWaterImg.call(this, ...a); }
+    _vfxPaintWater(...a) { return VisualFX.prototype._vfxPaintWater.call(this, ...a); }
+    _vfxDrawWater(...a) { return VisualFX.prototype._vfxDrawWater.call(this, ...a); }
+    _vfxUpdateShadows(...a) { return VisualFX.prototype._vfxUpdateShadows.call(this, ...a); }
+    _vfxHop(...a) { return VisualFX.prototype._vfxHop.call(this, ...a); }
+    _vfxBuildHud(...a) { return VisualFX.prototype._vfxBuildHud.call(this, ...a); }
+    _vfxDrawHud(...a) { return VisualFX.prototype._vfxDrawHud.call(this, ...a); }
+    _vfxHeart(...a) { return VisualFX.prototype._vfxHeart.call(this, ...a); }
+    _vfxElIcon(...a) { return VisualFX.prototype._vfxElIcon.call(this, ...a); }
     updateIciclePips(...a)          { return HUD.prototype.updateIciclePips.call(this, ...a); }
     updateIcicleChargeBar(...a)     { return HUD.prototype.updateIcicleChargeBar.call(this, ...a); }
     _destroyIcicleBarObjects(...a)  { return HUD.prototype._destroyIcicleBarObjects.call(this, ...a); }
     openPauseMenu(...a) { return HUD.prototype.openPauseMenu.call(this, ...a); }
+    _freezeClock(...a) { return HUD.prototype._freezeClock.call(this, ...a); }
     closePauseMenu(...a) { return HUD.prototype.closePauseMenu.call(this, ...a); }
     gameOver(...a) { return HUD.prototype.gameOver.call(this, ...a); }
     showDeathScreen(...a) { return HUD.prototype.showDeathScreen.call(this, ...a); }
     _showDeathContent(...a) { return HUD.prototype._showDeathContent.call(this, ...a); }
     showRoomName(...a) { return HUD.prototype.showRoomName.call(this, ...a); }
+    _bossBar(...a) { return HUD.prototype._bossBar.call(this, ...a); }
+    _bossBarHide(...a) { return HUD.prototype._bossBarHide.call(this, ...a); }
 
     _checkRoomNameDisplay() {
         const room = this.getCurrentPlayerRoom();
@@ -1600,9 +2523,33 @@ class GameScene extends Phaser.Scene {
             { label: 'God Mode',       key: '_devGodMode',       desc: 'No damage taken' },
             { label: 'One-Shot',       key: '_devOneShot',       desc: 'Enemies die in 1 hit' },
             { label: 'Freeze Enemies', key: '_devFreezeEnemies', desc: 'All enemies stop moving' },
-            { label: 'Fill Ult',       key: null,                desc: 'Instantly max ult charge', action: () => { this.ultCharge = this.ultChargeMax; this.updateHUD(); } },
+            { label: 'Fill Ult',       key: null,                desc: 'Instantly max ult charge (every cosmic layer too)', action: () => { for (const k in this.ultGems) this.ultGems[k] = this.ultChargeMax; this.ultCharge = this.ultChargeMax; this._csSetLayers?.(this._csMaxLayers?.() ?? 1); this.updateHUD(); } },
             { label: 'Kill All',       key: null,                desc: 'Kill enemies in room',      action: () => { for (const e of [...this.enemies]) { if (this.isInCurrentRoom(e.x, e.y)) this.killEnemy(e); } } },
             { label: 'Max Health',     key: null,                desc: 'Restore full HP',            action: () => { this.health = this.maxHealth; this.updateHUD(); } },
+            // Was `this.orbScraps = 9999`, which the run-scoped bank clamps to BANK_CAP on
+            // the next save -- so the readout jumped to 9999 and then silently snapped back
+            // to 40 the moment anything was bought. Fill to the cap instead, which is the
+            // most the game will ever let you hold anyway.
+            { label: 'Fill Scraps',    key: null,                desc: 'Scrap bank to the cap',
+              action: () => { this.orbScraps = this._scrapCfg().BANK_CAP; this.saveScrapBank(); this.updateHUD(); } },
+            // Unlock everything and make every cooldown ready.
+            { label: 'All Gadgets',    key: null,                desc: 'Unlock all, reset cooldowns',
+              action: () => {
+                  for (const id of this._gadgetOrder()) this.unlockGadget(id);
+                  this.beginGadgetRun();
+                  this.updateHUD();
+                  this.showStatusText(this.player.x, this.player.y - 20, 'ALL GADGETS', '#66ffcc');
+              } },
+            // The inverse, because testing the GATED state is the harder thing to reach once
+            // unlocks are permanent in localStorage -- without this you would be editing
+            // storage by hand to get back to a fresh player's view.
+            { label: 'Lock Gadgets',   key: null,                desc: 'Clear gadget unlocks',
+              action: () => {
+                  localStorage.removeItem(this._unlockStoreKey());
+                  this.beginGadgetRun();
+                  this.updateHUD();
+                  this.showStatusText(this.player.x, this.player.y - 20, 'GADGETS LOCKED', '#ff8866');
+              } },
             { label: 'Teleport Mode',  key: '_devTeleportMode',  desc: 'Left-click to warp' },
         ];
 
@@ -1691,8 +2638,8 @@ class GameScene extends Phaser.Scene {
 
         this.input.on('pointermove', (p) => {
             if (!this._devTeleportMode) { teleportCursor.setVisible(false); return; }
-            const wx = p.x + this.cameras.main.scrollX;
-            const wy = p.y + this.cameras.main.scrollY;
+            const wx = this._aim(p).x + this.cameras.main.scrollX;
+            const wy = this._aim(p).y + this.cameras.main.scrollY;
             const tx = Math.floor(wx / this.TILE_SIZE);
             const ty = Math.floor(wy / this.TILE_SIZE);
             const canPlace = this.world[tx]?.[ty] === this.FLOOR;
@@ -1702,8 +2649,8 @@ class GameScene extends Phaser.Scene {
 
         this.input.on('pointerdown', (p) => {
             if (!this._devTeleportMode || p.button !== 0) return;
-            const wx = p.x + this.cameras.main.scrollX;
-            const wy = p.y + this.cameras.main.scrollY;
+            const wx = this._aim(p).x + this.cameras.main.scrollX;
+            const wy = this._aim(p).y + this.cameras.main.scrollY;
             let tx = Math.floor(wx / this.TILE_SIZE);
             let ty = Math.floor(wy / this.TILE_SIZE);
 
@@ -1743,13 +2690,17 @@ class GameScene extends Phaser.Scene {
     }
 
     // Override damageEnemy to support one-shot dev toggle
-    damageEnemy(enemy, damage) {
+    // Passes `element` through. It used to drop it, so every typed damageEnemy call in the
+    // game was resolved as whatever element you happened to hold.
+    damageEnemy(enemy, damage, element) {
         if (this._devOneShot) {
-            return EnemyManager.prototype.damageEnemy
-                ? CombatSystem.prototype.damageEnemy.call(this, enemy, enemy.health + 1)
-                : CombatSystem.prototype.damageEnemy.call(this, enemy, 99999);
+            // Was a ternary on `EnemyManager.prototype.damageEnemy`, which has never
+            // existed -- damageEnemy lives in CombatSystem. The condition was always
+            // falsy, so the enemy.health + 1 branch was unreachable and one-shot always
+            // dealt a flat 99999. Kept the behaviour, dropped the pretence of a choice.
+            return CombatSystem.prototype.damageEnemy.call(this, enemy, 99999, element);
         }
-        return CombatSystem.prototype.damageEnemy.call(this, enemy, damage);
+        return CombatSystem.prototype.damageEnemy.call(this, enemy, damage, element);
     }
 
     // ── Crumble tile system (Level 4 only) ───────────────────────────────────
@@ -1865,6 +2816,13 @@ class GameScene extends Phaser.Scene {
     }
 
     _updateCrumbleTiles(time) {
+        // Expire the crumble slow first: the tile can grow back (and the map empty) before the slow
+        // runs out, and the early return below used to skip this, leaving you slowed for good.
+        if (this._crumbleSlowUntil && time > this._crumbleSlowUntil) {
+            this._crumbleSlowUntil = 0;
+            if (this.moveCooldown > 200) this.moveCooldown = 200;
+            if (this._playerSlowIndTimer) { this._playerSlowIndTimer.remove(); this._playerSlowIndTimer = null; }
+        }
         if (!this._crumbleTiles || this._crumbleTiles.size === 0) return;
         const TS = this.TILE_SIZE;
         const DMG = 8 * this.damageScaling;
@@ -1890,12 +2848,6 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Expire crumble slow
-        if (this._crumbleSlowUntil && time > this._crumbleSlowUntil) {
-            this._crumbleSlowUntil = 0;
-            if (this.moveCooldown > 200) this.moveCooldown = 200;
-            if (this._playerSlowIndTimer) { this._playerSlowIndTimer.remove(); this._playerSlowIndTimer = null; }
-        }
     }
 
     _restoreCrumbleTile(key) {
@@ -1906,7 +2858,5 @@ class GameScene extends Phaser.Scene {
         this._crumbleTiles.delete(key);
     }
 }
-
-
 
 // ─── LEVEL SELECT SCENE ────────────────────────────────────────────────────

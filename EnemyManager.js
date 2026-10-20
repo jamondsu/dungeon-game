@@ -16,6 +16,7 @@ class EnemyManager {
         sprite.setScale(this.SLIME_SCALE);
         sprite.setDepth(1);
         sprite.play('red_idle');
+        if (typeof CreatureFX !== 'undefined') CreatureFX.keepTint(sprite);   // Creatures.js: a tint that survives hits
 
         const healthBarBg = this.add.rectangle(
             sprite.x,
@@ -33,7 +34,13 @@ class EnemyManager {
             0xff0000
         );
 
-        const baseHealth = arguments[2] ?? 150;
+        // Floor scaling lands here, at the one place every enemy is born, so every
+
+
+        // derived creator (berserker, mortar, the Cistern roster) inherits it.
+
+
+        const baseHealth = Math.round((arguments[2] ?? 150) * (this.enemyHealthScale || 1));
         const enemy = {
             x: x,
             y: y,
@@ -75,6 +82,8 @@ class EnemyManager {
         };
 
         this.enemies.push(enemy);
+        this._vfxSpawn?.(enemy);   // Visuals.js (not for the ones a level starts with)
+        if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, sprite, { mood: 'angry' });   // Creatures.js: eyes
         return enemy;
     }
 
@@ -101,15 +110,17 @@ class EnemyManager {
 
         const healthPercent = enemy.health / enemy.maxHealth;
         const maxWidth = 24;
-        const currentWidth = maxWidth * healthPercent;
+        // overhealed (a healer totem): a full bar in gold, not one running off past its frame
+        const over = healthPercent > 1.001;
+        enemy.healthBarFill.width = maxWidth * Phaser.Math.Clamp(healthPercent || 0, 0, 1);
+        if (over !== !!enemy._hpOver && enemy._vfxBar) { enemy._hpOver = over; enemy.healthBarFill.setFillStyle?.(over ? 0xffd34a : 0xff4560, 1); }
 
-        enemy.healthBarFill.width = currentWidth;
-
+        const _byo = enemy._hpBarYOff || 0;
         enemy.healthBarBg.x = enemy.sprite.x;
-        enemy.healthBarBg.y = enemy.sprite.y;
+        enemy.healthBarBg.y = enemy.sprite.y + _byo;
 
         enemy.healthBarFill.x = enemy.sprite.x;
-        enemy.healthBarFill.y = enemy.sprite.y;
+        enemy.healthBarFill.y = enemy.sprite.y + _byo;
 
         // Keep burn stack pips pinned to enemy
         if (enemy._burnStackBar?.length) {
@@ -132,8 +143,10 @@ class EnemyManager {
         return null;
     }
 
+    // Name is legacy from the removed lightning-node system — now checks engineer
+    // towers instead, but kept as isNodeAt() since multiple callers depend on it.
     isNodeAt(x, y) {
-        return this.lightningNodes.some(n => n.tileX === x && n.tileY === y);
+        return (this.engineerTowers || []).some(t => t.tileX === x && t.tileY === y && t.active);
     }
 
     findPathBFS(startX, startY, targetX, targetY) {
@@ -142,65 +155,53 @@ class EnemyManager {
         return path || this._bfsRun(startX, startY, targetX, targetY, false);
     }
 
+    // A breadth-first path from start to target over floor tiles (start and target included), or null. Flat typed
+    // arrays reused between calls (a stamp marks this call's visits, so nothing is cleared), and the enemies' tiles
+    // gathered once: with a room full of enemies the old per-tile enemy scan made every step of every enemy crawl.
     _bfsRun(startX, startY, targetX, targetY, avoidEnemies) {
         if (startX === targetX && startY === targetY) return null;
-
-        const queue = [];
-        const visited = new Set();
-        const parent = new Map();
-
-        const startKey = `${startX},${startY}`;
-        queue.push({ x: startX, y: startY });
-        visited.add(startKey);
-        parent.set(startKey, null);
-
-        while (queue.length > 0) {
-            const current = queue.shift();
-
-            if (current.x === targetX && current.y === targetY) {
-                return this.reconstructPath(parent, startX, startY, targetX, targetY);
+        const W = this.WORLD_WIDTH, H = this.WORLD_HEIGHT, N = W * H;
+        let B = this._bfsBuf;
+        if (!B || B.n !== N) B = this._bfsBuf = { n: N, seen: new Uint32Array(N), parent: new Int32Array(N), queue: new Int32Array(N), stamp: 0 };
+        if (++B.stamp >= 0xffffffff) { B.seen.fill(0); B.stamp = 1; }
+        const seen = B.seen, parent = B.parent, queue = B.queue, stamp = B.stamp, world = this.world, FLOOR = this.FLOOR;
+        const blocked = new Set();
+        for (const t of this.engineerTowers || []) if (t.active) blocked.add(t.tileX * H + t.tileY);
+        if (avoidEnemies) for (const e of this.enemies) blocked.add(e.x * H + e.y);
+        const start = startX * H + startY, target = targetX * H + targetY;
+        let head = 0, tail = 0;
+        queue[tail++] = start; seen[start] = stamp; parent[start] = -1;
+        while (head < tail) {
+            const cur = queue[head++], cx = (cur / H) | 0, cy = cur - cx * H;
+            if (cur === target) {
+                const path = [];
+                for (let k = cur; k !== -1; k = parent[k]) path.push({ x: (k / H) | 0, y: k % H });
+                return path.reverse();
             }
-
-            const neighbors = [
-                { x: current.x, y: current.y - 1 },
-                { x: current.x, y: current.y + 1 },
-                { x: current.x - 1, y: current.y },
-                { x: current.x + 1, y: current.y }
-            ];
-
-            for (let neighbor of neighbors) {
-                const nx = neighbor.x;
-                const ny = neighbor.y;
-                const nKey = `${nx},${ny}`;
-
-                if (visited.has(nKey)) continue;
-                if (nx < 0 || nx >= this.WORLD_WIDTH || ny < 0 || ny >= this.WORLD_HEIGHT) continue;
-                if (this.world[nx][ny] !== this.FLOOR) continue;
-                if (this.isNodeAt(nx, ny)) continue;
-
-                // On first pass treat enemies as obstacles; player tile always passable
-                const isPlayerTile = nx === targetX && ny === targetY;
-                if (avoidEnemies && !isPlayerTile && this.getEnemyAt(nx, ny)) continue;
-
-                visited.add(nKey);
-                parent.set(nKey, current);
-                queue.push({ x: nx, y: ny });
+            // Explore neighbours in an order biased toward the target, so equal-length paths staircase diagonally
+            // toward it instead of hugging one axis then turning: the axis with more distance left first, then the
+            // other toward-target step, then the two away-from-target steps.
+            const dxT = targetX - cx, dyT = targetY - cy, sx = Math.sign(dxT || 1), sy = Math.sign(dyT || 1);
+            const ax = Math.abs(dxT), ay = Math.abs(dyT);
+            const first = ay > ax ? 1 : 0;   // (a stable sort by -k: x then y when they tie)
+            for (let n = 0; n < 4; n++) {
+                const which = n < 2 ? (n === 0 ? first : 1 - first) : n;   // 0: toward on x, 1: toward on y, 2: away on x, 3: away on y
+                const nx = which === 0 ? cx + sx : which === 1 ? cx : which === 2 ? cx - sx : cx;
+                const ny = which === 0 ? cy : which === 1 ? cy + sy : which === 2 ? cy : cy - sy;
+                if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+                const k = nx * H + ny;
+                if (seen[k] === stamp || world[nx][ny] !== FLOOR) continue;
+                if (blocked.has(k) && k !== target && (avoidEnemies || this.isNodeAt(nx, ny))) continue;   // (your tile is always open)
+                seen[k] = stamp; parent[k] = cur; queue[tail++] = k;
             }
         }
-
         return null;
     }
 
-    reconstructPath(parent, startX, startY, targetX, targetY) {
+    reconstructPath(parent, startX, startY, targetX, targetY) {   // (the old string-keyed BFS's; kept for its proxy)
         const path = [];
         let current = { x: targetX, y: targetY };
-
-        while (current) {
-            path.unshift(current);
-            const key = `${current.x},${current.y}`;
-            current = parent.get(key);
-        }
-
+        while (current) { path.unshift(current); current = parent.get(`${current.x},${current.y}`); }
         return path;
     }
 
@@ -225,8 +226,14 @@ class EnemyManager {
         }
 
         for (let enemy of this.enemies) {
+            // Taunt (CombatSystem._tauntBegin): when an ally is pulling this enemy, the ally is its
+            // "player" for this turn (where it heads, what it attacks) and the hits it lands go to
+            // the ally. Undone in the finally below, whichever of the turn's many `continue`s it
+            // leaves by. The body keeps its old indentation.
+            const _taunt = this._tauntBegin?.(enemy);
+            try {
             // ── Lightning elemental: periodic arc attack ─────────────────────
-            if (enemy.lightningImmune && !enemy.isFrozen && !enemy.isStunned) {
+            if (enemy._arcs && !enemy.isFrozen && !enemy.isStunned) {
                 // Keep range ring centered on enemy
                 if (enemy._arcRangeRing?.active) {
                     enemy._arcRangeRing.x = enemy.sprite.x;
@@ -239,7 +246,7 @@ class EnemyManager {
                     if (dist <= 5 && this.player?.active) {
                         // Arc toward player
                         this.drawLightningBolt({ sprite: enemy.sprite }, { sprite: this.player });
-                        this.takeDamage(8 * this.damageScaling);
+                        this.takeDamage(8 * (this.enemyDamageScale || 1));
                         enemy.sprite.setTint(0xffffaa);
                         this.time.delayedCall(120, () => { if (enemy.sprite?.active) enemy.sprite.setTint(0xffffaa); });
                         // Flash range ring on fire
@@ -355,7 +362,7 @@ class EnemyManager {
 
                                 // Damage + slow if player is on this tile
                                 if (this.playerX === tx && this.playerY === ty) {
-                                    this.takeDamage(4 * this.damageScaling);
+                                    this.takeDamage(4 * (this.enemyDamageScale || 1));
                                     this.player?.setTint(0xcc88ff);
                                     this.time.delayedCall(300, () => { if (this.player?.active) this.player.clearTint(); });
                                     this._singularitySlowed = true;
@@ -372,7 +379,7 @@ class EnemyManager {
             // ── Void sniper: pocket dimension + shotgun burst ────────────────
             if (enemy.isVoidSniper) {
                 // Room gating — force back into dimension when out of room
-                if ((this.isTutorial || this.isLevel2 || this.isLevel3 || this.isLevel4)) {
+                if (this._roomGated()) {
                     if ((enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) {
                         if (!enemy._inDimension) {
                             enemy._inDimension = true;
@@ -391,9 +398,18 @@ class EnemyManager {
 
                 // ── IN DIMENSION: waiting to reappear ──────────────────────
                 if (enemy._inDimension) {
+                    // Watchdog. The exit below is a chain of tweens and delayed calls; if any
+                    // link is interrupted (sprite deactivated, tween killed, scene restarted)
+                    // _sniperExiting stays true and this sniper sits invisible forever -- and
+                    // since phased snipers are now damage-immune, permanently invulnerable too.
+                    if (enemy._sniperExiting && currentTime - (enemy._sniperExitStarted || 0) > 5000) {
+                        enemy._sniperExiting = false;
+                        enemy._nextDimensionExit = currentTime + 500;
+                    }
                     if (currentTime < (enemy._nextDimensionExit || 0)) continue;
                     if (enemy._sniperExiting) continue;
                     enemy._sniperExiting = true;
+                    enemy._sniperExitStarted = currentTime;
 
                     // Pick a flanking tile 1-3 tiles from player
                     const flanks = [];
@@ -451,6 +467,9 @@ class EnemyManager {
                         enemy._inDimension = false;
                         enemy._sniperInvisible = false;
                         enemy._sniperVulnerable = true;
+                        enemy._sniperExiting = false;   // the exit finished; it was only cleared
+                                                        // on re-entry before, leaving the flag
+                                                        // set for the whole visible window
 
                         enemy.sprite.setScale(0.1);
                         this.tweens.add({ targets: enemy.sprite, scaleX: enemy._baseScale ?? this.SLIME_SCALE, scaleY: enemy._baseScale ?? this.SLIME_SCALE, alpha: 0.92, duration: 220, ease: 'Back.easeOut' });
@@ -486,7 +505,7 @@ class EnemyManager {
                                         enemy._sniperInvisible = true;
                                         enemy._sniperExiting = false;
                                         enemy.chillStacks = 0;
-                                        if (enemy._chillBar)     { for (const d2 of enemy._chillBar)     d2.setAlpha(0); }
+                                        if (enemy._chillBar?.active) enemy._chillBar.setAlpha(0);
                                         if (enemy._burnStackBar) { for (const p  of enemy._burnStackBar) p.setAlpha(0);  }
                                         if (enemy.healthBarBg?.active)   enemy.healthBarBg.setAlpha(0);
                                         if (enemy.healthBarFill?.active) enemy.healthBarFill.setAlpha(0);
@@ -514,6 +533,7 @@ class EnemyManager {
                 continue;
             } else if (enemy.isStunned && currentTime >= enemy.stunnedUntil) {
                 enemy.isStunned = false;
+                if (typeof this._clearStunIndicator === 'function') this._clearStunIndicator(enemy);
             }
             // Surge knockback — suppress pathfinding until arc fully settles
             if (enemy._surgeKnockedBack) continue;
@@ -551,6 +571,8 @@ class EnemyManager {
 
             if (enemy.isSlowed && currentTime >= enemy.slowedUntil) {
                 enemy.isSlowed = false;
+                // A cube's 2.2 stayed behind, so every later plain slow (1.0) was a 3.2x slow.
+                enemy._slowMult = undefined;
                 if (enemy._slowIndTimer) { enemy._slowIndTimer.remove(); enemy._slowIndTimer = null; }
             }
             // Wet enemies move at half speed (isWet set by _shatterWaterSplash)
@@ -559,15 +581,40 @@ class EnemyManager {
             }
 
             const isActuallySlowed = enemy.isSlowed || enemy.isWet;
-            let moveCooldown = isActuallySlowed ? this.enemyMoveCooldown * 2 : this.enemyMoveCooldown;
+            // _slowMult represents slow strength (0.20 = 20% slower, 0.70 = 70% slower).
+            // Default to 1.0 (full 2× stop) for legacy callers that never set _slowMult.
+            // The stronger of the two: a nearly spent slow (an EMP decaying toward 0) used to
+            // replace being wet instead of adding to the choice.
+            const slowStrength = Math.max(enemy.isSlowed ? (enemy._slowMult??1.0) : 0, enemy.isWet ? 1.0 : 0);
+            let moveCooldown = isActuallySlowed ? Math.round(this.enemyMoveCooldown * (1+slowStrength)) : this.enemyMoveCooldown;
+            // Generic per-enemy speed multiplier (<1 = faster). Every special case below
+            // hard-codes its own constant against its own flag; this is the same idea
+            // without needing a new flag and a new line each time. Used by the queen's brood.
+            if (enemy._moveCdMult) moveCooldown = Math.round(moveCooldown * enemy._moveCdMult);
+            // Standing in water slows anything that is not native to it. This is what makes
+            // water a TOOL rather than only a hazard -- the ice ult's puddles, and the
+            // flooded level's terrain, both bog down an ordinary enemy. Creatures that
+            // belong in the water (_waterNative) wade through it unaffected.
+            if (!enemy._waterNative && typeof this.isWaterAt === 'function'
+                && this.isWaterAt(enemy.x, enemy.y)) {
+                moveCooldown = Math.round(moveCooldown * 1.25);
+            }
             if (enemy.isElectrical) moveCooldown = Math.round(moveCooldown * 0.33); // 3× faster
-            if (enemy.isSingularitySlime) moveCooldown = this.enemyMoveCooldown * 2; // goopy — 2× slower
+            if (enemy._bomberSpeedMult) moveCooldown = Math.round(moveCooldown * enemy._bomberSpeedMult); // sapper rush
+            if (enemy.isSingularitySlime) moveCooldown = Math.round(moveCooldown * 2); // goopy — 2× slower (and slows still count)
             if (enemy._anchorSpeedMult && enemy._anchorSpeedMult > 1) moveCooldown = Math.round(moveCooldown / enemy._anchorSpeedMult);
+            // Cloaked enemies (Wraith stealth) crawl — they trade speed for invincibility.
+            // Applied after other multipliers so it stacks cleanly. _cloakSlowMult is set by
+            // the cloak system (default ~2.2× slower); cleared the instant they're revealed.
+            if (enemy._cloaked) moveCooldown = Math.round(moveCooldown * (enemy._cloakSlowMult || 2.2));
             // Splitter: smaller tiers move faster (tier 0=normal, tier 1=1.4×, tier 2=1.9×)
             if (enemy.isSplitter) {
                 const splitterSpeedMult = [1.0, 1.4, 1.9][enemy._splitterTier ?? 0];
                 moveCooldown = Math.round(moveCooldown / splitterSpeedMult);
             }
+
+            // Hexed (Cosmic.js, Void Blade's Retribution): 40% slower
+            if ((enemy._csHexUntil || 0) > currentTime) moveCooldown = Math.round(moveCooldown / 0.6);
 
             if (currentTime - enemy.lastMoveTime < moveCooldown) {
                 continue;
@@ -579,14 +626,20 @@ class EnemyManager {
             // ── Level 4: Mortar — stationary, lobs rocks over walls ─────────
             if (enemy.isMortar) {
                 if (enemy._mortarGfx?.active)    { enemy._mortarGfx.x = enemy.sprite.x; enemy._mortarGfx.y = enemy.sprite.y; }
-                if (enemy._mortarSafeRing?.active){ enemy._mortarSafeRing.x = enemy.sprite.x; enemy._mortarSafeRing.y = enemy.sprite.y; }
+                if (enemy._mortarSafeRing?.active){ enemy._mortarSafeRing.x = enemy.sprite.x; enemy._mortarSafeRing.y = enemy.sprite.y; VisualFX.clipAura(this, enemy._mortarSafeRing); }
                 if (!enemy.isFrozen && !enemy.isStunned) {
-                    if ((this.isLevel4)) {
+                    // Was hardcoded to isLevel4, so on any other room-gated level a mortar
+                    // shelled you from across the map the moment the level loaded.
+                    if (this._roomGated()) {
                         if ((enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) continue;
                     }
                     const mdx = this.playerX - enemy.x, mdy = this.playerY - enemy.y;
                     const mdist = Math.abs(mdx) + Math.abs(mdy);
-                    if (mdist > enemy._mortarSafeRadius && currentTime - enemy._mortarLastFire >= enemy._mortarCooldown) {
+                    // A mortar lobs over the walls of ITS room; it is not artillery. Without
+                    // an upper bound the only thing limiting range was the room gate above.
+                    const mmax = enemy._mortarMaxRange ?? 13;
+                    if (mdist > enemy._mortarSafeRadius && mdist <= mmax
+                        && currentTime - enemy._mortarLastFire >= enemy._mortarCooldown) {
                         enemy._mortarLastFire = currentTime;
                         this._fireMortarShot(enemy);
                     }
@@ -596,29 +649,31 @@ class EnemyManager {
 
             // ── Level 4: Healer Totem — stationary, heals nearby enemies ────
             if (enemy.isHealerTotem) {
-                if (enemy._healerAura?.active) { enemy._healerAura.x = enemy.sprite.x; enemy._healerAura.y = enemy.sprite.y; }
+                if (enemy._healerAura?.active) { enemy._healerAura.x = enemy.sprite.x; enemy._healerAura.y = enemy.sprite.y; VisualFX.clipAura(this, enemy._healerAura); }
                 if (enemy._totemGfx?.active)   { enemy._totemGfx.x  = enemy.sprite.x; enemy._totemGfx.y  = enemy.sprite.y; }
                 if (enemy._orbGlow?.active)    { enemy._orbGlow.x   = enemy.sprite.x; enemy._orbGlow.y   = enemy.sprite.y - 17; }
                 if (!enemy.isFrozen && currentTime - enemy._healerLastTick >= enemy._healerTickInterval) {
                     enemy._healerLastTick = currentTime;
-                    if ((this.isLevel4) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
+                    if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
                     for (const ally of this.enemies) {
                         if (!ally.sprite?.active || ally === enemy) continue;
                         const adx = Math.abs(ally.x - enemy.x), ady = Math.abs(ally.y - enemy.y);
                         if (adx + ady > enemy._healerRange) continue;
                         ally.health += enemy._healerHealPerTick;
-                        // Max overheal cap at 3× base HP
-                        if (ally.health > ally.maxHealth * 3) ally.health = ally.maxHealth * 3;
+                        // Overheal can stack very high (up to 10× base) — the gold bar is
+                        // log-scaled to show the range, and higher overheal decays faster.
+                        if (ally.health > ally.maxHealth * 10) ally.health = ally.maxHealth * 10;
                         this.updateEnemyHealthBar(ally);
                         // Green aura flash on healed enemy + plus sign above head
                         if (!ally._lastHealPuff4 || currentTime - ally._lastHealPuff4 > 500) {
                             ally._lastHealPuff4 = currentTime;
                             // Aura ring flash around enemy
                             const auraFlash = this.add.graphics().setDepth(3.0);
+                            auraFlash.x = ally.sprite.x; auraFlash.y = ally.sprite.y;
                             auraFlash.lineStyle(2, 0x44ff88, 0.85);
-                            auraFlash.strokeCircle(ally.sprite.x, ally.sprite.y, 12);
+                            auraFlash.strokeCircle(0, 0, 12);
                             auraFlash.fillStyle(0x44ff88, 0.18);
-                            auraFlash.fillCircle(ally.sprite.x, ally.sprite.y, 12);
+                            auraFlash.fillCircle(0, 0, 12);
                             this.tweens.add({ targets: auraFlash, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => auraFlash.destroy() });
                             // Small green plus sign rising above head
                             const plus = this.add.graphics().setDepth(3.5);
@@ -635,11 +690,11 @@ class EnemyManager {
 
             // ── Level 4: Anchor Slime — stationary, buffs enemies + slows player
             if (enemy.isAnchor) {
-                if (enemy._anchorRing?.active)     { enemy._anchorRing.x = enemy.sprite.x; enemy._anchorRing.y = enemy.sprite.y; }
+                if (enemy._anchorRing?.active)     { enemy._anchorRing.x = enemy.sprite.x; enemy._anchorRing.y = enemy.sprite.y; VisualFX.clipAura(this, enemy._anchorRing); }
                 if (enemy._anchorBodyGfx?.active)  { enemy._anchorBodyGfx.x = enemy.sprite.x; enemy._anchorBodyGfx.y = enemy.sprite.y; }
                 if (!enemy.isFrozen && currentTime - enemy._anchorLastPulse >= enemy._anchorPulseInterval) {
                     enemy._anchorLastPulse = currentTime;
-                    if ((this.isLevel4) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
+                    if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
                     // Speed buff nearby enemies
                     for (const ally of this.enemies) {
                         if (!ally.sprite?.active || ally === enemy || ally.isMortar || ally.isHealerTotem || ally.isAnchor) continue;
@@ -657,10 +712,7 @@ class EnemyManager {
                         }
                     }
                     // Pulse ring — steel blue expanding wave
-                    const pulse = this.add.graphics().setDepth(1.2);
-                    pulse.lineStyle(2, 0x4499cc, 0.80); pulse.strokeCircle(0, 0, enemy._anchorRange * this.TILE_SIZE);
-                    pulse.x = enemy.sprite.x; pulse.y = enemy.sprite.y;
-                    this.tweens.add({ targets: pulse, scaleX: 1.18, scaleY: 1.18, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => pulse.destroy() });
+                    VisualFX.ripple(this, enemy.sprite.x, enemy.sprite.y, 12, enemy._anchorRange * this.TILE_SIZE * 1.1, 0x4499cc, { duration: 900 });
                     // Slow player if in range
                     const pdx = Math.abs(this.playerX - enemy.x), pdy = Math.abs(this.playerY - enemy.y);
                     if (pdx + pdy <= enemy._anchorRange) {
@@ -680,8 +732,8 @@ class EnemyManager {
 
             // ── Level 4: Rooter — pull tendril (far) / ground thump (close) ──
             if (enemy.isRooter && !enemy.isFrozen && !enemy.isStunned) {
-                if (enemy._rooterMark?.active) { enemy._rooterMark.x = enemy.sprite.x; enemy._rooterMark.y = enemy.sprite.y - 22; }
-                if ((this.isLevel4) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { /* dormant */ }
+                if (enemy._rooterMark?.active) { enemy._rooterMark.x = enemy.sprite.x; enemy._rooterMark.y = enemy.sprite.y - 16; }
+                if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { /* dormant */ }
                 else {
                     const rdx = Math.abs(this.playerX - enemy.x), rdy = Math.abs(this.playerY - enemy.y);
                     const rdist = rdx + rdy;
@@ -702,16 +754,19 @@ class EnemyManager {
             }
 
 
-
-            const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
+            // _enemyTargetX/Y and _enemyActivationRange can be overridden by other scenes
+            // (e.g. TowerDefenseScene sets these to the base tile and a large range)
+            const _etx = this._enemyTargetX ?? this.playerX;
+            const _ety = this._enemyTargetY ?? this.playerY;
+            const dist = Math.abs(enemy.x - _etx) + Math.abs(enemy.y - _ety);
 
             // Room gating for tutorial, level 2, level 3, and level 4
-            if (this.isTutorial || this.isLevel2 || this.isLevel3 || this.isLevel4) {
+            if (this._roomGated()) {
                 const enemyRoom = enemy.tutorialRoomIndex ?? -1;
                 if (enemyRoom !== this.getCurrentPlayerRoom()) continue;
             }
 
-            if (dist < 20) {
+            if (dist < (this._enemyActivationRange ?? 20)) {
                 let nextStep = null;
 
                 // --- COMMITTED PATH LOGIC ---
@@ -722,11 +777,15 @@ class EnemyManager {
                     enemy._committedPath &&
                     enemy._pathStepsLeft > 0 &&
                     enemy._pathIndex !== undefined &&
-                    enemy._pathIndex + 1 < enemy._committedPath.length;
+                    enemy._pathIndex + 1 < enemy._committedPath.length &&
+                    // The committed path was built for a specific target; if the target has
+                    // changed (e.g. lane bow → base after merging), the old path can walk into
+                    // a side pocket. Discard it and replan to the current target.
+                    enemy._committedTX === _etx && enemy._committedTY === _ety;
 
                 if (pathStillValid) {
                     const candidate = enemy._committedPath[enemy._pathIndex + 1];
-                    const isPlayerTile = candidate.x === this.playerX && candidate.y === this.playerY;
+                    const isPlayerTile = candidate.x === _etx && candidate.y === _ety;
                     const wallBlocked = !isPlayerTile &&
                         (this.world[candidate.x]?.[candidate.y] !== this.FLOOR ||
                          this.isNodeAt(candidate.x, candidate.y));
@@ -755,10 +814,11 @@ class EnemyManager {
 
                 if (!nextStep) {
                     // Commit only 2 steps — prevents shadow-chasing while still resisting trivial jukes
-                    const path = this.findPathBFS(enemy.x, enemy.y, this.playerX, this.playerY);
+                    const path = this.findPathBFS(enemy.x, enemy.y, _etx, _ety);
                     if (path && path.length > 1) {
                         const commitSteps = Math.min(2, path.length - 1);
                         enemy._committedPath = path;
+                        enemy._committedTX = _etx; enemy._committedTY = _ety;
                         enemy._pathStepsLeft = commitSteps - 1; // consuming step 1 right now
                         enemy._pathIndex = 1;                   // step 1 is being taken this tick
                         nextStep = path[1];
@@ -773,10 +833,12 @@ class EnemyManager {
                 if (!nextStep) continue;
 
                 // Player collision — attack instead of moving
-                if (nextStep.x === this.playerX && nextStep.y === this.playerY) {
+                if (nextStep.x === _etx && nextStep.y === _ety) {
                     if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
-                        this.enemyAttackAnimation(enemy, this.playerX, this.playerY);
-                        this.takeDamage(1);
+                        this.enemyAttackAnimation(enemy, _etx, _ety);
+                        this._hitBy = enemy;   // who it was (the Frost Shield chills them back)
+                        this.takeDamage(enemy._meleeDmg || 1);   // most slimes hit for 1; a Frostborn far harder
+                        this._hitBy = null;
                         this.lastPlayerDamageTime = currentTime;
                     }
                     enemy.lastMoveTime = currentTime;
@@ -786,7 +848,7 @@ class EnemyManager {
                 }
 
                 // Final occupied check for the fresh-BFS case (pathStillValid already handles its own)
-                if (this.getEnemyAt(nextStep.x, nextStep.y)) {
+                if (this.getEnemyAt(nextStep.x, nextStep.y) || this._tauntBlocks?.(nextStep.x, nextStep.y)) {   // a taunted enemy still can't walk onto you
                     enemy.lastMoveTime = currentTime;
                     continue;
                 }
@@ -822,14 +884,16 @@ class EnemyManager {
                     enemy.sprite.x = targetX;
                     enemy.sprite.y = targetY;
                 } else {
-                    // 160ms matches the sniper tween — snappy but not instant
-                    const tweenDur = isActuallySlowed ? 280 : 160;
+                    // a soft hop: about a third of its step, easing in and out, its squash riding it (160ms at a constant speed snapped
+                    // tile to tile); never longer than the step, so a fast one doesn't overlap its own next move
+                    const tweenDur = Math.min(moveCooldown * 0.9, isActuallySlowed ? 480 : 320);
+                    if (!enemy._attackAnimPlaying) this._vfxHop?.(enemy.sprite, enemy._baseScale ?? this.SLIME_SCALE, tweenDur);
                     this.tweens.add({
                         targets: enemy.sprite,
                         x: targetX,
                         y: targetY,
                         duration: tweenDur,
-                        ease: 'Linear',
+                        ease: 'Sine.easeInOut',
                         onUpdate: () => {
                             // Sync health bars and marks
                             if (enemy.healthBarBg) {
@@ -866,11 +930,11 @@ class EnemyManager {
                             }
                             if (enemy._fireMark && enemy._fireMark.active) {
                                 enemy._fireMark.x = enemy.sprite.x;
-                                enemy._fireMark.y = enemy.sprite.y - 22;
+                                enemy._fireMark.y = enemy.sprite.y - 16;
                             }
                             if (enemy._iceMark && enemy._iceMark.active) {
                                 enemy._iceMark.x = enemy.sprite.x;
-                                enemy._iceMark.y = enemy.sprite.y - 22;
+                                enemy._iceMark.y = enemy.sprite.y - 16;
                             }
                             if (enemy._rangedMark && enemy._rangedMark.active) {
                                 enemy._rangedMark.x = enemy.sprite.x;
@@ -895,6 +959,7 @@ class EnemyManager {
                     });
                 }
             } // end if (dist < 20)
+            } finally { this._tauntEnd?.(_taunt); }
         } // end for enemies
 
         // SAFEGUARD: Teleport any enemies that ended up in walls back to nearest floor
@@ -1008,6 +1073,11 @@ class EnemyManager {
     createRangedEnemy(x, y, tutorialRoomIndex) {
         const enemy = this.createEnemy(x, y, 30);
         enemy.tutorialRoomIndex = tutorialRoomIndex;
+        // Body colour, not just the crosshair above it. A small icon is unreadable in a
+        // crowded room -- you are tracking a dozen sprites, not studying one. Every type
+        // should be identifiable from its BODY at a glance, with the mark as confirmation.
+        // Pale yellow to match its own crosshair.
+        if (typeof enemy.sprite.setTint === 'function') enemy.sprite.setTint(0xffee88);
         enemy.isRanged = true;
         enemy.rangedState = 'idle';
 
@@ -1017,7 +1087,7 @@ class EnemyManager {
         mark.strokeCircle(0, 0, 7);
         mark.beginPath(); mark.moveTo(-10, 0); mark.lineTo(10, 0); mark.strokePath();
         mark.beginPath(); mark.moveTo(0, -10); mark.lineTo(0, 10); mark.strokePath();
-        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 22;
+        mark.x = enemy.sprite.x; mark.y = enemy.sprite.y - 16;
         this.tweens.add({ targets: mark, scaleX: 1.2, scaleY: 1.2, duration: 500, yoyo: true, repeat: -1 });
         enemy._rangedMark = mark;
 
@@ -1069,14 +1139,21 @@ class EnemyManager {
                 elapsed += 16;
                 const t = Math.min(elapsed / SWING_DUR, 1);
                 const curEnd = startAngle + (endAngle - startAngle) * t;
+                // a slash, not a pie: a crescent band swept behind the blade, hot at its leading edge and cooling
+                // behind it, thicker in the middle of the swing, a bright edge on the blade itself
                 arcGfx.clear();
-                arcGfx.fillStyle(0xff2200, 0.18); arcGfx.slice(0, 0, RANGE + 8, startAngle, curEnd, true); arcGfx.fillPath();
-                arcGfx.fillStyle(0xff5500, 0.55); arcGfx.slice(0, 0, RANGE,       startAngle, curEnd, true); arcGfx.fillPath();
-                arcGfx.fillStyle(0xff9900, 0.75); arcGfx.slice(0, 0, RANGE * 0.4, startAngle, curEnd, true); arcGfx.fillPath();
-                arcGfx.lineStyle(2, 0xffcc88, 0.50 * (1 - t));
-                arcGfx.beginPath(); arcGfx.moveTo(0, 0);
-                arcGfx.lineTo(Math.cos(curEnd) * RANGE, Math.sin(curEnd) * RANGE); arcGfx.strokePath();
-                if (t >= 1) { this.time.delayedCall(80, () => arcGfx.destroy()); swingTimer.remove(); }
+                const R0 = RANGE * 0.5, ring = (r, a0, a1, n) => Array.from({ length: n + 1 }, (_, k) => { const a = a0 + (a1 - a0) * k / n; return { x: Math.cos(a) * r, y: Math.sin(a) * r }; });
+                const band = (from, rIn, rOut, col, alpha) => {   // a smooth crescent over the newest (1 - from) of the sweep
+                    const a0 = startAngle + (curEnd - startAngle) * from;
+                    arcGfx.fillStyle(col, alpha); arcGfx.fillPoints([...ring(rOut, a0, curEnd, 14), ...ring(rIn, curEnd, a0, 14)], true);
+                };
+                band(0, R0, RANGE + 4, 0xff2a10, 0.28);
+                band(0.4, R0 + RANGE * 0.08, RANGE + 2, 0xff7a20, 0.5);
+                band(0.78, R0 + RANGE * 0.16, RANGE, 0xffd890, 0.8);
+                arcGfx.lineStyle(2, 0xff3a10, 0.5); arcGfx.strokePoints(ring(RANGE + 4, startAngle, curEnd, 12), false);
+                arcGfx.lineStyle(3, 0xfff4d0, 0.95);
+                arcGfx.lineBetween(Math.cos(curEnd) * R0 * 0.8, Math.sin(curEnd) * R0 * 0.8, Math.cos(curEnd) * (RANGE + 6), Math.sin(curEnd) * (RANGE + 6));
+                if (t >= 1) { swingTimer.remove(); this.tweens.add({ targets: arcGfx, alpha: 0, duration: 180, ease: 'Quad.easeIn', onComplete: () => arcGfx.destroy() }); }
             }
         });
 
@@ -1097,7 +1174,7 @@ class EnemyManager {
             const kbDX = Math.sign(this.playerX - enemy.x);
             const kbDY = Math.sign(this.playerY - enemy.y);
             const nx = this.playerX + kbDX, ny = this.playerY + kbDY;
-            if (this.world[nx]?.[ny] === this.FLOOR) {
+            if (this.world[nx]?.[ny] === this.FLOOR && (this._iceShellUntil || 0) <= this.time.now) {   // (not through the ice ult's shell)
                 this.playerX = nx; this.playerY = ny;
                 this.player.x = nx * this.TILE_SIZE + this.TILE_SIZE / 2;
                 this.player.y = ny * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
@@ -1146,7 +1223,12 @@ class EnemyManager {
     _moveSniperStep(enemy, path, time) {
         // path[0] is the sniper's current tile — the next step is path[1]
         if (!path || path.length < 2) return;
-        if (time - (enemy.lastMoveTime || 0) < (enemy.moveDelay || 1000)) return;
+        // The same slows every other enemy walks under (moveEnemies): they skipped all of them,
+        // so a cubed or soaked sniper repositioned at full pace.
+        const slow = Math.max(enemy.isSlowed ? (enemy._slowMult ?? 1.0) : 0, enemy.isWet ? 1.0 : 0);
+        let delay = (enemy.moveDelay || 1000) * (1 + slow);
+        if ((enemy._csHexUntil || 0) > time) delay /= 0.6;   // Cosmic.js: Hexed
+        if (time - (enemy.lastMoveTime || 0) < delay) return;
         const next = path[1];
         if (this.world[next.x]?.[next.y] !== this.FLOOR) return;
         if (this.getEnemyAt(next.x, next.y)) return;
@@ -1157,8 +1239,9 @@ class EnemyManager {
         this.tweens.add({
             targets: enemy.sprite, x: wx, y: wy, duration: 160, ease: 'Linear',
             onUpdate: () => {
-                if (enemy.healthBarBg)  { enemy.healthBarBg.x  = enemy.sprite.x; enemy.healthBarBg.y  = enemy.sprite.y; }
-                if (enemy.healthBarFill){ enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y; }
+                const _byo = enemy._hpBarYOff || 0;
+                if (enemy.healthBarBg)  { enemy.healthBarBg.x  = enemy.sprite.x; enemy.healthBarBg.y  = enemy.sprite.y + _byo; }
+                if (enemy.healthBarFill){ enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y + _byo; }
                 if (enemy._rangedMark?.active) { enemy._rangedMark.x = enemy.sprite.x; enemy._rangedMark.y = enemy.sprite.y - 22; }
             }
         });
@@ -1170,21 +1253,27 @@ class EnemyManager {
             if (enemy.isFrozen || enemy.isStunned) continue;
 
             // Room gating
-            if (this.isTutorial || this.isLevel2 || this.isLevel3 || this.isLevel4) {
+            if (this._roomGated()) {
                 if ((enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) continue;
             }
 
             // Track splitter mark position
-            if (enemy._splitterMark?.active) { enemy._splitterMark.x = enemy.sprite.x; enemy._splitterMark.y = enemy.sprite.y - 26; }
+            if (enemy._splitterMark?.active) { enemy._splitterMark.x = enemy.sprite.x; enemy._splitterMark.y = enemy.sprite.y - 20; }
+            if (enemy._sniperMark?.active)   { enemy._sniperMark.x   = enemy.sprite.x; enemy._sniperMark.y   = enemy.sprite.y - 20; }
 
             // Expire anchor speed buff
-            if (enemy._anchorBuffUntil && enemy._anchorBuffUntil < currentTime) {
+            if (enemy._anchorBuffUntil && enemy._anchorBuffUntil < time) {
                 enemy._anchorBuffUntil = 0; enemy._anchorSpeedMult = 1;
                 if (enemy.sprite?.active && !enemy.isFrozen && typeof enemy.sprite.clearTint === 'function') enemy.sprite.clearTint();
                 if (enemy._speedIndTimer) { enemy._speedIndTimer.remove(); enemy._speedIndTimer = null; }
             }
 
-            const AGGRO_RANGE = 12, ATTACK_MAX = 10, MIN_RANGE = 4;
+            // TD sniper enemies (_tdType set only by TowerDefenseScene) can spawn or drift
+            // much farther from the base than dungeon rooms ever allowed, so they get an
+            // uncapped aggro range — otherwise they fail this gate entirely and never even
+            // attempt to path toward the base. Dungeon-mode enemies never have _tdType set,
+            // so this is a no-op outside the TD scene.
+            const AGGRO_RANGE = enemy._tdType === 'sniper' ? Infinity : (this._enemyActivationRange ?? 12), ATTACK_MAX = 10, MIN_RANGE = 4;
             const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
 
             if (!enemy.rangedState) enemy.rangedState = 'idle';
@@ -1293,6 +1382,14 @@ class EnemyManager {
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         const { x: ndx, y: ndy } = enemy.lockedDir;
         const beamLen = 14 * this.TILE_SIZE;
+        if (this._bfxOn) {   // Bosses.js: the line its shots fly, stopping where a wall stops them
+            BossFX.sight(this, enemy._prefireBeam, ex, ey, ndx, ndy, beamLen, true, enemy);
+            if (enemy._prefireWarning?.active) {
+                enemy._prefireWarning.x = ex; enemy._prefireWarning.y = enemy.sprite.y - 36;
+                enemy._prefireWarning.setColor('#ff0000');
+            }
+            return;
+        }
         enemy._prefireBeam.clear();
         // Solid bright red — locked on
         enemy._prefireBeam.lineStyle(2, 0xff0000, 0.9);
@@ -1327,6 +1424,7 @@ class EnemyManager {
         const ndx = dx / len, ndy = dy / len;
 
         const beamLen = 14 * this.TILE_SIZE;
+        if (this._bfxOn) { BossFX.sight(this, enemy._prefireBeam, ex, ey, ndx, ndy, beamLen, false, enemy); return; }
         enemy._prefireBeam.clear();
         // Dashed danger line
         const DASH = 10, GAP = 6;
@@ -1405,7 +1503,7 @@ class EnemyManager {
 
         const SPEED = 420;
         this.enemyProjectiles.push({
-            gfx: g,
+            gfx: this._bfxSwap ? this._bfxSwap(g, 'bolt', angle) : g,   // Bosses.js
             vx: fdx * SPEED,
             vy: fdy * SPEED,
             damage: 8,
@@ -1414,8 +1512,11 @@ class EnemyManager {
         });
 
         // Muzzle flash
-        const flash = this.add.circle(ex, ey, 8, 0xff4400, 0.7).setDepth(3);
-        this.tweens.add({ targets: flash, radius: 14, alpha: 0, duration: 140, onComplete: () => flash.destroy() });
+        if (this._bfxOn) BossFX.muzzle(this, 'bolt', ex, ey, angle);   // Bosses.js
+        else {
+            const flash = this.add.circle(ex, ey, 8, 0xff4400, 0.7).setDepth(3);
+            this.tweens.add({ targets: flash, radius: 14, alpha: 0, duration: 140, onComplete: () => flash.destroy() });
+        }
     }
 
     _fireSniperShotgun(enemy) {
@@ -1436,6 +1537,7 @@ class EnemyManager {
         flash.fillStyle(0xee88ff, 0.85); flash.fillCircle(0, 0, 14);
         flash.lineStyle(2, 0xffffff, 0.90); flash.strokeCircle(0, 0, 18);
         this.tweens.add({ targets: flash, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
+        if (this._bfxOn) { flash.setVisible(false); BossFX.muzzle(this, 'shard', ex, ey, baseAngle, true); }   // Bosses.js
         this.cameras.main.shake(30, 0.003);
 
         for (let i = 0; i < PELLETS; i++) {
@@ -1453,7 +1555,7 @@ class EnemyManager {
             g.fillStyle(0xffffff, 0.9); g.fillCircle(0, 0, 2);
             g.x = ex; g.y = ey;
 
-            this.enemyProjectiles.push({ gfx: g, vx, vy, damage: DAMAGE, startX: ex, startY: ey, _isShotgunPellet: true, maxDist: MAX_DIST });
+            this.enemyProjectiles.push({ gfx: this._bfxSwap ? this._bfxSwap(g, 'shard', angle) : g, vx, vy, damage: DAMAGE, startX: ex, startY: ey, _isShotgunPellet: true, maxDist: MAX_DIST });
         }
     }
 
@@ -1486,7 +1588,7 @@ class EnemyManager {
         g.x = ex; g.y = ey;
 
         this.enemyProjectiles.push({
-            gfx: g, vx: fdx * 380, vy: fdy * 380,
+            gfx: this._bfxSwap ? this._bfxSwap(g, 'dart', angle) : g, vx: fdx * 380, vy: fdy * 380,   // Bosses.js
             damage: 10 * this.damageScaling,
             isRicochetArrow: true, ricochetLeft: 3,
             startX: ex, startY: ey,
@@ -1495,6 +1597,9 @@ class EnemyManager {
 
     updateEnemyProjectiles(delta) {
         if (!this.enemyProjectiles) return;
+        // Sound.js: a pew when the count grows (every enemy shot lands in this list)
+        if (this.enemyProjectiles.length > (this._sfxShotN || 0)) Sfx.play(this, 'eshoot');
+        this._sfxShotN = this.enemyProjectiles.length;
         const ds = delta / 1000;
         const time = this.time.now;
 
@@ -1511,7 +1616,11 @@ class EnemyManager {
             }
 
             // ── Rope tendril visual — thorned organic tendril redrawn each frame ──
-            if (p.isRopeTendril && p.gfx.active) {
+            if (p.isRopeTendril && p.gfx.active && this._bfxOn) {
+                // Bosses.js: a vine with thorns and a clawed pod. Its graphics sits at the tip, so
+                // whatever reads its position (its pop, its wake, its light) finds the tip, not 0,0.
+                this._bfxDrawVine?.(p);
+            } else if (p.isRopeTendril && p.gfx.active) {
                 const tipX = p._tipX, tipY = p._tipY;
                 const sx = p.startX, sy = p.startY;
                 const rdx = tipX - sx, rdy = tipY - sy;
@@ -1596,7 +1705,7 @@ class EnemyManager {
             }
 
             // Standard trail (non-rope projectiles only)
-            if (!p.isRopeTendril) {
+            if (!p.isRopeTendril && !this._bfxOn) {
                 const trail = this.add.rectangle(p.gfx.x, p.gfx.y, 3, 3, 0xff4400, 0.4).setDepth(1.5);
                 this.tweens.add({ targets: trail, alpha: 0, duration: 200, onComplete: () => trail.destroy() });
             }
@@ -1617,11 +1726,46 @@ class EnemyManager {
                     if (hitX || oob) p.vx = -p.vx;
                     if (hitY || oob) p.vy = -p.vy;
                     p.ricochetLeft--;
+                    if (this._bfxOn) {   // Bosses.js: it points its new way; a spark in its colour
+                        p.gfx.rotation = Math.atan2(p.vy, p.vx);
+                        BossFX.pop(this, BossFX.kindOf(p), p.gfx.x, p.gfx.y, 2);
+                        continue;
+                    }
                     // Flash on bounce
                     const bf = this.add.circle(p.gfx.x, p.gfx.y, 6, 0xffdd00, 0.7).setDepth(3);
                     this.tweens.add({ targets: bf, radius: 12, alpha: 0, duration: 120, onComplete: () => bf.destroy() });
                     continue;
                 }
+                this._destroyEnemyProjectile(p);
+                this.enemyProjectiles.splice(i, 1);
+                continue;
+            }
+
+            // Engineer tower hit — checked before player hit, so a projectile that
+            // would otherwise hit the player can be intercepted by a tower standing
+            // in its path. Melee enemies never target towers; this is the only way
+            // towers take damage.
+            if (this.engineerTowers?.length) {
+                const checkTowerX = p.isRopeTendril ? p._tipX : p.gfx.x;
+                const checkTowerY = p.isRopeTendril ? p._tipY : p.gfx.y;
+                let towerHit = null;
+                for (const tower of this.engineerTowers) {
+                    if (!tower.active) continue;
+                    if (Math.hypot(checkTowerX - tower.px, checkTowerY - tower.py) < this.TILE_SIZE * 0.6) {
+                        towerHit = tower; break;
+                    }
+                }
+                if (towerHit) {
+                    this.damageEngineerTower(towerHit, p.damage || 5);
+                    if (p.trailGfx?.active) p.trailGfx.destroy();
+                    this._destroyEnemyProjectile(p);
+                    this.enemyProjectiles.splice(i, 1);
+                    continue;
+                }
+            }
+
+            // Cosmic.js: a Barrier ward eats it before it reaches you
+            if (this._csWardCatch?.(p.isRopeTendril ? p._tipX : p.gfx.x, p.isRopeTendril ? p._tipY : p.gfx.y, p)) {
                 this._destroyEnemyProjectile(p);
                 this.enemyProjectiles.splice(i, 1);
                 continue;
@@ -1635,7 +1779,7 @@ class EnemyManager {
             const dist = Math.hypot(hitX - ppx, hitY - ppy);
             if (dist < this.TILE_SIZE * 0.7) {
                 if (p.isRootTendril) {
-                    if (p.isPullTendril && p.sourceEnemy?.sprite?.active) {
+                    if (p.isPullTendril && p.sourceEnemy?.sprite?.active && (this._iceShellUntil || 0) <= this.time.now && this._ccGate?.(250) !== false) {   // (encased in the ice ult's shell, nothing moves you)
                         // Pull player toward the rooter — move up to 3 tiles
                         const enemy = p.sourceEnemy;
                         const PULL_TILES = 4;
@@ -1665,10 +1809,11 @@ class EnemyManager {
                         });
                         this.showStatusText(this.player.x, this.player.y - 28, 'PULLED!', '#44ff88');
                         this.cameras.main.shake(40, 0.004);
-                    } else {
-                        // Legacy root
-                        if (typeof this._rootPlayer === 'function') this._rootPlayer(2000, this.time.now);
-                        this.showStatusText(this.player.x, this.player.y - 28, 'ROOTED!', '#44ff88');
+                    } else if (!p.isPullTendril) {
+                        // Legacy root (it says RESISTED itself if you're in your escape window)
+                        const was = this._playerRooted;
+                        if (typeof this._rootPlayer === 'function') this._rootPlayer(500, this.time.now);
+                        if (this._playerRooted && !was) this.showStatusText(this.player.x, this.player.y - 28, 'ROOTED!', '#44ff88');
                     }
                 } else if (time - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
                     this.takeDamage(p.damage);
@@ -1694,6 +1839,14 @@ class EnemyManager {
 
     _destroyEnemyProjectile(p) {
         if (p.trailGfx?.active) p.trailGfx.destroy();
+        // Bosses.js: a vine whips back into the ground; a shot ends in a pop of its own colour
+        if (p.isRopeTendril && this._bfxVineSnap?.(p)) return;
+        if (this._bfxOn && p.gfx?.active) {
+            const x = p.gfx.x, y = p.gfx.y;
+            p.gfx.destroy();
+            BossFX.pop(this, BossFX.kindOf(p), x, y);
+            return;
+        }
         if (p.gfx && p.gfx.active) {
             const x = p.gfx.x, y = p.gfx.y;
             p.gfx.destroy();
@@ -1710,8 +1863,19 @@ class EnemyManager {
         // Level 4 sniper — fires 3 ricocheting arrows
         const e = this.createVoidSniper ? this.createVoidSniper(x, y, roomIndex) : this.createRangedEnemy(x, y, roomIndex);
         e._upgradedSniper = true;
-        e.health = 50; e.maxHealth = 50; // slightly more hp than base sniper
+        e.health = e.maxHealth = Math.round(50 * (this.enemyHealthScale || 1)); // a bit more than a base sniper
         if (typeof e.sprite.setTint === 'function') e.sprite.setTint(0xcc8800);
+        // The only type with a tint and NO mark. A long crosshair with a gap in the
+        // middle, so it reads as a scope rather than as the ranged enemy's full crosshair.
+        const sm = this.add.graphics().setDepth(3);
+        sm.lineStyle(1.5, 0xffcc44, 0.95);
+        sm.beginPath(); sm.moveTo(-11, 0); sm.lineTo(-4, 0); sm.strokePath();
+        sm.beginPath(); sm.moveTo(4, 0);   sm.lineTo(11, 0); sm.strokePath();
+        sm.beginPath(); sm.moveTo(0, -11); sm.lineTo(0, -4); sm.strokePath();
+        sm.beginPath(); sm.moveTo(0, 4);   sm.lineTo(0, 11); sm.strokePath();
+        sm.lineStyle(1.5, 0xffcc44, 0.7); sm.strokeCircle(0, 0, 7);
+        sm.x = e.sprite.x; sm.y = e.sprite.y - 26;
+        e._sniperMark = sm;
         return e;
     }
 
@@ -1721,7 +1885,8 @@ class EnemyManager {
         e.isMortar = true;
         e._mortarLastFire = 0;
         e._mortarCooldown = 3200;
-        e._mortarSafeRadius = 5; // tiles — blind spot
+        e._mortarSafeRadius = 5;  // tiles — blind spot underneath it
+        e._mortarMaxRange   = 13; // tiles — outer limit, so it cannot shell the map
         // Visual: dark grey with orange glowing barrel ring
         e.sprite.setTint(0x445566);
         const gfx = this.add.graphics().setDepth(2);
@@ -1732,19 +1897,17 @@ class EnemyManager {
         this.tweens.add({ targets: gfx, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
         e._mortarGfx = gfx;
         // Safe-radius ring
-        const safeRing = this.add.graphics().setDepth(0.8);
-        safeRing.lineStyle(1.5, 0xffaa00, 0.25);
-        safeRing.strokeCircle(0, 0, e._mortarSafeRadius * this.TILE_SIZE);
-        safeRing.x = e.sprite.x; safeRing.y = e.sprite.y;
-        e._mortarSafeRing = safeRing;
+        // Safe radius: a faint warm glow, no line
+        e._mortarSafeRing = VisualFX.aura(this, e.sprite.x, e.sprite.y, e._mortarSafeRadius * this.TILE_SIZE, 0xff9a30, { alpha: 0.6 });
         return e;
     }
 
     createSplitter(x, y, roomIndex, tier = 0) {
-        // tier 0=large(180HP), 1=medium(80HP), 2=small(30HP)
-        const hpByTier   = [180, 80, 30];
+        // tier 0=large(180HP), 1=medium(110HP), 2=small(60HP) — children stay a real threat
+        const hpByTier   = [180, 110, 60];
         const tintByTier = [0xff6600, 0xff8822, 0xffaa44];
-        const scaleByTier = [1.4, 1.0, 0.65];
+        // Wide size gap so the "big boy" is unmistakable vs its medium and small splits.
+        const scaleByTier = [2.4, 1.4, 0.8];
         const e = this.createEnemy(x, y, hpByTier[tier]);
         e.tutorialRoomIndex = roomIndex;
         e.isSplitter = true;
@@ -1753,6 +1916,15 @@ class EnemyManager {
         const targetScale = this.SLIME_SCALE * scaleByTier[tier];
         e._baseScale = targetScale; // stored so scale resets always use the right value
         if (typeof e.sprite.setScale === 'function') e.sprite.setScale(targetScale);
+        // Scaled-up sprites (esp. the 2.4× tier-0) were visually sinking ~1 tile below their
+        // logical tile, because scaling a center-origin sprite grows it equally downward while
+        // the tile position is fixed. Nudge the origin Y down proportionally to the EXTRA scale
+        // so the enlarged body seats back on its tile. (Origin persists through the per-frame
+        // sprite.y = tileY + offset updates; a one-time position nudge would be overwritten.)
+        if (typeof e.sprite.setOrigin === 'function') {
+            const extra = scaleByTier[tier] - 1;            // 0 at 1× → no shift
+            e.sprite.setOrigin(0.5, 0.5 + Math.max(0, extra) * 0.12);
+        }
         // Mark — orange S above
         const sm = this.add.graphics().setDepth(3);
         sm.fillStyle(tintByTier[tier], 0.95);
@@ -1760,17 +1932,19 @@ class EnemyManager {
         sm.fillStyle(0xffffff, 0.35); sm.fillRect(-2, -7, 4, 3);
         sm.x = e.sprite.x; sm.y = e.sprite.y - 26;
         e._splitterMark = sm;
+        e._hpBarYOff = -2;   // origin shift seats the sprite lower; lift the HP bar to match
         return e;
     }
 
     createRooter(x, y, roomIndex) {
-        const e = this.createEnemy(x, y, 60);
+        const e = this.createEnemy(x, y, 70);
         e.tutorialRoomIndex = roomIndex;
         e.isRooter = true;
         // Far attack — pull tendril
         e._tendrilCooldown = 4000;
         e._tendrilLastFire = 0;
-        e._tendrilRange = 12;   // tiles — fires when player is beyond thump range
+        e._tendrilRange = 14;   // tiles — longer reach so it threatens towers from further back
+        e._tetherDps = 3;       // HP/sec chipped from a tethered tower — chips it down, doesn't kill
         // Close attack — ground thump
         e._thumpCooldown = 2000;
         e._thumpLastFire = 0;
@@ -1799,6 +1973,8 @@ class EnemyManager {
     createAnchorSlime(x, y, roomIndex) {
         const e = this.createEnemy(x, y, 150);
         e.tutorialRoomIndex = roomIndex;
+        // Heavy slate — it is the anchor, so it should read as the dense one.
+        if (typeof e.sprite.setTint === 'function') e.sprite.setTint(0x7f93b5);
         e.isAnchor = true;
         e._anchorPulseInterval = 3000;
         e._anchorLastPulse = 0;
@@ -1857,23 +2033,8 @@ class EnemyManager {
         e._anchorBodyGfx = body;
 
         // ── RANGE RING — two concentric dashed-look rings ────────────────────
-        const ring = this.add.graphics().setDepth(0.9);
-        ring.x = px; ring.y = py;
-        const R = e._anchorRange * TS;
-        // Outer ring — dashed by drawing arc segments
-        for (let seg = 0; seg < 16; seg++) {
-            const a1 = (seg / 16) * Math.PI * 2;
-            const a2 = ((seg + 0.6) / 16) * Math.PI * 2;
-            ring.lineStyle(1.5, 0x4488bb, 0.45);
-            ring.beginPath();
-            ring.arc(0, 0, R, a1, a2, false);
-            ring.strokePath();
-        }
-        // Inner subtle ring
-        ring.lineStyle(1, 0x226699, 0.25);
-        ring.strokeCircle(0, 0, R * 0.6);
-        this.tweens.add({ targets: ring, alpha: 0.20, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        e._anchorRing = ring;
+        // a cold blue glow over its reach; each pulse sends a ripple through it
+        e._anchorRing = VisualFX.aura(this, px, py, e._anchorRange * TS, 0x3f86c0, { alpha: 0.8 });
 
         // Slow pulse — concentric ring that expands outward on each pulse tick
         e._anchorPulseGfx = null; // created dynamically each pulse in AI loop
@@ -1982,14 +2143,7 @@ class EnemyManager {
         e._particleTimer = particleTimer;
 
         // ── AURA RING ─────────────────────────────────────────────────────────
-        const aura = this.add.graphics().setDepth(0.8);
-        aura.lineStyle(2, 0x44ff88, 0.45);
-        aura.strokeCircle(0, 0, e._healerRange * TS);
-        aura.fillStyle(0x44ff88, 0.05);
-        aura.fillCircle(0, 0, e._healerRange * TS);
-        aura.x = px; aura.y = py;
-        this.tweens.add({ targets: aura, alpha: 0.20, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        e._healerAura = aura;
+        e._healerAura = VisualFX.aura(this, px, py, e._healerRange * TS, 0x44ff88, { alpha: 0.9 });
 
         // ── HP BAR ────────────────────────────────────────────────────────────
         // Re-position health bar above totem (not above hidden slime sprite)
@@ -2003,15 +2157,16 @@ class EnemyManager {
     _fireMortarShot(enemy) {
         const TS = this.TILE_SIZE;
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
-        // Lock to current player tile at fire time
-        const targetPX = this.playerX * TS + TS / 2;
-        const targetPY = this.playerY * TS + TS / 2;
+        // Target: TD can override to pick the nearest tower/base; else lock to player tile.
+        const ov = this._mortarTargetOverride ? this._mortarTargetOverride(enemy) : null;
+        const targetPX = ov ? ov.px : this.playerX * TS + TS / 2;
+        const targetPY = ov ? ov.py : this.playerY * TS + TS / 2;
 
         // Arc trajectory — parabolic tween
         const FLIGHT_DUR = 1000 + Math.random() * 300;
         const ROCK_SIZE  = 10;
         const SPLASH_R   = 2.0; // tile radius AoE on landing
-        const DMG        = 20 * this.damageScaling;
+        const DMG        = this._mortarShellDamage ?? (20 * (this.enemyDamageScale || 1));
 
         // Shadow grows on ground as rock descends
         const shadow = this.add.ellipse(ex, ey, 8, 5, 0x000000, 0.35).setDepth(0.5);
@@ -2024,9 +2179,15 @@ class EnemyManager {
         rock.fillStyle(0xffaa55, 0.60); rock.fillCircle(-3, -3, 4);
         rock.lineStyle(1.5, 0x885522, 0.80); rock.strokeCircle(0, 0, ROCK_SIZE);
         rock.x = ex; rock.y = ey;
+        // Bosses.js: a spinning shell for the drawn rock, and the very tiles it will hit filling in
+        // on the floor from the moment it leaves (the old ring came at 40% of the flight)
+        const _shell = this._bfxOn ? BossFX.shot(this, 'shell', ex, ey, 0, 5) : null;
+        if (_shell) rock.setVisible(false);
+        const _mk = this._bfxOn ? BossFX.mark(this, BossFX.tilesInRadius(this, targetPX, targetPY, SPLASH_R * TS, false), 0xff7a1a, FLIGHT_DUR) : null;
 
         // Warning ring at landing zone appears halfway through flight
         this.time.delayedCall(FLIGHT_DUR * 0.4, () => {
+            if (_mk) return;
             const warn = this.add.graphics().setDepth(3.5);
             warn.lineStyle(2, 0xff6600, 0.80); warn.strokeCircle(targetPX, targetPY, SPLASH_R * TS);
             warn.fillStyle(0xff6600, 0.10); warn.fillCircle(targetPX, targetPY, SPLASH_R * TS);
@@ -2047,13 +2208,17 @@ class EnemyManager {
                 // Parabola: y = start + (end-start)*t - 4*arcHeight*t*(1-t)
                 rock.y = startY + (targetPY - startY) * t - 4 * arcHeight * t * (1 - t);
                 rock.setScale(0.6 + t * 0.5); // grows as it falls
+                if (_shell?.active) { _shell.setPosition(rock.x, rock.y).setScale(1.2 + t * 0.9); _shell.rotation += 0.18; }
                 if (t >= 1) {
                     arcTimer.remove();
                     rock.destroy(); shadow.destroy();
+                    _shell?.destroy();
+                    if (_mk) { _mk.done(); BossFX.blast(this, targetPX, targetPY, SPLASH_R * TS, 'shell'); }
                     // IMPACT
                     this.cameras.main.shake(80, 0.006);
                     const impactGfx = this.add.graphics().setDepth(5);
                     impactGfx.x = targetPX; impactGfx.y = targetPY;
+                    if (_mk) impactGfx.setVisible(false);
                     impactGfx.fillStyle(0xff6600, 0.65); impactGfx.fillCircle(0, 0, SPLASH_R * TS * 1.1);
                     impactGfx.fillStyle(0xffaa44, 0.80); impactGfx.fillCircle(0, 0, SPLASH_R * TS * 0.4);
                     this.tweens.add({ targets: impactGfx, scaleX: 1.4, scaleY: 1.4, alpha: 0, duration: 400, onComplete: () => impactGfx.destroy() });
@@ -2066,10 +2231,28 @@ class EnemyManager {
                         dg.x = targetPX; dg.y = targetPY;
                         this.tweens.add({ targets: dg, x: targetPX + Math.cos(da)*dr, y: targetPY + Math.sin(da)*dr, alpha: 0, duration: 350, onComplete: () => dg.destroy() });
                     }
-                    // Damage player if in splash
-                    const pdx = this.player.x - targetPX, pdy = this.player.y - targetPY;
+                    // Damage if the locked-on impact point is still within splash range of
+                    // wherever the target actually is now. In TD, targetPX/Y is permanently
+                    // the base position (immune to dodging by design — you're defending a
+                    // fixed structure, not a mobile player), so this always lands correctly.
+                    // In the main game, the player may have moved since the rock launched —
+                    // check their CURRENT position against the locked impact point, same as
+                    // the original intent, just reading the right coordinate pair.
+                    const curPX = this.playerX * TS + TS / 2;
+                    const curPY = this.playerY * TS + TS / 2;
+                    const pdx = curPX - targetPX, pdy = curPY - targetPY;
                     if (Math.sqrt(pdx*pdx + pdy*pdy) <= SPLASH_R * TS) {
                         this.takeDamage(DMG);
+                    }
+                    // Damage any engineer tower caught in the splash
+                    if (this.engineerTowers?.length) {
+                        for (const tower of this.engineerTowers) {
+                            if (!tower.active) continue;
+                            const tdx = tower.px - targetPX, tdy = tower.py - targetPY;
+                            if (Math.sqrt(tdx*tdx + tdy*tdy) <= SPLASH_R * TS) {
+                                this.damageEngineerTower(tower, DMG);
+                            }
+                        }
                     }
                 }
             }
@@ -2110,19 +2293,22 @@ class EnemyManager {
         const TS = this.TILE_SIZE;
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         const THUMP_R = enemy._thumpRange || 3;
-        const ROOT_DUR = 1500;
+        const ROOT_DUR = 500;
 
         // Visual — ground shockwave ring
         this.cameras.main.shake(50, 0.005);
-        const ring = this.add.graphics().setDepth(3);
+        this._bfxThump?.(enemy, THUMP_R);   // Bosses.js: the very tiles it roots, flashing
+        // Drawn round itself and placed: drawn at its world position and then scaled, it slid
+        // toward the map's corner as it grew.
+        const ring = this.add.graphics().setDepth(3).setPosition(ex, ey).setVisible(!this._bfxOn);
         ring.lineStyle(3, 0x44ff88, 0.90);
-        ring.strokeCircle(ex, ey, THUMP_R * TS);
+        ring.strokeCircle(0, 0, THUMP_R * TS);
         ring.fillStyle(0x226633, 0.15);
-        ring.fillCircle(ex, ey, THUMP_R * TS);
+        ring.fillCircle(0, 0, THUMP_R * TS);
         this.tweens.add({ targets: ring, scaleX: 1.15, scaleY: 1.15, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
 
         // Small ground crack under rooter
-        const crack = this.add.graphics().setDepth(2.8);
+        const crack = this.add.graphics().setDepth(2.8).setVisible(!this._bfxOn);
         crack.lineStyle(2, 0x44ff88, 0.80);
         crack.beginPath(); crack.moveTo(ex - 8, ey); crack.lineTo(ex + 8, ey); crack.strokePath();
         crack.beginPath(); crack.moveTo(ex, ey - 8); crack.lineTo(ex, ey + 8); crack.strokePath();
@@ -2131,6 +2317,7 @@ class EnemyManager {
         // Root player if within range
         const pdx = Math.abs(this.playerX - enemy.x), pdy = Math.abs(this.playerY - enemy.y);
         if (pdx + pdy <= THUMP_R) {
+            this._bfxRootNext = 'vine';   // Bosses.js: thorned roots, not void tendrils
             if (typeof this._rootPlayer === 'function') this._rootPlayer(ROOT_DUR, this.time.now);
             this.showStatusText(this.player.x, this.player.y - 28, 'ROOTED!', '#44ff88');
         }
@@ -2139,8 +2326,11 @@ class EnemyManager {
         for (const ally of this.enemies) {
             if (!ally.sprite?.active || ally === enemy || ally.isFrozen) continue;
             const adx = Math.abs(ally.x - enemy.x), ady = Math.abs(ally.y - enemy.y);
-            if (adx + ady <= THUMP_R && typeof this.freezeEnemy === 'function') {
-                this.freezeEnemy(ally, ROOT_DUR); // reuse freeze as stun
+            if (adx + ady <= THUMP_R) {
+                // Held where they stand. This was freezeEnemy: every thump put the rooter's allies
+                // in ice cubes, in reach of a shatter, with ice nowhere in the fight.
+                ally.isStunned = true;
+                ally.stunnedUntil = Math.max(ally.stunnedUntil || 0, this.time.now + ROOT_DUR);
             }
         }
 
@@ -2164,12 +2354,17 @@ class EnemyManager {
         const gfxObjs = [];
         for (const t of poisonTiles) {
             const px2 = t.x * TS, py2 = t.y * TS;
-            const base = this.add.rectangle(px2 + TS/2, py2 + TS/2, TS, TS, 0x113322, 0.75).setDepth(0.65);
+            // A pool of murky sludge from Visuals.js where it's loaded (TD keeps the drawn tile)
+            const base = this._vfxSludgeTile ? this._vfxSludgeTile(px2 + TS/2, py2 + TS/2)
+                : this.add.rectangle(px2 + TS/2, py2 + TS/2, TS, TS, 0x113322, 0.75).setDepth(0.65);
             const glow = this.add.graphics().setDepth(0.70);
-            glow.fillStyle(0x44ff88, 0.22); glow.fillRect(px2 + 2, py2 + 2, TS - 4, TS - 4);
-            glow.lineStyle(1, 0x44ff88, 0.50); glow.strokeRect(px2 + 1, py2 + 1, TS - 2, TS - 2);
+            if (!this._vfxSludgeTile) {
+                glow.fillStyle(0x44ff88, 0.22); glow.fillRect(px2 + 2, py2 + 2, TS - 4, TS - 4);
+                glow.lineStyle(1, 0x44ff88, 0.50); glow.strokeRect(px2 + 1, py2 + 1, TS - 2, TS - 2);
+            }
             // Pulsing bubble
-            const bubble = this.add.circle(px2 + TS/2 + (Math.random()-0.5)*6, py2 + TS/2 + (Math.random()-0.5)*6, 3 + Math.random()*2, 0x88ff66, 0.60).setDepth(0.72);
+            const bubble = this.add.circle(px2 + TS/2 + (Math.random()-0.5)*6, py2 + TS/2 + (Math.random()-0.5)*6,
+                this._vfxSludgeTile ? 1.5 + Math.random() : 3 + Math.random()*2, 0x88ff66, this._vfxSludgeTile ? 0.45 : 0.60).setDepth(0.72);
             this.tweens.add({ targets: bubble, y: bubble.y - 4, alpha: 0.20, duration: 500 + Math.random()*300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             gfxObjs.push(base, glow, bubble);
         }
@@ -2218,6 +2413,15 @@ class EnemyManager {
         if (Math.sqrt((ppx-spx)**2 + (ppy-spy)**2) <= SPLASH_R) {
             this.takeDamage(DMG);
         }
+        // Damage any engineer tower caught in the splash
+        if (this.engineerTowers?.length) {
+            for (const tower of this.engineerTowers) {
+                if (!tower.active) continue;
+                if (Math.sqrt((tower.px-spx)**2 + (tower.py-spy)**2) <= SPLASH_R) {
+                    this.damageEngineerTower(tower, DMG);
+                }
+            }
+        }
 
         // Spawn smaller splitters at offset tiles
         const offsets = [[-2, 0], [2, 0]];
@@ -2227,8 +2431,9 @@ class EnemyManager {
             const validY = ny >= 0 && ny < this.WORLD_HEIGHT;
             const spawnX = (validX && validY && this.world[nx][ny] === this.FLOOR) ? nx : ex;
             const spawnY = (validX && validY && this.world[nx][ny] === this.FLOOR) ? ny : ey;
-            const child = this.createSplitter(spawnX, spawnY, enemy.tutorialRoomIndex, tier + 1);
-            this.enemies.push(child);
+            // createSplitter -> createEnemy has already put it in this.enemies: a second push
+            // made every loop over the enemies (lava, splash, chains) hit it twice.
+            this.createSplitter(spawnX, spawnY, enemy.tutorialRoomIndex, tier + 1);
         }
     }
 
@@ -2237,6 +2442,7 @@ class EnemyManager {
     // target: an object with .x/.y (sprite or player), or a GameObjects with those props
     // Returns a timer handle — store on target as _speedIndTimer, remove on expiry
     _spawnSpeedArrow(targetX, targetY, type) {
+        if (this._cfxSpeedArrow?.(targetX, targetY, type)) return;   // Creatures.js draws it
         const isUp = type.startsWith('speed');
         const col = type === 'slow_ice'    ? 0x44ccff
                   : type === 'slow_goop'   ? 0xaaaaaa
@@ -2273,6 +2479,40 @@ class EnemyManager {
 
     // Start a repeating arrow emitter on a target — call once when state begins
     // Returns the Phaser TimerEvent to store on the target
+    // Start/stop wrapper around _startSpeedIndicator. Every caller before this managed its
+    // own timer handle by hand, which is why several speed changes had no arrows at all and
+    // why the ones that did could only be applied on a one-shot event -- a per-frame check
+    // like "is this Ripplerunner standing in water" would have spawned an arrow every single
+    // frame. This only acts on TRANSITIONS, so a condition that is re-evaluated constantly is
+    // safe to drive it with.
+    //
+    // `key` names the timer slot on the target, so one entity can carry several independent
+    // indicators (a slowed enemy that is also anchor-buffed) without them overwriting.
+    _setSpeedIndicator(target, key, type, on, interval = 350, durationMs = 0) {
+        if (!target) return;
+        const slot = '_spdInd_' + key;
+        if (on) {
+            if (target[slot]) return;                    // already running: do not restack
+            // durationMs turns a PERSISTENT condition into a burst. A Ripplerunner's speed is
+            // a permanent property of the tile it stands on, so arrows that ran the whole time
+            // would be constant noise on every one of them; a short pulse on each wet/dry
+            // TRANSITION carries the same information at the only moment it is news.
+            target[slot] = this._startSpeedIndicator(
+                () => (target.sprite?.active ? { x: target.sprite.x, y: target.sprite.y - 10 }
+                     : (target === this ? { x: this.player.x, y: this.player.y - 10 } : null)),
+                type, interval
+            );
+            if (durationMs > 0) {
+                this.time.delayedCall(durationMs, () => {
+                    if (target[slot]) { target[slot].remove(); target[slot] = null; }
+                });
+            }
+        } else if (target[slot]) {
+            target[slot].remove();
+            target[slot] = null;
+        }
+    }
+
     _startSpeedIndicator(getTargetXY, type, interval = 350) {
         return this.time.addEvent({
             delay: interval, loop: true,
@@ -2365,8 +2605,8 @@ class EnemyManager {
                     this.takeDamage(trap.damage);
                     this.cameras.main.shake(60, 0.005);
                     this.showStatusText(
-                        this.player.x - this.cameras.main.scrollX,
-                        this.player.y - this.cameras.main.scrollY - 20,
+                        this.player.x,
+                        this.player.y - 20,      // showStatusText is world space; it used to get screen coords
                         'SPIKE!', '#cccccc');
                 }
             }
@@ -2411,7 +2651,7 @@ class EnemyManager {
         bottle.fillStyle(0x888888, 1);    bottle.fillRect(-3, -11, 6, 3);  // cork
         container.add(bottle);
         const lbl = this.add.text(0, 8, '+HP', {
-            fontSize: '7px', fontFamily: 'monospace', color: '#ff88aa', stroke: '#000', strokeThickness: 2
+            fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ff9ab8', stroke: '#1a0608', strokeThickness: 3, resolution: 2
         }).setOrigin(0.5, 0); container.add(lbl);
 
         // Hover bob
@@ -2437,7 +2677,7 @@ class EnemyManager {
         bottle.fillStyle(0x888888, 1);    bottle.fillRect(-3, -11, 6, 3);
         container.add(bottle);
         const lbl = this.add.text(0, 8, '+ULT', {
-            fontSize: '7px', fontFamily: 'monospace', color: '#ffee44', stroke: '#000', strokeThickness: 2
+            fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffee66', stroke: '#1a1406', strokeThickness: 3, resolution: 2
         }).setOrigin(0.5, 0); container.add(lbl);
 
         this.tweens.add({ targets: container, y: cy - 16, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -2504,10 +2744,11 @@ class EnemyManager {
         if (!this.totalGlorps) this.totalGlorps = 0;
         this.totalGlorps += drop.value;
         localStorage.setItem('glorps', this.totalGlorps);
+        Sfx.play(this, 'pickup');
         if (this.glorpText) this.glorpText.setText(`✦ ${this.totalGlorps} Glorps`);
 
-        const px = this.player.x - this.cameras.main.scrollX;
-        const py = this.player.y - this.cameras.main.scrollY;
+        const px = this._scrX(this.player.x);
+        const py = this._scrY(this.player.y);
 
         // Burst particles
         for (let p = 0; p < 8; p++) {
@@ -2524,9 +2765,11 @@ class EnemyManager {
     }
 
     _collectHealthPot(drop) {
-        const heal = Math.min(drop.heal, this.maxHealth - this.health);
+        const amt = drop.heal * PlayerStats.healMult(this);   // Hearty (Stats.js)
+        const heal = Math.min(amt, this.maxHealth - this.health);
         if (heal <= 0) return;
-        this.health = Math.min(this.maxHealth, this.health + drop.heal);
+        Sfx.play(this, 'heal');
+        this.health = Math.min(this.maxHealth, this.health + amt);
         this.updateHUD();
 
         // Green heal flash on health bar
@@ -2536,8 +2779,8 @@ class EnemyManager {
         });
 
         // Floating +HP text
-        const fx = this.player.x - this.cameras.main.scrollX;
-        const fy = this.player.y - this.cameras.main.scrollY - 20;
+        const fx = this._scrX(this.player.x);
+        const fy = this._scrY(this.player.y) - 20;
         const ft = this.add.text(fx, fy, `+${Math.round(drop.heal)} HP`, {
             fontSize: '16px', fontFamily: 'monospace', fontStyle: 'bold',
             color: '#44ff88', stroke: '#000', strokeThickness: 3
@@ -2552,15 +2795,15 @@ class EnemyManager {
     }
 
     _collectUltPot(drop) {
-        this.gainUltCharge(drop.ultAmount || 15);
+        this.gainUltCharge(drop.ultAmount || 15, this.currentElement, true);
 
         // Pulse the ult bar label
         if (this.ultBarLabel) {
             this.tweens.add({ targets: this.ultBarLabel, scaleX: 1.4, scaleY: 1.4, duration: 120, yoyo: true, ease: 'Quad.easeOut' });
         }
 
-        const fx = this.player.x - this.cameras.main.scrollX;
-        const fy = this.player.y - this.cameras.main.scrollY - 20;
+        const fx = this._scrX(this.player.x);
+        const fy = this._scrY(this.player.y) - 20;
         const ft = this.add.text(fx, fy, `+${drop.ultAmount || 15}% ULT`, {
             fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold',
             color: '#ffee44', stroke: '#000', strokeThickness: 3

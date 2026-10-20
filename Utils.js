@@ -66,3 +66,11 @@ class Utils {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = Utils;
 }
+// Phaser 3.60 redraws a Text's canvas and re-uploads it to the GPU on every setColor / setStroke, even when the
+// value is the one it already has. The HUD sets them every frame, so skip the no-op calls (about 18 GPU uploads
+// a frame in a Tower fight before this).
+if (typeof Phaser !== 'undefined' && Phaser.GameObjects?.Text) {   // (the test loader stubs Phaser)
+    const TP = Phaser.GameObjects.Text.prototype, setColor = TP.setColor, setStroke = TP.setStroke;
+    TP.setColor = function (c) { return this.style && this.style.color === c ? this : setColor.call(this, c); };
+    TP.setStroke = function (c, t) { const s = this.style; return s && c !== undefined && s.stroke === c && s.strokeThickness === (t === undefined ? s.strokeThickness : t) ? this : setStroke.call(this, c, t); };
+}

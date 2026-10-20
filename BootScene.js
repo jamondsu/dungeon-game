@@ -10,23 +10,35 @@ class BootScene extends Phaser.Scene {
         this.load.spritesheet('slime_blue', 'assets/Slime_Blue_32x32.png', {
             frameWidth: 32, frameHeight: 32
         });
+        // the menus' level pictures and the loader show the game's own slimes (Menus.js diorama)
+        for (const c of ['red', 'orange', 'purple']) this.load.spritesheet('slime_' + c, `assets/Slime_${c[0].toUpperCase() + c.slice(1)}_32x32.png`, { frameWidth: 32, frameHeight: 32 });
     }
 
     create() {
+        Music.play(this, 'menu');
         const W = this.scale.width;
         const H = this.scale.height;
 
-        this.add.rectangle(0, 0, W, H, 0x050a10).setOrigin(0);
+        this.add.rectangle(0, 0, W, H, 0x050a10).setOrigin(0).setDepth(-60);
+        // Visuals.js: the same starfield, dust and vignette as the dungeon, and its glow
+        if (typeof VisualFX !== 'undefined') VisualFX.dressMenu(this, { depth: -50, bloom: true });
 
-        // Title text
-        this.add.text(W / 2, H * 0.28, 'DUNGEON', {
-            fontSize: '42px', fontFamily: 'monospace', color: '#aaccff',
-            stroke: '#000000', strokeThickness: 6, fontStyle: 'bold'
+        // Title text: big, lit from within, breathing slowly
+        const title = this.add.text(W / 2, H * 0.28, 'DUNGEON', {
+            fontSize: '72px', fontFamily: 'monospace', color: '#e6f0ff',
+            stroke: '#0b1430', strokeThickness: 8, fontStyle: 'bold',
+            padding: { x: 28, y: 28 }          // room for the glow, or it's clipped to a box
         }).setOrigin(0.5);
+        const titleFill = title.context.createLinearGradient(0, 0, 0, title.height);
+        titleFill.addColorStop(0.25, '#ffffff'); titleFill.addColorStop(1, '#7fa6ff');
+        title.setFill(titleFill).setShadow(0, 0, '#4f7dff', 22, true, true);
+        this.tweens.add({ targets: title, scale: 1.03, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const titleRule = this.add.rectangle(W / 2, H * 0.28 + 52, 320, 2, 0x6f95ff, 0.9).setScale(0, 1);
+        this.tweens.add({ targets: titleRule, scaleX: 1, duration: 700, delay: 150, ease: 'Cubic.easeOut' });
 
-        this.add.text(W / 2, H * 0.28 + 50, 'ROGUELIKE', {
-            fontSize: '22px', fontFamily: 'monospace', color: '#445566',
-            stroke: '#000000', strokeThickness: 4
+        this.add.text(W / 2, H * 0.28 + 76, 'R O G U E L I K E', {
+            fontSize: '18px', fontFamily: 'monospace', color: '#8ea2d6',
+            stroke: '#000000', strokeThickness: 3
         }).setOrigin(0.5);
 
         // Slime falls from above, fast
@@ -43,6 +55,13 @@ class BootScene extends Phaser.Scene {
         const slime = this.add.sprite(W / 2, -60, 'slime_blue', 0)
             .setScale(3)
             .setDepth(5);
+        if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, slime, { mood: 'friend', look: 'pointer' });   // Creatures.js
+        // A pool of its own light on the ground, growing as it falls (Visuals.js' soft glow)
+        if (this.textures.exists('vfx_glow')) {
+            const pool = this.add.image(W / 2, H * 0.58 + 44, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD)
+                .setTint(0x2ad1b0).setScale(0.4, 0.1).setAlpha(0).setDepth(4);
+            this.tweens.add({ targets: pool, scaleX: 1.6, scaleY: 0.38, alpha: 0.45, duration: 380, ease: 'Power2.easeIn' });
+        }
 
         // Squish on landing
         const landY = H * 0.58;
@@ -83,13 +102,14 @@ class BootScene extends Phaser.Scene {
         const barX = W / 2 - barW / 2;
         const barY = landY + 60;
 
-        this.add.rectangle(barX, barY, barW, barH, 0x111122).setOrigin(0);
+        this.add.rectangle(barX, barY, barW, barH, 0x0a0e1c).setOrigin(0);
         const barBorder = this.add.rectangle(barX, barY, barW, barH).setOrigin(0);
-        barBorder.setStrokeStyle(2, 0x2244aa, 0.8);
-        const barFill = this.add.rectangle(barX, barY, 0, barH, 0x3366cc).setOrigin(0);
+        barBorder.setStrokeStyle(1, 0x5a7cff, 0.75);
+        const barFill = this.add.rectangle(barX + 2, barY + 2, 0, barH - 4, 0x6aa0ff).setOrigin(0);
+        const barSheen = this.add.rectangle(barX + 2, barY + 2, 0, 2, 0xe0ecff, 0.85).setOrigin(0);
 
-        const loadText = this.add.text(W / 2, barY + 24, 'Loading...', {
-            fontSize: '12px', fontFamily: 'monospace', color: '#334455'
+        const loadText = this.add.text(W / 2, barY + 26, 'Loading...', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#5a6a8a'
         }).setOrigin(0.5);
 
         // Simulate loading progress then launch
@@ -99,10 +119,12 @@ class BootScene extends Phaser.Scene {
             repeat: 49,
             callback: () => {
                 progress += 2;
-                barFill.width = barW * (progress / 100);
+                barFill.width = (barW - 4) * (progress / 100);
+                barSheen.width = barFill.width;
                 if (progress >= 100) {
                     loadText.setText('Press any key to start');
-                    loadText.setStyle({ color: '#aaccff' });
+                    loadText.setStyle({ color: '#cfe0ff', fontSize: '14px' });
+                    this.tweens.add({ targets: loadText, alpha: 0.45, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
                     // Slime bobs happily
                     this.tweens.add({
                         targets: slime,

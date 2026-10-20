@@ -7,6 +7,8 @@
 class WorldGen {
 
     generateWorld() {
+        if (this.towerRun) return this.generateTowerArena();   // Tower.js
+        if (this.trainingRun) return Training.world(this);    // Training.js
         // Check if we have a handcrafted level for this index
         if (this.currentLevelIndex === 0) {
             if (this.tutorialStage === 1) return this.generateIceTutorialLevel();
@@ -19,6 +21,8 @@ class WorldGen {
             return this.generateLevel3();
         } else if (this.currentLevelIndex === 4) {
             return this.generateLevel4();
+        } else if (this.currentLevelIndex === 5) {
+            return this.generateLevel6();
         }
 
         // Otherwise use procedural generation
@@ -882,6 +886,210 @@ class WorldGen {
         };
     }
 
+    generateLevel6() {
+        // ── Level 6: "The Cistern" ───────────────────────────────────────────
+        // Fifteen rooms. The first nine teach one type each on terrain built to make that
+        // type legible. The last five are STACKS -- a room full of one thing, because four
+        // Drowners together is a different problem from four different enemies, and three
+        // Wave Riders crossing is a different problem from one.
+        //
+        //   R6 Headrace -- R5 Switchgear -- R4 Confluence -- R3 Stillwell
+        //    |                                                    |
+        //   R7 Long Gallery                                  R2 Runnels
+        //    |                                                    |
+        //   R8 Grating -- R9 Drawing Rm    R0 Spawn -- R1 Shallows
+        //                      |
+        //                 R10 Torrent -- R11 Picket
+        //                                      |
+        //   R14 Sluice -- R13 Drowning Pool -- R12 Switchyard
+        //
+        // Water only pools inside room rectangles, so every wall is also a bank: pillars
+        // make islands, long runs make channels, a gap is somewhere you have to wade.
+
+        const world = [];
+        for (let x = 0; x < this.WORLD_WIDTH; x++) {
+            world[x] = [];
+            for (let y = 0; y < this.WORLD_HEIGHT; y++) world[x][y] = this.NOTHING;
+        }
+        this.rooms = [];
+        // Leaking pipes. Each one sits in the wall OUTSIDE a room and bleeds inward, and
+        // LevelManager keeps refilling its tiles a tile at a time -- so burning a pool off
+        // buys you seconds, not the room. `kind` is 'pool' (a blob at the mouth) or 'line'
+        // (a run straight in), and `len` is how far it reaches.
+        this.pipes = [];
+        const pipe = (mx, my, dx, dy, kind, len) => this.pipes.push({ mx, my, dx, dy, kind, len });
+        const hall   = (x0, x1, y) => { for (let x = x0; x <= x1; x++) for (let d = -1; d <= 1; d++) world[x][y+d] = this.FLOOR; };
+        const shaft  = (y0, y1, x) => { for (let y = y0; y <= y1; y++) for (let d = -1; d <= 1; d++) world[x+d][y] = this.FLOOR; };
+        const pillar = (px, py, w, h) => { for (let x = px; x < px+w; x++) for (let y = py; y < py+h; y++) world[x][y] = this.WALL; };
+        const room = (x, y, w, h, doors) => {
+            const r = { x, y, w, h, doorPositions: [] };
+            this.carveRoom(world, r);
+            for (const d of doors) r.doorPositions.push(d);
+            this.rooms.push(r);
+            return r;
+        };
+
+        // ── R0: Dry Landing (14x10) — the control ───────────────────────────
+        // Bone dry. You need ground that does nothing to you or the soak never reads.
+        room(52, 44, 14, 10, [{ x: 65, y: 48, direction: 'east' }]);
+        pillar(55, 46, 2, 1); pillar(62, 51, 2, 1);
+
+        // ── R1: The Shallows (18x14) — the floor is the lesson ──────────────
+        room(70, 42, 18, 14, [{ x: 70, y: 48, direction: 'west' },
+                              { x: 87, y: 48, direction: 'east' }]);
+        pillar(74, 45, 2, 2); pillar(83, 52, 2, 2); pillar(78, 49, 3, 2);
+        hall(65, 71, 48);
+
+        // ── R2: The Runnels (22x18) — Ripplerunner ─────────────────────────
+        // Four long channel banks. It skims the flooded lanes and bogs down crossing them.
+        room(92, 38, 22, 18, [{ x: 92, y: 48, direction: 'west' },
+                              { x: 103, y: 38, direction: 'north' }]);
+        // two pipes feeding the channels from the east wall, so the lanes re-flood
+        pipe(114, 43, -1, 0, 'line', 9);
+        pipe(114, 51, -1, 0, 'line', 9);
+        pillar(95, 41, 14, 1); pillar(97, 45, 14, 1);
+        pillar(95, 49, 14, 1); pillar(97, 53, 14, 1);
+        hall(87, 93, 48);
+
+        // ── R3: Stillwell (22x18) — Drowner, on dry ground ─────────────────
+        // A ring of columns around open floor, and the driest room in the level. Learn the
+        // commit here, where getting it wrong is damage instead of damage plus a pin.
+        room(92, 14, 22, 18, [{ x: 103, y: 31, direction: 'south' },
+                              { x: 92, y: 22, direction: 'west' }]);
+        for (const [px, py] of [[96,17],[108,17],[96,27],[108,27],[102,16],[102,29]]) pillar(px, py, 2, 2);
+        shaft(31, 39, 103);
+
+        // ── R4: Confluence (22x18) — the first pairing ─────────────────────
+        // A cross of banks cuts it into four quadrants with a wet middle.
+        room(64, 10, 22, 18, [{ x: 85, y: 20, direction: 'east' },
+                              { x: 64, y: 18, direction: 'west' }]);
+        pillar(74, 12, 2, 5); pillar(74, 21, 2, 5);
+        pillar(67, 17, 5, 2); pillar(78, 17, 5, 2);
+        hall(85, 93, 22);
+
+        // ── R5: Switchgear (22x16) — Conduit ───────────────────────────────
+        // Machine blocks on a grid. The dry lanes between them are the answer, and you can
+        // see them from the doorway.
+        room(36, 10, 22, 16, [{ x: 57, y: 18, direction: 'east' },
+                              { x: 36, y: 18, direction: 'west' }]);
+        for (let gx = 0; gx < 4; gx++) for (let gy = 0; gy < 3; gy++) pillar(39 + gx*5, 12 + gy*4, 2, 2);
+        hall(57, 65, 18);
+
+        // ── R6: Headrace (22x18) — Tidecaller ──────────────────────────────
+        // Two long races with gaps. It refills whichever one you dried.
+        room(8, 12, 22, 18, [{ x: 29, y: 19, direction: 'east' },
+                             { x: 17, y: 29, direction: 'south' }]);
+        // the races are fed from the west wall — dry one and it fills again from the end
+        pipe(7, 20, 1, 0, 'line', 11);
+        pipe(7, 28, 1, 0, 'line', 11);
+        pillar(11, 16, 7, 1); pillar(20, 16, 7, 1);
+        pillar(11, 24, 7, 1); pillar(20, 24, 7, 1);
+        hall(29, 37, 19);
+
+        // ── R7: The Long Gallery (34x12) — Wave Rider ──────────────────────
+        // Thirty-four tiles end to end and almost nothing in it: you watch the whole charge
+        // cross in front of you, which is the only way to learn to leave the lane.
+        room(4, 36, 34, 12, [{ x: 17, y: 36, direction: 'north' },
+                             { x: 12, y: 47, direction: 'south' }]);
+        pillar(13, 40, 2, 2); pillar(24, 42, 2, 2); pillar(32, 40, 2, 2);
+        shaft(29, 37, 17);
+
+        // ── R8: The Grating (18x20) — Tidal Guard ──────────────────────────
+        // Tall and open down the middle; the guard holds the bottom so its trident runs the
+        // length of the room at you. Pillars sit wide, off the prong lanes.
+        room(4, 54, 18, 20, [{ x: 12, y: 54, direction: 'north' },
+                             { x: 21, y: 64, direction: 'east' }]);
+        pillar(6, 58, 2, 2); pillar(18, 58, 2, 2);
+        pillar(6, 69, 2, 2); pillar(18, 69, 2, 2);
+        shaft(47, 55, 12);
+
+        // ── R9: The Drawing Room (20x16) — Wishing Well ────────────────────
+        // Open and unthreatening. Watch what a Well does to a floor before anything is
+        // standing on that floor trying to kill you.
+        room(26, 56, 20, 16, [{ x: 26, y: 64, direction: 'west' },
+                              { x: 45, y: 64, direction: 'east' }]);
+        pillar(30, 59, 2, 2); pillar(41, 67, 2, 2);
+        hall(21, 27, 64);
+
+        // ── R10: The Torrent (32x14) — a PACK of Wave Riders ───────────────
+        // Long, and deliberately almost empty. Three of them telegraph and charge across
+        // the same open floor, so the carpets overlap and the lane you dodged into is the
+        // lane the next one takes. Staggered short banks give you something to break
+        // line-of-sight on without ever blocking a charge outright.
+        room(50, 60, 32, 14, [{ x: 50, y: 66, direction: 'west' },
+                              { x: 81, y: 66, direction: 'east' }]);
+        // pools across the charge lanes, so the Wave Riders always have water to ride
+        pipe(57, 59, 0, 1, 'pool', 3);
+        pipe(74, 74, 0, -1, 'pool', 3);
+        pillar(56, 63, 3, 1); pillar(64, 69, 3, 1); pillar(72, 63, 3, 1);
+        hall(45, 51, 66);
+
+        // ── R11: The Picket (24x18) — a TRIO of Tidal Guards ───────────────
+        // Thin pickets cut long sightlines through the room. Three guards aim down them
+        // from different angles, so a step out of one trident is a step into another --
+        // the safe lane of one sits inside the prong of the next.
+        room(86, 60, 24, 18, [{ x: 86, y: 66, direction: 'west' },
+                              { x: 97, y: 77, direction: 'south' }]);
+        // one pool only: wet guards aim in 600ms instead of 1000, so this room does not
+        // need much help
+        pipe(93, 59, 0, 1, 'pool', 2);
+        pillar(90, 64, 1, 5); pillar(96, 70, 1, 5); pillar(103, 64, 1, 5);
+        pillar(93, 73, 4, 1); pillar(100, 62, 4, 1);
+        hall(81, 87, 66);
+
+        // ── R12: The Switchyard (18x12) — a Conduit LATTICE ────────────────
+        // Sized to the mechanic: at 18x12 a 3x2 lattice of four-tile fields covers ~94% of
+        // the floor, leaving a seam you can find rather than a room you cannot enter.
+        room(88, 82, 18, 12, [{ x: 97, y: 82, direction: 'north' },
+                              { x: 88, y: 86, direction: 'west' }]);
+        // the lattice is fed from both ends — this is the room where drying a seam is the
+        // whole tactic, so the seam closing again is the whole pressure
+        // ONE main, not two. This room's whole tactic is burning a dry seam through the
+        // Conduit lattice, and two streams crossing it leaves nowhere to make one.
+        pipe(87, 90, 1, 0, 'line', 8);   // clear of the corridor band at y85-87
+        pillar(89, 83, 2, 1); pillar(103, 92, 2, 1);
+        shaft(77, 83, 97);
+
+        // ── R13: The Drowning Pool (24x18) — a PACK of Drowners ────────────
+        // Four, plus Wells to keep it wet. Their commits land on overlapping timers, so you
+        // cannot answer them one at a time -- you have to pick ground that answers all of
+        // them, and every strike on dry floor takes some of that ground away.
+        room(58, 78, 24, 18, [{ x: 81, y: 86, direction: 'east' },
+                              { x: 58, y: 86, direction: 'west' }]);
+        // three pipes: the Drowning Pool should refuse to stay dry
+        pipe(66, 77, 0, 1, 'pool', 3);
+        pipe(79, 96, 0, -1, 'pool', 3);   // outside the south wall, draining north
+        pillar(62, 82, 3, 3); pillar(74, 82, 3, 3); pillar(68, 90, 3, 2);
+        hall(81, 89, 86);
+
+        // ── R14: Sluice Gate (38x18) — finale ──────────────────────────────
+        // Wide enough for the Wave Riders to build speed and for the queen's adds to have
+        // somewhere to come from. Gate housings give cover, but every piece is an island.
+        room(14, 78, 38, 18, [{ x: 51, y: 86, direction: 'east' }]);
+        // finale: two long lines down the arena plus a pool at the queen's end
+        pipe(13, 86, 1, 0, 'line', 12);
+        pipe(33, 77, 0, 1, 'pool', 3);
+        for (const [px, py] of [[19,82],[31,82],[43,82],[25,90],[37,90],[47,90]]) pillar(px, py, 3, 2);
+        hall(51, 59, 86);
+
+        this.isLevel6 = true;   // turns on room gating: see LevelManager._roomGated
+
+        // Room state, the same shape generateLevel2/3/4 set. Level 6 had none of this, so
+        // the door flags were whatever the previously played level left behind.
+        // lockTutorialDoors is deliberately NOT called here: these are intent flags, and
+        // the barrier is raised in _cisternRoomCheck when you walk into the room.
+        this.currentTutorialRoom = -1;
+        this.tutorialRoomCleared = this.rooms.map(() => false);
+        this.tutorialDoorsLocked = this.rooms.map((r, i) => i !== 0);
+
+        const spawnRoom = this.rooms[0];
+        this.playerX = Math.floor(spawnRoom.x + spawnRoom.w / 2);
+        this.playerY = Math.floor(spawnRoom.y + spawnRoom.h / 2);
+
+        this.addWalls(world);
+        return world;
+    }
+
     generateLevel4() {
         // ── Level 4: "The Fracture" ──────────────────────────────────────────
         // Layout:
@@ -912,22 +1120,22 @@ class WorldGen {
         });
         this.rooms.push(r0); // rooms[0]
 
-        // ── R1: Entry Crater (20×14) — WEST ─────────────────────────────────
+        // ── R1: Entry Crater (16×14) — WEST ─────────────────────────────────
         for (let x = 38; x <= 42; x++)
             for (let dy = -1; dy <= 1; dy++) world[x][33+dy] = this.FLOOR;
-        const r1 = { x: 18, y: 22, w: 20, h: 14, doorPositions: [] };
+        const r1 = { x: 22, y: 22, w: 16, h: 14, doorPositions: [] };   // (x 18 touched R2: the two rooms were one open space)
         this.carveRoom(world, r1);
         r1.doorPositions.push({ x: 38, y: 33, direction: 'east' });
-        r1.doorPositions.push({ x: 18, y: 33, direction: 'west' });
+        r1.doorPositions.push({ x: 22, y: 33, direction: 'west' });
         // Rubble pillars
-        [[20,24],[34,24],[20,32],[34,32]].forEach(([px,py]) => {
+        [[24,24],[34,24],[24,32],[34,32]].forEach(([px,py]) => {
             world[px][py] = this.WALL; world[px+1][py] = this.WALL;
             world[px][py+1] = this.WALL;
         });
         this.rooms.push(r1); // rooms[1]
 
-        // ── R2: Sinkhole (22×14) — FAR WEST ─────────────────────────────────
-        for (let x = 5; x <= 17; x++)
+        // ── R2: Sinkhole (14×14) — FAR WEST, a short corridor (x 18-21) to R1 ──
+        for (let x = 18; x <= 21; x++)
             for (let dy = -1; dy <= 1; dy++) world[x][33+dy] = this.FLOOR;
         const r2 = { x: 4, y: 22, w: 14, h: 14, doorPositions: [] };
         this.carveRoom(world, r2);

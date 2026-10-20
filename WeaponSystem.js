@@ -4,6 +4,14 @@
 // All methods receive GameScene as `this` via .call(scene, ...) from GameScene.js
 // Do NOT add local state here — all state lives on the scene object.
 
+// NOTE ON ENEMY ITERATION
+// Loops that can kill iterate `[...this.enemies]`, never `this.enemies` directly.
+// damageEnemy -> killEnemy SPLICES this.enemies, and a live for...of over a spliced
+// array skips the element after each removal — so an AoE that kills its first target
+// silently spares every second enemy in range. Measured: 3 of 6 killed instead of 6.
+// The spread makes a snapshot; dead entries are filtered by the `sprite?.active`
+// guards each body already has. `(this.enemies||[])` is a nullish guard, NOT a copy.
+
 class WeaponSystem {
 
     shootAttack(targetX, targetY) {
@@ -43,33 +51,161 @@ class WeaponSystem {
         this.lastFireballTime = currentTime;
     }
 
-    fireEquippedWeapon(targetX, targetY) {
-        // Level 4 — attacking near a crack pulse breaks it
-        if (this.isLevel4 && this._crackPulses?.length) {
-            const worldX = targetX + this.cameras.main.scrollX;
-            const worldY = targetY + this.cameras.main.scrollY;
-            this._tryBreakCrackPulse(worldX, worldY, this.TILE_SIZE * 1.2);
-        }
+    // The Magma Staff's shot: a 14px lump of lava rock, its crust dark, cracks running through
+    // it that glow orange to yellow and shift as it tumbles (4 frames). Drawn with the shop's
+    // pixel helper, so it gets the same outline as every other icon.
+    // Magma Staff's rocks: VARIANTS lumpy asteroids (each its own seeded outline, craters and
+    // seams), magma glowing in the seams and bulging out where they reach the edge.
+    static magmaRockKey(scene, v = 0) {
+        const key = 'wpn_magma_rock_' + v;
+        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
+        return ShopScene.icon(scene, key, 18, { k: '#1a0703', c: '#6a2a14', d: '#40180a', h: '#8a4424', o: '#ff6a1a', y: '#ffd24a', w: '#fff3c0', g: '#ff8a2a', r: '#c8320e' }, (m, f) => {
+            let seed = 7919 * (v + 1);
+            const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+            const ph = [rnd() * 6.28, rnd() * 6.28, rnd() * 6.28], am = [0.4 + rnd() * 0.6, 0.2 + rnd() * 0.4, 0.1 + rnd() * 0.25];
+            const R = th => 6.2 + am[0] * Math.sin(2 * th + ph[0]) + am[1] * Math.sin(3 * th + ph[1]) + am[2] * Math.sin(5 * th + ph[2]);
+            const out = [], inner = [];
+            for (let i = 0; i < 16; i++) { const th = i / 16 * Math.PI * 2, r = R(th); out.push([9 + Math.cos(th) * r, 9 + Math.sin(th) * r]); inner.push([8.4 + Math.cos(th) * r * 0.72, 8.4 + Math.sin(th) * r * 0.72]); }
+            m.poly(out, 'd'); m.poly(inner, 'c');
+            for (let i = 0; i < 2; i++) { const a = rnd() * 6.28, d = rnd() * 3; m.disc(9 + Math.cos(a) * d, 9 + Math.sin(a) * d, 1.2, 'd'); m.set(9 + Math.cos(a) * d - 1, 9 + Math.sin(a) * d - 1, 'h'); }
+            // seams: a wandering crack from near the core out past the crust, glow flowing outward
+            const seams = 2 + (v % 2);
+            for (let sI = 0; sI < seams; sI++) {
+                let a = rnd() * 6.28, x = 9 + Math.cos(a), y = 9 + Math.sin(a);
+                const len = R(a) + 0.5, steps = Math.ceil(len);
+                for (let k = 0; k < steps; k++) {
+                    a += (rnd() - 0.5) * 0.9;
+                    const nx = x + Math.cos(a), ny = y + Math.sin(a);
+                    m.line(x + 0.6, y + 0.6, nx + 0.6, ny + 0.6, 'r');   // the seam's glowing lip
+                    m.line(x, y, nx, ny, (k + f) % 4 === 0 ? 'y' : 'o');
+                    x = nx; y = ny;
+                }
+                // the ooze: a blob of magma swelling out of the seam's end, then sagging back
+                const sw = [0.8, 1.3, 1.7, 1.2][f];
+                m.disc(x + 0.5, y + 0.5, sw, 'o'); m.set(x, y, 'y');
+            }
+            m.disc(9, 9, 2.2, 'o'); m.disc(9, 9, 1.4, 'y'); m.set(9, 9, 'w');
+            for (let i = 0; i < 6; i++) { const th = 3.4 + i * 0.22, r = R(th) - 0.8; m.set(9 + Math.cos(th) * r, 9 + Math.sin(th) * r, 'h'); }   // a lit edge on the crust
+        }, 4);
+    }
+    static MAGMA_VARIANTS = 4;
+    static SURGE_MIN_HEAT = 18;   // Magma Surge needs at least this much heat (the staff's tier 2)
 
+    // Orb Emitter's orb: a caged plasma globe (24px, 8 frames). Dark glass, a hot core whose
+    // tendrils writhe out to touch the glass, and a brass cage turning round it in 3D.
+    static orbEmitterKey(scene) {
+        const key = 'wpn_tesla_orb';
+        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
+        return ShopScene.icon(scene, key, 24, { k: '#120e1c', n: '#161d3a', m: '#26386e', c: '#5ad8ff', C: '#c8f8ff', y: '#ffe04a', Y: '#fff6b0', w: '#ffffff', b: '#5a4020', B: '#e8b44a', h: '#fff0b0', g: '#fffbe0' }, (m, f) => {
+            const O = 12, R = 8.4, tilt = 0.45, spin = f / 8 * Math.PI / 2;   // the cage turns a quarter (its symmetry) per loop
+            // a point on the sphere (latitude t, longitude p) seen from a little above: [x, y, front]
+            const at = (t, p, r) => {
+                const x = r * Math.cos(t) * Math.sin(p), y = r * Math.sin(t), z = r * Math.cos(t) * Math.cos(p);
+                return [O + x, O + y * Math.cos(tilt) - z * Math.sin(tilt), y * Math.sin(tilt) + z * Math.cos(tilt) > 0];
+            };
+            const cage = front => {
+                for (let k = 0; k < 120; k++) {
+                    const s = k / 120 * Math.PI * 2;
+                    for (const [x, y, fr] of [at(0, s, R + 0.9), at(s, spin, R + 0.9), at(s, spin + Math.PI / 2, R + 0.9)])
+                        if (fr === front) m.set(x, y, front ? (x < O - 2 && y < O ? 'h' : 'B') : 'b');
+                }
+            };
+            m.disc(O, O, R, 'n'); m.disc(O - 1.6, O - 1.8, R - 2.6, 'm');   // the glass, lit from the top left
+            for (let i = 0; i < 4; i++) {                                     // tendrils, touching the glass where they end
+                const a = i * Math.PI / 2 + f * 0.4 + 0.5 * Math.sin(f * 1.3 + i * 2);
+                let x = O + Math.cos(a) * 2, y = O + Math.sin(a) * 2;
+                for (let st = 0; st < 4; st++) {
+                    const r = 2 + (R - 2.8) * (st + 1) / 4, b = a + 0.45 * Math.sin(f * 2.1 + i * 3 + st * 1.9);
+                    const nx = O + Math.cos(b) * r, ny = O + Math.sin(b) * r;
+                    m.line(x, y, nx, ny, st < 2 ? 'C' : 'c'); x = nx; y = ny;
+                }
+                m.disc(x + 0.5, y + 0.5, 1.1, 'C'); m.set(x, y, 'w');
+            }
+            const pr = [2.6, 2.9, 3.2, 2.9][f % 4];                           // the core breathes
+            m.disc(O, O, pr, 'y'); m.disc(O, O, pr - 1, 'Y'); m.rect(O - 1, O - 1, 2, 2, 'w');
+            cage(true);
+            for (const t of [-Math.PI / 2, Math.PI / 2]) { const [x, y] = at(t, 0, R + 1.4); m.rect(x - 1, y - 1, 3, 2, 'B'); m.set(x, y - 1, 'h'); }   // the pole caps
+            m.set(O - 4, O - 5, 'w'); m.set(O - 5, O - 4, 'w'); m.set(O - 3, O - 5, 'C');   // a glint on the glass
+            if (f % 3 === 0) { const a = f * 0.8; m.set(O + Math.cos(a) * 11, O + Math.sin(a) * 11, 'g'); }
+        }, 8);
+    }
+    // Ball Lightning: a roiling plasma ball (32px, 8 frames). A rim that won't hold still, bright
+    // cells rolling over it, a white-hot core, and bolts leaping off the edge.
+    static ballLightningKey(scene) {
+        const key = 'wpn_ball_lightning';
+        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
+        return ShopScene.icon(scene, key, 32, { k: '#0a0a24', v: '#3b2c9a', b: '#3d7bff', c: '#5ae6ff', C: '#c8fbff', w: '#ffffff', y: '#fff08a', g: '#e8fbff' }, (m, f) => {
+            const O = 16, ph = f / 8 * Math.PI * 2;
+            const R = th => 10 + 0.9 * Math.sin(3 * th + ph) + 0.6 * Math.sin(5 * th - 2 * ph) + 0.4 * Math.sin(7 * th + 3 * ph);
+            const shell = (k, c) => { const pts = []; for (let i = 0; i < 32; i++) { const th = i / 32 * Math.PI * 2; pts.push([O + Math.cos(th) * R(th) * k, O + Math.sin(th) * R(th) * k]); } m.poly(pts, c); };
+            shell(1, 'v'); shell(0.84, 'b'); shell(0.64, 'c');
+            for (let i = 0; i < 12; i++) { const th = 3.5 + i * 0.13, r = R(th) * 0.84 - 0.6; m.set(O + Math.cos(th) * r, O + Math.sin(th) * r, 'c'); }   // lit from the top left
+            for (let i = 0; i < 5; i++) {                                     // convection: bright cells rolling over the surface
+                const a = i * 1.2566 + ph * (i % 2 ? 1 : -0.7), d = 4.5 + 1.5 * Math.sin(ph * 2 + i);
+                m.disc(O + Math.cos(a) * d, O + Math.sin(a) * d, 1.6, 'C');
+            }
+            for (let i = 0; i < 3; i++) {                                     // and dark veins between them
+                let a = i * 2.09 + ph * 0.5, x = O + Math.cos(a) * 3, y = O + Math.sin(a) * 3;
+                for (let st = 0; st < 3; st++) { a += Math.sin(ph * 3 + i + st) * 0.8; const nx = x + Math.cos(a) * 2.2, ny = y + Math.sin(a) * 2.2; m.line(x, y, nx, ny, 'b'); x = nx; y = ny; }
+            }
+            const cr = 2.6 + 0.6 * Math.sin(ph * 2);
+            m.disc(O, O, cr + 1.3, 'y'); m.disc(O, O, cr, 'w');
+            for (let i = 0; i < 3; i++) {                                     // bolts off the rim ('g': no outline, so they stay thin)
+                const a = ((f * 5 + i * 11) % 16) / 16 * Math.PI * 2;
+                let r = R(a) - 1, x = O + Math.cos(a) * r, y = O + Math.sin(a) * r;
+                for (let st = 0; st < 3; st++) { const b = a + ((f * 7 + i * 3 + st * 5) % 5 - 2) * 0.22; r += 1.8; const nx = O + Math.cos(b) * r, ny = O + Math.sin(b) * r; m.line(x, y, nx, ny, 'g'); x = nx; y = ny; }
+            }
+        }, 8);
+    }
+    // The superconduct mark the orb leaves: a little bolt in a ring.
+    static superconductKey(scene) {
+        const key = 'wpn_superconduct';
+        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
+        return ShopScene.icon(scene, key, 11, { y: '#ffe04a', w: '#fff8c0', c: '#aef4ff' }, (m) => {
+            m.ring(5.5, 5.5, 5.4, 1, 'c');
+            m.poly([[6, 1.5], [3, 6], [5.2, 6], [4.4, 9.5], [8, 4.6], [5.8, 4.6], [6.8, 1.5]], 'y');
+            m.set(5, 4, 'w'); m.set(5, 6, 'w');
+        });
+    }
+
+    fireEquippedWeapon(targetX, targetY) {
+        if (this.fractureCore?.state === 'rhythm') return;   // LevelManager: the Fracture Core's rhythm has the mouse
+        if (this._iceShellUntil > this.time.now) return;   // encased in ice (the ice ult's end)
+        if (this._barrageOn && this.ignitionActive && this.currentElement === 'fire') return this._meteorBarrage?.(targetX, targetY);   // the fire ult's Meteor Barrage
         const weapon = this.equippedWeapons?.[this.currentElement] || 'flame_fists';
-        switch (weapon) {
+        // Sound.js: each weapon's own sound, when it actually went off (every weapon stamps
+        // _gearFiredAt as it fires; the cosmic casts stamp _cs.castAt)
+        const _fired0 = this._gearFiredAt, _cast0 = this._cs?.castAt;
+        try { switch (weapon) {
             case 'flame_sword':     this.flameSwordAttack(targetX, targetY); break;
             case 'magma_staff':     this.magmaStaffAttack(targetX, targetY); break;
+            case 'ignition':        this.kindlingBrandAttack(targetX, targetY); break;
             case 'ice_fists':       this.iceFistsAttack(targetX, targetY); break;
             case 'icicle_cannon':   this.icicleStaffAttack(targetX, targetY); break;
             case 'fractal_shard':   this.fractalShardAttack(targetX, targetY); break;
             case 'lightning_fists': this.lightningFistsAttack(targetX, targetY); break;
             case 'orb_emitter':     this.orbEmitterAttack(targetX, targetY); break;
-            case 'cosmic_fists':    this.cosmicFistsAttack(targetX, targetY); break;
-            case 'singularity_staff': this.singularityStaffFire(targetX, targetY); break;
+            case 'ball_lightning': this.ballLightningAttack(targetX, targetY); break;
+            // Unreachable in the overworld -- no shop card, no equip path. Kept because
+            // TowerDefenseScene sets this id and routes its Wrench upgrade tree through it.
+            case 'engineering_degree': this.engineeringDegreeAttack(targetX, targetY); break;
+            // Cosmic.js casts all five (each one a boon); the old two stay for a scene without it.
+            case 'cosmic_fists': case 'barrier_staff': case 'astrolabe': case 'singularity_staff': case 'void_blade':
+                if (this._csCast) { this._csCast?.(weapon, targetX, targetY); break; }
+                if (weapon === 'singularity_staff') this.singularityStaffFire(targetX, targetY);
+                else this.cosmicFistsAttack(targetX, targetY);
+                break;
             case 'flame_fists': default: this.flameFistsAttack(targetX, targetY); break;
+        } } finally {
+            if (this._gearFiredAt !== _fired0 || this._cs?.castAt !== _cast0) Sfx.play(this, 'w_' + weapon);
         }
     }
 
     flameFistsAttack(targetX, targetY) {
         const currentTime = this.time.now;
-        if (currentTime - (this.lastFlameFistsTime || 0) < 600) return;
+        if (currentTime - (this.lastFlameFistsTime || 0) < 600 * WeaponLevels.cdMult('flame_fists')) return;
         this.lastFlameFistsTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -115,6 +251,7 @@ class WeaponSystem {
 
             // Leave a single lava tile (spawn ignition trail directly, no 3x3 spread)
             this.spawnIgnitionTrail(px, py);
+            this._evaporate(tile.x, tile.y, 6);          // one-shots a puddle
 
             // Hit portal if on this tile
             const portal = this.getPortalAt(tile.x, tile.y);
@@ -124,31 +261,20 @@ class WeaponSystem {
             }
 
             // Damage enemies on that tile
-            for (let enemy of [...this.enemies]) {
-                if (enemy.x === tile.x && enemy.y === tile.y) {
-                    if (enemy.iceImmune) {
-                        // Ice elementals are immune to all physical/fire damage
-                        // Flame fists still leave a lava tile (handled below) but the hit itself does nothing
-                        this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#88eeff');
-                        this._triggerIceImmuneGlerpReaction();
-                        continue;
-                    }
-                    if (enemy.fireImmune) {
-                        // Fire elementals immune to direct hits but DO accumulate burn stacks
-                        if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
-                        continue;
-                    }
-                    if (enemy.elementImmune) {
-                        this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#8888ff');
-                        continue;
-                    }
-                    enemy.health -= damage;
-                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, damage, '#ff6600');
-                    this.updateEnemyHealthBar(enemy);
-                    this.gainUltCharge(this.ultChargePerHit);
-                    if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
-                    if (enemy.health <= 0) this.killEnemy(enemy);
-                }
+            for (const enemy of [...this.enemies]) {
+                if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
+                // Route through damageEnemy rather than writing enemy.health directly.
+                // The inline version re-implemented immunity as three hard bail-outs, so
+                // ElementResist never ran for this weapon -- and it silently excluded
+                // fire from every cross-element bonus damageEnemy applies: the 2.5x
+                // shatter on a frozen target, purple marks, tsunami, absorber toughness.
+                // damageEnemy also owns the damage number, the IMMUNE label, the health
+                // bar, the ult charge and the kill, so all of that comes back for free.
+                this.damageEnemy(enemy, damage, 'fire');
+                // Burn is fire's escape hatch and is applied even when the direct hit was
+                // refused -- burn and lava are the only way to hurt a fire elemental.
+                // applyBurnStack bails on iceImmune itself, so ice elementals stay clean.
+                if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
             }
         }
 
@@ -157,8 +283,9 @@ class WeaponSystem {
 
     iceFistsAttack(targetX, targetY) {
         const currentTime = this.time.now;
-        if (currentTime - (this.lastIceFistsTime || 0) < 500) return;
+        if (currentTime - (this.lastIceFistsTime || 0) < 500 * WeaponLevels.cdMult('ice_fists')) return;
         this.lastIceFistsTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -207,8 +334,9 @@ class WeaponSystem {
 
     lightningFistsAttack(targetX, targetY) {
         const currentTime = this.time.now;
-        if (currentTime - (this.lastLightningFistsTime || 0) < 500) return;
+        if (currentTime - (this.lastLightningFistsTime || 0) < 500 * WeaponLevels.cdMult('lightning_fists')) return;
         this.lastLightningFistsTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -250,14 +378,38 @@ class WeaponSystem {
             this.tweens.add({ targets: spark, alpha: 0, duration: 150, onComplete: () => spark.destroy() });
         }
 
+        // WET BONUS. Standing in water makes an enemy take more from lightning -- but it
+        // does NOT grant extra chain targets. Those are two different levers and the chain
+        // cap is about to be rebalanced for lightning's crowd identity; if water also fed
+        // that number, tuning one would silently move the other.
+        //
+        // This const used to be declared 20 lines BELOW here, inside the chain-lightning
+        // block, while the direct-hit line already read it -- a temporal dead zone. It
+        // never surfaced because `_wet ? WET_BONUS : 1` short-circuits: on dry ground the
+        // identifier is never evaluated. So Lightning Fists threw
+        // "Cannot access 'WET_BONUS' before initialization" on exactly one input --
+        // punching an enemy that is standing in water -- which is the normal case for
+        // every room of The Cistern and nowhere else in the game.
+        const WET_BONUS = 1.5;
+
         // Direct hit — routes through damageEnemy for immunity/room-gating/ult-charge
         const dmg = 14 * this.damageScaling;
         let hitEnemy = null;
         for (const enemy of [...this.enemies]) {
             if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
-            this.damageEnemy(enemy, dmg);
-            this.gainUltCharge(this.ultChargePerLightningHit); // lightning bypasses damageEnemy charge skip
+            // A wet target conducts: more damage, same number of chain targets.
+            const _wet = (typeof this.isWaterAt === 'function' && this.isWaterAt(enemy.x, enemy.y));
+            this.damageEnemy(enemy, dmg * (_wet ? WET_BONUS : 1));
+            // lightning bypasses damageEnemy charge skip; only for a hit that landed (it paid for refusals)
+            if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit);
             hitEnemy = enemy;
+            // CONDUCTION. Punching a target that is standing in water pushes the current
+            // through the whole connected pool, hitting everything sharing it regardless of
+            // distance. This is the lever that makes lightning the crowd element on a wet
+            // floor -- the chain hops below are capped and short-range, conduction is not.
+            if (_wet && typeof this._energizePool === 'function') {
+                this._energizePool(enemy.x, enemy.y, dmg);
+            }
             break;
         }
         const portal = this.getPortalAt(tile.x, tile.y);
@@ -272,7 +424,17 @@ class WeaponSystem {
 
         const CHAIN_RANGE = 3;   // tiles
         const CHAIN_FALLOFF = 0.6;
-        const MAX_CHAINS = 2;
+
+        // LIGHTNING'S CROWD IDENTITY. A flat 2 hops meant a duel and a nine-enemy room
+        // played identically, which is the opposite of what lightning is supposed to be.
+        // Scaling the cap off how many enemies are actually in reach makes it deliberately
+        // worse than the other three elements against a single target and better than all
+        // of them once a room fills up.
+        //   crowd 0-1 -> 1 hop      4-5 -> 3 hops
+        //   crowd 2-3 -> 2 hops     8+  -> 5 hops
+        const crowd = this.enemies.filter(e => e.sprite?.active && e !== hitEnemy &&
+            Math.abs(e.x - tile.x) + Math.abs(e.y - tile.y) <= CHAIN_RANGE + 2).length;
+        const MAX_CHAINS = Math.min(5, 1 + Math.floor(crowd / 2));
         const chainDmg = dmg * CHAIN_FALLOFF;
 
         // Collect candidates sorted by distance from hit tile
@@ -288,8 +450,9 @@ class WeaponSystem {
 
         for (const { enemy: chainEnemy } of candidates) {
             this.drawLightningBolt({ sprite: { x: hitPx, y: hitPy } }, chainEnemy);
-            this.damageEnemy(chainEnemy, chainDmg);
-            this.gainUltCharge(this.ultChargePerLightningHit * 0.5); // chain hits give half charge
+            const _cWet = (typeof this.isWaterAt === 'function' && this.isWaterAt(chainEnemy.x, chainEnemy.y));
+            this.damageEnemy(chainEnemy, chainDmg * (_cWet ? WET_BONUS : 1));
+            if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit * 0.5); // chain hits give half charge
         }
 
         this.cameras.main.shake(30, 0.001);
@@ -430,7 +593,12 @@ class WeaponSystem {
         });
 
         // Count shots for collapse unlock
-        this._singShots = (this._singShots || 0) + 1;
+        // (removed — orb is now gated by the passive charge bar, not a shot counter)
+
+        // Reset orb charge bar after firing — bar restarts from 0
+        this._singOrbCharge = 0;
+        this._singOrbTilesAtLastCheck = this._singTilesTraversed || 0;
+        this._updateSingOrbBar();
 
         // Muzzle flash
         const mf = this.add.graphics().setDepth(4);
@@ -474,7 +642,7 @@ class WeaponSystem {
 
             // ── Strong pull — drags enemies along with the projectile ──────────
             s.dotTimer += delta;
-            for (const enemy of this.enemies) {
+            for (const enemy of [...this.enemies]) {
                 if (!enemy.sprite?.active) continue;
                 const ex = enemy.sprite.x, ey = enemy.sprite.y;
                 const dist = Math.hypot(ex - s.gfx.x, ey - s.gfx.y);
@@ -500,8 +668,11 @@ class WeaponSystem {
                     enemy.sprite.y = enemy.y * TS + TS / 2 + (this.SLIME_Y_OFFSET || 0);
                 }
 
-                // DOT every 200ms
-                if (s.dotTimer >= 200) this.damageEnemy(enemy, 4 * this.damageScaling);
+                // DOT every 200ms. Element passed EXPLICITLY: this fires from a
+                // per-frame update long after the cast, so this.currentElement may have
+                // changed — the black hole's damage is cosmic regardless of what the
+                // player is holding now.
+                if (s.dotTimer >= 200) this.damageEnemy(enemy, 4 * this.damageScaling, 'cosmic');
             }
             if (s.dotTimer >= 200) s.dotTimer = 0;
 
@@ -621,7 +792,7 @@ class WeaponSystem {
         this.cameras.main.shake(40 + Math.floor(tilesDelta * 8), 0.004 + tilesDelta * 0.001);
 
         // Damage enemies in radius
-        for (const enemy of this.enemies) {
+        for (const enemy of [...this.enemies]) {
             if (!enemy.sprite?.active) continue;
             if (Math.hypot(enemy.sprite.x - ex, enemy.sprite.y - ey) <= R) {
                 this.damageEnemy(enemy, dmg);
@@ -638,11 +809,6 @@ class WeaponSystem {
     // ── COLLAPSE MODE ──────────────────────────────────────────────────
 
     singularityCollapseActivate() {
-        const SHOTS_NEEDED = 3;
-        if ((this._singShots || 0) < SHOTS_NEEDED) {
-            this.showStatusText(this.player.x, this.player.y - 28, `FIRE ${SHOTS_NEEDED - (this._singShots||0)} MORE`, '#cc44ff');
-            return;
-        }
         if (this._collapseBarActive || this._collapseMode) return;
 
         this._collapseBarActive = true;
@@ -652,7 +818,6 @@ class WeaponSystem {
         this._collapseOrbsReady = false;
         this._collapseDecaying  = false;
         this._singTilesAtCollapse = this._singTilesTraversed || 0;
-        this._singShots = 0; // reset shot counter
 
         this.showStatusText(this.player.x, this.player.y - 36, '◉ COLLAPSE', '#cc44ff');
         this.cameras.main.shake(30, 0.002);
@@ -763,7 +928,7 @@ class WeaponSystem {
         this._collapseOrbLastDmg = now;
         for (const orb of this._collapseOrbs) {
             if (!orb.gfx?.active) continue;
-            for (const enemy of this.enemies) {
+            for (const enemy of [...this.enemies]) {
                 if (!enemy.sprite?.active) continue;
                 if (Math.hypot(enemy.sprite.x - orb.gfx.x, enemy.sprite.y - orb.gfx.y) < 14) {
                     this.damageEnemy(enemy, 5 * this.damageScaling);
@@ -795,12 +960,12 @@ class WeaponSystem {
 
     _drawCollapseCursor() {
         if (!this._collapseDecaying) return;
-        if (!this._collapseCursorGfx) {
-            this._collapseCursorGfx = this.add.graphics().setDepth(6).setScrollFactor(0);
+        if (!this._collapseCursorGfx?.active) {
+            this._collapseCursorGfx = this.add.graphics().setDepth(6);   // in the world (it used to be pinned, at zoom 1)
         }
         const g = this._collapseCursorGfx;
         g.clear();
-        const mx = this.pointerX, my = this.pointerY;
+        const mx = this.pointerX + this.cameras.main.scrollX, my = this.pointerY + this.cameras.main.scrollY;
         const R = 16;
         // Crosshair
         g.lineStyle(2, 0xcc44ff, 0.90);
@@ -810,6 +975,92 @@ class WeaponSystem {
         // Pulsing fill
         g.fillStyle(0x9900ff, 0.18 + 0.12 * Math.sin(this.time.now * 0.008));
         g.fillCircle(mx, my, R);
+    }
+
+    // ── Singularity Orb passive charge bar ───────────────────────────────────
+    // Charges to 1.0 over 40s passively; each tile walked credits 0.5s toward the
+    // charge. Bar shows above the player while singularity_staff is equipped on
+    // cosmic element. When full, pulses to signal "press R". Resets after firing.
+    updateSingOrbCharge(delta) {
+        if (this._csCast) { this._destroySingOrbBar(); return; }   // Cosmic.js: the old orb is retired
+        if (this.currentElement !== 'cosmic') return;
+        if ((this.equippedWeapons?.cosmic || 'cosmic_fists') !== 'singularity_staff') {
+            this._destroySingOrbBar(); return;
+        }
+        const FULL_TIME = 40000; // ms to reach full charge from rest
+        const TILE_CREDIT = 0.5 / 40; // each tile moved adds 0.5s → 0.5/40 = 0.0125 of full bar
+
+        if (this._singOrbCharge === undefined) {
+            this._singOrbCharge = 0;
+            this._singOrbTilesAtLastCheck = this._singTilesTraversed || 0;
+        }
+
+        // Tile-movement credit
+        const newTiles = Math.max(0, (this._singTilesTraversed || 0) - (this._singOrbTilesAtLastCheck || 0));
+        if (newTiles > 0) {
+            this._singOrbTilesAtLastCheck = this._singTilesTraversed || 0;
+            this._singOrbCharge = Math.min(1, (this._singOrbCharge || 0) + newTiles * TILE_CREDIT);
+        }
+
+        // Passive time charge
+        if ((this._singOrbCharge || 0) < 1) {
+            this._singOrbCharge = Math.min(1, (this._singOrbCharge || 0) + delta / FULL_TIME);
+        }
+
+        this._updateSingOrbBar();
+    }
+
+    _updateSingOrbBar() {
+        if (!this.player?.active) return;
+        const pct = Math.min(1, this._singOrbCharge || 0);
+        const BAR_W = 36, BAR_H = 5;
+        const bx = this.player.x - BAR_W / 2;
+        const by = this.player.y - 42;
+
+        if (!this._singOrbBarGfx?.active) {
+            this._singOrbBarGfx = this.add.graphics().setDepth(6.5).setScrollFactor(1);
+        }
+
+        const g = this._singOrbBarGfx;
+        g.clear();
+        g.x = 0; g.y = 0;
+
+        // Background
+        g.fillStyle(0x110022, 0.75); g.fillRect(bx - 1, by - 1, BAR_W + 2, BAR_H + 2);
+
+        // Fill — pulses when full
+        const isFull = pct >= 1;
+        const fillAlpha = isFull ? (0.75 + 0.25 * Math.sin(this.time.now * 0.012)) : 0.9;
+        const fillColor = isFull ? 0xdd88ff : 0x9900ff;
+        g.fillStyle(fillColor, fillAlpha);
+        g.fillRect(bx, by, BAR_W * pct, BAR_H);
+
+        // Border
+        g.lineStyle(1, isFull ? 0xffffff : 0xcc44ff, 0.7);
+        g.strokeRect(bx - 1, by - 1, BAR_W + 2, BAR_H + 2);
+
+        // "READY" label when full
+        if (isFull) {
+            if (!this._singOrbReadyText?.active) {
+                this._singOrbReadyText = this.add.text(this.player.x, by - 8, 'R  ORB READY', {
+                    fontSize: '9px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#e0a8ff', resolution: 2,
+                    stroke: '#000', strokeThickness: 2
+                }).setOrigin(0.5, 1).setDepth(6.6).setScrollFactor(1);
+            }
+            this._singOrbReadyText.x = this.player.x;
+            this._singOrbReadyText.y = by - 1;
+            const ta = 0.6 + 0.4 * Math.sin(this.time.now * 0.008);
+            this._singOrbReadyText.setAlpha(ta);
+        } else {
+            if (this._singOrbReadyText?.active) {
+                this._singOrbReadyText.destroy(); this._singOrbReadyText = null;
+            }
+        }
+    }
+
+    _destroySingOrbBar() {
+        if (this._singOrbBarGfx?.active) { this._singOrbBarGfx.destroy(); this._singOrbBarGfx = null; }
+        if (this._singOrbReadyText?.active) { this._singOrbReadyText.destroy(); this._singOrbReadyText = null; }
     }
 
     singularityCollapseRelease(targetX, targetY) {
@@ -868,7 +1119,7 @@ class WeaponSystem {
             o.gfx.y += o.vy * ds;
 
             // Pierce damage — hit any enemy in range that hasn't been hit yet
-            for (const enemy of this.enemies) {
+            for (const enemy of [...this.enemies]) {
                 if (!enemy.sprite?.active) continue;
                 if (o.hitEnemies.has(enemy)) continue;
                 if (Math.hypot(enemy.sprite.x - o.gfx.x, enemy.sprite.y - o.gfx.y) < TS * 0.6) {
@@ -918,31 +1169,1032 @@ class WeaponSystem {
         this._collapseOrbAngle  = 0;
         if (this._collapseCursorGfx?.active) { this._collapseCursorGfx.destroy(); this._collapseCursorGfx = null; }
         if (this._collapseBarGfx?.active)    { this._collapseBarGfx.destroy();    this._collapseBarGfx    = null; }
-        if (this._collapseBarFill?.active)   { this._collapseBarFill.destroy();   this._collapseBarFill   = null; }
     }
 
     _updateCollapseBar(pct) {
-        const W = 60, H = 7;
-        const bx = this.player.x - this.cameras.main.scrollX - W / 2;
-        const by = this.player.y - this.cameras.main.scrollY - 38;
-
+        // Circle arc on the floor around the player slime.
+        // Charge phase (pct 0→1): arc fills clockwise from top.
+        // Decay phase (pct 1→0): full ring drains counterclockwise from top.
         if (!this._collapseBarGfx?.active) {
-            this._collapseBarGfx  = this.add.graphics().setDepth(6).setScrollFactor(0);
-            this._collapseBarFill = this.add.graphics().setDepth(6).setScrollFactor(0);
+            this._collapseBarGfx = this.add.graphics().setDepth(1.2).setScrollFactor(1);
         }
-        this._collapseBarGfx.clear();
-        this._collapseBarGfx.fillStyle(0x110022, 0.85); this._collapseBarGfx.fillRect(bx, by, W, H);
-        this._collapseBarGfx.lineStyle(1.5, 0xcc44ff, 0.70); this._collapseBarGfx.strokeRect(bx, by, W, H);
+        const g = this._collapseBarGfx;
+        g.clear();
 
-        this._collapseBarFill.clear();
-        const col = this._collapseDecaying ? 0xff44ff : 0xcc44ff;
-        this._collapseBarFill.fillStyle(col, 0.90); this._collapseBarFill.fillRect(bx + 1, by + 1, (W - 2) * pct, H - 2);
+        const cx = this.player.x, cy = this.player.y + 6; // slightly below center, on floor
+        const R = 14, THICK = 3;
+        const START = -Math.PI / 2; // 12 o'clock
+
+        // Ghost ring — always drawn at full alpha to show the total circumference
+        g.lineStyle(THICK, 0x440066, 0.35);
+        g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2, false); g.strokePath();
+
+        if (pct <= 0) return;
+
+        // Filled arc — color shifts from purple (charging) to bright pink (decay)
+        const isDying = this._collapseDecaying;
+        const arcColor = isDying ? 0xff66ff : 0xcc44ff;
+        const arcAlpha = isDying ? (0.8 + 0.2 * Math.sin(this.time.now * 0.015)) : 0.95;
+        g.lineStyle(THICK + 1, arcColor, arcAlpha);
+        g.beginPath();
+        g.arc(cx, cy, R, START, START + Math.PI * 2 * pct, false);
+        g.strokePath();
+
+        // Small bright leading dot at the arc tip
+        const tipAngle = START + Math.PI * 2 * pct;
+        const tipX = cx + Math.cos(tipAngle) * R;
+        const tipY = cy + Math.sin(tipAngle) * R;
+        g.fillStyle(0xffffff, arcAlpha * 0.9);
+        g.fillCircle(tipX, tipY, THICK - 0.5);
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // BALL LIGHTNING — lightning's signature weapon
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Replaces Engineering Degree, which became a hollow slot once the Field Kit took over
+    // the towers and the scrap economy. What was left was a lobbed wrench doing 2 damage per
+    // impact on a 1500ms cooldown -- about 8 damage a cycle if all four impacts landed on one
+    // target, against enemies with 55-140 HP.
+    //
+    // The identity is "stronger the more enemies there are, much weaker against one", and this
+    // gets that out of GEOMETRY rather than bookkeeping. Two places it falls out for free:
+    //
+    //   1. The orb is slow and PIERCES, discharging an area pulse on a timer. Its damage is
+    //      therefore proportional to how many bodies happen to be standing in its path -- a
+    //      lone enemy eats one or two pulses, a packed corridor eats every one of them.
+    //   2. It bursts into seekers that are consumed on contact. Against one enemy most of the
+    //      burst is wasted on empty floor; against ten, all of it connects.
+    //
+    // Deliberately inverted against Orb Emitter so the two never read as the same weapon:
+    // Orb Emitter is fast, BOUNCES off walls and stops on enemies (navigate geometry); Ball
+    // Lightning is slow, PIERCES enemies and bursts on walls (plow through bodies).
+    // Canonical jagged lightning path. Amplitude is a FRACTION of length, so a 1-tile fork
+    // and a 9-tile skyfall are equally jagged -- a fixed pixel jitter reads as forked up close
+    // and as a straight line at range, which is exactly how the Smite strike looked wrong.
+    // Tapered to zero at both ends so the arc starts and lands exactly on its endpoints.
+    _arcPath(fromX, fromY, toX, toY, segs = 7, ampFrac = 0.16) {
+        const len = Math.hypot(toX - fromX, toY - fromY) || 1;
+        const amp = len * ampFrac;
+        const px = -(toY - fromY) / len, py = (toX - fromX) / len;
+        const pts = [];
+        for (let i = 0; i <= segs; i++) {
+            const t = i / segs;
+            const off = (Math.random() - 0.5) * 2 * amp * Math.sin(t * Math.PI);
+            pts.push({ x: fromX + (toX - fromX) * t + px * off,
+                       y: fromY + (toY - fromY) * t + py * off });
+        }
+        return pts;
+    }
+
+    // A real FORK, not a bent line. The trunk runs to the target and dead-end BRANCHES split
+    // off it and fizzle out into empty space, recursing one level so branches have branches.
+    //
+    // This is the difference that matters visually: a single jagged polyline reads as a bent
+    // WIRE no matter how hard you jitter it, because real lightning is recognised by its
+    // branching, not by its waviness. The branches deliberately hit nothing -- they are what
+    // the discharge looks like, not what it does.
+    _strokeFork(g, fromX, fromY, toX, toY, colour, alpha, depth = 2) {
+        const scale = depth / 2;
+        const pts = this._arcPath(fromX, fromY, toX, toY, 7, 0.22);
+        this._strokeArc(g, pts, 6.0 * scale, 0xaaffff, alpha * 0.22);   // glow
+        this._strokeArc(g, pts, 2.6 * scale, colour,   alpha * 0.85);   // body
+        this._strokeArc(g, pts, 1.1 * scale, 0xffffff, alpha);          // core
+        if (depth <= 0) return pts;
+
+        const dx = toX - fromX, dy = toY - fromY;
+        const len = Math.hypot(dx, dy) || 1;
+        const base = Math.atan2(dy, dx);
+        const branches = 1 + Math.floor(Math.random() * 2);
+        for (let b = 0; b < branches; b++) {
+            const at = 1 + Math.floor(Math.random() * (pts.length - 2));
+            const root = pts[at];
+            const side = Math.random() < 0.5 ? -1 : 1;
+            const ang = base + side * (0.5 + Math.random() * 0.75);
+            const blen = len * (0.22 + Math.random() * 0.30);
+            this._strokeFork(g, root.x, root.y,
+                             root.x + Math.cos(ang) * blen, root.y + Math.sin(ang) * blen,
+                             colour, alpha * 0.55, depth - 1);
+        }
+        return pts;
+    }
+
+    _strokeArc(g, pts, width, colour, alpha) {
+        g.lineStyle(width, colour, alpha);
+        g.beginPath(); g.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+        g.strokePath();
+    }
+
+    _blCfg() {
+        return {
+            COOLDOWN:   1600,
+            SPEED:      90,     // px/s -- a third of Orb Emitter's 300; it is a moving wall
+            PULSE_MS:   250,    // how often it forks to everything in range
+            // Fork reach, not a blast radius.
+            PULSE_R:    3.5 + 0.5 * WeaponLevels.perk('ball_lightning', 'field'),
+            // 2 per tier-0 arc, NOT 5. The cascade multiplies far harder than it looks: at 5
+            // damage with a 0.55 falloff, eight clustered enemies took 910 total -- 114 each,
+            // which one-shots most of the roster. Measured down to 374 / 47 each.
+            PULSE_DMG:  3.6,    // tier-0 arc damage; tiers below fall off from this (all four of its damages -10% on 2026-10-20: it was top dps on one target and on packs)
+
+            // ── CASCADING FORKS ──────────────────────────────────────────────
+            // Each enemy the orb forks to then forks onward to LINK_N nearby enemies, and those
+            // fork again, TIERS deep. Three enemies in range therefore all receive the main
+            // fork plus tier-1 and tier-2 arcs from each other, which is where the crowd
+            // multiplication lives: total arcs grow far faster than enemy count.
+            FORK_TIERS:   2,    // tiers BEYOND the direct fork
+            FORK_LINK_N:  2,    // how many onward targets each node picks
+            FORK_LINK_R:  3.0,  // tiles between linked enemies
+            FORK_FALLOFF: 0.35, // damage multiplier per tier
+            FORK_CAP:     48,   // hard ceiling on arcs per discharge, for sanity
+            // WATER EXTENDS THE CASCADE. An arc terminating on an enemy standing in water
+            // relays to EVERY enemy sharing that pool, ignoring FORK_LINK_R entirely -- the
+            // puddle becomes one node in the fork tree. Deliberately reach, not damage: it
+            // changes the cascade's SHAPE, so a flooded lane is worth waiting for without
+            // inflating any number. It is also the reason to hold the throw, which the weapon
+            // did not previously have -- optimal play was firing on cooldown forever.
+            WATER_POOL_CAP: 40, // tiles of pool to consider
+            WATER_RELAY_N:  6,  // most enemies one pool may relay to at once
+
+            // CHARGE is spent per ARC DRAWN, not per enemy. With cascading that makes a crowd
+            // self-balancing: a dense pack produces dozens of arcs and burns the orb out fast,
+            // while a lone enemy produces one and the orb drifts on.
+            CHARGE:     150 * (1 + 0.2 * WeaponLevels.perk('ball_lightning', 'life')),   // its lifespan (Long Charge)
+            COST_IDLE:  4,      // a discharge that reaches nothing
+            COST_ARC:   3.2,    // per arc drawn -- a dense pack burns the orb out fast
+
+            // ── EMBEDDING ────────────────────────────────────────────────────
+            // A direct hit does NOT burst. The orb buries itself in the enemy's core, arcs
+            // between nearby enemies on a timer, then detonates inside the host. The host is
+            // deliberately NOT where the payoff lands -- it takes a decent hit on contact and
+            // only a fraction of the detonation, so the weapon converts one body into a
+            // delivery mechanism for damaging everything around it.
+            DIRECT_R:      0.5,   // tiles -- contact radius for embedding
+            EMBED_MS:      2600,  // how long it sits before detonating
+            EMBED_TICK_MS: 380,   // arc cadence while embedded
+            EMBED_HIT:     14.4,  // on contact, to the host
+            EMBED_TICK_DMG: 1.8,  // per tick, to enemies around the host
+            // Host DPS SCALES WITH THE CASCADE. Lodged in a lone enemy the embed barely burns;
+            // lodged in a pack it cooks. Before this, the embed was a complete single-target
+            // kit (16 contact + 23 DPS + detonation) that fired whether or not there was a
+            // crowd, which is what flattened per-enemy damage to 63 / 74 / 70 and erased
+            // "weak against one target" from the element.
+            EMBED_HOST_DPS: 8.1,  // per second AT FULL SPREAD, to the host
+            EMBED_DPS_FLOOR: 0.22, // fraction of it with nothing else in range
+            EMBED_DPS_FULL_AT: 4,  // arc targets needed for the full rate
+            DETONATE_DMG:  10.8,  // detonation, to nearby enemies
+            DETONATE_HOST_FRAC: 0.30,  // the host only takes this much of it
+            DETONATE_R:    4.0,   // tiles
+
+            // ── SEEKER SPRAY ─────────────────────────────────────────────────
+            SEEKERS_MAX: 70 + 20 * WeaponLevels.perk('ball_lightning', 'swarm'),    // at full charge -- a genuine swarm (Swarm: more)
+            SEEKERS_MIN: 20,    // floor, so a spent orb still sprays
+            // A detonation (the orb was carried into a host) bursts at least this full. Its flight
+            // through a pack burns most of the charge, so sized by what was left it always came
+            // out at the 20-seeker floor and the swarm never showed.
+            EMBED_BURST: 0.8,
+            SEEK_SPEED: 480,    // eased off 620 so the spray is readable
+            SEEK_R:     4.2,    // draw radius -- these are little balls, not pixels
+            SEEK_DMG:   5.4,
+            SEEK_ZAP_R: 1.6,    // tiles -- each impact forks to enemies this close
+            SEEK_ZAP_DMG: 2.6,
+            SEEK_ZAP_N: 2,      // how many nearby enemies one impact forks to
+            SEEK_LIFE:  700,
+            // Homing radius, tiles. It was read below and never defined, so `bd < TS * undefined`
+            // was always false and no seeker has ever homed. 0 keeps exactly that, on purpose:
+            // turned on at 2 tiles it cost ~14% of the pack damage (measured, 204 -> 176 DPS),
+            // because the homing picks the nearest enemy even when it is already full
+            // (SEEK_MAX_PER) and steers seekers into bodies that can no longer absorb them.
+            SEEK_HOME_R: 0,
+            SEEK_MAX_PER: 2,    // seekers one enemy can absorb
+            // Movement is SUBSTEPPED: at speed a frame can advance further than the hit radius
+            // and a seeker would step clean through a body without registering.
+            SEEK_SUBSTEPS: 3,
+            COLOR:      0xffee66
+        };
+    }
+
+    ballLightningAttack(targetX, targetY) {
+        const C = this._blCfg();
+        const now = this.time.now;
+        if (now - (this._lastBallTime || 0) < C.COOLDOWN) return;
+        this._lastBallTime = now;
+        this._gearFiredAt = now;   // the held weapon swings now (Creatures.gear)
+
+        const TS = this.TILE_SIZE;
+        const px = this.playerX * TS + TS / 2, py = this.playerY * TS + TS / 2;
+        const wx = targetX + this.cameras.main.scrollX;
+        const wy = targetY + this.cameras.main.scrollY;
+        const dx = wx - px, dy = wy - py;
+        const len = Math.hypot(dx, dy) || 1;
+
+        const gfx = this.add.graphics().setDepth(4);
+        gfx.x = px; gfx.y = py;
+
+        if (!this.ballLightnings) this.ballLightnings = [];
+        const orb = {
+            gfx, vx: (dx / len) * C.SPEED, vy: (dy / len) * C.SPEED,
+            charge: C.CHARGE, maxCharge: C.CHARGE,
+            lastPulse: now, born: now, hitThisPulse: new Set(), _done: false
+        };
+        this.ballLightnings.push(orb);
+        this._drawBallGfx(orb, C);
+        this.cameras.main.shake(20, 0.001);
+    }
+
+    // Charge drives the whole look: it dims, shrinks and loses its corona as it drains, so
+    // "how much is left" is legible without a bar anywhere on screen.
+    //
+    // Redrawn EVERY FRAME, not just on discharge. The first version only redrew when it fired,
+    // so between shots it was a frozen picture of a few strokes -- which is why it read as
+    // cheap. A plasma ball has to be in constant motion to look like one.
+    _drawBallGfx(orb, C) {
+        const g = orb.gfx;
+        if (!g?.active) return;
+        const f = Math.max(0, orb.charge / orb.maxCharge);
+        const t = (this.time.now - orb.born) / 1000;
+        // The ball is pixel art (ballLightningKey) in a soft glow; it shrinks and dims as it drains.
+        if (!orb.spr) {
+            const key = WeaponSystem.ballLightningKey(this);
+            orb.spr = this.add.sprite(g.x, g.y, key, '0').setDepth(3.95);
+            if (this.anims.exists(key)) { orb.spr.play(key); orb.spr.anims.timeScale = 2.5; }
+            orb.glow = this.add.image(g.x, g.y, 'vfx_glow').setTint(0x5ac8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(3.9);
+            g.once('destroy', () => { orb.spr.destroy(); orb.glow.destroy(); });
+        }
+        const sc = (0.7 + 0.5 * f) * (1 + Math.sin(t * 9) * 0.04);
+        orb.spr.setPosition(g.x, g.y).setScale(sc).setAlpha(0.6 + 0.4 * f);
+        orb.glow.setPosition(g.x, g.y).setScale((0.4 + 0.3 * f) * (1 + Math.sin(t * 7) * 0.08)).setAlpha(0.3 + 0.3 * f);
+        g.clear();
+
+        // ── LIVE ARCS: jagged, re-randomised every frame so the edge writhes; how many is the
+        // charge readout.
+        const r = 11 * sc;
+        const arcs = Math.round(2 + f * 4);
+        for (let k = 0; k < arcs; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const out = r * (1.3 + Math.random() * 1.1);
+            const pts = this._arcPath(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9,
+                                      Math.cos(a + 0.3) * out, Math.sin(a + 0.3) * out, 3, 0.35);
+            this._strokeArc(g, pts, 2, 0x5ae6ff, 0.25 + f * 0.25);
+            this._strokeArc(g, pts, 1, 0xffffff, 0.6 + f * 0.3);
+        }
+        // ── SPARKS riding the corona, so the silhouette is never a clean circle
+        const sparks = Math.round(2 + f * 3);
+        g.fillStyle(0xe8fbff, 0.7 + f * 0.3);
+        for (let k = 0; k < sparks; k++) {
+            const a = t * 3.5 + (k / sparks) * Math.PI * 2;
+            const rr = r * (1.45 + Math.sin(t * 6 + k) * 0.25);
+            g.fillRect(Math.round(Math.cos(a) * rr), Math.round(Math.sin(a) * rr), 2, 2);
+        }
+    }
+
+    updateBallLightnings(time, delta) {
+        if (!this.ballLightnings?.length) return;
+        const C = this._blCfg();
+        const TS = this.TILE_SIZE;
+        const dt = (delta || 16) / 1000;
+
+        for (let i = this.ballLightnings.length - 1; i >= 0; i--) {
+            const orb = this.ballLightnings[i];
+            if (orb._done) {
+                if (orb.gfx?.active) orb.gfx.destroy();
+                this.ballLightnings.splice(i, 1);
+                continue;
+            }
+            if (orb._embedded) { this._updateEmbeddedBall(orb, time, C); continue; }
+            orb.gfx.x += orb.vx * dt;
+            orb.gfx.y += orb.vy * dt;
+            this._drawBallGfx(orb, C);      // every frame: the surface has to writhe
+
+            const tx = Math.floor(orb.gfx.x / TS), ty = Math.floor(orb.gfx.y / TS);
+            // Bursts on a WALL rather than bouncing -- the inversion against Orb Emitter, and
+            // it makes aiming at the wall behind a pack a deliberate detonation.
+            const oob = tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT;
+            if (oob || this.world[tx]?.[ty] === this.WALL || this.world[tx]?.[ty] === this.NOTHING
+                || this.isInLockedRoom(tx, ty)) {
+                this._burstBallLightning(orb, C);
+                continue;
+            }
+
+            // DIRECT CONTACT EMBEDS. Not a burst -- the orb buries itself in the enemy's core
+            // and becomes a bomb carried by that enemy. The earlier version detonated on
+            // contact, which ended the orb 3.6 tiles in and skipped the whole grinding phase;
+            // embedding keeps the orb alive AND gives the contact a purpose.
+            let host = null;
+            for (const e of this.enemies) {
+                if (!e.sprite?.active || this._phasedOut(e)) continue;
+                if (Math.hypot(e.sprite.x - orb.gfx.x, e.sprite.y - orb.gfx.y) <= TS * C.DIRECT_R) {
+                    host = e; break;
+                }
+            }
+            if (host) { this._embedBall(orb, host, C); continue; }
+            // A boss or a queen is not in this.enemies: the orb flew straight through them and
+            // never touched one. Meeting one, it stops there and grinds (every discharge arcs into
+            // it, see _ballDischarge) until its charge runs out, or bursts if the boss leaves it.
+            {
+                const near = [this.voltslimeBoss, this.voidSovereignBoss].find(b => b?.active && b.container?.visible
+                        && Math.hypot(b.container.x - orb.gfx.x, b.container.y - 14 - orb.gfx.y) <= TS * 1.6)
+                    || (this.portals || []).find(q => q.active && this._portalCoversTile?.(q, tx, ty));
+                if (near && !orb._onBoss) { orb._onBoss = near; orb.vx = 0; orb.vy = 0; }
+                else if (!near && orb._onBoss) { this._burstBallLightning(orb, C); continue; }
+            }
+
+            // NO DIRECT-HIT DETONATION. It was in the original design and it did work, but
+            // measured against five enemies in a row it ended the orb 3.6 tiles in after three
+            // discharges -- the slow grinding forker, which is the whole middle of the weapon,
+            // never happened. It only bursts now on a WALL or on running out of charge, so the
+            // orb always gets to travel and fork, and the burst lands where the charge ran out
+            // (which in a crowd is inside the crowd).
+            if (time - orb.lastPulse >= C.PULSE_MS) {
+                orb.lastPulse = time;
+                const arcs = this._ballDischarge(orb, C);
+                orb.charge -= C.COST_IDLE + arcs * C.COST_ARC;
+                if (orb.charge <= 0) { this._burstBallLightning(orb, C); continue; }
+            }
+        }
+    }
+
+    // ── CASCADING FORK ───────────────────────────────────────────────────────
+    // Draws and damages a tree of arcs: origin -> each seed enemy (tier 0), then each of those
+    // -> up to FORK_LINK_N nearby enemies (tier 1), and those onward again (tier 2).
+    //
+    // An enemy can be struck by several arcs, once per INCOMING fork, which is the point -- with
+    // three enemies clustered, every one of them takes the direct arc plus arcs relayed from
+    // both others. Arc count therefore grows much faster than enemy count, and since charge is
+    // spent per arc, a dense pack burns the orb out quickly all on its own.
+    //
+    // Returns the number of arcs drawn, which is the charge cost basis.
+    _cascadeForks(g, originX, originY, seeds, C, baseDmg, colour) {
+        const TS = this.TILE_SIZE;
+        const linkR = C.FORK_LINK_R * TS;
+        let arcs = 0;
+
+        // Each entry: { from: {x,y}, to: enemy, tier }. Breadth-first so tiers resolve in order.
+        let frontier = seeds.map(e => ({ fx: originX, fy: originY, to: e, tier: 0 }));
+        // Tracks how many times an enemy has RELAYED, not how often it was hit -- a relay hub
+        // that fans out on every tier would double back and loop.
+        const relayed = new Set();
+
+        while (frontier.length && arcs < C.FORK_CAP) {
+            const next = [];
+            for (const link of frontier) {
+                if (arcs >= C.FORK_CAP) break;
+                const e = link.to;
+                if (!e.sprite?.active) continue;
+                const tx = e.sprite.x, ty = e.sprite.y + 4;
+                const alpha = 1 - link.tier * 0.28;
+                // An arc relayed THROUGH water is drawn cyan, so you can see the pool doing the
+                // work rather than just noticing more damage numbers than usual.
+                const arcCol = link.viaWater ? 0x66ddff : colour;
+                this._strokeFork(g, link.fx, link.fy, tx, ty, arcCol, alpha, link.tier === 0 ? 2 : 1);
+                g.fillStyle(0xffffff, 0.8 - link.tier * 0.2);
+                g.fillCircle(tx, ty, 3 - link.tier * 0.6);
+                arcs++;
+
+                const dmg = baseDmg * Math.pow(C.FORK_FALLOFF, link.tier) * this.damageScaling;
+                const _rdFork = this.resolveElementalHit(e, dmg, 'lightning');
+                if (_rdFork !== null) {
+                    e.health -= _rdFork;
+                    this.showDamageNumber(e.sprite.x, e.sprite.y - 10 - link.tier * 6,
+                                          Math.round(_rdFork), link.tier ? '#ffffaa' : '#ffee66');
+                    this.updateEnemyHealthBar(e);
+                    this.gainUltCharge(this.ultChargePerLightningHit * 0.2);
+                    if (e.health <= 0) { this.killEnemy(e); continue; }
+                }
+
+                if (link.tier >= C.FORK_TIERS || relayed.has(e)) continue;
+                relayed.add(e);
+
+                // ── WATER RELAY ──────────────────────────────────────────────
+                // Standing in water, this enemy relays along the whole POOL rather than to its
+                // nearest neighbours. Distance stops mattering: what matters is who shares the
+                // puddle, so a pipe-fed lane becomes a conductor the cascade runs down.
+                const wet = typeof this.isWaterAt === 'function' && this.isWaterAt(e.x, e.y);
+                if (wet && typeof this.enemiesSharingPool === 'function') {
+                    const shared = this.enemiesSharingPool(e.x, e.y, C.WATER_POOL_CAP)
+                        .filter(o => o !== e && !relayed.has(o));
+                    if (shared.length) {
+                        for (const o of shared.slice(0, C.WATER_RELAY_N)) {
+                            next.push({ fx: tx, fy: ty, to: o, tier: link.tier + 1, viaWater: true });
+                        }
+                        continue;   // the pool replaces the proximity relay, it does not stack
+                    }
+                }
+
+                const onward = [];
+                for (const o of this.enemies) {
+                    if (o === e || !o.sprite?.active || this._phasedOut(o)) continue;
+                    const d = Math.hypot(o.sprite.x - tx, o.sprite.y - ty);
+                    if (d > linkR) continue;
+                    onward.push({ o, d });
+                }
+                onward.sort((a, b) => a.d - b.d);
+                for (const { o } of onward.slice(0, C.FORK_LINK_N)) {
+                    next.push({ fx: tx, fy: ty, to: o, tier: link.tier + 1 });
+                }
+            }
+            frontier = next;
+        }
+        return arcs;
+    }
+
+    // One discharge. Returns the number of arcs drawn, which is what the charge cost is computed
+    // from -- so a discharge into a crowd is worth far more AND costs far more.
+    _ballDischarge(orb, C) {
+        const TS = this.TILE_SIZE;
+        const R = C.PULSE_R * TS;
+        const ox = orb.gfx.x, oy = orb.gfx.y;
+
+        const seeds = [];
+        for (const e of [...this.enemies]) {
+            if (!e.sprite?.active) continue;
+            if (Math.hypot(e.sprite.x - ox, e.sprite.y - oy) > R) continue;
+            if (this._phasedOut(e)) continue;
+            seeds.push(e);
+        }
+
+        const g = this.add.graphics().setDepth(3.8);
+        let arcs = 0;
+        if (seeds.length) arcs = this._cascadeForks(g, ox, oy, seeds, C, C.PULSE_DMG, C.COLOR);
+        // Bosses and queens are not in this.enemies: they take the direct arc too.
+        for (const b of [this.voltslimeBoss, this.voidSovereignBoss]) {
+            if (!b?.active || !b.container?.visible) continue;
+            const bx = b.container.x, by = b.container.y - 14;
+            if (Math.hypot(bx - ox, by - oy) > R + TS) continue;
+            this._strokeFork(g, ox, oy, bx, by, C.COLOR, 0.9, 2);
+            this.damageBossAtTile(b.tileX, b.tileY, C.PULSE_DMG * this.damageScaling, 'ball_arc', 'lightning');
+            arcs++;
+        }
+        for (const q of this.portals || []) {
+            if (!q.active) continue;
+            const qx = q.tileX * TS + TS / 2, qy = q.tileY * TS + TS / 2 + (q.hitOffY || 0);
+            if (Math.hypot(qx - ox, qy - oy) > R + TS) continue;
+            this._strokeFork(g, ox, oy, qx, qy, C.COLOR, 0.9, 2);
+            this.damagePortal(q, C.PULSE_DMG * this.damageScaling);
+            arcs++;
+        }
+
+        // A couple of forks into EMPTY space as well, so the orb reads as constantly
+        // discharging rather than only ever pointing at enemies.
+        for (let k = 0; k < 2; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const d = R * (0.3 + Math.random() * 0.4);
+            this._strokeFork(g, ox, oy, ox + Math.cos(a) * d, oy + Math.sin(a) * d,
+                             C.COLOR, 0.40, 1);
+        }
+        // Short life: a fork is a strike, not a beam. It re-strikes on the next cadence.
+        this.time.delayedCall(60, () => {
+            if (!g.active) return;
+            this.tweens.add({ targets: g, alpha: 0, duration: 120,
+                              onComplete: () => g.destroy() });
+        });
+        return arcs;
+    }
+
+    // ── EMBEDDING ────────────────────────────────────────────────────────────
+    // The orb stops, rides the host's sprite, and arcs between nearby enemies on a timer. When
+    // the timer expires it detonates INSIDE the host -- and the host takes only
+    // DETONATE_HOST_FRAC of it. The brunt goes to everything around it.
+    //
+    // That split is the whole idea: the enemy you hit becomes a delivery mechanism rather than
+    // the victim. It also means the correct target is a body on the EDGE of a pack, not the one
+    // you most want dead, which is a genuinely different aiming instinct from every other
+    // weapon in the game.
+    _embedBall(orb, host, C) {
+        if (orb._done || orb._embedded) return;
+        orb._embedded = true;
+        orb.host = host;
+        host._ballHost = orb;
+
+        // Contact damage is decent -- the host is not getting away with being a carrier.
+        const _rdEmbed = this.resolveElementalHit(host, C.EMBED_HIT * this.damageScaling, 'lightning');
+        if (_rdEmbed !== null) {
+            host.health -= _rdEmbed;
+            this.showDamageNumber(host.sprite.x, host.sprite.y - 12, Math.round(_rdEmbed), '#ffffff');
+            this.updateEnemyHealthBar(host);
+            this.gainUltCharge(this.ultChargePerLightningHit);
+        }
+        this.showStatusText?.(host.sprite.x, host.sprite.y - 24, 'EMBEDDED', '#ffee66');
+
+        const flash = this.add.circle(host.sprite.x, host.sprite.y, 6, 0xffffff, 0.9).setDepth(5);
+        this.tweens.add({ targets: flash, radius: 22, alpha: 0, duration: 200,
+                          onComplete: () => flash.destroy() });
+        this.cameras.main.shake(70, 0.002);
+
+        orb.embedEnd = this.time.now + C.EMBED_MS;
+        orb.lastEmbedTick = this.time.now;
+        // Host DPS is tracked separately from the arc cadence and accumulated as a FRACTION of
+        // a frame, so the total over the embed is exactly EMBED_HOST_DPS * EMBED_MS regardless
+        // of frame rate. Tying it to the arc ticks instead would make the damage depend on how
+        // the two timers happened to line up.
+        orb.hostDpsAt = this.time.now;
+        // If the host dies early the orb detonates where it stood -- the payload is not lost
+        // just because the carrier did not survive its own delivery.
+        orb._hostWasAt = { x: host.sprite.x, y: host.sprite.y };
+    }
+
+    // Per-frame while embedded. Split out of updateBallLightnings because an embedded orb shares
+    // almost nothing with a travelling one: it does not move, does not spend charge on distance,
+    // and ends on a timer rather than on geometry.
+    _updateEmbeddedBall(orb, time, C) {
+        const host = orb.host;
+        if (host?.sprite?.active) {
+            orb.gfx.x = host.sprite.x;
+            orb.gfx.y = host.sprite.y;
+            orb._hostWasAt = { x: host.sprite.x, y: host.sprite.y };
+        } else {
+            // Host died mid-carry: detonate at its last position immediately.
+            this._detonateEmbedded(orb, C);
+            return;
+        }
+        this._drawBallGfx(orb, C);
+        this._superconduct(host, 1000);   // embedded, it superconducts its host for as long as it's lodged there (and a second after)
+
+        // ── PERSISTENT DPS ON THE HOST ───────────────────────────────────────
+        // It is burning a hole in whatever it is lodged in for the whole duration, so carrying
+        // the bomb costs the host continuously rather than only at the two bookend moments.
+        const dtSec = Math.max(0, (time - (orb.hostDpsAt || time)) / 1000);
+        orb.hostDpsAt = time;
+        if (dtSec > 0) {
+            // Rate scales with how many enemies the last arc tick actually reached. A carrier
+            // standing alone is barely warm; one inside a pack is being cooked by its own
+            // neighbours' conductivity.
+            const spread = orb.lastArcTargets || 0;
+            const frac = C.EMBED_DPS_FLOOR +
+                (1 - C.EMBED_DPS_FLOOR) * Math.min(1, spread / C.EMBED_DPS_FULL_AT);
+            const tick = C.EMBED_HOST_DPS * frac * dtSec * this.damageScaling;
+            const _rdHostDps = this.resolveElementalHit(host, tick, 'lightning');
+            if (_rdHostDps !== null) {
+                host.health -= _rdHostDps;
+                // Accumulate into a visible number rather than spamming a 0.15 every frame.
+                orb._dpsShown = (orb._dpsShown || 0) + _rdHostDps;
+                if (orb._dpsShown >= 3) {
+                    this.showDamageNumber(host.sprite.x, host.sprite.y - 6,
+                                          Math.round(orb._dpsShown), '#ffcc44');
+                    orb._dpsShown = 0;
+                }
+                this.updateEnemyHealthBar(host);
+                if (host.health <= 0) {
+                    this.killEnemy(host);
+                    this._detonateEmbedded(orb, C);
+                    return;
+                }
+            }
+        }
+
+        if (time - orb.lastEmbedTick >= C.EMBED_TICK_MS) {
+            orb.lastEmbedTick = time;
+            const TS = this.TILE_SIZE;
+            const R = C.PULSE_R * TS;
+            // Arcs go to OTHERS, not the host: the host is the emitter now.
+            const seeds = [];
+            for (const e of [...this.enemies]) {
+                if (e === host || !e.sprite?.active || this._phasedOut(e)) continue;
+                if (Math.hypot(e.sprite.x - orb.gfx.x, e.sprite.y - orb.gfx.y) > R) continue;
+                seeds.push(e);
+            }
+            const g = this.add.graphics().setDepth(3.8);
+            // Remembered for the host-DPS scaling above: arcs DRAWN, not seeds found, so a pool
+            // relay counts toward it too.
+            orb.lastArcTargets = seeds.length
+                ? this._cascadeForks(g, orb.gfx.x, orb.gfx.y, seeds, C, C.EMBED_TICK_DMG, C.COLOR)
+                : 0;
+            for (let k = 0; k < 2; k++) {
+                const a = Math.random() * Math.PI * 2;
+                this._strokeFork(g, orb.gfx.x, orb.gfx.y,
+                                 orb.gfx.x + Math.cos(a) * R * 0.3,
+                                 orb.gfx.y + Math.sin(a) * R * 0.3, C.COLOR, 0.35, 1);
+            }
+            this.time.delayedCall(60, () => {
+                if (!g.active) return;
+                this.tweens.add({ targets: g, alpha: 0, duration: 120,
+                                  onComplete: () => g.destroy() });
+            });
+        }
+
+        if (time >= orb.embedEnd) this._detonateEmbedded(orb, C);
+    }
+
+    _detonateEmbedded(orb, C) {
+        if (orb._done) return;
+        orb._done = true;
+        const host = orb.host;
+        if (host) host._ballHost = null;
+        const at = (host?.sprite?.active)
+            ? { x: host.sprite.x, y: host.sprite.y }
+            : (orb._hostWasAt || { x: orb.gfx.x, y: orb.gfx.y });
+        const TS = this.TILE_SIZE;
+        const R = C.DETONATE_R * TS;
+
+        VisualFX.impact(this, at.x, at.y, 'lightning', R * 0.45);
+        this._vfxFlash?.(at.x, at.y, R * 0.7, 0xffe14a, 260, 0.6);
+        this.cameras.main.shake(160, 0.005);
+
+        const seeds = [];
+        for (const e of [...this.enemies]) {
+            if (e === host || !e.sprite?.active || this._phasedOut(e)) continue;
+            if (Math.hypot(e.sprite.x - at.x, e.sprite.y - at.y) > R) continue;
+            seeds.push(e);
+        }
+        const g = this.add.graphics().setDepth(4);
+        if (seeds.length) this._cascadeForks(g, at.x, at.y, seeds, C, C.DETONATE_DMG, 0xffffff);
+        this.time.delayedCall(90, () => {
+            if (!g.active) return;
+            this.tweens.add({ targets: g, alpha: 0, duration: 200,
+                              onComplete: () => g.destroy() });
+        });
+
+        // The host takes only a fraction. It carried the bomb; it is not the target.
+        if (host?.sprite?.active) {
+            const raw = C.DETONATE_DMG * C.DETONATE_HOST_FRAC * this.damageScaling;
+            const _rdHost = this.resolveElementalHit(host, raw, 'lightning');
+            if (_rdHost !== null) {
+                host.health -= _rdHost;
+                this.showDamageNumber(host.sprite.x, host.sprite.y - 10, Math.round(_rdHost), '#ffffff');
+                this.updateEnemyHealthBar(host);
+                if (host.health <= 0) this.killEnemy(host);
+            }
+        }
+
+        // And it still sprays -- the detonation is the burst, at whatever charge is left.
+        this._burstBallLightning(orb, C, at);
+    }
+
+    // Seeker count scales with charge REMAINING, which is what makes the charge budget a
+    // decision rather than just a timer.
+    _burstBallLightning(orb, C, originAt) {
+        if (orb._done && !originAt) return;
+        orb._done = true;
+        const f = Math.max(originAt ? C.EMBED_BURST : 0, Math.min(1, orb.charge / orb.maxCharge));
+        const count = Math.max(C.SEEKERS_MIN, Math.round(C.SEEKERS_MAX * f));
+        const ox = originAt ? originAt.x : orb.gfx.x, oy = originAt ? originAt.y : orb.gfx.y;
+        Sfx.play(this, 'blburst');
+
+        VisualFX.impact(this, ox, oy, 'lightning', 28);
+        this.cameras.main.shake(90, 0.003);
+
+        // Clear the per-burst saturation counters, or an enemy hit by an earlier burst would
+        // be immune to every later one. (Bosses and queens keep the same counter now.)
+        for (const e of (this.enemies || [])) e._seekHits = 0;
+        for (const b of [this.voltslimeBoss, this.voidSovereignBoss, ...(this.portals || [])]) if (b) b._seekHits = 0;
+
+        if (!this.ballSeekers) this.ballSeekers = [];
+        for (let i = 0; i < count; i++) {
+            // Angles are RANDOM, not an even fan. `(i / count) * 2PI` spaced them perfectly,
+            // which at seventy seekers read as a mechanical starburst -- a rosette, not an
+            // explosion. Jittering the slot by most of its own width breaks the ring up while
+            // still covering every direction, and randomising SPEED too means the leading edge
+            // is ragged instead of a single expanding circle.
+            const slot = (i / count) * Math.PI * 2;
+            const a = slot + (Math.random() - 0.5) * (Math.PI * 2 / count) * 2.8;
+            const spd = C.SEEK_SPEED * (0.62 + Math.random() * 0.76);
+            const sg = this.add.graphics().setDepth(4);
+            sg.x = ox; sg.y = oy;   // body and trail are drawn per frame in updateBallSeekers
+            this.ballSeekers.push({
+                gfx: sg, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+                // Stagger the birth times slightly so they do not all leave on the same frame.
+                born: this.time.now + Math.random() * 90, _done: false,
+                // Per-seeker phase, so the crackle on each one is out of step with the others.
+                phase: Math.random() * 100
+            });
+        }
+    }
+
+    updateBallSeekers(time, delta) {
+        if (!this.ballSeekers?.length) return;
+        const C = this._blCfg();
+        const TS = this.TILE_SIZE;
+        const dt = (delta || 16) / 1000;
+
+        for (let i = this.ballSeekers.length - 1; i >= 0; i--) {
+            const s = this.ballSeekers[i];
+            if (s._done || time - s.born > C.SEEK_LIFE) {
+                if (s.gfx?.active) s.gfx.destroy();
+                this.ballSeekers.splice(i, 1);
+                continue;
+            }
+            // Mild homing: enough to feel like it seeks, not enough to be unmissable.
+            let best = null, bd = Infinity;
+            if (C.SEEK_HOME_R > 0) for (const e of this.enemies) {   // off (0): skip the scan, it's per seeker per frame
+                if (!e.sprite?.active || this._phasedOut(e)) continue;
+                const d = Math.hypot(e.sprite.x - s.gfx.x, e.sprite.y - s.gfx.y);
+                if (d < bd) { bd = d; best = e; }
+            }
+            // Homing radius is DELIBERATELY SHORT. At 6 tiles every seeker in the burst
+            // converged on the same lone enemy and the whole payload landed on one target --
+            // measured as 44 damage to a single enemy against 85 to eight, which inverts the
+            // element's identity instead of expressing it. A seeker should correct its aim,
+            // not seek across the room.
+            if (best && bd < TS * C.SEEK_HOME_R) {
+                const ax = (best.sprite.x - s.gfx.x) / bd, ay = (best.sprite.y - s.gfx.y) / bd;
+                s.vx += ax * 900 * dt; s.vy += ay * 900 * dt;
+                const sp = Math.hypot(s.vx, s.vy) || 1;
+                s.vx = s.vx / sp * C.SEEK_SPEED; s.vy = s.vy / sp * C.SEEK_SPEED;
+            }
+            // Advance in substeps, testing collisions after each, so a fast seeker cannot
+            // tunnel through a body between frames.
+            const steps = C.SEEK_SUBSTEPS;
+            const sdt = dt / steps;
+            for (let k = 0; k < steps && !s._done; k++) {
+                s.gfx.x += s.vx * sdt; s.gfx.y += s.vy * sdt;
+
+                const tx = Math.floor(s.gfx.x / TS), ty = Math.floor(s.gfx.y / TS);
+                if (this.world[tx]?.[ty] === this.WALL || this.world[tx]?.[ty] === this.NOTHING) {
+                    s._done = true; break;
+                }
+                // Bosses and queens are not in this.enemies; a seeker meeting one strikes it (as
+                // many per burst as an enemy may absorb).
+                {
+                    const boss = [this.voltslimeBoss, this.voidSovereignBoss].find(b => b?.active && b.container?.visible
+                        && Math.hypot(b.container.x - s.gfx.x, b.container.y - 14 - s.gfx.y) <= TS * 1.2);
+                    const queen = boss ? null : (this.portals || []).find(q => q.active && this._portalCoversTile?.(q, tx, ty));
+                    const hit = boss || queen;
+                    if (hit && (hit._seekHits || 0) < C.SEEK_MAX_PER) {
+                        hit._seekHits = (hit._seekHits || 0) + 1;
+                        if (boss) this.damageBossAtTile(boss.tileX, boss.tileY, C.SEEK_DMG * this.damageScaling, undefined, 'lightning');
+                        else this.damagePortal(queen, C.SEEK_DMG * this.damageScaling);
+                        s._done = true; break;
+                    }
+                }
+                for (const e of this.enemies) {   // no copy: the loop breaks right after a hit (a kill may splice)
+                    if (!e.sprite?.active || this._phasedOut(e)) continue;
+                    if (Math.abs(e.sprite.x - s.gfx.x) > TS * 0.6 || Math.abs(e.sprite.y - s.gfx.y) > TS * 0.6) continue;
+                    if (Math.hypot(e.sprite.x - s.gfx.x, e.sprite.y - s.gfx.y) > TS * 0.6) continue;
+                    // One enemy can only absorb SEEK_MAX_PER seekers. Without a cap the burst is
+                    // just single-target damage whenever anything is closest, which is the same
+                    // failure as the wide homing radius: the split stops being about the crowd.
+                    e._seekHits = (e._seekHits || 0) + 1;
+                    if (e._seekHits > C.SEEK_MAX_PER) { e._seekHits = C.SEEK_MAX_PER; continue; }
+                    this._seekerHit(s, e, C);
+                    break;
+                }
+            }
+            if (s._done) continue;
+            // Redrawn every frame as a small CRACKLING ball, not a dot with a line behind it.
+            // Each one is a miniature of the parent orb -- glow, body, hot core, and two short
+            // arcs writhing off the surface that re-randomise per frame. A plain circle at this
+            // size reads as a bullet; the arcs are what say "electricity".
+            const g = s.gfx;
+            const r = C.SEEK_R;
+            g.clear();
+            const back = Math.hypot(s.vx, s.vy) || 1;
+            const bx = -(s.vx / back) * 13, by = -(s.vy / back) * 13;
+            g.lineStyle(r * 1.3, 0xffee66, 0.18); g.lineBetween(0, 0, bx, by);
+            g.lineStyle(1.4, 0xffffcc, 0.55);     g.lineBetween(0, 0, bx * 0.55, by * 0.55);
+
+            g.fillStyle(0xaaffff, 0.16); g.fillCircle(0, 0, r * 1.7);
+            g.fillStyle(0xffee66, 0.62); g.fillCircle(0, 0, r);
+            g.fillStyle(0xfff6b0, 0.85); g.fillCircle(0, 0, r * 0.62);
+            g.fillStyle(0xffffff, 1.00); g.fillCircle(0, 0, r * 0.30);
+            // ONE arc, and only on some frames. At seventy seekers, two arc paths each per
+            // frame is 140 path builds plus 280 strokes every 16ms -- the crackle is not worth
+            // that. Drawing it ~60% of frames costs a third as much AND flickers, which reads
+            // as more electrical than a steady pair of arcs did.
+            if (Math.random() < 0.6) {
+                const a = (s.phase || 0) + Math.random() * Math.PI * 2;
+                const pts = this._arcPath(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5,
+                                          Math.cos(a) * r * 2.1, Math.sin(a) * r * 2.1, 3, 0.4);
+                this._strokeArc(g, pts, 1.6, 0x99eeff, 0.35);
+                this._strokeArc(g, pts, 0.8, 0xffffff, 0.8);
+            }
+        }
+    }
+
+    // Consumed on contact. The impact FORKS to nearby enemies rather than applying an invisible
+    // radius of damage -- with thirty of these landing across a pack, the arcs between them are
+    // most of what the burst looks like.
+    _seekerHit(seeker, enemy, C) {
+        seeker._done = true;
+        Sfx.play(this, 'zap', { soft: true });
+        const TS = this.TILE_SIZE;
+        const hx = seeker.gfx.x, hy = seeker.gfx.y;
+
+        const g = this.add.graphics().setDepth(3.6);
+        g.fillStyle(0xffffff, 0.9); g.fillCircle(hx, hy, 3.5);
+        g.fillStyle(0xffee66, 0.35); g.fillCircle(hx, hy, 7);
+
+        // Direct target first, at full seeker damage. Named _rd* because the resistance check scans
+        // for `.health -=` whose value did not come out of resolveElementalHit -- a local called
+        // `direct` reads better and trips that guard, so the convention wins.
+        const _rdSeekDirect = this.resolveElementalHit(enemy, C.SEEK_DMG * this.damageScaling, 'lightning');
+        if (_rdSeekDirect !== null) {
+            enemy.health -= _rdSeekDirect;
+            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rdSeekDirect), '#ffffaa');
+            this.updateEnemyHealthBar(enemy);
+            this.gainUltCharge(this.ultChargePerLightningHit * 0.1);
+            if (enemy.health <= 0) this.killEnemy(enemy);
+        }
+
+        // Then fork onward to the nearest few others.
+        const R = C.SEEK_ZAP_R * TS;
+        const near = [];
+        for (const e of this.enemies) {
+            if (e === enemy || !e.sprite?.active || this._phasedOut(e)) continue;
+            const d = Math.hypot(e.sprite.x - hx, e.sprite.y - hy);
+            if (d <= R) near.push({ e, d });
+        }
+        near.sort((a, b) => a.d - b.d);
+        for (const { e } of near.slice(0, C.SEEK_ZAP_N)) {
+            this._strokeFork(g, hx, hy, e.sprite.x, e.sprite.y + 4, 0xffffcc, 0.75, 1);
+            const _rdZap = this.resolveElementalHit(e, C.SEEK_ZAP_DMG * this.damageScaling, 'lightning');
+            if (_rdZap === null) continue;
+            e.health -= _rdZap;
+            this.showDamageNumber(e.sprite.x, e.sprite.y - 10, Math.round(_rdZap), '#ffffcc');
+            this.updateEnemyHealthBar(e);
+            if (e.health <= 0) this.killEnemy(e);
+        }
+
+        this.tweens.add({ targets: g, alpha: 0, duration: 200,
+                          onComplete: () => g.destroy() });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // WRENCH — TowerDefenseScene only
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // NOT reachable from the overworld any more: Ball Lightning replaced Engineering Degree
+    // and no weapon id dispatches here. These stay because TowerDefenseScene is built on them
+    // -- it has a whole Wrench upgrade tab (damage, extra bounces, Long Arm, Quick Release,
+    // Gold and Diamond reforges) and its overrides call straight into these as base behaviour:
+    //
+    //   TowerDefenseScene.engineeringDegreeAttack -> WeaponSystem.prototype.engineeringDegreeAttack
+    //   TowerDefenseScene._throwWrenchArc         -> WeaponSystem.prototype._throwWrenchArc
+    //   TowerDefenseScene._wrenchImpact           -> WeaponSystem.prototype._wrenchImpact
+    //
+    // Exactly the shape the engineer towers already had: the overworld drops the ENTRY POINT,
+    // and the shared implementation stays for the mode that is actually built on it.
+    engineeringDegreeAttack(targetX, targetY) {
+        const currentTime = this.time.now;
+        if (currentTime - (this._lastWrenchTime || 0) < 1500 - (this._wrenchCDBonus || 0)) return;
+        this._lastWrenchTime = currentTime;
+
+        const TS = this.TILE_SIZE;
+        const worldX = targetX + this.cameras.main.scrollX;
+        const worldY = targetY + this.cameras.main.scrollY;
+        const px = this.player.x, py = this.player.y;
+        const dx = worldX - px, dy = worldY - py;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        const MAX_RANGE = (8 + (this._wrenchRangeBonus || 0)) * TS;
+        const lobDist = Math.min(dist, MAX_RANGE);
+        const dirX = dx / dist, dirY = dy / dist;
+        const targetPX = px + dirX * lobDist;
+        const targetPY = py + dirY * lobDist;
+
+        const TOTAL_BOUNCES = 3 + (this._wrenchBounceBonus || 0);
+        this._throwWrenchArc(px, py, targetPX, targetPY, TOTAL_BOUNCES, dirX, dirY, lobDist);
+    }
+
+    // One hop of the wrench's flight -- arcs from (fromX,fromY) to (toX,toY), impacts on
+    // landing, then hops again along the same throw direction with a shrinking distance.
+    _throwWrenchArc(fromX, fromY, toX, toY, bouncesLeft, dirX, dirY, hopDist) {
+        const TS = this.TILE_SIZE;
+        const WRENCH_DMG = 2 * this.damageScaling;
+        const SPLASH_R = 1.5;   // tile radius AoE on landing -- covers a 3x3 tile area
+        const STUN_R = 0.5;     // tile radius -- tighter than the damage splash
+
+        const gfx = this.add.graphics().setDepth(4);
+        gfx.x = fromX; gfx.y = fromY;
+        this._drawWrenchGfx(gfx, 0);
+
+        // Shadow on the ground grows as the wrench rises and falls, so the arc reads as height.
+        const shadow = this.add.ellipse(fromX, fromY, 10, 5, 0x000000, 0.3).setDepth(1.6);
+
+        const PEAK = Math.min(34, 12 + hopDist * 0.25);
+        const dur = Math.max(180, Math.min(520, hopDist * 2.2));
+        const start = this.time.now;
+        const ev = this.time.addEvent({
+            delay: 16, loop: true, callback: () => {
+                const t = Math.min(1, (this.time.now - start) / dur);
+                const bx = fromX + (toX - fromX) * t;
+                const by = fromY + (toY - fromY) * t;
+                if (gfx.active) {
+                    gfx.x = bx;
+                    gfx.y = by - Math.sin(t * Math.PI) * PEAK;
+                    this._drawWrenchGfx(gfx, t * Math.PI * 4);
+                }
+                if (shadow.active) { shadow.x = bx; shadow.y = by; shadow.setScale(0.7 + t * 0.5); }
+                if (t < 1) return;
+
+                ev.remove();
+                if (gfx.active) gfx.destroy();
+                if (shadow.active) shadow.destroy();
+                this._wrenchImpact(toX, toY, WRENCH_DMG, SPLASH_R, STUN_R);
+
+                if (bouncesLeft > 0) {
+                    const nextHopDist = hopDist * 0.6;
+                    const nextX = toX + dirX * nextHopDist;
+                    const nextY = toY + dirY * nextHopDist;
+                    const ntx = Math.floor(nextX / TS), nty = Math.floor(nextY / TS);
+                    const blocked = this.world?.[ntx]?.[nty] === this.WALL
+                                 || this.world?.[ntx]?.[nty] === this.NOTHING;
+                    if (!blocked && nextHopDist > TS * 0.4) {
+                        this._throwWrenchArc(toX, toY, nextX, nextY, bouncesLeft - 1,
+                                             dirX, dirY, nextHopDist);
+                    }
+                }
+            }
+        });
+    }
+
+    // AoE impact at the landing point -- splash damage, a tighter stun ring, portals and
+    // bosses. Returns nothing; TowerDefenseScene wraps it to add its Gold/Diamond effects.
+    _wrenchImpact(targetPX, targetPY, damage, splashRTiles, stunRTiles) {
+        const TS = this.TILE_SIZE;
+        const splashR = splashRTiles * TS;
+        const stunR = (stunRTiles ?? 0) * TS;
+
+        const impactGfx = this.add.graphics().setDepth(5);
+        impactGfx.x = targetPX; impactGfx.y = targetPY;
+        impactGfx.fillStyle(0xaaaaaa, 0.55); impactGfx.fillCircle(0, 0, splashR * 1.1);
+        impactGfx.fillStyle(0xdddddd, 0.70); impactGfx.fillCircle(0, 0, splashR * 0.4);
+        this.tweens.add({ targets: impactGfx, scaleX: 1.4, scaleY: 1.4, alpha: 0,
+                          duration: 300, onComplete: () => impactGfx.destroy() });
+        this.cameras.main.shake(20, 0.0015);
+
+        for (let d = 0; d < 4; d++) {
+            const da = Math.random() * Math.PI * 2;
+            const dr = 10 + Math.random() * 16;
+            const dg = this.add.graphics().setDepth(4);
+            dg.fillStyle(0xcccccc, 1.0); dg.fillCircle(0, 0, 1.5 + Math.random() * 1.5);
+            dg.x = targetPX; dg.y = targetPY;
+            this.tweens.add({ targets: dg, x: targetPX + Math.cos(da) * dr,
+                              y: targetPY + Math.sin(da) * dr, alpha: 0,
+                              duration: 280, onComplete: () => dg.destroy() });
+        }
+
+        let hitSomething = false;
+
+        // CONDUCTION. A lump of metal landing in a puddle carries the charge through the whole
+        // connected pool. Keyed off the LANDING TILE, so a wrench thrown into empty water
+        // still electrifies it.
+        if (typeof this._energizePool === 'function') {
+            const wtx = Math.floor(targetPX / TS), wty = Math.floor(targetPY / TS);
+            if (this.isWaterAt?.(wtx, wty)) this._energizePool(wtx, wty, damage);
+        }
+
+        for (const enemy of [...this.enemies]) {
+            if (!enemy.sprite?.active) continue;
+            const edx = enemy.sprite.x - targetPX, edy = enemy.sprite.y - targetPY;
+            const ed = Math.sqrt(edx * edx + edy * edy);
+            if (ed <= splashR) {
+                if (this._phasedOut(enemy)) continue;
+                const _rdWrench = this.resolveElementalHit(enemy, damage, 'lightning');
+                if (_rdWrench === null) continue;
+                enemy.health -= _rdWrench;
+                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rdWrench), '#cccccc');
+                this.updateEnemyHealthBar(enemy);
+                this.gainUltCharge(this.ultChargePerHit);
+                if (enemy.health <= 0) { this.killEnemy(enemy); hitSomething = true; continue; }
+                hitSomething = true;
+            }
+            if (stunR > 0 && ed <= stunR && enemy.sprite?.active) {
+                enemy.isStunned = true;
+                enemy.stunnedUntil = Math.max(enemy.stunnedUntil || 0, this.time.now + 1000);
+                this._showStunIndicator(enemy);
+            }
+        }
+
+        const tx = Math.floor(targetPX / TS), ty = Math.floor(targetPY / TS);
+        const portalHit = this.getPortalAt(tx, ty);
+        if (portalHit) { this.damagePortal(portalHit, damage); hitSomething = true; }
+
+        for (const boss of [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore].filter(Boolean)) {
+            if (!boss.active) continue;
+            const bx = boss.container?.x ?? boss.tileX * TS;
+            const by = boss.container?.y ?? boss.tileY * TS;
+            if (Math.hypot(targetPX - bx, targetPY - by) <= splashR + TS * 1.5) {
+                this.damageBossAtTile(boss.tileX, boss.tileY, damage);
+                hitSomething = true;
+            }
+        }
+
+        if (hitSomething && Math.random() < 0.35) this.spawnOrbScrap(targetPX, targetPY);
+    }
+
+    // Pixel-art wrench silhouette — handle plus two jaw ends. TowerDefenseScene overrides this
+    // with gold/diamond variants, so this is the plain fallback.
+    _drawWrenchGfx(gfx, rotation) {
+        gfx.clear();
+        gfx.setRotation(rotation || 0);
+        gfx.fillStyle(0x999999, 1);
+        gfx.fillRect(-1.5, -7, 3, 14);              // handle
+        gfx.lineStyle(1, 0x555555, 0.9);
+        gfx.strokeCircle(0, -9, 5);                  // upper jaw
+        gfx.strokeCircle(0, 9, 4);                   // lower jaw
+        gfx.fillStyle(0xcccccc, 1);
+        gfx.fillRect(-1, -6, 1, 12);                 // highlight
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ORB EMITTER — bouncing electric orb, marks + forks lightning on hit
+    // ══════════════════════════════════════════════════════════════════════
     orbEmitterAttack(targetX, targetY) {
         const currentTime = this.time.now;
         if (currentTime - (this._lastOrbTime || 0) < 700) return;
         this._lastOrbTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -952,13 +2204,21 @@ class WeaponSystem {
 
         const ORB_SPEED = 300; // px/s
         const ORB_DMG   = 10 * this.damageScaling;
-        const FORK_RANGE = 3; // tiles
+        const FORK_RANGE = 3 + 0.5 * WeaponLevels.perk('orb_emitter', 'forks'); // tiles
         const MAX_BOUNCES = 10;
 
-        // Orb visual — electric sphere with inner glow and orbiting ring
-        const gfx = this.add.graphics().setDepth(4);
-        gfx.x = px; gfx.y = py;
-        this._drawOrbEmitterGfx(gfx);
+        // The orb: a tesla sphere (orbEmitterKey) in a glow, with live arcs drawn each frame
+        const gfx = this.add.container(px, py).setDepth(4);
+        const okey = WeaponSystem.orbEmitterKey(this);
+        const glow = this.add.image(0, 0, 'vfx_glow').setTint(0xffd84a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3).setAlpha(0.55);
+        const body = this.add.sprite(0, 0, okey, '0');
+        if (this.anims.exists(okey)) { body.play(okey); body.anims.timeScale = 2.5; }
+        const arcs = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+        gfx.add([glow, arcs, body]);
+        gfx._glow = glow; gfx._arcs = arcs; gfx._body = body;
+        // muzzle: a snap of light at the slime
+        const flash = this.add.image(px + dx / len * 10, py + dy / len * 10, 'vfx_glow').setTint(0xfff6b0).setBlendMode(Phaser.BlendModes.ADD).setDepth(4).setScale(0.15);
+        this.tweens.add({ targets: flash, scale: 0.4, alpha: 0, duration: 160, onComplete: () => flash.destroy() });
 
         if (!this.lightningOrbs) this.lightningOrbs = [];
         this.lightningOrbs.push({
@@ -975,6 +2235,29 @@ class WeaponSystem {
     }
 
     _drawOrbEmitterGfx(gfx) {
+        if (gfx._arcs) {   // the tesla orb: arcs reaching for what's close, and crawling over the shell
+            const g = gfx._arcs, TS = this.TILE_SIZE, now = this.time.now;
+            g.clear();
+            gfx._glow.setScale(0.28 + 0.04 * Math.sin(now * 0.04) + Math.random() * 0.03);
+            let n = 0;
+            for (const e of this.enemies || []) {
+                if (n >= 3 || !e.sprite?.active) continue;
+                const ex = e.sprite.x - gfx.x, ey = e.sprite.y - gfx.y;
+                if (ex * ex + ey * ey > (TS * 2.6) ** 2 || Math.random() < 0.35) continue;
+                const pts = this._arcPath(0, 0, ex, ey, 5, 0.3);
+                this._strokeArc(g, pts, 4, 0x88ddff, 0.25);
+                this._strokeArc(g, pts, 1.4, 0xffffff, 0.85);
+                n++;
+            }
+            for (let i = 0; i < 2; i++) {
+                if (Math.random() < 0.4) continue;
+                const a = Math.random() * Math.PI * 2, r0 = 10, r1 = 15 + Math.random() * 8;
+                const pts = this._arcPath(Math.cos(a) * r0, Math.sin(a) * r0, Math.cos(a + 0.6) * r1, Math.sin(a + 0.6) * r1, 3, 0.4);
+                this._strokeArc(g, pts, 2.5, 0xffe066, 0.3);
+                this._strokeArc(g, pts, 1, 0xfffbe0, 0.9);
+            }
+            return;
+        }
         gfx.clear();
         // Outer glow
         gfx.fillStyle(0xffff00, 0.20);
@@ -1000,51 +2283,68 @@ class WeaponSystem {
         gfx.strokeCircle(0, 0, 11);
     }
 
+    // Superconduct an enemy (lightning carries further from it): the Orb Emitter's hits, and
+    // Ball Lightning while it's embedded in one. Refreshes the mark if it's already on.
+    _superconduct(enemy, ms = this.superConductDuration || 5000) {
+        if (!enemy?.sprite?.active) return;
+        enemy.isSuperConducted = true;
+        enemy.superConductUntil = Math.max(enemy.superConductUntil || 0, this.time.now + ms);
+        if (enemy.superConductVisual?.container?.active) return;
+        const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 18, WeaponSystem.superconductKey(this)).setDepth(3).setScale(1.3);
+        this.tweens.add({ targets: mark, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 });
+        enemy.superConductVisual = { container: mark, g: mark };
+    }
+
     _orbHitEnemy(orb, enemy) {
         const TS = this.TILE_SIZE;
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
 
         // Damage with falloff per bounce (25% less each hit)
         const FALLOFF = 0.75;
-        const hitDamage = orb.damage;
+        // the first enemy an orb strikes takes ×FIRST_HIT: alone, a target used to take one weak
+        // hit and nothing else (14.5 dps); the forks after it are unchanged
+        const FIRST_HIT = 1.8;
+        const hitDamage = orb.damage * (orb._struck ? 1 : FIRST_HIT);
+        orb._struck = true;
         orb.damage = orb.damage * FALLOFF; // reduce for next bounce
 
-        // Mark enemy as superconducted
-        enemy.isSuperConducted = true;
-        enemy.superConductUntil = this.time.now + 5000;
-        if (enemy.superConductVisual) {
-            if (enemy.superConductVisual.container?.active) {
-                this.tweens.killTweensOf(enemy.superConductVisual.container);
-                enemy.superConductVisual.container.destroy();
-            }
-            enemy.superConductVisual = null;
-        }
-        const markGfx = this.add.graphics().setDepth(3);
-        markGfx.lineStyle(2, 0xffff00, 0.90);
-        markGfx.beginPath();
-        markGfx.moveTo(-5, -8); markGfx.lineTo(0, -3); markGfx.lineTo(-3, 0); markGfx.lineTo(2, 6);
-        markGfx.strokePath();
-        markGfx.x = ex; markGfx.y = ey - 20;
-        this.tweens.add({ targets: markGfx, alpha: 0.40, duration: 600, yoyo: true, repeat: -1 });
-        enemy.superConductVisual = { container: markGfx, g: markGfx };
+        this._superconduct(enemy);
+        // the impact: a white-hot snap and a ring of sparks
+        Sfx.play(this, 'orbhit');
+        const snap = this.add.image(ex, ey, 'vfx_glow').setTint(0xfff3a0).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.2).setScale(0.2);
+        this.tweens.add({ targets: snap, scale: 0.38, alpha: 0, duration: 180, onComplete: () => snap.destroy() });
+        this._vfxTrail?.lightning?.emitParticleAt(ex, ey, 8);
 
-        // Damage
-        this.damageEnemy(enemy, hitDamage);
-        this.gainUltCharge(this.ultChargePerLightningHit);
+        // Damage. Typed: an orb still flying after you switch element used to hit (and burn, and
+        // charge) as the new one. And paid only for a hit that landed.
+        this.damageEnemy(enemy, hitDamage, 'lightning');
+        if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit, 'lightning');
 
         // Fork lightning to ALL nearby enemies regardless of superconductor (35% of impact damage)
+        // CONDUCTION. An orb that pops on a soaked target dumps its charge into the whole
+        // connected pool. The fork below is capped at FORK_R tiles; conduction is not, so
+        // on wet ground the orb's reach is the shape of the water rather than a radius.
+        if (typeof this._energizePool === 'function' && this.isWaterAt?.(enemy.x, enemy.y)) {
+            this._energizePool(enemy.x, enemy.y, hitDamage);
+        }
         const FORK_R = orb.forkRange;
-        const FORK_DMG = hitDamage * 0.35;
+        const FORK_DMG = hitDamage * 0.38;   // 0.35, then 0.5; 0.38 2026-10-19: a tier 2 out-valued the tier 3s and 4s in a crowd
         const forkCandidates = this.enemies.filter(e =>
             e !== enemy && e.sprite?.active &&
             Math.abs(e.x - enemy.x) + Math.abs(e.y - enemy.y) <= FORK_R
         );
         for (const forkTarget of forkCandidates) {
             this.drawLightningBolt({ sprite: { x: ex, y: ey } }, forkTarget);
-            this.damageEnemy(forkTarget, FORK_DMG);
+            this.damageEnemy(forkTarget, FORK_DMG, 'lightning');
+            // Forks superconduct what they hit, so the orb can bounce on into the crowd (the bounce
+            // goes only to superconducted enemies, and only a direct hit used to make one).
+            if (this._dmgLanded && forkTarget.health > 0) {
+                forkTarget.isSuperConducted = true;
+                forkTarget.superConductUntil = Math.max(forkTarget.superConductUntil || 0, this.time.now + (this.superConductDuration || 5000));
+            }
         }
         // Fork to boss too
-        this.damageBossAtTile(enemy.x, enemy.y, FORK_DMG);
+        this.damageBossAtTile(enemy.x, enemy.y, FORK_DMG, undefined, 'lightning');
 
         // Bounce — ONLY to superconducted enemies within range
         if (orb.bouncesLeft > 0) {
@@ -1086,11 +2386,19 @@ class WeaponSystem {
                     // Death burst — snapshot position before destroying, draw at local (0,0)
                     const bx = orb.gfx.x, by = orb.gfx.y;
                     orb.gfx.destroy();
-                    const burst = this.add.graphics().setDepth(5);
+                    // the orb pops: a flash, a ring, and arcs thrown out in every direction
+                    const glow = this.add.image(bx, by, 'vfx_glow').setTint(0xffe066).setBlendMode(Phaser.BlendModes.ADD).setDepth(5).setScale(0.3);
+                    this.tweens.add({ targets: glow, scale: 0.9, alpha: 0, duration: 260, onComplete: () => glow.destroy() });
+                    if (typeof VisualFX !== 'undefined') VisualFX.ripple(this, bx, by, 6, 30, 0xffe066, { depth: 5, duration: 300 });
+                    const burst = this.add.graphics().setDepth(5).setBlendMode(Phaser.BlendModes.ADD);
                     burst.x = bx; burst.y = by;
-                    burst.fillStyle(0xffff00, 0.70); burst.fillCircle(0, 0, 18);
-                    burst.lineStyle(2, 0xffffff, 0.90); burst.strokeCircle(0, 0, 18);
-                    this.tweens.add({ targets: burst, scaleX: 2, scaleY: 2, alpha: 0, duration: 300, onComplete: () => burst.destroy() });
+                    for (let k = 0; k < 6; k++) {
+                        const a = k / 6 * Math.PI * 2 + Math.random() * 0.5, r = 18 + Math.random() * 14;
+                        const pts = this._arcPath(0, 0, Math.cos(a) * r, Math.sin(a) * r, 4, 0.35);
+                        this._strokeArc(burst, pts, 3, 0x88ddff, 0.35); this._strokeArc(burst, pts, 1.2, 0xffffff, 0.95);
+                    }
+                    this.tweens.add({ targets: burst, alpha: 0, duration: 220, onComplete: () => burst.destroy() });
+                    Sfx.play(this, 'zap');
                 }
                 this.lightningOrbs.splice(i, 1);
                 continue;
@@ -1106,18 +2414,13 @@ class WeaponSystem {
             // Animate orb (redraw arc lines)
             this._drawOrbEmitterGfx(orb.gfx);
 
-            // Trail spark — position the object, draw at local (0,0), fade only (no scale tween)
-            if (Math.random() < 0.4) {
-                const spark = this.add.graphics().setDepth(3.5);
-                spark.x = orb.gfx.x; spark.y = orb.gfx.y;
-                spark.fillStyle(0xffdd00, 0.70); spark.fillCircle(0, 0, 3);
-                this.tweens.add({ targets: spark, alpha: 0, duration: 120, onComplete: () => spark.destroy() });
-            }
+            // (its trail and glow come from Visuals.js, which follows every lightning orb)
 
             // Wall collision — destroy
             const tx = Math.floor(orb.gfx.x / TS), ty = Math.floor(orb.gfx.y / TS);
             const orbOob = tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT;
             if (orbOob || this.world[tx]?.[ty] === this.WALL || this.world[tx]?.[ty] === this.NOTHING || this.isInLockedRoom(tx, ty)) {
+                VisualFX.wallImpact(this, orb.gfx.x, orb.gfx.y, 'lightning', orb.vx, orb.vy);
                 orb._done = true;
                 continue;
             }
@@ -1170,29 +2473,23 @@ class WeaponSystem {
 
         // Ice elementals (iceImmune) take NO chip damage — only chill stacks toward freeze/shatter
         if (!enemy.iceImmune) {
-            const chipDmg = 12 * this.damageScaling;
-            enemy.health -= chipDmg;
-            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, chipDmg, '#88eeff');
+            const chipDmg = 14 * this.damageScaling;   // 12 left the free ice weapon the weakest in the game (36 dps)
+            const _rd1461 = this.resolveElementalHit(enemy, chipDmg, 'ice');
+            if (_rd1461 === null) return;
+            enemy.health -= _rd1461;
+            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd1461, '#88eeff');
             this.updateEnemyHealthBar(enemy);
             this.gainUltCharge(this.ultChargePerHit);
             if (enemy.health <= 0) { this._destroyChillIndicator(enemy); this.killEnemy(enemy); return; }
         }
 
-        this._updateChillIndicator(enemy);
-
-        if (enemy.chillStacks >= 3) {
-            enemy.chillStacks = 0;
-            enemy.frozenAt = time;
-            this._destroyChillIndicator(enemy);
-            this.freezeEnemy(enemy, 10000);
-            this.gainUltCharge(this.ultChargePerFreeze);
-            enemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
-                if (enemy.sprite?.active) this._shatterWaterSplash(enemy.x, enemy.y);
-            });
-        }
+        // This used to call _updateChillIndicator and then test `>= 3` -- with NOTHING in between
+        // incrementing the bar. Ice Fists could not cube anything on its own; the branch below was
+        // dead code for as long as it existed.
+        this.applyChill(enemy, this._chillCfg().MELEE);
     }
 
-    applyIcicleCannonHit(enemy, damage, shatterMult = 0.5) {
+    applyIcicleCannonHit(enemy, damage, shatterMult = 0.5, chillWeight = 1) {
         // Icicle cannon — completely independent of ice fists
         if (enemy._sniperInvisible) return; // invisible snipers immune to chill/freeze/slow
         if (enemy.fireImmune) {
@@ -1202,29 +2499,19 @@ class WeaponSystem {
         if (enemy.isFrozen) { this._clearFreezeVisuals(enemy); this._triggerShatterBurst(enemy, shatterMult); return; } // cannon: scaled shatter
 
         if (!enemy.iceImmune) {
-            enemy.health -= damage;
-            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, damage, '#88eeff');
+            const _rd1492 = this.resolveElementalHit(enemy, damage, 'ice');
+            if (_rd1492 === null) return;
+            enemy.health -= _rd1492;
+            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd1492, '#88eeff');
             this.updateEnemyHealthBar(enemy);
             this.gainUltCharge(this.ultChargePerHit * 0.65); // icicle fires rapidly — reduced per-hit charge
             if (enemy.health <= 0) { this._destroyChillIndicator(enemy); this.killEnemy(enemy); return; }
         }
 
-        const time = this.time.now;
-        if (!enemy.chillStacks) enemy.chillStacks = 0;
-        enemy.chillStacks++;
-        enemy.lastChillTime = time;
-        this._updateChillIndicator(enemy);
-
-        if (enemy.chillStacks >= 3) {
-            enemy.chillStacks = 0;
-            enemy.frozenAt = time;
-            this._destroyChillIndicator(enemy);
-            this.freezeEnemy(enemy, 10000);
-            this.gainUltCharge(this.ultChargePerFreeze * 0.65); // proportionally reduced freeze charge too
-            enemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
-                if (enemy.sprite?.active) this._shatterWaterSplash(enemy.x, enemy.y);
-            });
-        }
+        // Fractional and range-weighted: a point-blank pellet is worth many ranged ones toward the
+        // bar. chillWeight is the cannon's own distance curve; RATE scales it inside applyChill.
+        // 0.65 charge because the cannon fires rapidly and would otherwise print ult.
+        this.applyChill(enemy, chillWeight, { chargeMult: 0.65 });
     }
 
     applyFractalShardHit(enemy, damage) {
@@ -1242,67 +2529,137 @@ class WeaponSystem {
         }
         // Ice elementals: skip chip damage, only chill toward shatter
         if (!enemy.iceImmune) {
-            enemy.health -= damage;
-            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, damage, '#88eeff');
+            const _rd1532 = this.resolveElementalHit(enemy, damage, 'ice');
+            if (_rd1532 === null) return;
+            enemy.health -= _rd1532;
+            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd1532, '#88eeff');
             this.updateEnemyHealthBar(enemy);
             this.gainUltCharge(this.ultChargePerHit);
             if (enemy.health <= 0) { this._destroyChillIndicator(enemy); this.killEnemy(enemy); return; }
         }
-        const time = this.time.now;
-        if (!enemy.chillStacks) enemy.chillStacks = 0;
-        enemy.chillStacks++;
-        enemy.lastChillTime = time;
-        this._updateChillIndicator(enemy);
-        if (enemy.chillStacks >= 3) {
-            enemy.chillStacks = 0;
-            enemy.frozenAt = time;
-            this._destroyChillIndicator(enemy);
-            this.freezeEnemy(enemy, 10000);
-            this.gainUltCharge(this.ultChargePerFreeze);
-            enemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
-                if (enemy.sprite?.active) this._shatterWaterSplash(enemy.x, enemy.y);
-            });
-        }
+        this.applyChill(enemy, this._chillCfg().DIRECT);
     }
 
     _updateChillIndicator(enemy) {
-        // Create or update a row of ice dots above the enemy showing chill stacks
-        if (!enemy._chillBar) {
-            enemy._chillBar = [];
-            for (let i = 0; i < 3; i++) {
-                const dot = this.add.graphics().setDepth(3);
-                enemy._chillBar.push(dot);
-            }
-        }
-        // Hide entirely while sniper is invisible
-        if (enemy._sniperInvisible) {
-            for (const dot of enemy._chillBar) dot.setAlpha(0);
+        // Liveness gate. Indicators hang off the enemy, and killEnemy splices it out of
+        // this.enemies -- so anything that recreates a bar after death leaks it forever,
+        // with nothing left holding a reference to clean it up. Rather than trusting a
+        // dozen call sites to return at the right moment, refuse to build one for a
+        // corpse and tear down anything already there.
+        if (!enemy || enemy.health <= 0 || !enemy.sprite?.active) {
+            this._destroyChillIndicator(enemy);
             return;
         }
-        const stacks = enemy.chillStacks || 0;
-        for (let i = 0; i < 3; i++) {
-            const dot = enemy._chillBar[i];
-            dot.clear();
-            const filled = i < stacks;
-            dot.fillStyle(filled ? 0x44aaff : 0x112233, filled ? 1 : 0.5);
-            dot.fillCircle(0, 0, 4);
-            if (filled) {
-                dot.lineStyle(1, 0xaaddff, 0.8);
-                dot.strokeCircle(0, 0, 4);
-            }
-            // Position: 3 dots spaced across enemy head
-            dot.x = enemy.sprite.x + (i - 1) * 10;
-            dot.y = enemy.sprite.y - 30;
+        // ── A BAR, not three dots ────────────────────────────────────────────
+        // Three dots read as "3 hits and it freezes", which was true when every source added
+        // exactly 1. It is not true now: weights run from 1.0 for a point-blank punch down to
+        // ~0.09 for a pellet at maximum range, so a dot lighting up meant wildly different things
+        // depending on where you were standing. A continuous bar is honest about a continuous
+        // quantity -- and the thing the player needs to see is RATE OF FILL, which a bar shows
+        // and three discrete pips actively hide.
+        if (!enemy._chillBar) {
+            enemy._chillBar = this.add.graphics().setDepth(3);
         }
+        const g = enemy._chillBar;
+
+        if (enemy._sniperInvisible) { g.setAlpha(0); return; }
+        g.setAlpha(1);
+
+        const MAX = (this._chillCfg?.().MAX) || 3;
+        const frac = Math.max(0, Math.min(1, (enemy.chillStacks || 0) / MAX));
+        const W = 22, H = 4;
+
+        g.clear();
+        g.x = enemy.sprite.x - W / 2;
+        g.y = enemy.sprite.y - 30;
+
+        // Track, with a dark outline so it stays legible over a pale slime.
+        g.fillStyle(0x001222, 0.72);
+        g.fillRect(-1, -1, W + 2, H + 2);
+        g.fillStyle(0x11334d, 0.9);
+        g.fillRect(0, 0, W, H);
+
+        if (frac > 0) {
+            // Colour carries urgency: pale blue early, near-white as it approaches the cube, so
+            // the bar tells you "almost" without you having to measure its length.
+            const hot  = frac > 0.82;
+            const fill = hot ? 0xeafaff : (frac > 0.5 ? 0x77ccff : 0x4499dd);
+            g.fillStyle(fill, 1);
+            g.fillRect(0, 0, Math.max(1, W * frac), H);
+            // Highlight along the top edge -- reads as ice rather than a health bar.
+            g.fillStyle(0xffffff, hot ? 0.75 : 0.35);
+            g.fillRect(0, 0, Math.max(1, W * frac), 1);
+            if (hot) {
+                const p = 0.45 + 0.55 * Math.abs(Math.sin(this.time.now / 90));
+                g.lineStyle(1, 0xffffff, p);
+                g.strokeRect(-1.5, -1.5, W + 3, H + 3);
+            }
+        }
+        // Faint segment ticks: the threshold is still MAX "marks" underneath, and keeping them
+        // visible means the old mental model still works for anyone who had learned it.
+        g.fillStyle(0x001222, 0.55);
+        for (let i = 1; i < MAX; i++) g.fillRect(Math.round((W / MAX) * i), 0, 1, H);
     }
 
     _destroyChillIndicator(enemy) {
+        if (!enemy) return;
         if (enemy._chillBar) {
-            for (const dot of enemy._chillBar) {
-                this.tweens.killTweensOf(dot);
-                dot.destroy();
-            }
+            // One Graphics object now, not an array of three dots.
+            this.tweens.killTweensOf(enemy._chillBar);
+            enemy._chillBar.destroy();
             enemy._chillBar = null;
+        }
+    }
+
+    // Stun indicator — spinning stars above a stunned enemy's head. Stun is
+    // binary (not stacking like chill) and a stunned enemy doesn't move, so this
+    // only needs to be created once when stun starts and removed when it ends —
+    // no per-frame position tracking needed.
+    _showStunIndicator(enemy) {
+        if (!enemy.sprite?.active || enemy._stunIndicator) return; // already showing
+        const container = this.add.container(enemy.sprite.x, enemy.sprite.y - 32).setDepth(6);
+        const stars = [];
+        for (let i = 0; i < 3; i++) {
+            const star = this.add.graphics();
+            star.fillStyle(0xffee44, 1);
+            // Simple 4-point star/sparkle shape
+            star.fillTriangle(0, -4, 1.3, -1.3, 4, 0);
+            star.fillTriangle(4, 0, 1.3, 1.3, 0, 4);
+            star.fillTriangle(0, 4, -1.3, 1.3, -4, 0);
+            star.fillTriangle(-4, 0, -1.3, -1.3, 0, -4);
+            star.lineStyle(0.8, 0xffffff, 0.8);
+            star.strokeCircle(0, 0, 1);
+            container.add(star);
+            stars.push(star);
+        }
+        enemy._stunIndicator = container;
+        enemy._stunIndicatorStars = stars;
+
+        // Orbit the 3 stars in a slow circle above the head
+        const radius = 9;
+        let angle = 0;
+        const orbitTimer = this.time.addEvent({
+            delay: 30, loop: true,
+            callback: () => {
+                if (!container.active) { orbitTimer.remove(); return; }
+                angle += 0.12;
+                for (let i = 0; i < stars.length; i++) {
+                    const a = angle + (i / stars.length) * Math.PI * 2;
+                    stars[i].x = Math.cos(a) * radius;
+                    stars[i].y = Math.sin(a) * radius * 0.55; // flattened ellipse orbit
+                }
+            }
+        });
+        enemy._stunOrbitTimer = orbitTimer;
+    }
+
+    _clearStunIndicator(enemy) {
+        if (enemy._stunOrbitTimer) { enemy._stunOrbitTimer.remove(); enemy._stunOrbitTimer = null; }
+        if (enemy._stunIndicator) {
+            this.tweens.killTweensOf(enemy._stunIndicator);
+            enemy._stunIndicator.destroy(); // destroys child stars too
+            enemy._stunIndicator = null;
+            enemy._stunIndicatorStars = null;
         }
     }
 
@@ -1320,6 +2677,7 @@ class WeaponSystem {
     }
 
     _triggerShatterBurst(enemy, shatterMult = 1.0) {
+        if (enemy._deepFrozen && enemy.isFrozen) return;   // the ice ult's Deep Freeze holds until its own shatter (which clears this first)
         // Don't shatter if the enemy was frozen in the last 200ms (same-frame pierce spike freeze)
         if (enemy._justFrozenAt && this.time.now - enemy._justFrozenAt < 200) return;
         if (!enemy._shatterTriggered) {
@@ -1345,7 +2703,7 @@ class WeaponSystem {
             const ex = snapX, ey = snapY;
 
             // Shard burst
-            for (let i = 0; i < 10; i++) {
+            for (let i = 0; i < (enemy._quietShatter ? 0 : 10); i++) {
                 const angle = (i / 10) * Math.PI * 2;
                 const shard = this.add.rectangle(ex, ey, 5, 10, 0xaaffff, 1).setDepth(4);
                 shard.setRotation(angle);
@@ -1357,11 +2715,11 @@ class WeaponSystem {
                     onComplete: () => shard.destroy()
                 });
             }
-            const burst = this.add.circle(ex, ey, 8, 0xffffff, 0.9).setDepth(4);
-            this.tweens.add({ targets: burst, radius: 28, alpha: 0, duration: 300, onComplete: () => burst.destroy() });
+            if (!enemy._quietShatter) { const burst = this.add.circle(ex, ey, 8, 0xffffff, 0.9).setDepth(4);
+            this.tweens.add({ targets: burst, radius: 28, alpha: 0, duration: 300, onComplete: () => burst.destroy() }); }
             this.cameras.main.shake(20, 0.001);
             this.showStatusText(ex, ey - 28, 'SHATTER!', '#aaffff');
-            this.gainUltCharge(this.ultChargePerFreeze * 2);
+            this.gainUltCharge(this.ultChargePerFreeze * 2, 'ice');
 
             // Cancel natural-melt timer
             if (enemy._freezeMeltTimer) { enemy._freezeMeltTimer.remove(); enemy._freezeMeltTimer = null; }
@@ -1374,18 +2732,22 @@ class WeaponSystem {
             this._clearFreezeVisuals(enemy);
 
             // Shatter burst damage — shatterMult is per-weapon (fractal=1.0/default, cannon=~0.133)
-            const shatterDmg = 7.5 * shatterMult * this.damageScaling * (enemy._purpleMarked ? 2.0 : 1);
-            if (enemy.iceImmune) {
-                enemy.health -= shatterDmg;
-                this.gainUltCharge(this.ultChargePerHit * 2);
-                this.showDamageNumber(ex, ey - 44, shatterDmg, '#ffffff');
+            // Resolved once, the way every other ice hit is: the table, brittle and purple (all in
+            // resolveElementalHit). It applied purple here AND went through damageEnemy, which
+            // applied it again (x4), ran every on-hit effect a second time (a slow, the 15% cube
+            // roll, a second ult charge) and printed a second, unresolved number; the ice-immune
+            // branch paid a second charge on top of the shatter's own (above).
+            // (No early return for a refused or phased-out target any more: that skipped the reset
+            // of _shatterTriggered at the end, and the enemy could never shatter again.)
+            const shatterDmg = 7.5 * shatterMult * this.damageScaling;
+            const _rd1729 = this._phasedOut(enemy) ? null : this.resolveElementalHit(enemy, shatterDmg, 'ice');
+            if (_rd1729 !== null) {
+                enemy.health -= _rd1729;
+                this.showDamageNumber(ex, ey - 44, Math.round(_rd1729), '#ffffff');
                 this.updateEnemyHealthBar(enemy);
-                if (enemy.health <= 0) this.killEnemy(enemy);
-            } else {
-                this.damageEnemy(enemy, shatterDmg);
-                this.showDamageNumber(ex, ey - 44, shatterDmg, '#ffffff');
+                if (enemy.health <= 0) { this._destroyChillIndicator(enemy); this.killEnemy(enemy); }
             }
-            this.damageBossAtTile(enemy.x, enemy.y, shatterDmg);
+            this.damageBossAtTile(enemy.x, enemy.y, shatterDmg, undefined, 'ice');
             this._shatterWaterSplash(enemy.x, enemy.y);
 
             // Destroy chill stack indicator
@@ -1435,8 +2797,10 @@ class WeaponSystem {
                     const wx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
                     const wy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-                    const tile    = this.add.rectangle(wx, wy, this.TILE_SIZE,     this.TILE_SIZE,     0x0055aa, 0.65).setDepth(0.5).setAlpha(0);
-                    const shimmer = this.add.rectangle(wx, wy, this.TILE_SIZE - 4, this.TILE_SIZE - 4, 0x3388cc, 0.4 ).setDepth(0.5).setAlpha(0);
+                    const tile    = (this._vfxWaterImg ? this._vfxWaterImg(wx, wy, false)
+                        : this.add.rectangle(wx, wy, this.TILE_SIZE,     this.TILE_SIZE,     0x0055aa, 0.65).setDepth(0.5)).setAlpha(0);
+                    const shimmer = (this._vfxWaterImg ? this._vfxWaterImg(wx, wy, true)
+                        : this.add.rectangle(wx, wy, this.TILE_SIZE - 4, this.TILE_SIZE - 4, 0x3388cc, 0.4 ).setDepth(0.5)).setAlpha(0);
 
                     // Continuous shimmer like tsunami puddles
                     this.tweens.add({ targets: shimmer, alpha: 0.6, duration: 150 + Math.random() * 100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -1462,19 +2826,27 @@ class WeaponSystem {
                     });
 
                     // Wet enemies on this tile now
+                    // Dries at wetUntil, whichever splash set it last: a refresh used to move the
+                    // deadline while the first splash's timer dried it anyway.
+                    const dry = (enemy) => {
+                        if (this.time.now + 20 < (enemy.wetUntil || 0)) return;
+                        enemy.isWet = false;
+                        if (enemy.sprite?.active && !enemy.isFrozen && typeof enemy.sprite.clearTint === 'function') enemy.sprite.clearTint();
+                    };
                     for (const enemy of this.enemies) {
                         if (enemy.x !== tx || enemy.y !== ty) continue;
-                        if (enemy.isWet) { enemy.wetUntil = this.time.now + WET_DURATION; continue; }
+                        if (enemy.isWet) {
+                            enemy.wetUntil = this.time.now + WET_DURATION;
+                            this.time.delayedCall(WET_DURATION, () => dry(enemy));
+                            continue;
+                        }
                         enemy.isWet = true;
                         enemy.wetUntil = this.time.now + WET_DURATION;
                         if (enemy.sprite?.active && typeof enemy.sprite.setTint === 'function') {
                             enemy.sprite.setTint(0x4499ff);
                             this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'WET', '#44aaff');
-                            this.time.delayedCall(WET_DURATION, () => {
-                                enemy.isWet = false;
-                                if (enemy.sprite?.active && !enemy.isFrozen && typeof enemy.sprite.clearTint === 'function') enemy.sprite.clearTint();
-                            });
                         }
+                        this.time.delayedCall(WET_DURATION, () => dry(enemy));
                     }
                 }
             });
@@ -1483,8 +2855,9 @@ class WeaponSystem {
 
     fractalShardAttack(targetX, targetY) {
         const currentTime = this.time.now;
-        if (currentTime - (this.lastFractalShardTime || 0) < 600) return;
+        if (currentTime - (this.lastFractalShardTime || 0) < 600 * WeaponLevels.cdMult('fractal_shard')) return;
         this.lastFractalShardTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         if (this._fractalPhase === undefined) this._fractalPhase = 0;
 
@@ -1559,17 +2932,18 @@ class WeaponSystem {
             // Shared volleyId lets boss-hit logic ensure only ONE freeze-or-shatter event
             // happens per volley, even though all 3 needles can land base damage on the
             // same target like a shotgun.
-            const SHOTGUN_SPREAD = 0.10; // ~5.7° half-angle — tight, still reads as one attack
-            const volleyId = Math.random().toString(36).slice(2);
-            this._spawnPierceSpike(playerPx, playerPy, angle - SHOTGUN_SPREAD, volleyId);
-            this._spawnPierceSpike(playerPx, playerPy, angle, volleyId);
-            this._spawnPierceSpike(playerPx, playerPy, angle + SHOTGUN_SPREAD, volleyId);
+            // One shard, and up to two more with Splinter, spread a little either side. Only the
+            // centre one plants the totem, so a volley leaves one pillar.
+            const SHOTGUN_SPREAD = 0.10 * Enchants.spread('fractal_shard'); // ~5.7° half-angle — tight, still reads as one attack (True Aim narrows it)
+            const volleyId = Math.random().toString(36).slice(2), n = 1 + WeaponLevels.perk('fractal_shard', 'shards');
+            this._fractalSpikeDmg = [17, 11, 8][n - 1];   // the spike sets up (cubes: brittle); the burst is the damage. 14, 9, 7 until 2026-10-19: a tier 4 hit one target softer than the free Ice Fists
+            for (let i = 0; i < n; i++) this._spawnPierceSpike(playerPx, playerPy, angle + (n === 1 ? 0 : (i / (n - 1) - 0.5) * 2 * SHOTGUN_SPREAD), volleyId, i === Math.floor(n / 2));
 
         } else {
             // ── PHASE 2: UNSTABLE SPLITTER ────────────────────────────────
             this._fractalPhase = 0;
             // Phase 2 has a longer effective cooldown — override timer
-            this.lastFractalShardTime = currentTime + 1400; // total ~2s before next shot
+            this.lastFractalShardTime = currentTime + 1400 * WeaponLevels.cdMult('fractal_shard'); // total ~2s before next shot (Rapid Facets: both strikes)
 
             // Muzzle flash — unstable crackling burst
             const muzzle = this.add.graphics().setDepth(4);
@@ -1589,12 +2963,28 @@ class WeaponSystem {
             muzzle.lineStyle(1.5, 0x88ddff, 0.55); muzzle.strokeCircle(0, 0, 20);
             this.tweens.add({ targets: muzzle, scaleX: 3.0, scaleY: 3.0, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => muzzle.destroy() });
 
-            // Fire in every direction around the player — each seed shard fractures
-            // independently, turning this into a full 360° fractal nova.
-            const RADIAL_COUNT = 8;
-            for (let i = 0; i < RADIAL_COUNT; i++) {
-                const radialAngle = (i / RADIAL_COUNT) * Math.PI * 2;
-                this._spawnSplitterShard(playerPx, playerPy, radialAngle, 0);
+            // ── A 60-DEGREE FORWARD FAN, not a 360 nova ──────────────────────
+            // The old version fired 8 seeds in a full ring for a second, boosted, aim-free pass.
+            // boosted pass. Two problems with that under the current ice identity. A nova has no
+            // aim, so the weapon had no direction to be good or bad at -- and now that ice's job
+            // is APPLYING brittle rather than dealing damage, an omnidirectional applicator makes
+            // position irrelevant, which is the one thing ice is supposed to care about. The
+            // recall also meant every cast covered the same ground twice, so there was nothing to
+            // decide after firing.
+            //
+            // A fan you point sweeps a direction and commits to it. Combined with phase 1's
+            // totem, the pair reads as: plant the chill field, then sweep the lane you want.
+            // 60 degrees, not 90. And the count drops with it: narrowing the cone ALONE is not a
+            // nerf, because shards pierce and each enemy can be hit once per shard -- squeezing 7
+            // shards into a tighter arc means more of them overlap a single target, so the weapon
+            // loses area and GAINS single-target burst. Holding angular density fixed at 15 deg
+            // apart (7 over 90 -> 5 over 60) cuts coverage without handing back focused damage.
+            const FAN_COUNT = 5 + 2 * WeaponLevels.perk('fractal_shard', 'fan');   // Burst Fan: more
+            this._fractalVolley = Math.random().toString(36).slice(2);   // the burst's shards fall off on one target
+            const FAN_HALF  = Math.PI / 6;      // 30 deg either side = a 60 deg fan
+            for (let i = 0; i < FAN_COUNT; i++) {
+                const t = FAN_COUNT === 1 ? 0.5 : i / (FAN_COUNT - 1);
+                this._spawnSplitterShard(playerPx, playerPy, angle - FAN_HALF + t * (FAN_HALF * 2), 0);
             }
         }
     }
@@ -1634,7 +3024,7 @@ class WeaponSystem {
     }
 
     _applyPurpleMark(enemy, ex, ey) {
-        // Upgrade from gold — 2× damage from ALL sources, longer duration
+        // Upgrade from gold — 1.5× damage from ALL sources (resolveElementalHit, damageEnemy, bosses), longer duration
         const MARK_DURATION = 7000;
         this._clearShatterMark(enemy);
         enemy._shatterMarked = true;
@@ -1726,9 +3116,9 @@ class WeaponSystem {
         this.tweens.add({ targets: mv, scaleX: 1.3, scaleY: 1.3, alpha: 0.55, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
-    _spawnPierceSpike(x, y, angle, volleyId = null) {
+    _spawnPierceSpike(x, y, angle, volleyId = null, plantsTotem = false) {
         const SPEED  = 580;  // very fast — feels like a bullet
-        const DAMAGE = 12 * this.damageScaling;
+        const DAMAGE = (this._fractalSpikeDmg || 12) * this.damageScaling;
         const vx = Math.cos(angle) * SPEED;
         const vy = Math.sin(angle) * SPEED;
 
@@ -1770,6 +3160,16 @@ class WeaponSystem {
             _lastAfterimageTime: 0,
             isCannonShard: true,
             isPierceSpike: true,
+            _plantsTotem: plantsTotem,
+            // NO isPiercing FLAG, deliberately. I added one here and it was wrong: both fractal
+            // phases ALREADY pierce, through a different mechanism entirely. Their collision
+            // branches keep a `hitEnemies` Set, skip anything already in it, and simply never
+            // destroy the shard -- pierce by omission. The isPiercing/maxPierces pair belongs to
+            // other shard types (nova, heal) and adding it here stacked a second, conflicting
+            // pierce system on top of the working one.
+            //
+            // Lesson for next time: a flag being unset does not mean the behaviour is absent.
+            // Read the collision branch, not the constructor.
             volleyId,
             hitEnemies: new Set(),
             piercedEnemies: new Set(),
@@ -1853,18 +3253,9 @@ class WeaponSystem {
                     if (enemy.isFrozen) continue; // already frozen — don't re-stack chill
                     const dx = enemy.x - tpx, dy = enemy.y - tpy;
                     if (Math.sqrt(dx*dx + dy*dy) > CHILL_RADIUS) continue;
-                    // Apply chill stack — ignores iceImmune (that's the whole point)
-                    if (!enemy.chillStacks) enemy.chillStacks = 0;
-                    enemy.chillStacks++;
-                    enemy.lastChillTime = this.time.now;
-                    this._updateChillIndicator(enemy);
-                    if (enemy.chillStacks >= 3) {
-                        enemy.chillStacks = 0;
-                        this._destroyChillIndicator(enemy);
-                        this.freezeEnemy(enemy, 4000);
-                        this.gainUltCharge(this.ultChargePerFreeze);
-                        this.showStatusText(enemy.sprite.x, enemy.sprite.y - 12, 'FROZEN', '#88ddff');
-                    }
+                    // Ignores iceImmune -- that's the whole point of the totem.
+                    // Was freezeEnemy(4000): a leftover 4-second hard stun on a weapon path.
+                    this.applyChill(enemy, this._chillCfg().TOTEM);
                     // Small chill puff visual
                     const cf = this.add.graphics().setDepth(3.5);
                     cf.x = enemy.sprite.x; cf.y = enemy.sprite.y - 10;
@@ -1902,10 +3293,26 @@ class WeaponSystem {
     // Each shard splits into 2 after SPLIT_INTERVAL ms. Capped at gen 4
     // (1 → 2 → 4 → 8 → 16, max 31 total projectiles per shot).
     _spawnSplitterShard(x, y, angle, gen) {
-        const MAX_GEN      = 4;
+        // ── WHY THIS IS SO MUCH SMALLER THAN IT WAS ──────────────────────────
+        // Every shard split into TWO, four times over. One seed therefore became
+        // 1+2+4+8+16 = 31 shards, and every split also detonated an AoE at its own position.
+        // Five seeds in the fan meant 155 piercing shards and 75 explosions per cast.
+        //
+        // That was survivable while phase 2 was a 360 ring, because the shards sprayed away from
+        // each other and any single enemy only met a few. Narrowing it to a 60 degree fan pointed
+        // the entire cascade down one lane -- so nerfing the ARC was a large buff to the damage
+        // anything in front of you actually took. That is why it melted.
+        //
+        // Two generations instead of four: 7 shards per seed, 35 per cast, 15 explosions. Ice's
+        // payoff is meant to be the shatter, so the fan's job is covering ground with CHILL.
+        const MAX_GEN      = 2;
         const SPLIT_INTERVAL = 250; // ms between splits
         const SPEEDS     = [160, 130, 105, 85, 70];
-        const DAMAGES    = [10,   6,   3,   2,  1];
+        // x0.5 (was 5 / 3 / 2 / 1 / 1). x0.65 measured with purple at 1.5x on
+        // these shards only; purple reaches every source now and the fan chills (cubes: brittle),
+        // and at x0.65 it was still the best group weapon in the game (290 against the staff's 262).
+        // ×0.72 again (2026-10-18): at 217 on packs it still out-crowded Ball Lightning
+        const DAMAGES    = [3.75, 2.35, 1.55, 0.8, 0.8];   // ×1.7 (2026-10-18): the burst is the medium AoE now, the spike only sets up
         const SIZES      = [8,    6,   5,   4,  3];
 
         const speed  = SPEEDS[gen];
@@ -1986,6 +3393,7 @@ class WeaponSystem {
             lastTrailTime: 0,
             isCannonShard: true,
             isSplitter: true,
+            volleyId: this._fractalVolley,   // the burst it came from (_volleyMult)
             splitterGen: gen,
             splitterCanSplit: gen < MAX_GEN,
             splitterAngle: angle,
@@ -2002,14 +3410,18 @@ class WeaponSystem {
             });
         }
 
-        // Gen 4 fragments: after a brief travel window, snap back to player
+        // ── RECALL, measured in DISTANCE rather than on a timer ──────────────
+        // The old version flipped after a flat 1200ms. At the final generation's speed that is
+        // roughly 125px -- barely past arm's reach, so fragments turned around while still on top
+        // of you and the return pass re-hit the same enemies as the outbound one.
+        //
+        // Distance is also the honest unit: it does not silently change meaning when a
+        // generation's speed is retuned, which a hardcoded duration does.
         if (gen === MAX_GEN) {
-            shardObj._recallTimer = this.time.delayedCall(1200, () => {
-                if (!shardObj.sprite?.active) return;
-                shardObj.isRecalling = true;
-                shardObj.hitEnemies = new Set(); // reset so return path can re-hit
-                shardObj._recallDamage = damage * 2.2; // boosted return damage
-            });
+            shardObj._isFinalGen    = true;
+            shardObj._recallAfterPx = 260;
+            shardObj._travelledPx   = 0;
+            shardObj._recallDmgMult = 2.2;   // boosted return damage
         }
 
         this.iceShards.push(shardObj);
@@ -2028,23 +3440,28 @@ class WeaponSystem {
 
         // ── AoE ice explosion at every split point ──
         const AOE_R = 22 + (4 - s.splitterGen) * 5; // gen0 splits are bigger
-        const splitDmg = s.damage * 0.5;
+        const splitDmg = s.damage * 0.3;   // every split detonates; 0.5 compounded far too hard
         // Visual
-        const burst = this.add.graphics().setDepth(5);
+        // a crisp ring and a frost star rather than filled discs: a fan's cascade lands dozens of these together, and
+        // stacked fills (with the bloom on top) blew the whole area out to white. Past a handful at once, rings only.
+        const burst = this.add.graphics().setDepth(5), now = this.time.now;
+        this._splitFx = (this._splitFx || []).filter(t => now - t < 120); this._splitFx.push(now);
+        const busy = this._splitFx.length > 5;
         burst.x = x; burst.y = y;
-        burst.fillStyle(0xaaeeff, 0.28); burst.fillCircle(0, 0, AOE_R * 1.4);
-        burst.fillStyle(0xddf8ff, 0.45); burst.fillCircle(0, 0, AOE_R * 0.7);
-        burst.fillStyle(0xffffff, 0.85); burst.fillCircle(0, 0, 4 + s.splitterGen * 1.5);
-        burst.lineStyle(1.5, 0xffffff, 0.75); burst.strokeCircle(0, 0, AOE_R * 0.9);
-        for (let i = 0; i < 6; i++) {
-            const sa = baseAngle + (i / 6) * Math.PI * 2;
-            burst.lineStyle(1.2, i % 2 === 0 ? 0xffffff : 0x88ddff, 0.75);
-            burst.beginPath(); burst.moveTo(Math.cos(sa)*4, Math.sin(sa)*4); burst.lineTo(Math.cos(sa)*(AOE_R*1.1), Math.sin(sa)*(AOE_R*1.1)); burst.strokePath();
+        if (!busy) {
+            burst.fillStyle(0xaaeeff, 0.12); burst.fillCircle(0, 0, AOE_R * 0.9);
+            burst.fillStyle(0xffffff, 0.8); burst.fillCircle(0, 0, 2 + s.splitterGen);
+            for (let i = 0; i < 6; i++) {
+                const sa = baseAngle + (i / 6) * Math.PI * 2;
+                burst.lineStyle(1.2, i % 2 === 0 ? 0xe8faff : 0x88ddff, 0.7);
+                burst.beginPath(); burst.moveTo(Math.cos(sa)*3, Math.sin(sa)*3); burst.lineTo(Math.cos(sa)*(AOE_R*0.8), Math.sin(sa)*(AOE_R*0.8)); burst.strokePath();
+            }
         }
-        this.tweens.add({ targets: burst, scaleX: 1.9, scaleY: 1.9, alpha: 0, duration: 190, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
+        burst.lineStyle(busy ? 1 : 1.5, 0xddf8ff, busy ? 0.45 : 0.8); burst.strokeCircle(0, 0, AOE_R * 0.9);
+        this.tweens.add({ targets: burst, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
 
         // Damage enemies in AoE radius at split point
-        for (const enemy of this.enemies) {
+        for (const enemy of [...this.enemies]) {
             if (!enemy.sprite?.active) continue;
             const edx = enemy.sprite.x - x, edy = enemy.sprite.y - y;
             if (edx*edx + edy*edy > AOE_R*AOE_R) continue;
@@ -2052,8 +3469,14 @@ class WeaponSystem {
             if (enemy.isFrozen) {
                 this._triggerShatterBurst(enemy, 1.6); // Fractal Shard — buffed shatter damage
             } else {
-                enemy.health -= splitDmg;
-                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(splitDmg), '#aaeeff');
+                if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                // Tagged 'physical' until now, so the splitter -- an ICE weapon's AoE --
+                // sailed straight past ice resistance at full damage while the same
+                // weapon's spikes and shatter were cut to 0.40x.
+                const _rd2406 = this.resolveElementalHit(enemy, splitDmg, 'ice');
+                if (_rd2406 === null) continue;
+                enemy.health -= _rd2406;
+                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rd2406), '#aaeeff');
                 this.updateEnemyHealthBar(enemy);
                 this.gainUltCharge(this.ultChargePerHit);
                 if (enemy.health <= 0) this.killEnemy(enemy);
@@ -2069,92 +3492,43 @@ class WeaponSystem {
     icicleStaffAttack(targetX, targetY) {
         const currentTime = this.time.now;
 
-        // ── Accuracy zone constants ──────────────────────────────────────────
-        const ACCURACY_RADIUS_TILES = 2.75;
-        const ACCURACY_RADIUS_PX    = ACCURACY_RADIUS_TILES * this.TILE_SIZE;
-
-        // ── Per-shot config ──────────────────────────────────────────────────
-        const PELLETS         = 4;
-        const HITS_TO_CHARGE  = 28;
-
-        // Cooldown: inside accuracy zone = slow (1200ms), outside = fast (380ms)
+        // A plain ice shotgun (reworked 2026-10-18; it had a range gimmick nobody used):
+        // PELLETS icicles in a fixed cone every COOLDOWN, the same damage wherever you aim,
+        // reaching RANGE tiles. Each one chills a little and splashes the tiles beside what it
+        // hits. Up close the whole cone lands on one target; into a crowd it spreads. Perks:
+        // Spread Shot (more icicles), Tight Choke (a narrower cone that reaches further).
+        const C = { COOLDOWN: 760, DMG: 10.5, SPREAD: 0.30, RANGE: 6, SPEED: 620, CHILL: 0.8, SHATTER: 1.4 };   // CHILL 0.8: a point-blank volley gets ~2.4 of the 3-stack bar (was 0.35, ~1, and the target died first)
+        const choke = WeaponLevels.perk('icicle_cannon', 'choke');
+        // Spread Shot: +1, +2 icicles; at its max it's a double barrel instead, two volleys a shot (the second 140ms on)
+        const spreadLv = WeaponLevels.perk('icicle_cannon', 'pellets'), doubleBarrel = spreadLv >= 3;
+        const PELLETS         = 5 + Math.min(2, spreadLv);
         const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
         const worldX   = targetX + this.cameras.main.scrollX;
         const worldY   = targetY + this.cameras.main.scrollY;
         const cursorDx = worldX - playerPx;
         const cursorDy = worldY - playerPy;
-        const cursorDist = Math.sqrt(cursorDx * cursorDx + cursorDy * cursorDy);
-
-        // 0 = cursor at player, 1 = cursor at edge of accuracy zone, >1 = outside
-        const proximityT = Math.min(cursorDist / ACCURACY_RADIUS_PX, 1.0); // clamped 0–1
-        const inZone     = cursorDist <= ACCURACY_RADIUS_PX;
-
-        const CD_MIN = 220;   // fastest (at max range)
-        const CD_MAX = 1000;  // slowest (inside zone / point blank)
-        // Spectrum: cursor at player = CD_MAX, grows faster with distance, caps at CD_MIN
-        const MAX_DIST_PX = ACCURACY_RADIUS_PX * 5; // distance at which cap is reached
-        const distFrac    = Math.min(cursorDist / MAX_DIST_PX, 1.0);
-        const effectiveCD = Math.round(CD_MAX - (CD_MAX - CD_MIN) * distFrac);
-
-        if (currentTime - (this.lastIcicleStaffTime || 0) < effectiveCD) return;
-        this.lastIcicleStaffTime = currentTime;
-
-        // ── Charged nova burst — fired instead of normal burst once charged ──
-        if (this._icicleHealModeActive && (this._icicleHitCounter || 0) >= HITS_TO_CHARGE) {
-            this._fireIcicleNovaBurst(playerPx, playerPy);
-            this._icicleHealModeActive = false;
-            this._icicleHitCounter = 0;
-            this._updateIcicleChargeBar();
-            return;
+        if (!this._icicleSecond) {
+            if (currentTime - (this.lastIcicleStaffTime || 0) < C.COOLDOWN) return;
+            this.lastIcicleStaffTime = currentTime;
+            if (doubleBarrel) this.time.delayedCall(140, () => {
+                if (this.currentElement !== 'ice' || this._deathScreenActive) return;
+                this._icicleSecond = true;
+                try { this.icicleStaffAttack(targetX, targetY); } finally { this._icicleSecond = false; }
+            });
         }
-
-        // ── Spread: tight inside zone, fans out with distance ────────────────
-        // proximityT = 0 (cursor on player) → max spread (panic spray)
-        // proximityT = 1 (edge of zone) → min spread inside zone
-        // outside zone: spread grows further with distance
-        const SPREAD_MIN = 0.04;  // ~2.3° half-angle, tight cluster
-        const SPREAD_MAX = 0.75;  // ~43° half-angle, wide fan
-        let spreadHalf;
-        if (inZone) {
-            // Inside: spread is very tight, constant regardless of exact distance
-            spreadHalf = SPREAD_MIN;
-        } else {
-            // Outside: spreads from SPREAD_MIN → SPREAD_MAX over 0–4× ACCURACY_RADIUS beyond zone edge
-            const outsideFrac = Math.min((cursorDist - ACCURACY_RADIUS_PX) / (ACCURACY_RADIUS_PX * 4), 1.0);
-            spreadHalf = SPREAD_MIN + (SPREAD_MAX - SPREAD_MIN) * outsideFrac;
-        }
-
-        // ── Pellet speed: fast inside zone, slower outside ───────────────────
-        const SPEED_FAST = 700;
-        const SPEED_SLOW = 130;
-        const pelletSpeed = inZone
-            ? SPEED_FAST
-            : SPEED_SLOW + Math.max(0, SPEED_SLOW - (cursorDist - ACCURACY_RADIUS_PX) * 0.5);
-
-        // ── Damage ────────────────────────────────────────────────────────────
-        // Inside zone: high per-pellet damage rewarding close range play
-        // point blank (dist=0) → 9.0×, zone edge → 4.0×, outside zone → 0.8×
-        const DMG_POINTBLANK = 9.0 * this.damageScaling;
-        const DMG_ZONE_EDGE  = 4.0 * this.damageScaling;
-        const DMG_OUTSIDE    = 0.8 * this.damageScaling;
-        let shardDmg;
-        if (inZone) {
-            shardDmg = DMG_POINTBLANK + (DMG_ZONE_EDGE - DMG_POINTBLANK) * (cursorDist / ACCURACY_RADIUS_PX);
-        } else {
-            shardDmg = DMG_OUTSIDE;
-        }
-
-        // Shatter mult: point blank = 2.5×, zone edge = 1.2×, outside = 0.5×
-        const shatterMultCannon = inZone
-            ? 1.2 + 1.3 * (1.0 - cursorDist / ACCURACY_RADIUS_PX)
-            : 0.5;
-
-        // ── Splash (inside zone only) ─────────────────────────────────────────
-        const SPLASH_RADIUS = 18; // px
-        const SPLASH_DMG    = shardDmg * 0.5;
-
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
+        const inZone = true;                                   // (the visuals below still read it)
+        const spreadHalf = C.SPREAD * (1 - 0.2 * choke) * Enchants.spread('icicle_cannon');   // True Aim narrows the cone
+        const pelletSpeed = C.SPEED;
+        const range = (C.RANGE + 1.5 * choke) * this.TILE_SIZE;
+        const shardDmg = C.DMG * this.damageScaling;
+        const shatterMultCannon = C.SHATTER;
+        const chillWeight = C.CHILL;
+        const SPLASH_RADIUS = 30; // px: the 4 tiles beside the target
+        const SPLASH_DMG    = shardDmg * 0.35;
         const baseAngle = Math.atan2(cursorDy, cursorDx);
+        const volleyId = Math.random().toString(36).slice(2);   // one shot's icicles fall off on one target (_volleyMult)
 
         // ── Fire PELLETS pellets ───────────────────────────────────────────────
         for (let s = 0; s < PELLETS; s++) {
@@ -2196,7 +3570,8 @@ class WeaponSystem {
             this.iceShards.push({
                 sprite: container, vx, vy,
                 damage: capturedDmg,
-                startX: playerPx, startY: playerPy,
+                _chillWeight: chillWeight,
+                startX: playerPx, startY: playerPy, _range: range, volleyId,
                 createdAt: this.time.now,
                 isCannonShard: true,
                 isPiercing: capturedPiercing,
@@ -2211,48 +3586,41 @@ class WeaponSystem {
                 hitEnemies: new Set(),
                 piercedEnemies: new Set(),
                 _onHit: (enemy) => {
-                    this.applyIcicleCannonHit(enemy, capturedDmg, capturedShatterM);
+                    // chillWeight, not s._chillWeight: `s` is this loop's INDEX, so the weighting
+                    // read undefined and every pellet chilled (and charged the nova) at full weight
+                    this.applyIcicleCannonHit(enemy, capturedDmg * this._volleyMult(enemy, volleyId), capturedShatterM, chillWeight);
 
                     // ── Accuracy zone splash ─────────────────────────────────
                     if (capturedInZone && enemy.sprite?.active) {
                         const sx = enemy.sprite.x, sy = enemy.sprite.y;
                         // Splash visual
-                        const splashG = this.add.graphics().setDepth(4);
-                        splashG.x = sx; splashG.y = sy;
-                        splashG.fillStyle(0xaaeeff, 0.35); splashG.fillCircle(0, 0, SPLASH_RADIUS * 1.3);
-                        splashG.fillStyle(0xffffff, 0.70); splashG.fillCircle(0, 0, SPLASH_RADIUS * 0.45);
-                        splashG.lineStyle(1.2, 0xddf8ff, 0.75); splashG.strokeCircle(0, 0, SPLASH_RADIUS * 0.9);
-                        this.tweens.add({ targets: splashG, scaleX: 1.7, scaleY: 1.7, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => splashG.destroy() });
+                        VisualFX.impact(this, sx, sy - 4, 'ice', SPLASH_RADIUS * 0.8);   // a bigger crack of shards
 
                         // Splash damage + 1 chill stack to nearby enemies
-                        for (const nearEnemy of this.enemies) {
-                            if (!nearEnemy.sprite?.active) continue;
+                        for (const nearEnemy of [...this.enemies]) {
+                            // the pellet's own target is at distance 0: it took a second +50% and chill
+                            if (nearEnemy === enemy || !nearEnemy.sprite?.active) continue;
                             const sdx = nearEnemy.sprite.x - sx, sdy = nearEnemy.sprite.y - sy;
                             if (sdx*sdx + sdy*sdy > SPLASH_RADIUS*SPLASH_RADIUS) continue;
                             if (nearEnemy.fireImmune || nearEnemy.elementImmune) continue;
                             if (nearEnemy.isFrozen) {
                                 this._triggerShatterBurst(nearEnemy, capturedShatterM);
                             } else if (!nearEnemy.iceImmune) {
-                                nearEnemy.health -= SPLASH_DMG;
-                                this.showDamageNumber(nearEnemy.sprite.x, nearEnemy.sprite.y - 8, Math.round(SPLASH_DMG), '#aaeeff');
+                                const _rd2587 = this.resolveElementalHit(nearEnemy, SPLASH_DMG, 'ice');
+                                if (_rd2587 === null) continue;
+                                nearEnemy.health -= _rd2587;
+                                this.showDamageNumber(nearEnemy.sprite.x, nearEnemy.sprite.y - 8, Math.round(_rd2587), '#aaeeff');
                                 this.updateEnemyHealthBar(nearEnemy);
                                 if (nearEnemy.health <= 0) { this.killEnemy(nearEnemy); continue; }
                             }
-                            // Apply 1 chill stack to all splash targets (including iceImmune)
-                            if (!nearEnemy.chillStacks) nearEnemy.chillStacks = 0;
-                            nearEnemy.chillStacks++;
-                            nearEnemy.lastChillTime = this.time.now;
-                            this._updateChillIndicator(nearEnemy);
-                            if (nearEnemy.chillStacks >= 3) {
-                                nearEnemy.chillStacks = 0;
-                                nearEnemy.frozenAt = this.time.now;
-                                this._destroyChillIndicator(nearEnemy);
-                                this.freezeEnemy(nearEnemy, 10000);
-                                this.gainUltCharge(this.ultChargePerFreeze);
-                                nearEnemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
-                                    if (nearEnemy.sprite?.active) this._shatterWaterSplash(nearEnemy.x, nearEnemy.y);
-                                });
-                            }
+                            // Splash chill is weighted the same way. Left flat, a ranged spam
+                            // would still chill whole GROUPS for free, which is the same exploit
+                            // one step removed. Applies to iceImmune enemies as before -- they
+                            // cannot be damaged but can still be frozen and shattered.
+                            // Was freezeEnemy(10000) -- the cannon's DIRECT hits cubed while its
+                            // own splash handed out a ten-second hard stun. Same weapon, two
+                            // different mechanics, depending on which enemy you clipped.
+                            this.applyChill(nearEnemy, chillWeight * 0.5, { chargeMult: 0.65 });
                         }
                     }
 
@@ -2272,8 +3640,8 @@ class WeaponSystem {
                         }
                     }
 
-                    // Count every pellet hit toward heal charge
-                    this._icicleHitCounter = Math.min(HITS_TO_CHARGE, (this._icicleHitCounter || 0) + 1);
+                    // each icicle that lands is one of the 28 that charge the Frost Shield
+                    this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1);
                     this._updateIcicleChargeBar();
                 }
             });
@@ -2364,24 +3732,16 @@ class WeaponSystem {
                     if (enemy.isFrozen) {
                         this._triggerShatterBurst(enemy, 1 / 7.5);
                     } else if (!enemy.iceImmune) {
-                        enemy.health -= NOVA_DMG;
-                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(NOVA_DMG), '#44ffaa');
+                        if (this._phasedOut(enemy)) return;   // phased out: not in the world
+                        const _rd2719 = this.resolveElementalHit(enemy, NOVA_DMG, 'ice');
+                        if (_rd2719 === null) return;
+                        enemy.health -= _rd2719;
+                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rd2719), '#44ffaa');
                         this.updateEnemyHealthBar(enemy);
                         if (enemy.health <= 0) { this.killEnemy(enemy); return; }
-                        if (!enemy.chillStacks) enemy.chillStacks = 0;
-                        enemy.chillStacks++;
-                        enemy.lastChillTime = this.time.now;
-                        this._updateChillIndicator(enemy);
-                        if (enemy.chillStacks >= 3) {
-                            enemy.chillStacks = 0;
-                            enemy.frozenAt = this.time.now;
-                            this._destroyChillIndicator(enemy);
-                            this.freezeEnemy(enemy, 10000);
-                            this.gainUltCharge(this.ultChargePerFreeze);
-                            enemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
-                                if (enemy.sprite?.active) this._shatterWaterSplash(enemy.x, enemy.y);
-                            });
-                        }
+                        // The melt timer here was dead weight: it fired at 10s and tested
+                        // isFrozen, which a cube never sets. shatterIceCube owns the water now.
+                        this.applyChill(enemy, this._chillCfg().SPLASH);
                     }
                     // Heal on every enemy hit — keeps the sustain identity of the old heal shard
                     this.health = Math.min((this.maxHealth || 100) + 25, this.health + HEAL_ON_HIT);
@@ -2399,14 +3759,16 @@ class WeaponSystem {
                     this.tweens.add({ targets: burstG, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 220, onComplete: () => burstG.destroy() });
 
                     // Splash damage to nearby enemies within SPLASH_R
-                    for (const other of this.enemies) {
+                    for (const other of [...this.enemies]) {
                         if (other === enemy || !other.sprite?.active) continue;
                         const edx = other.sprite.x - enemy.sprite.x, edy = other.sprite.y - enemy.sprite.y;
                         if (edx*edx + edy*edy > SPLASH_R*SPLASH_R) continue;
                         if (other.iceImmune || other.fireImmune || other.elementImmune) continue;
                         const splashDmg = NOVA_DMG * 0.5;
-                        other.health -= splashDmg;
-                        this.showDamageNumber(other.sprite.x, other.sprite.y - 10, Math.round(splashDmg), '#44ffaa');
+                        const _rd2776 = this.resolveElementalHit(other, splashDmg, 'ice');
+                        if (_rd2776 === null) continue;
+                        other.health -= _rd2776;
+                        this.showDamageNumber(other.sprite.x, other.sprite.y - 10, Math.round(_rd2776), '#44ffaa');
                         this.updateEnemyHealthBar(other);
                         if (other.health <= 0) this.killEnemy(other);
                     }
@@ -2467,7 +3829,7 @@ class WeaponSystem {
             this.tweens.add({ targets: burstG, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 350, ease: 'Quad.easeOut', onComplete: () => burstG.destroy() });
 
             // AoE damage + heal on every enemy in radius
-            for (const enemy of this.enemies) {
+            for (const enemy of [...this.enemies]) {
                 if (!enemy.sprite?.active) continue;
                 if (enemy.fireImmune || enemy.elementImmune) continue;
                 const edx = enemy.sprite.x - ix, edy = enemy.sprite.y - iy;
@@ -2475,25 +3837,15 @@ class WeaponSystem {
                 if (enemy.isFrozen) {
                     this._triggerShatterBurst(enemy, 1 / 7.5);
                 } else if (!enemy.iceImmune) {
-                    enemy.health -= HEAL_SHARD_DMG;
-                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(HEAL_SHARD_DMG), '#44ffaa');
+                    if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                    const _rd2831 = this.resolveElementalHit(enemy, HEAL_SHARD_DMG, 'ice');
+                    if (_rd2831 === null) continue;
+                    enemy.health -= _rd2831;
+                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rd2831), '#44ffaa');
                     this.updateEnemyHealthBar(enemy);
                     if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
                     // 1 chill stack from splash
-                    if (!enemy.chillStacks) enemy.chillStacks = 0;
-                    enemy.chillStacks++;
-                    enemy.lastChillTime = this.time.now;
-                    this._updateChillIndicator(enemy);
-                    if (enemy.chillStacks >= 3) {
-                        enemy.chillStacks = 0;
-                        enemy.frozenAt = this.time.now;
-                        this._destroyChillIndicator(enemy);
-                        this.freezeEnemy(enemy, 10000);
-                        this.gainUltCharge(this.ultChargePerFreeze);
-                        enemy._freezeMeltTimer = this.time.delayedCall(10000, () => {
-                            if (enemy.sprite?.active) this._shatterWaterSplash(enemy.x, enemy.y);
-                        });
-                    }
+                    this.applyChill(enemy, this._chillCfg().SPLASH);
                 }
                 // Heal per enemy hit
                 this.health = Math.min((this.maxHealth || 100) + 25, this.health + HEAL_ON_HIT);
@@ -2573,50 +3925,9 @@ class WeaponSystem {
     }
 
     // ── Accuracy circle — drawn each frame while icicle cannon is equipped ────
-    _updateIcicleAccuracyCircle(targetX, targetY) {
-        const isCannon = this.currentElement === 'ice' &&
-            (this.equippedWeapons?.ice || 'ice_fists') === 'icicle_cannon';
-
-        if (!isCannon) {
-            if (this._icicleAccuracyCircle) { this._icicleAccuracyCircle.destroy(); this._icicleAccuracyCircle = null; }
-            return;
-        }
-
-        const ACCURACY_RADIUS_PX = 2.75 * this.TILE_SIZE;
-        const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const worldX   = targetX + this.cameras.main.scrollX;
-        const worldY   = targetY + this.cameras.main.scrollY;
-        const cursorDx = worldX - playerPx;
-        const cursorDy = worldY - playerPy;
-        const cursorDist = Math.sqrt(cursorDx * cursorDx + cursorDy * cursorDy);
-        const inZone = cursorDist <= ACCURACY_RADIUS_PX;
-
-        if (!this._icicleAccuracyCircle) {
-            this._icicleAccuracyCircle = this.add.graphics().setDepth(1.5);
-        }
-        const circ = this._icicleAccuracyCircle;
-        circ.clear();
-        circ.x = playerPx;
-        circ.y = playerPy;
-
-        // Pulse alpha based on time
-        const pulse = 0.55 + 0.25 * Math.sin(this.time.now / 280);
-
-        if (inZone) {
-            // Inside: bright cyan glow — player is in accurate mode
-            circ.lineStyle(1.5, 0x44eeff, pulse * 0.9);
-            circ.strokeCircle(0, 0, ACCURACY_RADIUS_PX);
-            circ.lineStyle(0.6, 0xaaf8ff, pulse * 0.5);
-            circ.strokeCircle(0, 0, ACCURACY_RADIUS_PX - 3);
-            // Small inner dot indicator
-            circ.fillStyle(0x44eeff, pulse * 0.6);
-            circ.fillCircle(0, 0, 3);
-        } else {
-            // Outside: dim dashed-style (drawn as short arcs)
-            circ.lineStyle(1.0, 0x336688, 0.35);
-            circ.strokeCircle(0, 0, ACCURACY_RADIUS_PX);
-        }
+    // The Icicle Cannon had an aiming circle; the shotgun rework dropped it. Clears a leftover.
+    _updateIcicleAccuracyCircle() {
+        if (this._icicleAccuracyCircle) { this._icicleAccuracyCircle.destroy(); this._icicleAccuracyCircle = null; }
     }
 
     _updateIcicleChargeBar() {
@@ -2630,6 +3941,7 @@ class WeaponSystem {
         const currentTime = this.time.now;
         if (currentTime - (this.lastFlameSwordTime || 0) < 750) return;
         this.lastFlameSwordTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
@@ -2652,25 +3964,50 @@ class WeaponSystem {
 
         // For each sample angle cast at range 1.5 tiles (hits the ring of tiles
         // 1–2 away) and round to nearest tile. Dedupe by tile key.
-        const tileMap = new Map();
-        for (const angle of sampleAngles) {
-            for (const r of [1.0, 1.85]) {
-                const wx = playerPx + Math.cos(angle) * r * this.TILE_SIZE;
-                const wy = playerPy + Math.sin(angle) * r * this.TILE_SIZE;
-                const tx = Math.round((wx - this.TILE_SIZE / 2) / this.TILE_SIZE);
-                const ty = Math.round((wy - this.TILE_SIZE / 2) / this.TILE_SIZE);
-                const key = `${tx},${ty}`;
-                // Skip player tile and already-added tiles
-                if (tx === this.playerX && ty === this.playerY) continue;
-                if (!tileMap.has(key)) tileMap.set(key, { x: tx, y: ty });
-                // Stop once we have 5 unique tiles
-                if (tileMap.size >= 5) break;
+        // Gather EVERY candidate first, then choose which 5 to keep. The previous
+        // version broke out the moment it had 5 tiles while iterating angle-outer, so
+        // it filled up from the FIRST sample angle and never reached the last two: the
+        // right half of the 110-degree swing was drawn but hit nothing, at every facing.
+        // Collecting first and ranking by angular distance from where you aimed keeps
+        // the arc symmetric and puts the tiles you actually hit nearest the centre.
+        // Build the tile set in MIRRORED UNITS, working outward from where you aimed.
+        // A unit is one ring-step of one angle pair (-x and +x together) or the centre
+        // ray alone, so a unit is symmetric by construction. Units are committed whole
+        // or not at all, which is what actually guarantees the swing is even: ranking
+        // individual tiles and slicing to a budget still cuts a pair in half whenever
+        // the budget lands mid-pair, leaving one wing longer than the other.
+        // 3, was 6. Fire is the single-target element: a 6-tile sweep at 12 made the T2 sword
+        // hit one target softer than the free Flame Fists (37 vs 46 DPS, measured) while
+        // out-damaging every T2 on a crowd. Three tiles at 20 puts it back on fire's side:
+        // 47 to one target, 95 to a pack of five.
+        const MAX_TILES = 4 + WeaponLevels.perk('flame_sword', 'arc');   // the 3-tile arc in front + the tile beyond its middle (ring order, below)
+        const tileAt = (angle, r) => {
+            const wx = playerPx + Math.cos(angle) * r * this.TILE_SIZE;
+            const wy = playerPy + Math.sin(angle) * r * this.TILE_SIZE;
+            const tx = Math.round((wx - this.TILE_SIZE / 2) / this.TILE_SIZE);
+            const ty = Math.round((wy - this.TILE_SIZE / 2) / this.TILE_SIZE);
+            if (tx === this.playerX && ty === this.playerY) return null;
+            return { x: tx, y: ty };
+        };
+        const chosen = new Map();
+        // Centre first, then each symmetric pair of offsets, inner ring before outer.
+        // The ring next to you first, every angle, then the next ring out. Angle-first took the
+        // centre tile at both radii, so no flanking pair fit under MAX_TILES after it: the arc
+        // came out 2 tiles straight ahead, or 3 with one side only.
+        for (const r of [1.0, 1.85]) {
+            for (const spread of [0, halfSpread * 0.5, halfSpread]) {
+                const unit = (spread === 0)
+                    ? [tileAt(facingAngle, r)]
+                    : [tileAt(facingAngle - spread, r), tileAt(facingAngle + spread, r)];
+                const fresh = unit.filter(t => t && !chosen.has(`${t.x},${t.y}`));
+                // Whole unit or nothing -- a partial commit is the asymmetry itself.
+                if (chosen.size + fresh.length > MAX_TILES) continue;
+                for (const t of fresh) chosen.set(`${t.x},${t.y}`, t);
             }
-            if (tileMap.size >= 5) break;
         }
-        const swipeTiles = [...tileMap.values()];
+        const swipeTiles = [...chosen.values()];
 
-        const damage = 12 * this.damageScaling;
+        const damage = 20 * this.damageScaling;   // was 12, see MAX_TILES
 
         // ── Arc sweep visual ───────────────────────────────────────────────
         const arcRadius = 2.6 * this.TILE_SIZE;
@@ -2711,6 +4048,7 @@ class WeaponSystem {
             const tpx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
             const tpy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
             this.time.delayedCall(SWING_DURATION * 0.5, () => this.spawnIgnitionTrail(tpx, tpy));
+            this._evaporate(tx, ty, 3);                  // two swings per puddle, six tiles a swing
 
             // Hit portal if on this tile
             const p = this.getPortalAt(tx, ty);
@@ -2722,22 +4060,15 @@ class WeaponSystem {
             for (const enemy of [...this.enemies]) {
                 if (enemy.x !== tx || enemy.y !== ty || hitEnemies.has(enemy)) continue;
                 hitEnemies.add(enemy);
-                if (enemy.iceImmune) {
-                    // Ice elementals are immune to all fire/physical damage
-                    this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#88eeff');
-                    this._triggerIceImmuneGlerpReaction();
-                    continue;
-                }
-                if (enemy.fireImmune) {
-                    // Fire elementals immune to direct damage but accumulate burn stacks
-                    if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
-                    continue;
-                }
-                if (enemy.elementImmune) { this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#8888ff'); continue; }
-                enemy.health -= damage;
-                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, damage, '#ff8800');
-                this.updateEnemyHealthBar(enemy);
-                if (enemy.health <= 0) this.killEnemy(enemy);
+                // Same routing fix as Flame Fists: the inline version bypassed
+                // ElementResist and every cross-element bonus. It also had two bugs of
+                // its own that this collapses away -- applyBurnStack was only reached on
+                // the fireImmune branch, so a NORMAL enemy never took a burn stack from
+                // this weapon at all (which also meant the sword could not feed the
+                // Magma Staff's stack ramp), and the successful-hit path never called
+                // gainUltCharge, so the sword built ult slower than the free fists.
+                this.damageEnemy(enemy, damage, 'fire');
+                if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
             }
         }
 
@@ -2747,11 +4078,15 @@ class WeaponSystem {
     magmaStaffAttack(targetX, targetY) {
         const currentTime = this.time.now;
 
-        // Cooldown scales with fireball count: base 1200ms + 120ms per extra fireball
-        const fireballCount = Math.min((this._magmaStaffFireballCount || 0) + 1, 6);
-        const cooldown = 1200 + (fireballCount - 1) * 120;
+        // Tier now comes from the staff's own heat, not from whatever enemy on the map
+        // happens to be burning hardest. See _magmaCfg / _addMagmaHeat above.
+        const C = this._magmaCfg();
+        const tier = this._magmaTier();
+        const fireballCount = C.FIREBALLS[tier - 1] + WeaponLevels.perk('magma_staff', 'volley');
+        const cooldown = C.COOLDOWN[tier - 1];
         if (currentTime - (this.lastMagmaStaffTime || 0) < cooldown) return;
         this.lastMagmaStaffTime = currentTime;
+        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         const worldX   = targetX + this.cameras.main.scrollX;
         const worldY   = targetY + this.cameras.main.scrollY;
@@ -2761,18 +4096,18 @@ class WeaponSystem {
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         const baseAngle = Math.atan2(dy, dx);
 
-        // Per-fireball damage is fixed across tiers — tier only affects fireball COUNT
-        // and cooldown (more shots per cast as stacks build), not per-hit damage.
-        // Burn stacks are now the reward for stacking tier, not raw fireball damage.
-        // (Lowered from 6 to 4.5 to balance the max-tier 3-per-shot shotgun below.)
-        const baseDmg = 4.5 * this.damageScaling;
+        // 9.0, up from 4.5. The old value was explicitly lowered "to balance the max-tier
+        // 3-per-shot shotgun" -- i.e. the five weak tiers were nerfed to pay for the one
+        // strong one, which is why tier 1 sat at 15% of the FREE weapon's dps. The pellets
+        // no longer multiply (see below), so the low end no longer has to fund the top.
+        const baseDmg = C.BASE_DMG * this.damageScaling;
 
         // Muzzle flash
-        const muzzle = this.add.graphics().setDepth(4).setScrollFactor(0);
-        const mx = playerPx - this.cameras.main.scrollX;
-        const my = playerPy - this.cameras.main.scrollY;
-        muzzle.fillStyle(0xff8800, 0.8); muzzle.fillCircle(mx, my, 10);
-        muzzle.fillStyle(0xffff44, 0.6); muzzle.fillCircle(mx, my, 5);
+        // at the player in the world (it used to be pinned at screen coords and drawn off its own
+        // origin, so the grow tween flung it to the bottom right of the screen)
+        const muzzle = this.add.graphics().setDepth(4).setPosition(playerPx, playerPy);
+        muzzle.fillStyle(0xff8800, 0.8); muzzle.fillCircle(0, 0, 10);
+        muzzle.fillStyle(0xffff44, 0.6); muzzle.fillCircle(0, 0, 5);
         this.tweens.add({ targets: muzzle, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 180, onComplete: () => muzzle.destroy() });
 
         // Fire fireballs sequentially with slight random spread.
@@ -2780,16 +4115,19 @@ class WeaponSystem {
         // instead of a single fireball — 6 shots × 3 pellets = 18 total fireballs.
         const SPEED = 210;
         const SHOT_INTERVAL = 90;
-        const leavesTrail = (fireballCount >= 6);
-        const isMaxTier = fireballCount >= 6;
-        const PELLETS_PER_SHOT = isMaxTier ? 3 : 1;
-        const PELLET_SPREAD = 0.32; // ~18.3° half-angle fan between the 3 pellets in a burst
+        const leavesTrail = tier >= C.TRAIL_TIER;
+        // One projectile per shot, always. See the note on BASE_DMG above for why the fan
+        // was removed and why the dps curve is unaffected by removing it.
+        const PELLETS_PER_SHOT = 1;
+        const PELLET_SPREAD = 0;
+        const pelletDmg = baseDmg;
 
+        const castId = Math.random().toString(36).slice(2);
         for (let i = 0; i < fireballCount; i++) {
             this.time.delayedCall(i * SHOT_INTERVAL, () => {
                 if (this._deathScreenActive) return;
                 const spread = 0.12 - (fireballCount - 1) * 0.01;
-                const shotAngle = baseAngle + (Math.random() - 0.5) * spread * 2;
+                const shotAngle = baseAngle + (Math.random() - 0.5) * spread * 2 * Enchants.spread('magma_staff');   // True Aim narrows it
 
                 for (let p = 0; p < PELLETS_PER_SHOT; p++) {
                     // Pellets fan evenly around shotAngle; single-pellet shots are unchanged
@@ -2808,7 +4146,7 @@ class WeaponSystem {
                         sprite:        container,
                         fireGraphics:  fireGraphics,
                         vx, vy,
-                        damage:        baseDmg,
+                        damage:        pelletDmg,
                         dirX:          Math.cos(angle),
                         dirY:          Math.sin(angle),
                         startX:        playerPx, startY: playerPy,
@@ -2817,6 +4155,11 @@ class WeaponSystem {
                         createdAt:     this.time.now,
                         lastFlameTime: this.time.now,
                         isStaffBall:   true,
+                        volleyId:      castId,   // one cast's fireballs fall off on one target (_volleyMult)
+                        // Whether this shot was fired at or above FOCUS_TIER. Captured at
+                        // fire time so a shot in flight keeps the tier it was launched at
+                        // rather than reading whatever heat happens to be current on hit.
+                        _focus:        tier >= C.FOCUS_TIER,
                         leavesTrail,
                         _burnApplied:  new Set(),
                     });
@@ -2827,35 +4170,1155 @@ class WeaponSystem {
         this.cameras.main.shake(30 + fireballCount * 5, 0.002);
     }
 
-    // Single source of truth for burn DoT damage/interval per stack count (1-5).
-    // Each of the 5 stacks now has its own distinct, escalating tier instead of
-    // grouping into 3 bands — every stack should feel like it matters.
-    _burnTierStats(stacks) {
-        const TIERS = {
-            1: { dmg: 0.8, interval: 1900 },
-            2: { dmg: 1.6, interval: 1600 },
-            3: { dmg: 2.8, interval: 1300 },
-            4: { dmg: 4.4, interval: 1000 },
-            5: { dmg: 6.5, interval: 700  },
-        };
-        const tier = TIERS[Math.min(5, Math.max(1, stacks))];
-        return { dmg: tier.dmg * this.damageScaling, interval: tier.interval };
+    // ── FIRE vs WATER ────────────────────────────────────────────────────────
+    // Evaporation power per hit, against a tile with 6 HP. These are deliberately NOT
+    // uniform: what the player feels is tiles-cleared-per-second, which is power x tiles
+    // covered per shot x cadence, and those three differ enormously between the four fire
+    // weapons. Costed per-hit alone, the free Flame Fists would clear faster than the
+    // 500-glorp machine gun.
+    //
+    //   Flame Fists  6 -> one-shot, but a single tile per 600ms   =  1.7 tiles/sec
+    //   Flame Sword  3 -> two swings, but SIX tiles at a time     =  4.0 tiles/sec
+    //   Magma ball   6 -> one-shot, five fireballs a cast         =  5.3 tiles/sec
+    //   Ignition     6 -> one-shot, 11.5 pellets a second         = 11.5 tiles/sec
+    //
+    // Ignition ends up clearly first, which is right: hosing a floor is what a machine
+    // gun should be good at, and it is the only fire weapon with no area coverage at all
+    // to fall back on.
+    _evaporate(tx, ty, power) {
+        if (typeof this.evaporateWater === 'function') this.evaporateWater(tx, ty, power);
     }
 
-    // Apply one burn stack to an enemy — called by fire hits and lava tiles
-    applyBurnStack(enemy) {
-        if (!enemy.sprite?.active || enemy.health <= 0) return;
+    // ═══ IGNITION ════════════════════════════════════════════════════════
+    // A weapon that deals no damage on contact. Every hit STORES its payload on the
+    // target as kindling and starts a fuse; when the fuse runs out the whole accumulation
+    // detonates at once, scaled by how many times you managed to hit that one enemy.
+    //
+    // Built on triggerCombustion, which until now had exactly ONE live call site in the
+    // entire codebase -- inside the fire ult. The burst, the lava ring, the fire-elemental
+    // and ice-elemental handling and the COMBUSTION! readout were all already written and
+    // unreachable from any weapon. This gives that system a reason to exist.
+    //
+    // WHY THERE IS NO DETONATE KEY: hitting a DIFFERENT enemy cashes out the current mark
+    // immediately. Walking your aim off the target is the early detonate. That enforces
+    // the single-target discipline through the normal act of aiming instead of through a
+    // keybind, and it means spreading your fire is self-punishing -- you keep collecting
+    // small payouts instead of one large one.
+    _kindlingCfg() {
+        return {
+            COOLDOWN:   130,    // machine-gun cadence, ~7.7 pellets/sec
+            // 0.1. A full 60-pellet cycle chips 6 damage against a ~333 detonation — under
+            // 2% of the weapon's output. The point is not just that the gun is weak: at
+            // 0.4 a full cycle chipped 24, which is enough to kill a 32 HP queen minion
+            // outright and throw away the entire bank you had built on it. At 0.1 nothing
+            // dies to the pellets, so the detonation always gets to happen.
+            PELLET_DMG: 0.1,
+            // What a pellet does once the bar is ALREADY FULL. The bar filling no longer
+            // detonates -- it opens a window that lasts until the fuse expires, and in
+            // that window the gun itself finally bites. This exists because capping early
+            // used to just skip the rest of the fuse, so the reward for filling fast was
+            // a shorter fight rather than a better one; now filling fast buys you a LONGER
+            // window, and how long you have is decided by how well you shot.
+            //
+            // 5, not the 3 that first looked right: the window costs ~2.8s of waiting for
+            // the same detonation, so anything under 5 is a straight dps loss versus just
+            // capping and moving on. At 5 the cycle comes out level with the old one and
+            // the gradient does the interesting work.
+            FULL_DMG:   3,      // a pellet into a full (overkindled) mark (5 before pellets could apply Burn)
+            BURN_CHANCE: 0.12,  // a pellet's chance to apply a Burn stack: Ignition feeds fire's burn, and the detonation cashes it in
+            BURST:      12,     // pellets in a burst
+            BURST_GAP:  25,     // ms between pellets inside a burst -- very fast
+            BURST_CHANCE: 0.10 + 0.05 * WeaponLevels.perk('ignition', 'burst'), // every shot rolls for a free burst
+            // 10 tiles, not 5. Five was inherited from when this was a short-range brand
+            // and never revisited: it left the T4 machine gun reaching barely further than
+            // the Flame Sword's 2.6-tile arc while the T3 Magma Staff throws fireballs 15
+            // tiles. Ten keeps a real difference from the staff -- the staff is slow
+            // artillery with the longer reach, this is a fast stream with less of it --
+            // without the gun being outranged by melee.
+            // Effectively unlimited: walls stop pellets, so this is only a backstop so a
+            // round that escapes the map cannot live forever. No room is 40 tiles across.
+            RANGE:      40,     // tiles
+            SPEED:      720,    // px/sec
+            PELLET_R:   4,      // collision radius, px -- deliberately small
+            // Half-angle of the cone, in radians. 0.07 is ~4deg — at the far end of
+            // range that is about two thirds of a tile of drift, enough that a long shot
+            // can genuinely miss; up close it is a few pixels and you will not notice it.
+            // At the old 0.045 the widest possible deviation was still inside the 14px
+            // collision reach at any normal distance, so the spread could never actually
+            // cause a miss: it was jitter you could not see doing nothing you could feel.
+            SPREAD:     0.07,
+            // EXP alone sets how much focus is worth: a pellet at the cap is worth
+            // (MAX_HITS/10)^(EXP-1) times one at ten hits, so 1.8 over a 60 cap makes late
+            // pellets ~4.2x early ones. STORE only scales the whole curve, so the two
+            // dials stay independent -- EXP for the shape, STORE for the ceiling.
+            // 0.48. STORE has moved every time the burst has, and always for the same
+            // reason: the payout is collected when the bar CAPS, so anything that changes
+            // how fast pellets land changes dps without touching a damage number. A 10%
+            // chance of 8 pellets works out to ~11.5 pellets/sec against 7.7 baseline, so
+            // the cap arrives in ~2.6s instead of ~3.8s. The ceiling is what is being held
+            // steady across these changes, not this constant.
+            STORE:      3.0,    // (0.42 over the old 60-pellet bar: rescaled so a full 20-tick bar pays what 60 pellets did)
+            STORE_OLD:  0.42,   // (0.45 before RAMP_DMG moved ~6% of a full mark's payout into the pellets)
+            RAMP_DMG:   0.9,    // past RAMP_FROM of the bar a pellet chips up to this much more, rising to the cap: the gun isn't dead while it builds
+            RAMP_FROM:  0.3,   // payload banked per pellet, before the exponent (0.21: level with the T3 staff)
+            EXP:        1.8,    // see _kindlingPayout -- the whole design lives here
+            // 60, doubled. The bar is the commitment: at ~11.5 pellets/sec that is over
+            // five seconds of unbroken fire on ONE target to fill, and the payout only
+            // reaches its interesting range in the back half of that. Thirty filled too
+            // quickly for the exponent to ever really bite.
+            MAX_HITS:   20,   // jet ticks to fill (20 x TICK = 4.5s; Blue Flame 3s)   // filling the bar detonates it early, see _brandEnemy 
+            // 8s, up from 5. The fuse has to outlast the bar or the cap is unreachable:
+            // 60 pellets at the baseline 7.7/sec is 7.8 seconds, so a 5s window would have
+            // made the top of the curve literally impossible without burst luck.
+            FUSE:       8000,   // (no longer a fuse: kept as the scale the ring's cooling arc is drawn against)
+            COOL_DELAY: 2500,   // a mark left unfed this long starts to cool
+            COOL_RATE:  3.5,    // ...losing this many ticks of heat a second; cooled to nothing it fizzles
+            OVER_MS:    3000,   // overkindled holds while the jet is on it; this long after the jet leaves, it goes off by itself
+            CASCADE:    0.25,   // fraction dealt to enemies within CASCADE_R on detonation
+            // Under a tile. The detonation is a single-target payoff, so its splash is a
+            // courtesy to whatever is pressed right up against the target, not an AoE.
+            CASCADE_R:  0.8,    // tiles
+            // How many marks can burn at once. Marking a third target detonates the
+            // OLDEST rather than refusing the mark, so the limit never blocks you -- it
+            // just decides for you which bank cashes out. Two is enough to let you work a
+            // pair, and few enough that you cannot quietly seed a whole room and collect
+            // later, which would turn a single-target weapon into an area one.
+            MAX_MARKS:  2,
+            JET_EVAP:   2,      // the flame dries water: this much of a tile's 6 HP a tick (3 ticks, ~0.7s, a tile)
+            FUEL_MS:    9000,   // a full tank: this long lit (a fill plus the second ring fits with room to spare)
+            REFUEL_MS:  4000,   // empty to full while it's out
+            DRY_MS:     1500,   // run dry and it can't relight for this long
+            DET_PCT:    0.06,   // a full bar's detonation also takes 6% of the target's max HP (x the overheat: up to 24%); less on a full bar
+            DET_BOSS:   0.25,   // story bosses take a quarter of that share
+            IGNITE_DUR: 5000 + 1000 * WeaponLevels.perk('ignition', 'burst'),   // Blue Flame (R): this long (Long Flame: +1s a level)
+            // ── THE FLAMETHROWER (2026-10-20: it was a machine gun) ── a fan of fire JET_R tiles long, JET_ARC radians either side
+            // of your aim, stopped by walls. A tick every TICK (Blue Flame: BLUE_TICK): the MARK_N closest enemies in the flame are
+            // its marks (existing marks first) and fill a tick of kindling, taking CHIP (+CHIP_RAMP as they fill; MELT once
+            // overkindled); every enemy in it rolls JET_BURN for a burn stack, the overkindled excepted. Blue Flame ignores resistance.
+            // (TICK_PCT: every tick on a mark also takes this share of its max HP)
+            STORE_MAX: 0.4,   // overkindled and still fed, a second ring fills, up to this share of a bar: the mark starts there again once detonated
+            MELT_PCT: 0.002, OVER_BURN: 0.5,   // an overkindled tick: MELT + this share of max HP (instead of TICK_PCT), and this burn chance (instead of JET_BURN)
+            JET_R: 7.2 + 0.8 * WeaponLevels.perk('ignition', 'reach'), JET_ARC: 0.62 * (1 + 0.15 * WeaponLevels.perk('ignition', 'spray')), TICK_PCT: 0.001, TICK: 225, BLUE_TICK: 150, MARK_N: 2, CHIP: 1.6, CHIP_RAMP: 2.4, MELT: 20,
+            JET_BURN: 0.12 + 0.04 * WeaponLevels.perk('ignition', 'mix'), BLUE_BURN: 0.05,   // perks: Long Nozzle, Wide Spray, Hot Mix
+            PASS:       0.8,    // a mark whose target dies hands this share of its heat to the nearest enemy...
+            PASS_R:     5,      // ...within this many tiles (in waves the target often died first and the bank was lost)
+            IGNITE_COOL: 16000,
+        };
+    }
+
+    // Total payout for h hits. Superlinear but bounded: the multiplier climbs with hit
+    // count so a long uninterrupted focus is worth disproportionately more than the same
+    // hits split across two enemies, while MAX_HITS stops an attack-speed buff from
+    // turning it into an arbitrarily large number.
+    // STORE * h^1.6, capped at MAX_HITS. The exponent is the entire weapon.
+    //
+    // At 1.6 the payout is superlinear in hit count, so the value of a pellet depends on
+    // how many of its neighbours landed on the SAME enemy: around 2 damage per pellet at
+    // five hits, around 7 at thirty. Early kindling is deliberately close to worthless --
+    // stopping at five hits pays less than the pellets themselves did -- and the weapon
+    // only becomes a weapon once you have stayed on one target long enough to earn the
+    // curve's steep end.
+    //
+    // It is also what makes spreading fire legal but bad. Thirty pellets in one enemy pay
+    // roughly 1.5x what fifteen-and-fifteen pay and over 2x what three lots of ten pay,
+    // so you CAN work a crowd, you just always earn less for the same trigger time.
+    _kindlingPayout(hits) {
+        const C = this._kindlingCfg();
+        const h = Math.min(hits, C.MAX_HITS);
+        if (h <= 0) return 0;
+        return C.STORE * Math.pow(h, C.EXP) * (this.damageScaling || 1);
+    }
+
+    // ── BRANDABLE TARGETS ────────────────────────────────────────────────────
+    // Bosses are not in this.enemies and do not share its shape: they carry container/hp
+    // where an enemy carries sprite/health, which is why pellets flew straight through
+    // them. Portals (Queen Slimes) are a third shape again. These three helpers are the
+    // only places that difference is allowed to exist; everything else in the kindle
+    // system treats a target as a target.
+    _kindleBrandables() {
+        const out = (this.enemies || []).slice();
+        if (this.voltslimeBoss?.active)     out.push(this.voltslimeBoss);
+        if (this.voidSovereignBoss?.active) out.push(this.voidSovereignBoss);
+        for (const p of (this.portals || [])) if (p.active) out.push(p);
+        return out;
+    }
+
+    _kindlePos(o) {
+        if (o?.sprite?.active) return { x: o.sprite.x, y: o.sprite.y };
+        if (o?.container)      return { x: o.container.x, y: o.container.y };
+        if (o?.tileX !== undefined) {
+            const TS = this.TILE_SIZE;
+            return { x: o.tileX * TS + TS / 2, y: o.tileY * TS + TS / 2 + (o.hitOffY || 0) };
+        }
+        return null;
+    }
+
+    _kindleAlive(o) {
+        if (!o) return false;
+        if (o === this.voltslimeBoss || o === this.voidSovereignBoss)
+            return !!o.active && o.hp > 0;
+        if ((this.portals || []).includes(o)) return !!o.active && o.hp > 0;
+        return !!o.sprite?.active && o.health > 0 && (this.enemies || []).includes(o);
+    }
+
+    // Routes a payout to whichever damage entry point the target actually uses.
+    _kindleDamage(o, amount) {
+        if (o === this.voltslimeBoss)     { this.damageVoltslimeBoss(amount); return; }
+        if (o === this.voidSovereignBoss) { this.damageVoidSovereignBoss(amount); return; }
+        if ((this.portals || []).includes(o)) { this.damagePortal(o, amount); return; }
+        this.damageEnemy(o, amount, 'fire');
+    }
+
+    // The flamethrower: a tick of fire into the fan in front of you (see the JET_ keys in _kindlingCfg)
+    kindlingBrandAttack(targetX, targetY) {
+        const C = this._kindlingCfg(), now = this.time.now, blue = (this._kindleIgniteUntil || 0) > now;
+        if (now - (this._lastKindleTime || 0) < (blue ? C.BLUE_TICK : C.TICK)) return;
+        this._lastKindleTime = now;
+        this._gearFiredAt = now;   // the held weapon swings now (Creatures.gear)
+        const T = this.TILE_SIZE, cam = this.cameras.main, tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null;   // from the gun's muzzle
+        const px = tip?.x ?? this.player.x, py = tip?.y ?? this.player.y - 6;
+        const ang = Math.atan2(targetY + cam.scrollY - py, targetX + cam.scrollX - px), R = C.JET_R * T;
+        this._jetFx(px, py, ang, blue);
+        const clear = (x1, y1) => { const n = Math.ceil(Math.hypot(x1 - px, y1 - py) / (T / 2)); for (let k = 1; k < n; k++) { const x = px + (x1 - px) * k / n, y = py + (y1 - py) * k / n; if (this.world?.[Math.floor(x / T)]?.[Math.floor(y / T)] !== this.FLOOR) return false; } return true; };
+        const inFan = [];
+        for (const o of this._kindleBrandables()) {
+            if (!this._kindleAlive(o)) continue;
+            const p = this._kindlePos(o); if (!p) continue;
+            const d = Math.hypot(p.x - px, p.y - py), big = o === this.voltslimeBoss || o === this.voidSovereignBoss ? T * 1.5 : 0;
+            if (d > R + big || Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(p.y - py, p.x - px) - ang)) > C.JET_ARC + (d < T ? 0.6 : 0) || !clear(p.x, p.y)) continue;
+            inFan.push({ o, d });
+        }
+        inFan.sort((a, b) => a.d - b.d);
+        // the marks are fixed: MARK_N at most, kept until detonated (G) or cooled out; a third enemy in the flame isn't marked
+        const held = [...(this._kindleMarked || [])].filter(o => this._kindleAlive(o) && o._kindleHits > 0);
+        const marks = inFan.filter(f => held.includes(f.o)).map(f => f.o);
+        let free = C.MARK_N - held.length;
+        for (const f of inFan) if (free > 0 && !marks.includes(f.o)) { marks.push(f.o); free--; }
+        for (const o of marks) this._brandEnemy(o, blue);
+        for (const f of inFan) {   // the whole fan can catch, overkindled marks far more often
+            const e = f.o;
+            if (!(this.enemies || []).includes(e) || !(e.health > 0)) continue;
+            const r = Math.random();
+            if (blue && r < C.BLUE_BURN) this.applyBlueBurn?.(e);   // Blue Flame: now and then a blue burn stack
+            else if (r < ((e._kindleHits || 0) >= C.MAX_HITS ? C.OVER_BURN : C.JET_BURN)) this.applyBurnStack?.(e, 1);
+        }
+        if (this.waterTiles?.size) {   // the flame boils the water it covers off to steam: JET_EVAP of a tile's 6 a tick (Blue Flame all of it)
+            const r = Math.ceil(C.JET_R), ptx = Math.floor(px / T), pty = Math.floor(py / T);
+            for (let x = ptx - r; x <= ptx + r; x++) for (let y = pty - r; y <= pty + r; y++) {
+                if (!this.isWaterAt?.(x, y)) continue;
+                const cx = x * T + T / 2, cy = y * T + T / 2, d = Math.hypot(cx - px, cy - py);
+                if (d > R || (d > T && Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(cy - py, cx - px) - ang)) > C.JET_ARC) || !clear(cx, cy)) continue;
+                this._evaporate(x, y, blue ? 6 : C.JET_EVAP);
+            }
+        }
+    }
+    // The jet's pixel fire: 5 frames of 10px blobs, each a ragged pixel shape with hard colour bands, burning down from a white
+    // core to embers and smoke (blue: Blue Flame's). Played over a particle's life (the anim of the same key).
+    static jetPixKey(scene, blue) {
+        const key = blue ? 'fx_jetpx_b' : 'fx_jetpx', N = 5, S = 10;
+        if (scene.textures.exists(key)) return key;
+        const t = scene.textures.createCanvas(key, S * N, S), c = t.getContext(), R = MenuArt.rng(blue ? 717 : 313);
+        const PAL = blue ? [['#ffffff', '#d8f0ff', '#8ac8ff'], ['#d8f0ff', '#8ac8ff', '#4a8aff'], ['#8ac8ff', '#4a8aff', '#2a4ad8'], ['#4a8aff', '#2a4ad8', '#141e5a'], ['#3a4058', '#2a2e40', '#1a1c28']]
+                          : [['#fffbe0', '#ffe08a', '#ffb040'], ['#ffe08a', '#ffb040', '#ff7a20'], ['#ffb040', '#ff6a1a', '#c8381a'], ['#ff6a1a', '#c8381a', '#5a1a0c'], ['#4a3a32', '#2e2420', '#1a1412']];
+        const RAD = [3.2, 4.2, 4.6, 4.2, 4.4];
+        for (let f = 0; f < N; f++) {
+            const [core, mid, rim] = PAL[f], r0 = RAD[f];
+            for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+                const d = Math.hypot(x + 0.5 - S / 2, y + 0.5 - S / 2) + (R() - 0.5) * 1.3;   // ragged edge
+                if (d > r0 || (f >= 3 && R() < 0.12 * (f - 2))) continue;   // late frames break up into embers
+                c.fillStyle = d < r0 * 0.4 ? core : d < r0 * 0.75 ? mid : rim; c.fillRect(f * S + x, y, 1, 1);
+            }
+        }
+        t.refresh();
+        for (let f = 0; f < N; f++) t.add(f, 0, f * S, 0, S, S);
+        if (!scene.anims.exists(key)) scene.anims.create({ key, frames: Array.from({ length: N }, (_, f) => ({ key, frame: f })), frameRate: 10, repeat: 0 });
+        return key;
+    }
+    // The jet's look: a CONTINUOUS stream of fire while you hold (the damage ticks underneath, but the flame doesn't pulse
+    // with them): a soft body going white-hot to yellow, orange, red and dark at the tip; teardrop tongues licking along it;
+    // dark smoke rolling off the end; a glow at the nozzle. Blue Flame swaps to the blue set. One watcher per scene follows
+    // your aim every frame and starts and stops the emitters.
+    _jetFx(px, py, ang, blue) {
+        const C = this._kindlingCfg(), T = this.TILE_SIZE, now = this.time.now;
+        this._jetOn = now + (blue ? C.BLUE_TICK : C.TICK) * 1.6; this._jetBlue = blue;
+        if (this._jetS?.core?.scene) return;
+        const life = 520, v = C.JET_R * T / (life / 1000) / 0.95, ADD = Phaser.BlendModes.ADD;   // (fast enough, and visible long enough, to reach the full JET_R)
+        const fire = WeaponSystem.jetPixKey(this, false), blueK = WeaponSystem.jetPixKey(this, true);
+        // pixel-art fire: chunky hand-placed blobs that burn down white -> yellow -> orange -> red -> smoke over their life
+        const body = key => this.add.particles(0, 0, key, { anim: key, lifespan: { min: life * 0.85, max: life }, speed: { min: v * 0.85, max: v * 1.02 },
+            scale: { start: 1.3, end: 2.6 }, alpha: { start: 1, end: 0.35, ease: 'Cubic.easeIn' }, frequency: 12, quantity: 1, emitting: false }).setDepth(4.4);
+        const tongues = key => this.add.particles(0, 0, key, { anim: key, lifespan: { min: life * 0.5, max: life * 0.75 }, speed: { min: v * 0.7, max: v * 0.9 },
+            scale: { start: 1, end: 1.8 }, alpha: { start: 1, end: 0.5 }, blendMode: ADD, frequency: 30, quantity: 1, emitting: false }).setDepth(4.45);
+        const smoke = this.add.particles(0, 0, fire, { frame: 4, lifespan: { min: 700, max: 950 }, speed: { min: v * 0.35, max: v * 0.5 }, scale: { start: 1.6, end: 3 },
+            alpha: { start: 0.35, end: 0 }, frequency: 45, quantity: 1, emitting: false, gravityY: -40 }).setDepth(4.3);
+        const glow = this.add.image(0, 0, 'vfx_glow').setBlendMode(ADD).setDepth(4.46).setVisible(false);
+        const S = this._jetS = { core: body(fire), tong: tongues(fire), coreB: body(blueK), tongB: tongues(blueK), smoke, glow, on: false, blue: false };
+        // walls stop the flame like they stop its damage: a blob dies entering a tile that isn't floor (3.60 hands death zones world positions)
+        const wall = (wx, wy) => !!this.world && this.world[Math.floor(wx / T)]?.[Math.floor(wy / T)] !== this.FLOOR;
+        for (const em of [S.core, S.tong, S.coreB, S.tongB, S.smoke]) em.addDeathZone({ type: 'onEnter', source: { contains: wall } });
+        const tick = () => {
+            if (!S.core.scene || !this.player?.active) { this.events.off('update', tick); return; }
+            const t = this.time.now, on = t < (this._jetOn || 0), b = !!this._jetBlue;
+            const cam = this.cameras.main, ap = this._aim ? this._aim(this.input.activePointer) : this.input.activePointer;
+            const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null, nx0 = tip?.x ?? this.player.x, ny0 = tip?.y ?? this.player.y - 6;   // out of the gun itself
+            const ang = Math.atan2(ap.y + cam.scrollY - ny0, ap.x + cam.scrollX - nx0);
+            this._jetAng = ang;
+            const nx = nx0 + Math.cos(ang) * (tip ? 2 : 12), ny = ny0 + Math.sin(ang) * (tip ? 2 : 12), deg = Phaser.Math.RadToDeg(ang), arc = Phaser.Math.RadToDeg(C.JET_ARC) * 0.8;
+            for (const em of [S.core, S.tong, S.coreB, S.tongB, S.smoke]) { em.setPosition(nx, ny); em.ops.angle.loadConfig({ angle: { min: deg - arc, max: deg + arc } }); }   // (3.60: setEmitterAngle didn't take; it sprayed all round)
+            if (on !== S.on || b !== S.blue) {
+                S.on = on; S.blue = b;
+                for (const [em, want] of [[S.core, on && !b], [S.tong, on && !b], [S.coreB, on && b], [S.tongB, on && b], [S.smoke, on]]) want ? em.start() : em.stop();
+            }
+            S.glow.setVisible(on).setPosition(nx, ny).setTint(b ? 0x7ab8ff : 0xff8a2a).setScale(0.22 + 0.04 * Math.sin(t * 0.05)).setAlpha(0.45 + 0.15 * Math.sin(t * 0.07));
+        };
+        this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));
+    }
+
+    // One round. Hitscan with a tracer rather than a travelling projectile: at this fire
+    // rate a real bullet would be in flight for less than a frame at close range, and it
+    // would need its own update loop and collision pass for no visible difference.
+    // One pellet. A REAL projectile now, not a hitscan with a tracer drawn after the
+    // fact: it travels, it can miss, and its 4px hitbox means a machine gun at this
+    // cadence still rewards aim. Hitscan made the weapon feel like a beam, which is the
+    // opposite of what a stream of individual rounds should feel like.
+    _fireKindleRound(targetX, targetY) {
+        const C = this._kindlingCfg();
+        const worldX = targetX + this.cameras.main.scrollX;
+        const worldY = targetY + this.cameras.main.scrollY;
+        const px = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const py = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+
+        // Triangular, not uniform: averaging two randoms clusters shots near the centre
+        // line with the occasional wider one, which is what a real burst looks like.
+        // A flat distribution scatters evenly across the cone and reads as the gun being
+        // broken rather than as recoil.
+        const jitter = ((Math.random() + Math.random()) / 2 - 0.5) * C.SPREAD * 2 * Enchants.spread('ignition');   // True Aim narrows it
+        const ang = Math.atan2(worldY - py, worldX - px) + jitter;
+        const g = this.add.graphics().setDepth(2.4);
+        g.x = px; g.y = py; g.rotation = ang;
+        // Drawn once in LOCAL space and rotated, so the bolt always points along travel.
+        // Built back-to-front as a flame rather than a cartridge: a long translucent wind
+        // streak tapering behind, then the ember body, then a white-hot head. The taper is
+        // what sells the speed -- a uniform bar just looks like a stick.
+        for (let t = 0; t < 5; t++) {
+            const k = t / 4;                       // 0 at the head end of the tail
+            const len = 5 + t * 5;                 // each band reaches further back
+            const h   = 3.2 * (1 - k * 0.72);      // and is thinner
+            g.fillStyle(t < 2 ? 0xff7a1e : 0xc23a08, 0.30 * (1 - k) + 0.05);
+            g.fillRoundedRect(-len, -h / 2, len - (t ? 5 + (t - 1) * 5 : 0) + 5, h, h / 2);
+        }
+        g.fillStyle(0xff4d0a, 0.85); g.fillRoundedRect(-7, -2.6, 12, 5.2, 2.6);   // outer flame
+        g.fillStyle(0xff9c2b, 0.98); g.fillRoundedRect(-4, -1.9, 9.5, 3.8, 1.9);  // body
+        g.fillStyle(0xffe6a0, 1);    g.fillRoundedRect(1, -1.25, 5.5, 2.5, 1.25); // hot core
+        g.fillStyle(0xfff6e0, 1);    g.fillCircle(5.8, 0, 1.5);                   // head
+
+        if (!this._kindleBullets) this._kindleBullets = [];
+        const glow = this.textures.exists('vfx_glow') ? this.add.image(px, py, 'vfx_glow').setTint(0xff7a1e).setBlendMode(Phaser.BlendModes.ADD).setDepth(2.35).setScale(0.22, 0.12).setRotation(ang) : null;   // its heat haze
+        g.setBlendMode(Phaser.BlendModes.ADD);
+        this._kindleBullets.push({
+            g, glow, x: px, y: py,
+            vx: Math.cos(ang) * C.SPEED, vy: Math.sin(ang) * C.SPEED,
+            life: (C.RANGE * this.TILE_SIZE) / C.SPEED * 1000,
+        });
+        this._kindleMuzzle(px, py, ang);
+    }
+
+    // Per-frame flight, collision and expiry for the pellets.
+    _updateKindleBullets(time, delta) {
+        const list = this._kindleBullets;
+        if (!list || !list.length) return;
+        const C = this._kindlingCfg();
+        const dt = Math.min(delta || 16, 50) / 1000;
+        const TS = this.TILE_SIZE;
+
+        for (let i = list.length - 1; i >= 0; i--) {
+            const b = list[i];
+            // Keep where it WAS. At 900px/s a pellet covers ~15px per frame, which is
+            // wider than its own 4px hitbox — a point test at the new position would let
+            // it tunnel straight through an enemy between two frames. Collision below is
+            // swept along the segment it actually travelled.
+            const px0 = b.x, py0 = b.y;
+            b.x += b.vx * dt; b.y += b.vy * dt;
+            b.life -= dt * 1000;
+            if (b.g?.active) { b.g.x = b.x; b.g.y = b.y; b.g.scaleY = 0.85 + Math.random() * 0.35; }   // the tracer flickers
+            if (b.glow?.active) b.glow.setPosition(b.x - b.vx * 0.008, b.y - b.vy * 0.008);
+
+            // Sheds embers as it flies. Throttled per bullet rather than per frame: at
+            // 7.7 rounds a second with three in the air, one graphic per frame each would
+            // be ~180 objects a second for a decorative effect.
+            b.trail = (b.trail || 0) + dt * 1000;
+            if (b.trail >= 55) {
+                b.trail = 0;
+                const em = this.add.graphics().setDepth(2.2);
+                em.x = px0; em.y = py0;
+                em.fillStyle(Math.random() < 0.4 ? 0xffd27a : 0xff6a1e, 0.55);
+                em.fillCircle(0, 0, 1.6 + Math.random() * 1.2);
+                this.tweens.add({
+                    targets: em, alpha: 0,
+                    x: px0 - b.vx * 0.06 + (Math.random() - 0.5) * 6,
+                    y: py0 - b.vy * 0.06 + (Math.random() - 0.5) * 6,
+                    scaleX: 0.3, scaleY: 0.3, duration: 220 + Math.random() * 160,
+                    ease: 'Quad.easeOut', onComplete: () => em.destroy()
+                });
+            }
+
+            let gone = b.life <= 0;
+            // Walls stop pellets. Checked before enemies so you cannot shoot through one.
+            if (!gone) {
+                const tx = Math.floor(b.x / TS), ty = Math.floor(b.y / TS);
+                // A room you have not entered stops a pellet exactly like a wall -- the
+                // same isInLockedRoom test every other projectile uses. This has to run
+                // BEFORE _evaporate: previously the pellet dried the tile it was stopped
+                // on, so Ignition boiled water out of sealed rooms through the doorway.
+                const blocked = !this.world?.[tx] || this.world[tx][ty] !== this.FLOOR
+                                || this.isInLockedRoom(tx, ty);
+                if (blocked) { gone = true; VisualFX.wallImpact(this, b.x, b.y, 'fire', b.vx, b.vy); }
+                else this._evaporate(tx, ty, 6);         // one-shots a puddle, 11.5 a second
+            }
+            if (!gone) {
+                for (const e of this._kindleBrandables()) {
+                    if (!this._kindleAlive(e)) continue;
+                    // A pellet cannot reach into a room you have not opened. damageEnemy
+                    // already refuses the damage, but BRANDING does not go through it --
+                    // so without this a pellet still stacked kindle on a sealed room and
+                    // the mark detonated the instant you walked in.
+                    if (typeof this._roomGated === 'function' && this._roomGated()
+                        && e.tutorialRoomIndex !== undefined
+                        && e.tutorialRoomIndex !== this.getCurrentPlayerRoom()) continue;
+                    const p = this._kindlePos(e);
+                    if (!p) continue;
+                    // Bosses are physically huge, so they get a proportionally larger
+                    // catch radius -- a 4px pellet against a 5x-scale slime should not
+                    // have to thread its exact centre.
+                    const big = (e === this.voltslimeBoss || e === this.voidSovereignBoss);
+                    const reach = C.PELLET_R + (big ? 46 : (e.hitR ? e.hitR : 10));
+                    // Swept, not point: distance from the target to the segment this
+                    // pellet crossed this frame. See the note on px0/py0 above.
+                    const d = (typeof Utils !== 'undefined' && Utils.distancePointToSegment)
+                        ? Utils.distancePointToSegment(p.x, p.y, px0, py0, b.x, b.y)
+                        : Math.hypot(p.x - b.x, p.y - b.y);
+                    if (d > reach) continue;
+                    // NO detonate-on-switch. It ran BEFORE _brandEnemy, so touching a
+                    // second enemy popped the first mark instantly and the two-mark board
+                    // could never actually fill -- and because it was gated on 8+ pellets
+                    // it only did that SOMETIMES, which is what made the behaviour look
+                    // random. Displacement is the manual trigger now: hold two marks, tag
+                    // a third target to cash out the oldest. Same control, and it is the
+                    // rule that was supposed to own this.
+                    this._brandEnemy(e);
+                    this._kindleSpark(b.x, b.y);
+                    gone = true;
+                    break;
+                }
+            }
+            if (gone) {
+                if (b.g?.active) { this.tweens.killTweensOf(b.g); b.g.destroy(); }
+                b.glow?.destroy();
+                list.splice(i, 1);
+            }
+        }
+    }
+
+    // The shot leaving the barrel (the gun's own tip where it's drawn): a four-point flash, a puff of smoke, and now and
+    // then a spent casing spun out the side.
+    _kindleMuzzle(px, py, ang) {
+        const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null, x = tip?.x ?? px + Math.cos(ang) * 10, y = tip?.y ?? py + Math.sin(ang) * 10, ADD = Phaser.BlendModes.ADD;
+        const m = this.add.graphics().setDepth(2.5).setBlendMode(ADD).setPosition(x, y).setRotation(ang);
+        m.fillStyle(0xff8a2a, 0.9); m.fillTriangle(0, -3, 0, 3, 14, 0); m.fillTriangle(-3, 0, 3, 0, 0, -7); m.fillTriangle(-3, 0, 3, 0, 0, 7);
+        m.fillStyle(0xfff0c0, 1); m.fillTriangle(0, -1.5, 0, 1.5, 9, 0); m.fillCircle(0, 0, 2.4);
+        this.tweens.add({ targets: m, alpha: 0, scaleX: 1.4, scaleY: 0.6, duration: 70, onComplete: () => m.destroy() });
+        if (Math.random() < 0.4) { const sm = this.add.circle(x, y, 2.5, 0x3a302a, 0.35).setDepth(2.45); this.tweens.add({ targets: sm, x: x + Math.cos(ang) * 6, y: y - 8, scale: 2.2, alpha: 0, duration: 420, onComplete: () => sm.destroy() }); }
+        if (Math.random() < 0.3) {   // a casing, kicked out to the side and bouncing
+            const side = ang + Math.PI / 2 * (Math.cos(ang) >= 0 ? -1 : 1), c = this.add.rectangle(px, py, 3, 1.5, 0xd8a84a).setDepth(2.4);
+            this.tweens.add({ targets: c, x: px + Math.cos(side) * 12, y: py + Math.sin(side) * 6 - 6, angle: 540, duration: 260, ease: 'Quad.easeOut', onComplete: () => this.tweens.add({ targets: c, y: c.y + 10, alpha: 0, duration: 260, ease: 'Bounce.easeOut', onComplete: () => c.destroy() }) });
+        }
+    }
+
+    _kindleSpark(x, y) {
+        VisualFX.impact(this, x, y, 'fire', 7);
+        const r = this.add.circle(x, y, 3, 0, 0).setStrokeStyle(1.5, 0xffb040, 0.9).setDepth(3.4).setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: r, scale: 3, alpha: 0, duration: 160, onComplete: () => r.destroy() });
+    }
+
+    _brandEnemy(enemy, blue = false) {
+        const C = this._kindlingCfg();
+        const p = this._kindlePos(enemy);
+        if (!p) return;
+        if (enemy.iceImmune) {
+            this.showStatusText(p.x, p.y - 10, 'IMMUNE', '#88eeff');
+            return;
+        }
+        if (!enemy._kindleHits) {
+            // A NEW mark, only into a free slot: a full board stays as it is (G detonates to free it)
+            if ([...(this._kindleMarked || [])].filter(o => o !== enemy && this._kindleAlive(o) && o._kindleHits > 0).length >= C.MAX_MARKS) return;
+            enemy._kindleHits = 0;
+            enemy._kindleUntil = 0;   // no fuse: it holds while you feed it (see _updateKindling)
+        }
+        const wasFull = enemy._kindleHits >= C.MAX_HITS;
+        enemy._kindleHits = Math.min(C.MAX_HITS, enemy._kindleHits + 1);
+        const isFull = enemy._kindleHits >= C.MAX_HITS;
+        if (wasFull) {   // overkindled and still in the flame: the second ring fills a tick, up to STORE_MAX of a bar
+            const cap = Math.round(C.MAX_HITS * C.STORE_MAX), was = enemy._kindleStore || 0, fp = this._kindlePos(enemy);
+            enemy._kindleStore = Math.min(cap, was + 1);
+            if (fp && enemy._kindleStore === cap && was < cap) this.showStatusText(fp.x, fp.y - 46, `STORED ${Math.round(C.STORE_MAX * 100)}%`, '#9fe4ff');
+        }
+        enemy._kindleFedAt = this.time.now;
+        if (isFull && !wasFull) enemy._kindleUntil = this.time.now + C.OVER_MS;   // the overkindled window opens
+        // Announced once, on the pellet that tops it off, so the window has a start you
+        // can see rather than a number you have to be watching.
+        if (isFull && !wasFull) {
+            const fp = this._kindlePos(enemy);
+            if (fp) this.showStatusText(fp.x, fp.y - 46, 'OVERKINDLED', '#9fe4ff');
+        }
+        // Tracked separately from this.enemies. killEnemy SPLICES a dead enemy out of that
+        // array, so a marked enemy that dies simply stops being iterated and its meter is
+        // never destroyed -- the bar was left hanging in the air. This set still holds it
+        // afterwards, so the sweep below can clean up.
+        (this._kindleMarked || (this._kindleMarked = new Set())).add(enemy);
+        this._kindleTarget = enemy;
+        // The pellet itself stings. Small on purpose -- 2.5 against a 30-pellet payout of
+        // ~160 means the gun is worth about a third of the detonation it sets up, so it
+        // stays a marker rather than becoming a DPS weapon you never bother detonating.
+        // Routed through damageEnemy so ElementResist still gets a say.
+        // Chip while filling, real damage once full.
+        // the jet on a mark: chip that grows as it fills, then it melts once overkindled. Blue Flame ignores resistance.
+        const amt = (isFull ? C.MELT : C.CHIP + C.CHIP_RAMP * enemy._kindleHits / C.MAX_HITS) * (this.damageScaling || 1) + (isFull ? C.MELT_PCT : C.TICK_PCT) * (enemy.maxHealth || enemy.maxHp || 0);   // + a share of max HP every tick (more once overkindled)
+        if (blue && enemy.sprite?.active && (this.enemies || []).includes(enemy)) {
+            const d = this._afterHit(enemy, 'fire', amt * this._dmgOutMult(enemy, 'fire') * this._hitRoll(enemy, 'fire'));
+            enemy.health -= d; this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, d, '#bfe8ff'); this.updateEnemyHealthBar(enemy);
+            if (enemy.health <= 0) this.killEnemy(enemy);
+        } else this._kindleDamage(enemy, amt);
+        this.gainUltCharge(this.ultChargePerHit * 0.5, 'fire');
+        this._updateKindleIndicator(enemy);
+        // NO detonate-on-cap. A full bar is a STATE, not an event: it holds until the fuse
+        // runs out, and the leftover time is the reward rather than something to skip.
+    }
+
+    // Fuse check. Runs per frame from the scene update; also sweeps enemies that died or
+    // were removed while marked so the banked payload does not follow a corpse around.
+    _updateKindling(time, delta) {
+        this._updateKindleBullets(time, delta);
+        // Iterates the MARKED set, not this.enemies -- see the note in _brandEnemy.
+        const marked = this._kindleMarked;
+        if (!marked || !marked.size) return;
+        for (const e of [...marked]) {
+            if (!e || !e._kindleHits) { marked.delete(e); this._clearKindle(e); continue; }
+            if (!this._kindleAlive(e)) { const h = e._kindleHits, at = e._kindleLastPos; marked.delete(e); this._clearKindle(e); this._kindlePassOn?.(h, at, e); continue; }
+            e._kindleLastPos = this._kindlePos(e);
+            // The meter is drawn once per HIT, but the target keeps moving between hits --
+            // without this the bar detaches and hangs in the air where the last pellet
+            // landed. Position only; the fill is redrawn on hit.
+            if (e._kindleGfx?.active) this._drawKindleMark(e, time);   // its flame ring, alive every frame
+            const C = this._kindlingCfg();
+            if (e._kindleHits >= C.MAX_HITS) { if (time - (e._kindleFedAt || time) >= C.OVER_MS) this._detonateKindling(e, 'KINDLED'); continue; }   // overkindled holds while the jet's on it; left, it goes off
+            // no fuse: left unfed, it cools a few pellets a second (the ring dropping back toward ember), and fizzles at nothing
+            if (time - (e._kindleFedAt || time) > C.COOL_DELAY) {
+                e._kindleHits = Math.max(0, e._kindleHits - C.COOL_RATE * Math.min(100, delta || 16) / 1000);
+                if (e._kindleHits <= 0.5) { const fp = this._kindlePos(e); if (fp) this.showStatusText(fp.x, fp.y - 40, 'fizzled', '#8a6a4a'); marked.delete(e); this._clearKindle(e); }
+            }
+        }
+    }
+
+    // A marked target died with heat still banked: PASS of it jumps to the nearest enemy within PASS_R, as if shot there
+    _kindlePassOn(hits, from, dead) {
+        const C = this._kindlingCfg(), T = this.TILE_SIZE;
+        if (!(hits > 0) || !from) return;
+        let to = null, best = C.PASS_R * T;
+        for (const o of this._kindleBrandables()) {
+            if (o === dead || !this._kindleAlive(o) || o.iceImmune) continue;
+            const p = this._kindlePos(o), d = p ? Math.hypot(p.x - from.x, p.y - from.y) : Infinity;
+            if (d < best) { best = d; to = o; }
+        }
+        if (!to) return;
+        this._brandEnemy(to);   // makes it a mark (retiring the oldest if the board's full)
+        if (!to._kindleHits) return;
+        const wasFull = to._kindleHits >= C.MAX_HITS;
+        to._kindleHits = Math.min(C.MAX_HITS, to._kindleHits + Math.round(hits * C.PASS) - 1);
+        if (to._kindleHits >= C.MAX_HITS && !wasFull) to._kindleUntil = this.time.now + C.OVER_MS;
+        this._updateKindleIndicator(to);
+        const tp = this._kindlePos(to), streak = this.add.image(from.x, from.y, 'vfx_glow').setTint(0xff8a2a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35).setDepth(4.5);
+        this.tweens.add({ targets: streak, x: tp.x, y: tp.y, scale: 0.2, duration: 180, ease: 'Quad.easeIn', onComplete: () => streak.destroy() });
+        this.showStatusText(tp.x, tp.y - 40, 'HEAT PASSED', '#ffb060');
+    }
+
+    // Pellets in flight are per-RUN state, like the heat on the staff. A restart that left
+    // them in the array would carry graphics belonging to a destroyed scene.
+    _clearKindleBullets() {
+        for (const b of (this._kindleBullets || [])) {
+            if (b.g?.active) { this.tweens.killTweensOf(b.g); b.g.destroy(); }
+            b.glow?.destroy();
+        }
+        this._kindleBullets = [];
+    }
+
+    // how much an overkindled bank has heated past full (1 = just full)
+    _kindleOverMult(e) { return 1; }   // (the overheat is gone, the second ring replaced it: kept for its proxies)
+    // the detonate key: every kindled mark goes off now
+    _kindleDetonateAll() {
+        const L = [...(this._kindleMarked || [])].filter(e => this._kindleAlive(e) && (e._kindleHits || 0) >= 1);
+        for (const e of L) this._detonateKindling(e, 'DETONATED');
+        return L.length;
+    }
+    _detonateKindling(enemy, label) {
+        if (!enemy || !enemy._kindleHits) return;
+        const C = this._kindlingCfg();
+        const hits = enemy._kindleHits, store = enemy._kindleStore || 0;   // the second ring: what the next kindle starts at
+        const payout = this._kindlingPayout(hits);
+        // ...plus a share of the target's max HP on the same curve, so it still hits hard on big HP pools (the cascade takes the flat part only)
+        const boss = enemy === this.voltslimeBoss || enemy === this.voidSovereignBoss;
+        const pct = C.DET_PCT * (boss ? C.DET_BOSS : 1) * (enemy.maxHealth || enemy.maxHp || 0) * Math.pow(Math.min(hits, C.MAX_HITS) / C.MAX_HITS, C.EXP);
+        this._clearKindle(enemy);
+        const dp = this._kindlePos(enemy);
+        if (!dp) return;
+        const ex = dp.x, ey = dp.y;
+        this.showStatusText(ex, ey - 44, label, '#ffaa33');
+        this._kindleBlast(ex, ey, Math.min(1, hits / C.MAX_HITS));
+
+        // Regular enemies go through triggerCombustion, which owns the lava ring, the
+        // immunity handling and the COMBUSTION! readout. Bosses and portals have none of
+        // that shape, so they take the payload directly with their own burst drawn here.
+        if (enemy.sprite?.active && (this.enemies || []).includes(enemy)) {
+            this.triggerCombustion(enemy, false, payout + pct);
+        } else {
+            this._kindleDamage(enemy, payout + pct);
+        }
+
+        // Small cascade so a detonation reads as an explosion rather than a hit, without
+        // making this a crowd weapon: neighbours take a quarter, and only the marked
+        // target ever gets the full accumulation.
+        // Cascade covers every brandable, so a detonation next to a boss still splashes
+        // it. The old version also paid the boss and any covering portal the FULL payout
+        // on top of the main target's -- a detonation on a minion standing on the Queen
+        // handed her the entire bank for free.
+        const R = C.CASCADE_R * this.TILE_SIZE;
+        for (const other of this._kindleBrandables()) {
+            if (other === enemy || !this._kindleAlive(other)) continue;
+            const op = this._kindlePos(other);
+            if (!op || Math.hypot(op.x - ex, op.y - ey) > R) continue;
+            this._kindleDamage(other, payout * C.CASCADE);
+        }
+        this.cameras.main.shake(110, 0.007);
+        if (store > 0 && this._kindleAlive(enemy)) {   // the stored ring: still marked, its next kindle already part full
+            enemy._kindleHits = store; enemy._kindleFedAt = this.time.now;
+            (this._kindleMarked || (this._kindleMarked = new Set())).add(enemy);
+            this._updateKindleIndicator(enemy);
+        }
+    }
+
+    // A click on a kindled enemy (within CLICK_R px of it, generous on purpose) sets its mark off there and then, for
+    // whatever it has banked. Only marks past CLICK_MIN hits answer, so a click to start shooting at something you've only
+    // just tagged doesn't throw its mark away. True if one went off (the click is spent).
+    _kindleClickDetonate(wx, wy) {
+        const C = this._kindlingCfg(), CLICK_R = 26, CLICK_MIN = 3;   // (ticks of heat: a tap on something only just caught doesn't throw it away)
+        let best = null, bd = Infinity;
+        for (const e of this._kindleMarked || []) {
+            if (!this._kindleAlive(e) || (e._kindleHits || 0) < CLICK_MIN) continue;
+            const p = this._kindlePos(e); if (!p) continue;
+            const big = e === this.voltslimeBoss || e === this.voidSovereignBoss, d = Math.hypot(p.x - wx, p.y - wy);
+            if (d <= CLICK_R + (big ? 30 : 0) && d < bd) { bd = d; best = e; }
+        }
+        if (!best) return false;
+        this._detonateKindling(best, 'DETONATED');
+        return true;
+    }
+
+    // A mark going off: a pillar of fire in the colour its heat reached, a shockwave, petals of flame thrown out, smoke
+    // rising, a scorch left on the floor. Bigger the fuller it was (t, 0..1).
+    _kindleBlast(x, y, t) {
+        const ADD = Phaser.BlendModes.ADD, col = this._kindleHeatColor(t), s = 0.7 + 0.8 * t;
+        const pil = this.add.rectangle(x, y + 6, 16 * s, 70 * s, col, 0.85).setOrigin(0.5, 1).setDepth(4.6).setBlendMode(ADD);
+        this.tweens.add({ targets: pil, scaleX: 2.2, scaleY: 1.3, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => pil.destroy() });
+        const core = this.add.rectangle(x, y + 6, 6 * s, 56 * s, 0xfff4d8, 1).setOrigin(0.5, 1).setDepth(4.61).setBlendMode(ADD);
+        this.tweens.add({ targets: core, scaleX: 0.2, alpha: 0, duration: 260, onComplete: () => core.destroy() });
+        const wave = this.add.ellipse(x, y + 8, 20, 9).setStrokeStyle(3, col, 1).setDepth(3.5).setBlendMode(ADD);
+        this.tweens.add({ targets: wave, scale: 4 + 3 * t, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => wave.destroy() });
+        for (let k = 0; k < 10 + Math.round(8 * t); k++) {   // petals of flame
+            const a = Math.random() * Math.PI * 2, d = (24 + Math.random() * 24) * s, pt = this.add.ellipse(x, y, 6, 3, k % 3 ? col : 0xffb040).setRotation(a).setDepth(4.5).setBlendMode(ADD);
+            this.tweens.add({ targets: pt, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.6 - 8, scaleX: 0.3, alpha: 0, duration: 380 + Math.random() * 200, ease: 'Quad.easeOut', onComplete: () => pt.destroy() });
+        }
+        for (let k = 0; k < 4; k++) { const sm = this.add.circle(x + (Math.random() - 0.5) * 20, y - 6, 4, 0x2a2420, 0.4).setDepth(4.4); this.tweens.add({ targets: sm, y: sm.y - 40, scale: 3, alpha: 0, duration: 900 + k * 120, onComplete: () => sm.destroy() }); }
+        const sc = this.add.ellipse(x, y + 8, 34 * s, 14 * s, 0x140a06, 0.5).setDepth(0.62);
+        this.tweens.add({ targets: sc, alpha: 0, delay: 1200, duration: 1200, onComplete: () => sc.destroy() });
+        this._vfxFlash?.(x, y, 90 * s, col, 320, 0.9);
+        Sfx.play(this, 'erupt');
+    }
+
+    _clearKindle(enemy) {
+        if (this._kindleMarked) this._kindleMarked.delete(enemy);
+        if (this._kindleTarget === enemy) this._kindleTarget = null;
+        enemy._kindleHits = 0;
+        enemy._kindleUntil = 0;
+        enemy._kindleStore = 0;
+        if (enemy.sprite?.active && !enemy._iceCube && !enemy.isFrozen) enemy.sprite.clearTint?.();   // (the heat glow off it; clearTint puts its own colour back)
+        if (enemy._kindleGfx) {
+            this.tweens.killTweensOf(enemy._kindleGfx);
+            enemy._kindleGfx.destroy();
+            enemy._kindleGfx = null;
+        }
+    }
+
+    // ── KINDLE METER ─────────────────────────────────────────────────────────
+    // ONE bar that fills, not a row of pips. Pips could only ever say "how many" -- at a
+    // 30 hit cap that is thirty tiny rectangles nobody can count, and it hid the thing
+    // that actually matters, which is how far along a steeply non-linear curve you are.
+    //
+    // The fill colour carries that instead: a cold ember at the start, through orange and
+    // white-hot, to blue at the cap. Blue reads as hotter than red to anyone who has seen
+    // a gas flame, and it only appears when you have genuinely stayed on one target -- so
+    // the colour IS the payout curve, visible at a glance from across the room.
+    _kindleHeatColor(t) {
+        // Stops walked as a plain channel lerp. Phaser's Interpolate.ColorWithColor
+        // returns {r,g,b} with no .color, which is a trap this file has hit before.
+        const STOPS = [
+            [0.00, 0x4a, 0x1c, 0x08],   // cold ember
+            [0.40, 0xff, 0x6a, 0x1e],   // orange
+            [0.72, 0xff, 0xc4, 0x4a],   // yellow-white
+            // The last two stops are deliberately close in brightness. A pure white-hot
+            // peak followed by a saturated blue dropped ~69 points of luminance exactly
+            // when the meter is worth the most -- the bar visibly DIMMED as it filled.
+            // A warmer near-peak and a paler blue keep the colour shift (which is the
+            // signal) while cutting the brightness loss to about a third of that.
+            [0.90, 0xff, 0xdc, 0xa8],   // near-white, held back a little
+            [1.00, 0x7f, 0xd4, 0xff],   // blue hot
+        ];
+        const u = Math.max(0, Math.min(1, t));
+        let a = STOPS[0], b = STOPS[STOPS.length - 1];
+        for (let i = 0; i < STOPS.length - 1; i++) {
+            if (u >= STOPS[i][0] && u <= STOPS[i + 1][0]) { a = STOPS[i]; b = STOPS[i + 1]; break; }
+        }
+        const span = (b[0] - a[0]) || 1;
+        const k = (u - a[0]) / span;
+        const ch = i => Math.round(a[i] + (b[i] - a[i]) * k);
+        return (ch(1) << 16) | (ch(2) << 8) | ch(3);
+    }
+
+    // The kindle mark: a ring of fire at its feet that fills round it as the pellets pile up, its colour the heat
+    // (_kindleHeatColor: ember, orange, white-hot, blue at the cap), flame tongues rising off the lit part, the fuse as a
+    // thin arc closing, and once it's overkindled a crown of blue flame over it. Drawn every frame (_updateKindling).
+    _updateKindleIndicator(enemy) {
+        if (!enemy._kindleGfx) { enemy._kindleGfx = this.add.graphics().setDepth(1.05).setBlendMode(Phaser.BlendModes.ADD); this._vfxSort?.(enemy._kindleGfx); }
+        enemy._kindleBump = this.time.now;
+        this._drawKindleMark(enemy, this.time.now);
+    }
+    _drawKindleMark(e, now) {
+        const g = e._kindleGfx, p = this._kindlePos(e); if (!g?.active || !p) return;
+        const C = this._kindlingCfg(), t = Math.min(1, (e._kindleHits || 0) / C.MAX_HITS), col = this._kindleHeatColor(t), TAU = Math.PI * 2;
+        const bump = Math.max(0, 1 - (now - (e._kindleBump || 0)) / 140), rx = 15 + 2 * bump, ry = 6 + 0.8 * bump, top = -Math.PI / 2;
+        g.clear().setPosition(p.x, p.y + 10);
+        g.lineStyle(2, 0x2a1408, 0.6); g.strokeEllipse(0, 0, rx * 2, ry * 2);   // the unlit ring
+        const seg = 28, lit = Math.round(seg * Math.max(0.04, t));
+        for (let k = 0; k < lit; k++) {   // the lit part, and a flame tongue off every other segment
+            const a0 = top + k / seg * TAU, a1 = top + (k + 1) / seg * TAU;
+            g.lineStyle(3, col, 0.95); g.lineBetween(Math.cos(a0) * rx, Math.sin(a0) * ry, Math.cos(a1) * rx, Math.sin(a1) * ry);
+            if (k % 2 === 0) {
+                const a = (a0 + a1) / 2, x = Math.cos(a) * rx, y = Math.sin(a) * ry, h = (3 + 5 * t) * (0.6 + 0.4 * Math.sin(now * 0.025 + k * 1.7));
+                g.fillStyle(col, 0.85); g.fillTriangle(x - 1.6, y, x + 1.6, y, x + Math.sin(now * 0.02 + k) * 1.2, y - h);
+                g.fillStyle(0xfff4d8, 0.7); g.fillTriangle(x - 0.6, y, x + 0.6, y, x, y - h * 0.5);
+            }
+        }
+        if (Math.random() < 0.04 + 0.25 * t) {   // it smokes, more as it fills, and spits sparks once it's past halfway
+            const sm = this.add.circle(p.x + (Math.random() - 0.5) * 14, p.y - 4, 2.5 + 2 * t, t > 0.5 ? 0x4a2a1a : 0x2a2420, 0.35).setDepth(4.3);
+            this.tweens.add({ targets: sm, y: sm.y - 22 - 14 * t, x: sm.x + (Math.random() - 0.5) * 8, scale: 2.2, alpha: 0, duration: 800, onComplete: () => sm.destroy() });
+            if (t > 0.5) { const sp = this.add.rectangle(p.x, p.y - 4, 2, 2, col).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.31); const a = Math.random() * Math.PI * 2; this.tweens.add({ targets: sp, x: p.x + Math.cos(a) * 14, y: p.y - 10 + Math.sin(a) * 8, alpha: 0, duration: 300, onComplete: () => sp.destroy() }); }
+        }
+        if (t > 0.25 && e.sprite?.active && e.sprite.setTint && !e._iceCube && !e.isFrozen) e.sprite.setTint(MenuArt.mix(e.sprite._cfxTint?.base ?? 0xffffff, col, Math.min(0.55, t * 0.6)));   // it glows hotter as it fills, from its own colour (from white, a Rooter or a sniper lost theirs)
+        const full = (e._kindleHits || 0) >= C.MAX_HITS, idle = now - (e._kindleFedAt || now);
+        // the arc: overkindled, the window running out; otherwise the time before it starts cooling (gone while it cools)
+        const fuse = full ? Math.max(0, ((e._kindleUntil || now) - now) / C.OVER_MS) : Math.max(0, 1 - idle / C.COOL_DELAY);
+        g.lineStyle(1, 0xffe8b0, 0.7); g.beginPath(); g.arc(0, 0, rx + 4, top, top + fuse * TAU, false); g.strokePath();
+        if (t >= 1) {   // overkindled: a crown of blue flame over it, and the ring throbbing
+            const cy2 = -26, f2 = 0.5 + 0.5 * Math.sin(now * 0.03);
+            for (let k = 0; k < 5; k++) { const x = (k - 2) * 4, h = 6 + (k === 2 ? 4 : 0) + 2 * Math.sin(now * 0.03 + k); g.fillStyle(0x7fd4ff, 0.9); g.fillTriangle(x - 2, cy2, x + 2, cy2, x, cy2 - h); g.fillStyle(0xffffff, 0.8); g.fillTriangle(x - 0.8, cy2, x + 0.8, cy2, x, cy2 - h * 0.55); }
+            g.lineStyle(2, 0xdff2ff, 0.4 + 0.5 * f2); g.strokeEllipse(0, 0, rx * 2 + 6, ry * 2 + 3);
+        }
+        const st = (e._kindleStore || 0) / Math.round(C.MAX_HITS * C.STORE_MAX);
+        if (t >= 1) {   // the second ring, stacked on top of the first: its empty track, then the stored part, white-hot over a blue glow
+            const oy = -6, n2 = Math.round(seg * st);
+            g.lineStyle(2, 0x2a3a58, 0.7); g.strokeEllipse(0, oy, rx * 2, ry * 2);
+            for (let k = 0; k < n2; k++) {
+                const a0 = top + k / seg * TAU, a1 = top + (k + 1) / seg * TAU, x0 = Math.cos(a0) * rx, y0 = Math.sin(a0) * ry + oy, x1 = Math.cos(a1) * rx, y1 = Math.sin(a1) * ry + oy;
+                g.lineStyle(5, 0x4a9aff, 0.45); g.lineBetween(x0, y0, x1, y1);
+                g.lineStyle(2, 0xffffff, 0.95); g.lineBetween(x0, y0, x1, y1);
+            }
+        }
+    }
+
+    // R key. The spender: attack speed goes supersonic so you can actually reach MAX_HITS
+    // inside one fuse, which roughly doubles the payout.
+    // R key. Guarantees the burst roll for its duration rather than introducing a second
+    // mechanic: the six pellets are the same six you get from the 5% passive. Because a
+    // full bar detonates on its own, the extra pellets convert into reaching the cap
+    // sooner -- more detonations per second, not one larger one.
+    // ══════════════════════════════════════════════════════════════════════
+    // IGNITION BAR
+    // ══════════════════════════════════════════════════════════════════════
+    // A 16-second cooldown whose ONLY feedback was a status text telling you how many seconds
+    // were left -- and only if you pressed R and were refused. You had to fail to find out.
+    //
+    // Three states, so the bar answers "can I press R" at a glance without a number:
+    //   RECHARGING  fills left to right, dim, no pulse
+    //   READY       full, bright, pulsing -- the only state that pulses, so it reads as a
+    //               prompt rather than decoration
+    //   ACTIVE      drains fast across IGNITE_DUR, brightest, so the 3.5s window is visible
+    //               while you are spending it
+    //
+    // Drawn every frame rather than tweened: the fill is a function of two timestamps, so a
+    // tween would be a second source of truth that could disagree with them.
+    _updateKindleIgniteBar() {
+        // Requires fire to be the ACTIVE element, not merely the one Kindling Brand is slotted
+        // into. The first version checked equippedWeapons.fire alone, which is true the whole
+        // time the weapon is owned -- so the bar sat over the player while you were playing ice
+        // or lightning, advertising a cooldown for an ability you could not press. Exactly the
+        // slotted-versus-wielding distinction the Field Kit's scrap gate turns on, got backwards
+        // here because for the Field Kit "slotted" was the right answer and for a UI prompt it
+        // is not.
+        const wielding = this.currentElement === 'fire'
+            && (this.equippedWeapons?.fire || 'flame_fists') === 'ignition';
+        if (!wielding || !this.player) { this._destroyKindleIgniteBar(); return; }
+
+        const C = this._kindlingCfg();
+        const now = this.time.now;
+        const activeUntil = this._kindleIgniteUntil || 0;
+        const readyAt     = this._kindleIgniteReady || 0;
+
+        let frac, state;
+        if (now < activeUntil) {
+            // Spending it: drain across the duration.
+            frac = (activeUntil - now) / C.IGNITE_DUR;
+            state = 'active';
+        } else if (now < readyAt) {
+            // Recharging: fill across whatever remains of the cooldown AFTER the active window,
+            // so the bar starts empty the instant ignition ends rather than jumping.
+            const fillStart = readyAt - (C.IGNITE_COOL - C.IGNITE_DUR);
+            frac = Math.max(0, Math.min(1, (now - fillStart) / (C.IGNITE_COOL - C.IGNITE_DUR)));
+            state = 'recharging';
+        } else {
+            frac = 1;
+            state = 'ready';
+        }
+
+        if (!this._kindleBar?.bg?.active) {   // the scene object outlives a floor change; its old graphics do not
+            this._kindleBar = {
+                bg:  this.add.graphics().setDepth(6),
+                fill: this.add.graphics().setDepth(6.1),
+                glow: this.add.graphics().setDepth(6.05)
+            };
+        }
+        const B = this._kindleBar;
+        // ABOVE the player. Below it read as a different KIND of object -- a shadow or a
+        // selection marker -- because every other status bar in the game sits overhead.
+        //
+        // 24, not the 42 the Singularity Staff's orb bar uses. Matching that offset looked right
+        // on paper and floated in practice: the orb bar carries an "R ORB READY" label above it,
+        // so 42 is the height of a bar PLUS its caption. A bare bar needs to sit where the
+        // caption would have been.
+        // One bar for both (2026-10-20): the fuel across it, Blue Flame's charge as a pip at its right end.
+        const W = 34, H = 5, fuel = Math.max(0, Math.min(1, this._fuel ?? 1)), dry = now < (this._fuelDryUntil || 0), blue = state === 'active';
+        const bx = this.player.x - (W + 7) / 2, by = this.player.y - 16;
+        B.bg.clear();
+        B.bg.fillStyle(0x1a0a04, 0.75); B.bg.fillRect(bx - 1, by - 1, W + 2, H + 2); B.bg.fillRect(bx + W + 2, by - 1, H + 2, H + 2);
+        B.bg.lineStyle(1, 0x5a2a12, 0.9); B.bg.strokeRect(bx - 1, by - 1, W + 2, H + 2); B.bg.strokeRect(bx + W + 2, by - 1, H + 2, H + 2);
+        // fuel: orange, blinking red when low, grey while it's run dry, blue while Blue Flame refills it
+        const low = fuel < 0.25 && !blue, blink = low ? 0.55 + 0.45 * Math.sin(now / 70) : 1;
+        const body = dry ? 0x5a4a44 : blue ? 0x7fd4ff : low ? 0xff3a2a : 0xff7a22, hot = dry ? 0x8a7a70 : blue ? 0xffffff : 0xffc070;
+        B.fill.clear();
+        const w = Math.round(W * fuel);
+        if (w > 0) { B.fill.fillStyle(body, blink); B.fill.fillRect(bx, by, w, H); B.fill.fillStyle(hot, 0.85 * blink); B.fill.fillRect(bx, by, w, 2); }
+        // the pip: Blue Flame's charge filling up from the bottom, pulsing when R is ready, draining while it burns
+        const pulse = state === 'ready' ? 0.72 + Math.sin(now / 140) * 0.28 : 1, ph = Math.round(H * frac), px = bx + W + 3;
+        if (ph > 0) { B.fill.fillStyle(state === 'recharging' ? 0x2a5a8a : 0x7fd4ff, pulse); B.fill.fillRect(px, by + H - ph, H, ph); }
+        B.glow.clear();
+        if (state !== 'recharging') { B.glow.fillStyle(0x7fd4ff, 0.22 * pulse); B.glow.fillRect(px - 3, by - 3, H + 6, H + 6); }
+        if (low) { B.glow.fillStyle(0xff3a2a, 0.14 * blink); B.glow.fillRect(bx - 3, by - 3, W + 6, H + 6); }
+    }
+
+    // Ignition's fuel (FUEL_MS of flame on a full tank, REFUEL_MS to fill it out): it drains while lit and refills while out.
+    // Running dry puts the flame out with a sputter and it can't relight for DRY_MS; putting it out yourself costs nothing.
+    // Blue Flame burns free and refills the tank as it runs. Per frame, from GameScene.update.
+    _jetFuelTick(delta) {
+        const C = this._kindlingCfg(), now = this.time.now, dt = Math.min(100, delta || 16);
+        const blue = (this._kindleIgniteUntil || 0) > now, burning = this._jetLit && this._jetHeld?.();
+        if (blue || !burning) { this._fuel = Math.min(1, (this._fuel ?? 1) + dt / C.REFUEL_MS); return; }
+        this._fuel = (this._fuel ?? 1) - dt / C.FUEL_MS;
+        if (this._fuel > 0) return;
+        this._fuel = 0; this._jetLit = false; this._fuelDryUntil = now + C.DRY_MS;
+        const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null, x = tip?.x ?? this.player.x, y = tip?.y ?? this.player.y - 6;
+        for (let k = 0; k < 6; k++) {   // a puff of smoke off the nozzle
+            const sm = this.add.circle(x, y, 2 + Math.random() * 2, 0x4a4440, 0.7).setDepth(4.3);
+            this.tweens.add({ targets: sm, x: x + (Math.random() - 0.5) * 16, y: y - 8 - Math.random() * 14, scale: 2.4, alpha: 0, duration: 600 + k * 60, onComplete: () => sm.destroy() });
+        }
+        Sfx.play(this, 'click');
+        this.showStatusText(this.player.x, this.player.y - 34, 'OUT OF FUEL', '#ff8a5a');
+    }
+
+    _destroyKindleIgniteBar() {
+        if (!this._kindleBar) return;
+        for (const g of Object.values(this._kindleBar)) { if (g?.active) g.destroy(); }
+        this._kindleBar = null;
+    }
+
+    kindlingIgnitionMode() {
+        const C = this._kindlingCfg();
+        const now = this.time.now;
+        if (now < (this._kindleIgniteReady || 0)) {
+            // Kept, but it is no longer the only feedback -- the bar under the player shows this
+            // continuously, so the player does not have to fail a press to learn the timing.
+            const left = Math.ceil(((this._kindleIgniteReady || 0) - now) / 1000);
+            this.showStatusText(this.player.x, this.player.y - 28, `BLUE FLAME ${left}s`, '#6a8acc');
+            return;
+        }
+        this._kindleIgniteUntil = now + C.IGNITE_DUR;
+        this._kindleIgniteReady = now + C.IGNITE_COOL;
+        this.cameras.main.shake(140, 0.005);
+        this._kindleIgniteFx(C.IGNITE_DUR);
+    }
+
+    // Ignition mode on you: the word slams in over you in the title face, a ring of fire bursts out, and while it lasts a
+    // heat haze shimmers round you, flames lick up off you and the gun's barrel glows white-hot.
+    _kindleIgniteFx(ms) {
+        const p = this.player; if (!p?.active) return;
+        const ADD = Phaser.BlendModes.ADD, t0 = this.time.now;
+        const word = this.add.text(p.x, p.y - 40, 'BLUE FLAME', { fontSize: '22px', fontFamily: UIKit.FONT.title, fontStyle: 'bold italic', color: '#eaf6ff', stroke: '#2a5ac8', strokeThickness: 5 }).setOrigin(0.5).setDepth(10).setScale(1.8).setAlpha(0);
+        this._vfxSort?.(word);
+        this.tweens.add({ targets: word, scale: 1, alpha: 1, duration: 160, ease: 'Back.easeOut', onComplete: () => this.tweens.add({ targets: word, y: word.y - 16, alpha: 0, delay: 500, duration: 400, onComplete: () => word.destroy() }) });
+        const ring = this.add.ellipse(p.x, p.y + 10, 24, 10).setStrokeStyle(3, 0x8ac8ff, 1).setBlendMode(ADD).setDepth(1.04);
+        this.tweens.add({ targets: ring, scale: 5, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+        const haze = this.textures.exists('vfx_glow') ? this.add.image(p.x, p.y, 'vfx_glow').setTint(0x3a6aff).setBlendMode(ADD).setDepth(p.depth - 0.02).setScale(0.55).setAlpha(0) : null;
+        const g = this.add.graphics().setBlendMode(ADD);
+        const tick = () => {
+            const now = this.time.now, left = ms - (now - t0);
+            if (left <= 0 || !p.active) { this.events.off('update', tick); haze?.destroy(); g.destroy(); return; }
+            const fade = Math.min(1, (now - t0) / 150, left / 300);
+            haze?.setPosition(p.x, p.y + 4).setAlpha(0.3 * fade * (0.8 + 0.2 * Math.sin(now * 0.03))).setScale(0.5 + 0.05 * Math.sin(now * 0.02));
+            g.clear().setDepth(p.depth + 0.01).setAlpha(fade);
+            for (let k = 0; k < 6; k++) { const x = p.x - 12 + k * 4.8, h = 6 + 5 * (0.5 + 0.5 * Math.sin(now * 0.03 + k * 2.1)), y = p.y + 12; g.fillStyle(0x4a8aff, 0.8); g.fillTriangle(x - 2, y, x + 2, y, x + Math.sin(now * 0.02 + k), y - h); g.fillStyle(0xffd27a, 0.8); g.fillTriangle(x - 1, y, x + 1, y, x, y - h * 0.55); }
+            const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null;
+            if (tip) { g.fillStyle(0x6ab0ff, 0.6); g.fillCircle(tip.x, tip.y, 5); g.fillStyle(0xeaf6ff, 0.9); g.fillCircle(tip.x, tip.y, 2.2); }   // the barrel, white-hot
+            if (Math.random() < 0.4) { const e = this.add.rectangle(p.x + (Math.random() - 0.5) * 22, p.y + 8, 2, 2, Math.random() < 0.5 ? 0xbfe8ff : 0x4a8aff).setBlendMode(ADD).setDepth(p.depth + 0.02); this.tweens.add({ targets: e, y: e.y - 24 - Math.random() * 14, alpha: 0, duration: 520, onComplete: () => e.destroy() }); }
+        };
+        this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));
+        Sfx.play(this, 'ult');
+    }
+
+    // ═══ MAGMA STAFF HEAT ════════════════════════════════════════════════
+    // The staff's ramp used to be read off the ENEMIES: _recalcMagmaFireballCount
+    // scanned every enemy on the map for the highest burn stack and used that as the
+    // tier. Three things fell out of that, all bad. You could build stacks on a trash
+    // mob and then open on a fresh boss at full power, so the ramp was cosmetic. The
+    // instant the burning enemy died the tier dropped to 1, meaning the weapon was at
+    // its weakest immediately after a kill. And in a crowd where your own lava kept
+    // something burning, it sat at max tier permanently without being earned.
+    //
+    // Heat belongs to the WEAPON instead. It builds when your fireballs land and bleeds
+    // off when they stop, so the reward for committing to a target is yours and does not
+    // evaporate because the target died. Burn still feeds it -- a burning target heats
+    // the staff faster -- but burn is the accelerant now, not the fuel gauge.
+    // Returned from a method, not held as class fields: every method in this file is
+    // invoked as WeaponSystem.prototype.x.call(scene), so `this` is the SCENE. A class
+    // field would be defined on a WeaponSystem instance that is never constructed.
+    _magmaCfg() {
+        return {
+            HEAT_MAX:   100,
+            TIER_AT:    [0, 18, 36, 54, 72, 90],   // heat floor for tiers 1..6
+            FIREBALLS:  [2, 2, 3, 3, 4, 5],
+            // SHRINKS as you ramp. It used to GROW (1200 + 120 per tier), which partly
+            // cancelled the damage gain and is why the middle of the curve felt flat.
+            COOLDOWN:   [1200, 1140, 1080, 1020, 980, 940],
+            // No pellet fan. It was introduced to kill the damage cliff, and it did --
+            // but a 3-pellet 18-degree spread also let one cast hit several enemies, so
+            // the staff turned into a crowd-clearer at exactly the tier it is meant to be
+            // at its most focused. Because the pellets SPLIT the payload rather than
+            // multiplying it, deleting them costs nothing on the curve: single-target dps
+            // at every tier is identical, only the incidental multi-target reach is gone.
+            BASE_DMG:   12.0,    // per fireball (9 until volleys fell off on one target, 2026-10-18)
+            // What replaces the fan as the high-tier reward, and it points the other way:
+            // bonus damage against a target that is ALREADY burning. Crowds do not benefit
+            // -- a fresh enemy gives +0% -- but the one thing you have been working on
+            // takes up to +30%. The reward for ramping now lands on commitment.
+            FOCUS_TIER: 4,       // tier at which the bonus switches on
+            FOCUS_PER_STACK: 0.06,
+            TRAIL_TIER: 5,
+            DECAY:      25 * (WeaponLevels.perk('magma_staff', 'burn') ? 0.6 : 1),   // heat per second once idle (Slow Burn: 40% slower)
+            GRACE:      1200,    // ms after the last hit before decay starts
+        };
+    }
+
+    _magmaTier() {
+        const h = this._magmaHeat || 0;
+        const T = this._magmaCfg().TIER_AT;
+        for (let i = 5; i >= 0; i--) if (h >= T[i]) return i + 1;
+        return 1;
+    }
+
+    // Called by the staff's fireballs when they connect. Burn stacks on the victim
+    // accelerate the climb, which is what keeps the weapon reading as fire rather than
+    // as a generic charge meter.
+    _addMagmaHeat(enemy) {
+        const C = this._magmaCfg();
+        const stacks = Math.min(enemy?.burnStacks || 0, 5);
+        this._magmaHeat = Math.min(C.HEAT_MAX, (this._magmaHeat || 0) + 8 + 1.5 * stacks);
+        this._magmaLastHit = this.time.now;
+    }
+
+    // Per-frame bleed. Grace period first so the gap between casts does not cost you
+    // tier -- only actually stopping does.
+    _updateMagmaHeat(time) {
+        // _magmaHeatPrev advances EVERY frame, not only while decaying. Stamping it
+        // inside the decay branch means the first frame after the grace period measures
+        // dt from whenever decay last ran -- potentially seconds -- and dumps the entire
+        // bar in one step instead of bleeding it.
+        const prev = this._magmaHeatPrev ?? time;
+        this._magmaHeatPrev = time;
+        if (!this._magmaHeat) return;
+        const C = this._magmaCfg();
+        if (time - (this._magmaLastHit || 0) < C.GRACE) return;
+        const dt = Math.min(0.25, (time - prev) / 1000);
+        this._magmaHeat = Math.max(0, this._magmaHeat - C.DECAY * dt);
+    }
+
+    // ── BURN: one stacking burn for every fire source ───────────────────────
+    // There used to be four running at once on the same target, each with its own rules: the
+    // old isBurning burn (any fire hit, unless the Magma Staff was the equipped weapon), these
+    // stacks, lava's own 0.8-every-80ms tick, and a boss copy. Now there is one:
+    //   stacks 1-5, a tick every 0.5s: 1 / 2.25 / 4 / 6.5 / 10 (2 / 4.5 / 8 / 13 / 20 DPS), plus PCT_TICK of max HP a tick
+    //   any new stack refreshes a 4s hold, then one stack falls off per second
+    //   fists, sword and magma balls +1 a hit; lava +1 every 0.8s it stands in it (lava deals
+    //   no damage of its own); Magma Surge +2; fire ult pellets +1. Ignition's pellets don't burn.
+    //   Combustion (the fire ult, Ignition's pop) cashes it in: +8 per stack, the stacks spent
+    _burnCfg() {
+        return {
+            MAX: 5,
+            TICK_MS: 500,
+            PER_TICK: [0, 1, 2.25, 4, 6.5, 10],
+            PCT_TICK: [0, 0.001, 0.002, 0.003, 0.004, 0.005],   // ...plus this share of its MAX HP a tick (5 stacks: 1%/s), so burn keeps up as the Tower's HP grows
+            BOSS_PCT: 0.25,   // bosses take this much of the percent part
+            // BLUE BURN (Ignition's Blue Flame): blue stacks sit among the ordinary ones but don't tick. Once the hold ends, a burn
+            // with any blue in it doesn't lose stacks: every BLUE_INFECT_MS one more turns blue; all blue, one pops every
+            // BLUE_POP_MS for BLUE_BURST + BLUE_PCT of max HP (bosses BOSS_PCT of that), through resistance.
+            BLUE_INFECT_MS: 600, BLUE_POP_MS: 400, BLUE_BURST: 25, BLUE_PCT: 0.02,
+            HOLD_MS: 4000,
+            DECAY_MS: 1000,
+            LAVA_MS: 800,   // standing in lava: one burn stack per 0.8s, no damage of its own
+            COMBUST_PER_STACK: 8,
+        };
+    }
+
+    // Damage and interval for a stack count (kept for anything that still asks).
+    _burnTierStats(stacks) {
+        const B = this._burnCfg();
+        const s = Math.min(B.MAX, Math.max(1, stacks | 0));
+        return { dmg: B.PER_TICK[s] * this.damageScaling, interval: B.TICK_MS };
+    }
+
+    // Brings a burning thing's stacks up to date: once its hold is over, one falls off every
+    // DECAY_MS. Keeps the old isBurning flag true to the stacks for whatever still reads it.
+    _burnDecay(o, now) {
+        if (!o) return;
+        if ((o.burnStacks || 0) > 0) {
+            const B = this._burnCfg();
+            if (o._burnDecayAt === undefined) o._burnDecayAt = now + B.HOLD_MS;
+            while (o.burnStacks > 0 && now >= o._burnDecayAt) {
+                if (o.blueBurn > 0 && o.burnStacks > o.blueBurn) { o.blueBurn++; o._burnDecayAt += B.BLUE_INFECT_MS; o._blueChanged = true; }   // the blue spreads
+                else if (o.blueBurn > 0) { o.blueBurn--; o.burnStacks--; o._burnDecayAt += B.BLUE_POP_MS; this._blueBurnPop?.(o); }   // all blue: they go off, one by one
+                else { o.burnStacks--; o._burnDecayAt += B.DECAY_MS; }
+            }
+            o.blueBurn = Math.min(o.blueBurn || 0, o.burnStacks || 0);
+        }
+        if (!((o.burnStacks || 0) > 0)) o.burnStacks = 0;
+        o.isBurning = o.burnStacks > 0;
+    }
+
+    // n stacks onto an enemy. Not on ice elementals, not on anything out of the world.
+    applyBurnStack(enemy, n = 1) {
+        if (!enemy?.sprite?.active || enemy.health <= 0) return;
         if (enemy.iceImmune) return;
-        if (enemy.isVoidSniper && enemy._sniperInvisible) return; // invisible — immune to burn
-        if (!enemy.burnStacks) enemy.burnStacks = 0;
-        enemy.burnStacks = Math.min(5, enemy.burnStacks + 1);
-        enemy.lastBurnStackTime = this.time.now;
-
-        // Update global fireball count — max stacks on any alive enemy OR boss
+        if (this._phasedOut(enemy)) return;
+        const B = this._burnCfg(), now = this.time.now;
+        this._burnDecay(enemy, now);
+        enemy.burnStacks = Math.min(B.MAX, (enemy.burnStacks || 0) + n);
+        enemy.lastBurnStackTime = now;
+        Sfx.play(this, 'ignite');
+        // Super Burn (the fire ult's) is kept alight by ordinary burn, never added to by it: its hold starts again
+        if (enemy.superBurn > 0) { this._superBurnDecay(enemy, now); if (enemy.superBurn > 0) enemy._sbDecayAt = now + this._superBurnCfg().HOLD; }
+        enemy._burnDecayAt = now + B.HOLD_MS;
+        enemy.isBurning = true;
         this._recalcMagmaFireballCount();
-
-        this._updateBurnStackIndicator(enemy);
         this._applyBurnDoT(enemy);
+    }
+
+    // A blue burn stack: onto an empty slot if there is one, else one of the ordinary stacks turns blue
+    applyBlueBurn(enemy) {
+        if (!enemy?.sprite?.active || enemy.health <= 0 || enemy.iceImmune || this._phasedOut(enemy)) return;
+        const B = this._burnCfg(), now = this.time.now;
+        this._burnDecay(enemy, now);
+        if ((enemy.burnStacks || 0) < B.MAX) enemy.burnStacks = (enemy.burnStacks || 0) + 1;
+        enemy.blueBurn = Math.min(enemy.burnStacks, (enemy.blueBurn || 0) + 1);
+        enemy.lastBurnStackTime = now; enemy._burnDecayAt = now + B.HOLD_MS; enemy.isBurning = true;
+        Sfx.play(this, 'sburn');
+        this._applyBurnDoT(enemy);
+    }
+    // One blue stack going off: a burst through resistance (a tick, not a hit)
+    _blueBurnPop(e) {
+        if (!e?.sprite?.active || !(e.health > 0)) return;
+        const B = this._burnCfg(), raw = B.BLUE_BURST * (this.damageScaling || 1) + B.BLUE_PCT * (e.maxHealth || 0) * (e.isBoss ? B.BOSS_PCT : 1);
+        this._tick = true; let d; try { d = raw * this._dmgOutMult(e, 'fire'); } finally { this._tick = false; }
+        e.health -= d;
+        this.showDamageNumber(e.sprite.x, e.sprite.y - 14, d, '#8ac8ff');
+        this._vfxFlash?.(e.sprite.x, e.sprite.y - 6, 34, 0x6ab0ff, 220, 0.8);
+        Sfx.play(this, 'sburn');
+        this.updateEnemyHealthBar(e);
+        if (e.health <= 0) this.killEnemy(e);
+    }
+
+    // ── SUPER BURN (Scorch, the fire ult) ─────────────────────────────────────
+    // Burn's bigger form: 3 stacks at most, so it fills fast, ticking every SB_TICK for SB_PER_TICK[stacks] (it melts
+    // things rather than thudding them: many light ticks, good against armour that counts hits). It holds SB_HOLD after
+    // the last stack, then one falls off every SB_DECAY. Each tick, like every burn tick in Scorch, heals you a little.
+    _superBurnCfg() { return { MAX: 3, TICK: 200, PER_TICK: [0, 2, 4, 6], PCT_TICK: [0, 0.0015, 0.003, 0.005], HOLD: 8000, DECAY: 2500 }; }   // it lasts: 8s after the last stack, then one every 2.5s (burn: 4s, then 1s)   // PCT_TICK: of max HP a tick (3 stacks 2.5%/s; bosses burn's BOSS_PCT of it)
+    applySuperBurn(enemy, n = 1) {
+        if (!enemy?.sprite?.active || enemy.health <= 0 || enemy.iceImmune || this._phasedOut(enemy)) return;
+        const B = this._superBurnCfg(), now = this.time.now;
+        this._superBurnDecay(enemy, now);
+        enemy.superBurn = Math.min(B.MAX, (enemy.superBurn || 0) + n);
+        Sfx.play(this, 'sburn');
+        enemy._sbDecayAt = now + B.HOLD;
+        if (!enemy._sbTimer) {
+            const tick = () => {
+                enemy._sbTimer = null;
+                if (!enemy.sprite?.active || enemy.health <= 0) return;
+                this._superBurnDecay(enemy, this.time.now);
+                if (!(enemy.superBurn > 0)) return;
+                if (!this._phasedOut(enemy)) {
+                    this._tick = true; let dmg; try { dmg = this.resolveElementalHit(enemy, B.PER_TICK[enemy.superBurn] * this.damageScaling + B.PCT_TICK[enemy.superBurn] * (enemy.maxHealth || 0) * (enemy.isBoss ? this._burnCfg().BOSS_PCT : 1), 'fire', true); } finally { this._tick = false; }   // a tick, not a hit
+                    if (dmg !== null && dmg > 0) {
+                        enemy.health -= dmg;
+                        this.gainUltCharge(this.ultChargePerBurnTick, 'fire');
+                        this._scorchHeal();
+                        if (enemy.sprite?.active) this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, '#ffe08a');
+                        this.updateEnemyHealthBar(enemy);
+                        if (enemy.health <= 0) { this.killEnemy(enemy); return; }
+                    }
+                }
+                enemy._sbTimer = this.time.delayedCall(B.TICK, tick);
+            };
+            enemy._sbTimer = this.time.delayedCall(B.TICK, tick);
+        }
+    }
+    _superBurnDecay(o, now) {
+        if (!((o.superBurn || 0) > 0)) { o.superBurn = 0; return; }
+        const B = this._superBurnCfg();
+        while (o.superBurn > 0 && now >= (o._sbDecayAt ?? now)) { o.superBurn--; o._sbDecayAt = (o._sbDecayAt ?? now) + B.DECAY; }
+    }
+    // Scorch's healing: a share of your max HP per burn tick while it runs, capped per second.
+    _scorchHeal() {
+        if (!this.ignitionActive || !(this.health > 0)) return;
+        const C = this._scorchCfg?.(); if (!C) return;
+        const now = this.time.now, W = (this._scorchHealWin ||= { t: now, amt: 0 });
+        if (now - W.t >= 1000) { W.t = now; W.amt = 0; }
+        const heal = Math.min(this.maxHealth * C.HEAL_TICK, this.maxHealth * C.HEAL_CAP - W.amt, this.maxHealth * C.HEAL_TOTAL - (this._scorchHealt || 0), this.maxHealth * (1 + C.OVERHEAL) - this.health);   // it can overheal, up to OVERHEAL past max
+        if (heal <= 0) return;
+        this.health += heal; W.amt += heal; this._scorchHealt = (this._scorchHealt || 0) + heal;
+        if (now - (this._scorchHealHud || 0) > 120) { this._scorchHealHud = now; this.updateHUD?.(); }
     }
 
     // ── Supernova ignition mark — explodes after 2s, cascades to nearby enemies ──
@@ -2869,35 +5332,30 @@ class WeaponSystem {
         const FUSE_TIME        = 2000;
         const MAX_EXPLOSIONS   = 2; // per enemy per cast
 
-        // Visual — blue pulsing mark above enemy
-        const markG = this.add.graphics().setDepth(5);
+        // The mark: a blue-white molten core lodged in it, hotter as the fuse burns down. Cracks of that light spread
+        // over its body, a fuse ring closes in round it, and sparks spit off faster toward the end.
+        const markG = this.add.graphics().setDepth(5).setBlendMode(Phaser.BlendModes.ADD), born = this.time.now;
+        const cracks = Array.from({ length: 5 }, (_, k) => { const a = k / 5 * Math.PI * 2 + Math.random(); return [a, 5 + Math.random() * 5]; });
         const drawMark = () => {
             if (!markG.active) return;
-            markG.clear();
-            const pulse = 0.7 + 0.3 * Math.sin(this.time.now / 120);
-            markG.x = enemy.sprite.x; markG.y = enemy.sprite.y - 18;
-            markG.fillStyle(0x0066ff, pulse * 0.90);
-            markG.fillCircle(0, 0, 7);
-            markG.fillStyle(0xaaccff, 0.95);
-            markG.fillCircle(0, 0, 3.5);
-            markG.lineStyle(2, 0x4488ff, pulse * 0.80);
-            markG.strokeCircle(0, 0, 10);
+            const k = Math.min(1, (this.time.now - born) / FUSE_TIME), heat = k * k, flick = 0.75 + 0.25 * Math.sin(this.time.now * (0.02 + 0.05 * k));
+            markG.clear(); markG.x = enemy.sprite.x; markG.y = enemy.sprite.y - 4;
+            for (const [a, L] of cracks) {   // the cracks, spreading as it heats
+                const l = L * (0.3 + 0.9 * k); markG.lineStyle(1.4, k > 0.7 ? 0xffffff : 0x8ac8ff, (0.4 + 0.6 * heat) * flick);
+                markG.lineBetween(0, 0, Math.cos(a) * l * 0.6 + Math.sin(a * 3) * 2, Math.sin(a) * l * 0.6); markG.lineBetween(Math.cos(a) * l * 0.6 + Math.sin(a * 3) * 2, Math.sin(a) * l * 0.6, Math.cos(a) * l, Math.sin(a) * l);
+            }
+            markG.fillStyle(0x2a6aff, 0.5 * flick); markG.fillCircle(0, 0, 6 + 3 * heat);
+            markG.fillStyle(0xbfe0ff, 0.9); markG.fillCircle(0, 0, 3 + 1.5 * heat);
+            markG.fillStyle(0xffffff, 1); markG.fillCircle(0, 0, 1.5 + heat);
+            const rr = 18 - 10 * k;   // the fuse ring, closing
+            markG.lineStyle(2, 0x6aa8ff, 0.5 + 0.5 * k); markG.beginPath(); markG.arc(0, 0, rr, -Math.PI / 2, -Math.PI / 2 + (1 - k) * Math.PI * 2); markG.strokePath();
+            if (Math.random() < 0.1 + 0.5 * k) { const a2 = Math.random() * Math.PI * 2, sp = this.add.rectangle(markG.x, markG.y, 2, 2, Math.random() < 0.5 ? 0xffffff : 0x8ac8ff).setDepth(5.1).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: sp, x: sp.x + Math.cos(a2) * 14, y: sp.y + Math.sin(a2) * 14 - 6, alpha: 0, duration: 280, onComplete: () => sp.destroy() }); }
         };
         const markTimer = this.time.addEvent({ delay: 30, loop: true, callback: () => {
             if (!enemy.sprite?.active) { markTimer.remove(); markG.destroy(); return; }
             drawMark();
         }});
-
-        // Countdown text
-        let countdown = Math.ceil(FUSE_TIME / 1000);
-        const cdText = this.add.text(enemy.sprite.x, enemy.sprite.y - 30, countdown + '', {
-            fontSize: '11px', fontFamily: 'monospace', color: '#4488ff',
-            stroke: '#000', strokeThickness: 3, fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(6);
-        const cdTimer = this.time.addEvent({ delay: 1000, repeat: countdown - 1, callback: () => {
-            countdown--;
-            if (cdText.active) cdText.setText(countdown > 0 ? countdown + '' : '!');
-        }});
+        const cdText = { active: false, destroy() {} };   // (the old countdown number is gone: the ring is the fuse)
 
         // Fuse — explode after FUSE_TIME
         this.time.delayedCall(FUSE_TIME, () => {
@@ -2909,101 +5367,76 @@ class WeaponSystem {
 
             const ex = enemy.sprite.x, ey = enemy.sprite.y;
 
-            // Explosion visual
-            const expFlash = this.add.circle(ex, ey, 12, 0xffffff, 0.95).setDepth(6);
-            const expRing  = this.add.circle(ex, ey, 12, 0x0044ff, 0).setDepth(6);
-            expRing.setStrokeStyle(3, 0x4488ff, 1.0);
-            const expCore  = this.add.circle(ex, ey, 20, 0x0022cc, 0.55).setDepth(5.5);
-            this.tweens.add({ targets: [expFlash, expRing, expCore], scaleX: 3.5, scaleY: 3.5, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => { expFlash.destroy(); expRing.destroy(); expCore.destroy(); } });
-            // Shard burst
-            for (let i = 0; i < 8; i++) {
-                const sa = (i / 8) * Math.PI * 2;
-                const sg = this.add.graphics().setDepth(6);
-                sg.x = ex; sg.y = ey;
-                sg.fillStyle(i % 2 === 0 ? 0x4488ff : 0xffffff, 0.90);
-                sg.fillRect(-2, -4, 4, 8); sg.setRotation(sa);
-                this.tweens.add({ targets: sg, x: ex + Math.cos(sa)*28, y: ey + Math.sin(sa)*28, alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 300, ease: 'Quad.easeOut', onComplete: () => sg.destroy() });
+            // It goes off: a column of blue-white fire, a shockwave, molten chunks thrown out
+            const ADD = Phaser.BlendModes.ADD;
+            const col = this.add.rectangle(ex, ey - 26, 14, 64, 0xbfe0ff, 0.9).setDepth(6).setBlendMode(ADD).setOrigin(0.5, 0.9);
+            this.tweens.add({ targets: col, scaleX: 2.2, scaleY: 1.4, alpha: 0, duration: 340, ease: 'Quad.easeOut', onComplete: () => col.destroy() });
+            const wave = this.add.circle(ex, ey, 8, 0, 0).setStrokeStyle(3, 0x6aa8ff, 1).setDepth(6).setBlendMode(ADD);
+            this.tweens.add({ targets: wave, radius: EXPLOSION_RADIUS, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => wave.destroy() });
+            VisualFX.impact(this, ex, ey, 'fire', 30);
+            this._vfxFlash?.(ex, ey, 90, 0x6aa8ff, 320, 0.9);
+            for (let i = 0; i < 10; i++) {
+                const sa = Math.random() * Math.PI * 2, d = 20 + Math.random() * 26, c = [0xffffff, 0xbfe0ff, 0x4a88ff, 0xff8a2a][i % 4];
+                const ch = this.add.rectangle(ex, ey, 3, 3, c).setDepth(6).setBlendMode(ADD);
+                this.tweens.add({ targets: ch, x: ex + Math.cos(sa) * d, y: ey + Math.sin(sa) * d - 10, alpha: 0, angle: 200, duration: 420, ease: 'Quad.easeOut', onComplete: () => ch.destroy() });
             }
+            Sfx.play(this, 'erupt');
             this.cameras.main.shake(30, 0.003);
 
             // Damage + apply burn stack to detonating enemy
             if (enemy.sprite?.active && enemy.health > 0) {
-                this.damageEnemy(enemy, EXPLOSION_DMG);
+                this.damageEnemy(enemy, EXPLOSION_DMG, 'fire');
                 if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
             }
             // Boss direct hit
-            this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), EXPLOSION_DMG);
-            if (typeof this.applyBurnStackBoss === 'function') this.applyBurnStackBoss();
+            if (this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), EXPLOSION_DMG, undefined, 'fire')) {
+                if (typeof this.applyBurnStackBoss === 'function') this.applyBurnStackBoss();
+            }
 
             // AoE — damage nearby enemies and cascade ignition marks
-            for (const nearby of this.enemies) {
+            for (const nearby of [...this.enemies]) {
                 if (nearby === enemy) continue;
                 if (!nearby.sprite?.active || nearby.health <= 0) continue;
                 const ndx = nearby.sprite.x - ex, ndy = nearby.sprite.y - ey;
                 if (Math.sqrt(ndx*ndx + ndy*ndy) > EXPLOSION_RADIUS) continue;
-                this.damageEnemy(nearby, EXPLOSION_DMG * 0.7);
+                this.damageEnemy(nearby, EXPLOSION_DMG * 0.7, 'fire');
                 if (typeof this.applyBurnStack === 'function') this.applyBurnStack(nearby);
                 // Cascade — mark nearby enemies (respects max explosions per enemy)
                 if (!(nearby._ignitionMarkActive)) {
                     nearby._ignitionExplosionCount = (nearby._ignitionExplosionCount || 0) + 1;
                     if (nearby._ignitionExplosionCount <= MAX_EXPLOSIONS) {
                         this._applyIgnitionMark(nearby);
+                        const em = this.add.image(ex, ey, 'vfx_dot').setTint(0xbfe0ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(6).setScale(1.4), f = { t: 0 }, tx = nearby.sprite.x, ty = nearby.sprite.y - 4;
+                        this.tweens.add({ targets: f, t: 1, duration: 260, ease: 'Quad.easeIn', onUpdate: () => em.setPosition(ex + (tx - ex) * f.t, ey + (ty - ey) * f.t - Math.sin(f.t * Math.PI) * 22), onComplete: () => em.destroy() });   // the cascade, seen: an ember arcing to it
                     }
                 }
             }
             // Boss AoE hit
-            if (this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), EXPLOSION_DMG * 0.7)) {
+            if (this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), EXPLOSION_DMG * 0.7, undefined, 'fire')) {
                 if (typeof this.applyBurnStackBoss === 'function') this.applyBurnStackBoss();
             }
         });
     }
 
-    // Apply one burn stack directly to Voltslime boss
-    applyBurnStackBoss() {
-        // Apply to voltslime
-        const boss = this.voltslimeBoss;
-        if (boss?.active && boss.hp > 0) {
-            if (!boss.burnStacks) boss.burnStacks = 0;
-            boss.burnStacks = Math.min(5, boss.burnStacks + 1);
-            boss.lastBurnStackTime = this.time.now;
+    // n stacks onto the bosses: the one given, or whichever are up (a level has one at most).
+    applyBurnStackBoss(n = 1, only = null) {
+        const B = this._burnCfg(), now = this.time.now;
+        const vb = this.voltslimeBoss, vs = this.voidSovereignBoss;
+        const add = (boss) => {
+            this._burnDecay(boss, now);
+            boss.burnStacks = Math.min(B.MAX, (boss.burnStacks || 0) + n); Sfx.play(this, 'ignite');
+            boss.lastBurnStackTime = now;
+            boss._burnDecayAt = now + B.HOLD_MS;
+            boss.isBurning = true;
             this._recalcMagmaFireballCount();
-            this._applyBurnDoTBoss();
             this._updateBossBurnIndicator(boss);
-        }
-        // Apply to void sovereign
-        const vs = this.voidSovereignBoss;
-        if (vs?.active && vs.hp > 0 && !vs._isInvulnerable) {
-            if (!vs.burnStacks) vs.burnStacks = 0;
-            vs.burnStacks = Math.min(5, vs.burnStacks + 1);
-            vs.lastBurnStackTime = this.time.now;
-            this._recalcMagmaFireballCount();
-            this._applyBurnDoTVoidSovereign();
-            this._updateBossBurnIndicator(vs);
-        }
+        };
+        if ((!only || only === vb) && vb?.active && vb.hp > 0) { add(vb); this._applyBurnDoTBoss(); }
+        if ((!only || only === vs) && vs?.active && vs.hp > 0 && !vs._isInvulnerable) { add(vs); this._applyBurnDoTVoidSovereign(); }
     }
 
     _applyBurnDoTVoidSovereign() {
-        const vs = this.voidSovereignBoss;
-        if (!vs?.active) return;
-        const s = vs.burnStacks || 0;
-        if (s <= 0) return;
-        const { dmg: dmgPerTick, interval } = this._burnTierStats(s);
-        if (vs._burnDoTTimer) { vs._burnDoTTimer.remove(); vs._burnDoTTimer = null; }
-        const tick = () => {
-            if (!vs?.active || vs.hp <= 0 || !vs.burnStacks) return;
-            const timeSinceLast = this.time.now - (vs.lastBurnStackTime || 0);
-            if (timeSinceLast > interval * 1.5) {
-                vs.burnStacks = Math.max(0, vs.burnStacks - 1);
-                this._recalcMagmaFireballCount();
-                this._updateBossBurnIndicator(vs);
-                if (vs.burnStacks > 0) this._applyBurnDoTVoidSovereign();
-                return;
-            }
-            if (typeof this.damageVoidSovereignBoss === 'function') this.damageVoidSovereignBoss(dmgPerTick);
-            this.gainUltCharge(this.ultChargePerBurnTick);
-            vs._burnDoTTimer = this.time.delayedCall(interval, tick);
-        };
-        vs._burnDoTTimer = this.time.delayedCall(interval, tick);
+        this._burnBossTicker(this.voidSovereignBoss, d => this.damageVoidSovereignBoss?.(d));
     }
 
     _recalcMagmaFireballCount() {
@@ -3018,27 +5451,27 @@ class WeaponSystem {
     }
 
     _applyBurnDoTBoss() {
-        const boss = this.voltslimeBoss;
-        if (!boss?.active) return;
-        const s = boss.burnStacks || 0;
-        if (s <= 0) return;
-        const { dmg: dmgPerTick, interval } = this._burnTierStats(s);
-        if (boss._burnDoTTimer) { boss._burnDoTTimer.remove(); boss._burnDoTTimer = null; }
+        this._burnBossTicker(this.voltslimeBoss, d => this.damageVoltslimeBoss(d));
+    }
+
+    // The boss version of _applyBurnDoT: the same ticks, the same hold and decay.
+    _burnBossTicker(boss, hurt) {
+        if (!boss?.active || !((boss.burnStacks || 0) > 0) || boss._burnDoTTimer) return;
+        const B = this._burnCfg();
         const tick = () => {
-            if (!boss?.active || boss.hp <= 0 || !boss.burnStacks) return;
-            const timeSinceLast = this.time.now - (boss.lastBurnStackTime || 0);
-            if (timeSinceLast > interval * 1.5) {
-                boss.burnStacks = Math.max(0, boss.burnStacks - 1);
-                this._recalcMagmaFireballCount();
-                this._updateBossBurnIndicator(boss);
-                if (boss.burnStacks > 0) { this._applyBurnDoTBoss(); }
-                return;
+            boss._burnDoTTimer = null;
+            if (!boss?.active || boss.hp <= 0) return;
+            const before = boss.burnStacks;
+            this._burnDecay(boss, this.time.now);
+            if (boss.burnStacks !== before) { this._recalcMagmaFireballCount(); this._updateBossBurnIndicator(boss); }
+            if (!(boss.burnStacks > 0)) return;
+            if (!boss._isInvulnerable) {
+                this._tick = true; try { hurt(B.PER_TICK[boss.burnStacks] * this.damageScaling + B.PCT_TICK[boss.burnStacks] * B.BOSS_PCT * (boss.maxHp || boss.maxHealth || 0)); } finally { this._tick = false; }   // a tick, not a hit; a boss takes BOSS_PCT of the percent part
+                this.gainUltCharge(this.ultChargePerBurnTick, 'fire');
             }
-            this.damageVoltslimeBoss(dmgPerTick);
-            this.gainUltCharge(this.ultChargePerBurnTick);
-            boss._burnDoTTimer = this.time.delayedCall(interval, tick);
+            boss._burnDoTTimer = this.time.delayedCall(B.TICK_MS, tick);
         };
-        boss._burnDoTTimer = this.time.delayedCall(interval, tick);
+        boss._burnDoTTimer = this.time.delayedCall(B.TICK_MS, tick);
     }
 
     // Burn stack pip indicator — works for any boss object with .container/.burnStacks/.active
@@ -3051,75 +5484,47 @@ class WeaponSystem {
         }
         const stacks = boss.burnStacks || 0;
         if (stacks <= 0) return;
-        const colors = [0xff9900, 0xff6600, 0xff3300, 0xff1100, 0xff0000];
+        // the same flame pips the enemies wear (CreatureFX), bigger, over the boss's bar
         boss._burnStackBar = [];
-        const GAP = 8, W = 8, H = 10;
+        const GAP = 8, W = 8;
         const totalW = stacks * W + (stacks - 1) * GAP;
         const bx = boss.container.x, by = boss.container.y - 130; // above HP bar
         for (let i = 0; i < stacks; i++) {
-            const pip = this.add.graphics().setDepth(6);
-            const col = colors[i] || 0xff0000;
-            pip.fillStyle(col, 0.4); pip.fillRect(-(W+2)/2, -(H+2)/2, W+2, H+2);
-            pip.fillStyle(col, 1.0); pip.fillRect(-W/2, -H/2, W, H);
-            pip.fillStyle(0xffff88, 0.7); pip.fillRect(-W/2+1, -H/2+1, W-2, 2);
+            const pip = this.textures.exists('cfx_bits') ? this.add.image(0, 0, 'cfx_bits', 'flame').setScale(1.6).setDepth(6) : this.add.circle(0, 0, 4, 0xff6a1a).setDepth(6);
             pip.x = bx - totalW/2 + i*(W+GAP) + W/2;
             pip.y = by;
             boss._burnStackBar.push(pip);
         }
     }
 
+    // The burn's clock: one ticker per burning enemy, every TICK_MS, until its stacks run out.
     _applyBurnDoT(enemy) {
-        const s = enemy.burnStacks || 0;
-        if (s <= 0) return;
-        const { dmg: dmgPerTick, interval } = this._burnTierStats(s);
-
-        if (enemy._burnDoTTimer) { enemy._burnDoTTimer.remove(); enemy._burnDoTTimer = null; }
-
-        const tickBurn = () => {
-            if (!enemy.sprite?.active || enemy.health <= 0 || !(enemy.burnStacks > 0)) return;
-            // Invisible snipers are immune — pause DoT, hide indicator, reschedule
-            if (enemy.isVoidSniper && enemy._sniperInvisible) {
-                this._clearBurnStackIndicator(enemy);
-                enemy._burnDoTTimer = this.time.delayedCall(interval, tickBurn);
-                return;
-            }
-            // Decay: reduce stack if no new hit in 1.5x the interval
-            const timeSinceLast = this.time.now - (enemy.lastBurnStackTime || 0);
-            if (timeSinceLast > interval * 1.5) {
-                enemy.burnStacks = Math.max(0, enemy.burnStacks - 1);
-                this._updateBurnStackIndicator(enemy);
-                if (enemy.burnStacks === 0) {
-                    this._clearBurnStackIndicator(enemy);
-                    this._recalcMagmaFireballCount();
-                    return;
-                }
-                this._applyBurnDoT(enemy);
-                return;
-            }
-            // Tick damage — burn DoT now damages ALL enemies including fire elementals
-            // (lava + burn is the only way to hurt fire elementals — that's the design)
-            const burnPurpleBonus = enemy._purpleMarked ? 2.0 : 1;
-            const finalBurnDmg = dmgPerTick * burnPurpleBonus;
-            enemy.health -= finalBurnDmg;
-            this.gainUltCharge(this.ultChargePerBurnTick);
-            if (enemy.sprite?.active) {
-                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, finalBurnDmg, enemy._purpleMarked ? '#ff44ff' : '#ff8800');
-                if (!enemy.fireImmune && typeof enemy.sprite.setTint === 'function') {
-                    // Skip tint on fire elementals — they're already their own colour
-                    enemy.sprite.setTint(0xff4400);
-                    this.time.delayedCall(80, () => {
-                        if (enemy.sprite?.active && typeof enemy.sprite.setTint === 'function') {
-                            if (enemy.burnStacks > 0) enemy.sprite.setTint(0xff6600);
-                            else enemy.sprite.clearTint();
-                        }
-                    });
+        if (!((enemy.burnStacks || 0) > 0) || enemy._burnDoTTimer) return;   // already ticking
+        const B = this._burnCfg();
+        const tick = () => {
+            enemy._burnDoTTimer = null;
+            if (!enemy.sprite?.active || enemy.health <= 0) return;
+            this._burnDecay(enemy, this.time.now);
+            if (!(enemy.burnStacks > 0)) { this._clearBurnStackIndicator(enemy); this._recalcMagmaFireballCount(); return; }
+            // Out of the world right now (a phased sniper, a submerged drowner, one held by the
+            // Displacer): no damage, but the clock runs.
+            if (!this._phasedOut(enemy)) {
+                const reg = Math.max(0, enemy.burnStacks - (enemy.blueBurn || 0));   // (blue stacks don't tick: they burst)
+                const raw = B.PER_TICK[reg] * this.damageScaling + B.PCT_TICK[reg] * (enemy.maxHealth || 0) * (enemy.isBoss ? B.BOSS_PCT : 1);   // flat + a share of max HP; purple: resolveElementalHit
+                // the escape hatch: burn is one of the ways to hurt a fire elemental
+                this._tick = true; let dmg; try { dmg = this.resolveElementalHit(enemy, raw, 'fire', true); } finally { this._tick = false; }   // a tick, not a hit
+                if (dmg !== null && dmg > 0) {
+                    enemy.health -= dmg;
+                    this.gainUltCharge(this.ultChargePerBurnTick, 'fire');
+                    this._scorchHeal();   // Scorch: burn ticks heal you
+                    if (enemy.sprite?.active) this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, enemy._purpleMarked ? '#ff44ff' : '#ff8800');
+                    this.updateEnemyHealthBar(enemy);
+                    if (enemy.health <= 0) { this.killEnemy(enemy); return; }
                 }
             }
-            this.updateEnemyHealthBar(enemy);
-            if (enemy.health <= 0) { this.killEnemy(enemy); return; }
-            enemy._burnDoTTimer = this.time.delayedCall(interval, tickBurn);
+            enemy._burnDoTTimer = this.time.delayedCall(B.TICK_MS, tick);
         };
-        enemy._burnDoTTimer = this.time.delayedCall(interval, tickBurn);
+        enemy._burnDoTTimer = this.time.delayedCall(B.TICK_MS, tick);
     }
 
     _updateBurnStackIndicator(enemy) {
@@ -3158,19 +5563,25 @@ class WeaponSystem {
         }
     }
 
-    // Magma Staff ripple — panic button on R key, charges over 12 seconds
+    // Magma Surge (R): dumps the staff's stored heat. Everything round you is thrown back and
+    // set burning, and a wave of lava rolls outward. More heat, a bigger surge: radius 2-5,
+    // knockback 1-3 tiles, 1-3 burn stacks, lava that lasts longer. The heat goes to 0, so the
+    // staff drops back to its first tier: spending it is the trade.
     magmaStaffRipple() {
         if (this._magmaRippleReady !== true) return;
+        const f = Math.min(1, (this._magmaHeat || 0) / this._magmaCfg().HEAT_MAX);
+        this._magmaHeat = 0;
         this._magmaRippleReady = false;
-        this._magmaRippleCharge = 0;
+        this._magmaSurgeCdUntil = this.time.now + 1000;
         this._updateMagmaRippleBar();
 
         const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const RADIUS    = 4;  // tiles
-        const KNOCKBACK = 2;  // tiles
+        const RADIUS    = 2 + Math.round(3 * f);  // tiles
+        const KNOCKBACK = 1 + Math.round(2 * f);  // tiles
+        const STACKS    = 1 + Math.round(2 * f);
         const RING_INTERVAL = 80;  // ms between each ring wave
-        const RING_LIFE     = 700; // ms each lava ring tile stays visible
+        const RING_LIFE     = Math.round(700 + 1500 * f); // ms each lava ring tile stays
 
         // ── Wave ring — one ring at a time, each briefly lit then gone ──
         for (let r = 1; r <= RADIUS; r++) {
@@ -3197,8 +5608,8 @@ class WeaponSystem {
         }
 
         // Shockwave visual
-        const wave = this.add.graphics().setDepth(4);
-        wave.lineStyle(4, 0xff6600, 0.9); wave.strokeCircle(playerPx, playerPy, 12);
+        const wave = this.add.graphics().setDepth(4).setPosition(playerPx, playerPy);
+        wave.lineStyle(4, 0xff6600, 0.9); wave.strokeCircle(0, 0, 12);
         this.tweens.add({ targets: wave, scaleX: RADIUS * 2.4, scaleY: RADIUS * 2.4, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => wave.destroy() });
         const core = this.add.circle(playerPx, playerPy, 16, 0xffaa00, 0.7).setDepth(4);
         this.tweens.add({ targets: core, radius: 40, alpha: 0, duration: 200, onComplete: () => core.destroy() });
@@ -3234,7 +5645,7 @@ class WeaponSystem {
             enemy.x = landX; enemy.y = landY;
             // Long stun — covers full arc duration + brief settle time
             enemy.isStunned = true;
-            enemy.stunnedUntil = this.time.now + 800;
+            enemy.stunnedUntil = Math.max(enemy.stunnedUntil || 0, this.time.now + 800);
             // Flag to suppress pathfinding target recalculation during arc
             enemy._surgeKnockedBack = true;
             this.time.delayedCall(850, () => { if (enemy.sprite?.active) enemy._surgeKnockedBack = false; });
@@ -3265,7 +5676,7 @@ class WeaponSystem {
                 }
             });
 
-            this.applyBurnStack(enemy);
+            this.applyBurnStack(enemy, STACKS);   // the Surge: 1-3 stacks, by the heat spent
         }
 
         this.showStatusText(playerPx, playerPy - 30, 'MAGMA SURGE!', '#ff8800');
@@ -3274,7 +5685,8 @@ class WeaponSystem {
     _updateMagmaOrbs(time) {
         const isStaff = this.currentElement === 'fire' &&
             (this.equippedWeapons?.fire || 'flame_fists') === 'magma_staff';
-        const count = isStaff ? Math.min((this._magmaStaffFireballCount || 0) + 1, 6) : 0;
+        // Orbiting orbs are the tier readout, so they follow heat like everything else.
+        const count = isStaff ? this._magmaTier() : 0;
 
         // Rebuild orbs if count changed
         if (this._magmaOrbCount !== count) {
@@ -3286,18 +5698,13 @@ class WeaponSystem {
             this._magmaOrbGraphics = [];
             if (count > 0) {
                 for (let i = 0; i < count; i++) {
-                    const g = this.add.graphics().setDepth(5);
-                    // Size and colour scale with count — small dim ember at 1, large bright orb at 6
-                    const r    = 3 + (count - 1) * 0.8;          // 3px → 7px
-                    const col  = count <= 2 ? 0xff9900
-                               : count <= 4 ? 0xff5500
-                                            : 0xff2200;
-                    const glow = count <= 2 ? 0xff6600
-                               : count <= 4 ? 0xff3300
-                                            : 0xff0000;
-                    g.fillStyle(glow, 0.35); g.fillCircle(0, 0, r + 3);
-                    g.fillStyle(col,  1.00); g.fillCircle(0, 0, r);
-                    g.fillStyle(0xffee88, 0.80); g.fillCircle(-r * 0.3, -r * 0.3, r * 0.4);
+                    // a little lava rock (magmaRockKey), bigger and hotter with the heat
+                    const key = WeaponSystem.magmaRockKey(this, i % WeaponSystem.MAGMA_VARIANTS);
+                    const g = this.add.container(0, 0).setDepth(5);
+                    const glow = this.add.image(0, 0, 'vfx_glow').setTint(count <= 2 ? 0xff7a1a : count <= 4 ? 0xff4a10 : 0xff2200).setBlendMode(Phaser.BlendModes.ADD).setScale(0.12 + count * 0.02).setAlpha(0.8);
+                    const rock = this.add.sprite(0, 0, key, String(i % 4)).setScale(0.55 + count * 0.07);
+                    if (this.anims.exists(key)) rock.play({ key, startFrame: i % 4 });
+                    g.add([glow, rock]); g._rock = rock;
                     this._magmaOrbGraphics.push(g);
                 }
             }
@@ -3316,6 +5723,7 @@ class WeaponSystem {
             const angle = baseAngle + (i / this._magmaOrbCount) * Math.PI * 2;
             g.x = px + Math.cos(angle) * ORBIT_R;
             g.y = py + Math.sin(angle) * ORBIT_R;
+            if (g._rock) g._rock.rotation = angle * 1.7 + i;
             // Pulse alpha with a slight phase offset per orb
             g.alpha = 0.7 + Math.sin(time * 0.006 + i * 1.2) * 0.3;
         }
@@ -3332,15 +5740,15 @@ class WeaponSystem {
         }
         const px = this.player.x, py = this.player.y - 18;
         const BAR_W = 40, BAR_H = 4;
-        const pct   = Math.min((this._magmaRippleCharge || 0) / (this._magmaRippleMaxCharge || 12000), 1);
+        const pct   = Math.min((this._magmaHeat || 0) / this._magmaCfg().HEAT_MAX, 1);   // the heat the Surge would dump
         const ready = this._magmaRippleReady === true;
 
-        if (!this._magmaRippleBarBg) {
+        if (!this._magmaRippleBarBg?.active) {   // (dead after a floor change)
             this._magmaRippleBarBg   = this.add.rectangle(px, py, BAR_W + 4, BAR_H + 4, 0x000000, 0.7).setDepth(5.5);
             this._magmaRippleBarFill = this.add.rectangle(px - BAR_W / 2, py, 0, BAR_H, 0xff4400, 1).setOrigin(0, 0.5).setDepth(5.6);
-            this._magmaRippleLabel   = this.add.text(px, py + 7, 'SURGE [R]', {
-                fontSize: '7px', fontFamily: 'monospace', color: '#ff8844',
-                stroke: '#000', strokeThickness: 2
+            this._magmaRippleLabel   = this.add.text(px, py + 7, `SURGE [${Settings.label(Settings.key('surge'))}]`, {
+                fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ff8844',
+                stroke: '#1a0806', strokeThickness: 3, resolution: 2
             }).setOrigin(0.5, 0).setDepth(5.7);
         }
         this._magmaRippleBarBg.x   = px; this._magmaRippleBarBg.y   = py;
@@ -3361,8 +5769,8 @@ class WeaponSystem {
         this.tweens.add({ targets: ring, radius: this.TILE_SIZE * 3.5, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
 
         // Core flash
-        const core = this.add.circle(cpx, cpy, this.TILE_SIZE * 2, 0xffffff, 0.85).setDepth(5);
-        this.tweens.add({ targets: core, radius: this.TILE_SIZE * 4.5, alpha: 0, duration: 280, ease: 'Quad.easeOut', onComplete: () => core.destroy() });
+        VisualFX.impact(this, cpx, cpy, 'fire', this.TILE_SIZE * 1.8);
+        this._vfxFlash?.(cpx, cpy, this.TILE_SIZE * 4, 0xff8a2a, 320, 0.8);
 
         // Debris
         for (let i = 0; i < 16; i++) {
@@ -3417,10 +5825,13 @@ class WeaponSystem {
                             if (enemy.iceImmune && this.isIceTutorial) this._triggerIceImmuneGlerpReaction();
                             continue;
                         }
-                        if (this.isTutorial && enemy.tutorialRoomIndex !== undefined &&
+                        if (this._roomGated() && enemy.tutorialRoomIndex !== undefined &&
                             enemy.tutorialRoomIndex !== this.getCurrentPlayerRoom()) continue;
-                        enemy.health -= damage;
-                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, damage, '#ffffff');
+                        if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                        const _rd4467 = this.resolveElementalHit(enemy, damage, 'fire');
+                        if (_rd4467 === null) continue;
+                        enemy.health -= _rd4467;
+                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd4467, '#ffffff');
                         this.updateEnemyHealthBar(enemy);
                         if (enemy.health <= 0) this.killEnemy(enemy);
                     }
@@ -3504,10 +5915,13 @@ class WeaponSystem {
                                 for (const enemy of [...this.enemies]) {
                                     if (enemy.x !== landTileX || enemy.y !== landTileY) continue;
                                     if (enemy.iceImmune || enemy.fireImmune || enemy.elementImmune) continue;
-                                    if (this.isTutorial && enemy.tutorialRoomIndex !== undefined &&
+                                    if (this._roomGated() && enemy.tutorialRoomIndex !== undefined &&
                                         enemy.tutorialRoomIndex !== this.getCurrentPlayerRoom()) continue;
-                                    enemy.health -= rockDmg;
-                                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, rockDmg, '#ff8800');
+                                    if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                                    const _rd4555 = this.resolveElementalHit(enemy, rockDmg, 'fire');
+                                    if (_rd4555 === null) continue;
+                                    enemy.health -= _rd4555;
+                                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd4555, '#ff8800');
                                     this.updateEnemyHealthBar(enemy);
                                     if (enemy.health <= 0) this.killEnemy(enemy);
                                 }
@@ -3710,13 +6124,21 @@ class WeaponSystem {
             // travel until they hit a wall; only the original bouncing shards and
             // tsunami scatter keep a distance cap.
             if (s.startX && s.startY &&
-                !s.isCannonShard && !s.isHealShard && !s.isHealSplinter) {
+                (!s.isCannonShard || s._range) && !s.isHealShard && !s.isHealSplinter) {
                 const distTraveled = Math.sqrt(
                     Math.pow(s.sprite.x - s.startX, 2) +
                     Math.pow(s.sprite.y - s.startY, 2)
                 );
-                const maxRange = s.isPierceSpike ? 14 * this.TILE_SIZE : 12 * this.TILE_SIZE;
+                const maxRange = s._range || (s.isPierceSpike ? 14 * this.TILE_SIZE : 12 * this.TILE_SIZE);
                 if (distTraveled > maxRange) {
+                    // The centre spike plants its totem where it runs out, so the pillar lands at
+                    // the far end of the lane you swept rather than at your feet.
+                    // Attack 1 always leaves a totem, even on a clean miss: _spawnFrostTotem
+                    // normally fires on the spike's FIRST enemy hit, so a spike that connected
+                    // with nothing would otherwise leave nothing behind.
+                    if (s._plantsTotem && !s.hitEnemies?.size) {
+                        this._spawnFrostTotem(s.sprite.x, s.sprite.y);
+                    }
                     this.destroyIceShard(s);
                     this.iceShards.splice(i, 1);
                     continue;
@@ -3877,9 +6299,9 @@ class WeaponSystem {
                             // Splitters: shatter if frozen, else normal damage
                             if (s.isSplitter && !boss._isFrozen) {
                                 // Normal splitter damage — no freeze
-                                this.damageVoltslimeBoss(s.damage);
+                                this.damageVoltslimeBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
                             } else {
-                                this.damageVoltslimeBoss(s.damage);
+                                this.damageVoltslimeBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
                             }
                         }
 
@@ -3938,13 +6360,13 @@ class WeaponSystem {
                             if (wasAlreadyFrozen && !volleyAlreadyHandled) {
                                 // Shatter — deal full damage with shatter mult
                                 const shatterMult = s.isCannonShard ? (s._shatterMult || 0.5) : 1.0;
-                                this.damageVoidSovereignBoss(s.damage * (1 + shatterMult * 5));
+                                this.damageVoidSovereignBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId) * (1 + shatterMult * 5));
                                 if (typeof this._clearFreezeVisuals === 'function') this._clearFreezeVisuals(vboss._bossProxy || vboss);
                                 vboss._isFrozen = false; // thaw — _thawVoidSovereign doesn't exist, so clear directly
                                 this.showStatusText(vpx, vpy - 60, 'SHATTER!', '#aaffff');
                                 if (s.volleyId) vboss._handledVolleys.add(s.volleyId);
                             } else {
-                                this.damageVoidSovereignBoss(s.damage);
+                                this.damageVoidSovereignBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
                             }
                         }
 
@@ -3954,6 +6376,19 @@ class WeaponSystem {
                             continue;
                         }
                     }
+                }
+            }
+
+            // ── Distance-based recall ────────────────────────────────────────────
+            // Accumulated from actual per-frame movement rather than from elapsed time, so it
+            // stays correct if a shard is slowed, steered, or has its generation speed retuned.
+            if (s._recallAfterPx && !s.isRecalling) {
+                s._travelledPx = (s._travelledPx || 0) + Math.hypot(s.vx * ds, s.vy * ds);
+                if (s._travelledPx >= s._recallAfterPx) {
+                    if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
+                    s.isRecalling   = true;
+                    s.hitEnemies    = new Set();           // the return pass may re-hit
+                    s._recallDamage = s.damage * (s._recallDmgMult || 2.2);
                 }
             }
 
@@ -3970,11 +6405,14 @@ class WeaponSystem {
 
             const hitWallX = outX || (!outY && this.world[nextTileX][tileY] === this.WALL);
             const hitWallY = outY || (!outX && this.world[tileX][nextTileY] === this.WALL);
+            if ((hitWallX || hitWallY) && !s.isHealShard) VisualFX.wallImpact(this, s.sprite.x, s.sprite.y, 'ice', s.vx, s.vy);
 
             if (hitWallX && !hitWallY) {
                 if (s.isHealShard && s._onImpact) { s._onImpact(s.sprite.x, s.sprite.y); this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isTsunamiScatter || s.isPierceSpike) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isSplitter && s.splitterGen === 4 && !s.isRecalling) {
+                if (s.isTsunamiScatter || s.isPierceSpike) {
+                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
+                // A wall short-circuits the distance requirement: nowhere further to go.
+                if (s.isSplitter && s._isFinalGen && !s.isRecalling) {
                     // Wall hit triggers immediate recall instead of destruction
                     if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
                     if (s._recallTimer) { s._recallTimer.remove(); }
@@ -3988,8 +6426,10 @@ class WeaponSystem {
                 }
             } else if (hitWallY && !hitWallX) {
                 if (s.isHealShard && s._onImpact) { s._onImpact(s.sprite.x, s.sprite.y); this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isTsunamiScatter || s.isPierceSpike) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isSplitter && s.splitterGen === 4 && !s.isRecalling) {
+                if (s.isTsunamiScatter || s.isPierceSpike) {
+                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
+                // A wall short-circuits the distance requirement: nowhere further to go.
+                if (s.isSplitter && s._isFinalGen && !s.isRecalling) {
                     if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
                     if (s._recallTimer) { s._recallTimer.remove(); }
                     s.isRecalling = true; s.hitEnemies = new Set(); s._recallDamage = s.damage * 2.2;
@@ -4004,8 +6444,10 @@ class WeaponSystem {
                 s.vy = -s.vy; s.bounces++; this.spawnBounceImpact(s.sprite.x, s.sprite.y);
             } else if (hitWallX && hitWallY) {
                 if (s.isHealShard && s._onImpact) { s._onImpact(s.sprite.x, s.sprite.y); this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isTsunamiScatter || s.isPierceSpike) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isSplitter && s.splitterGen === 4 && !s.isRecalling) {
+                if (s.isTsunamiScatter || s.isPierceSpike) {
+                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
+                // A wall short-circuits the distance requirement: nowhere further to go.
+                if (s.isSplitter && s._isFinalGen && !s.isRecalling) {
                     if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
                     if (s._recallTimer) { s._recallTimer.remove(); }
                     s.isRecalling = true; s.hitEnemies = new Set(); s._recallDamage = s.damage * 2.2;
@@ -4099,8 +6541,8 @@ class WeaponSystem {
                 }
             }
 
-            // ── Gen 4 splitter recall: snap back toward player, destroy on arrival ──
-            if (s.isSplitter && s.splitterGen === 4 && s.isRecalling) {
+            // ── Final-gen splitter recall: snap back toward player, destroy on arrival ──
+            if (s.isSplitter && s._isFinalGen && s.isRecalling) {
                 const RECALL_SPEED   = 220;
                 const RECALL_ACCEL   = 0.28;
                 const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -4122,14 +6564,17 @@ class WeaponSystem {
                 if (time - s.lastDamageTick >= 80) {
                     s.lastDamageTick = time;
                     const orbX = s.sprite.x, orbY = s.sprite.y;
-                    for (const enemy of this.enemies) {
+                    for (const enemy of [...this.enemies]) {
                         if (!enemy.sprite?.active) continue;
                         if (enemy.fireImmune) continue;
                         const dx = enemy.sprite.x - orbX, dy = enemy.sprite.y - orbY;
                         if (dx * dx + dy * dy > (32 * 32)) continue;
                         if (!enemy.iceImmune) {
-                            enemy.health -= s.damage;
-                            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, s.damage, '#00ff88');
+                            if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                            const _rd5178 = this.resolveElementalHit(enemy, s.damage, 'ice');
+                            if (_rd5178 === null) continue;
+                            enemy.health -= _rd5178;
+                            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, _rd5178, '#00ff88');
                             this.updateEnemyHealthBar(enemy);
                             if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
                         }
@@ -4152,7 +6597,7 @@ class WeaponSystem {
 
             // Enemy hit
             let destroyed = false;
-            for (let enemy of this.enemies) {
+            for (let enemy of [...this.enemies]) {
                 if (s.hitEnemies?.has(enemy)) continue;
                 if (s.piercedEnemies?.has(enemy)) continue;
                 const ex = enemy.sprite.x, ey = enemy.sprite.y;
@@ -4165,7 +6610,9 @@ class WeaponSystem {
                     if (s.isBlock) {
                         // Always freeze on block hit
                         this.damageEnemyIce(enemy, s.damage);
-                        this.freezeEnemy(enemy, this.iceBlockFreezeDuration);
+                        // Instant, bar-skipping -- that is the ice block's whole point. But a cube
+                        // now, not a stun: this path predates the brittle rework entirely.
+                        this.makeIceCube(enemy, this.iceBlockFreezeDuration);
                         this.spawnIceSplinter(ex, ey);
                         this.spawnIceSplinter(ex, ey);
                         this.destroyIceShard(s);
@@ -4178,33 +6625,42 @@ class WeaponSystem {
                         s.hitEnemies.add(enemy);
 
                         // ── Spawn frost totem on FIRST hit ───────────────
-                        if (s.hitEnemies.size === 1) {
+                        // Only the volley's centre spike (_plantsTotem): all three planted one.
+                        if (s.hitEnemies.size === 1 && s._plantsTotem) {
                             this._spawnFrostTotem(ex, ey);
                         }
 
                         if (!enemy.iceImmune && !enemy.fireImmune && !enemy.elementImmune) {
                             // Damage
-                            enemy.health -= s.damage;
-                            this.showDamageNumber(ex, ey - 10, Math.round(s.damage), '#aaeeff');
+                            if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                            // full damage to the first enemy it pierces, 35% to the rest: the
+                            // shard is the single-target half of the weapon, the burst the crowd half
+                            const _rd5235 = this.resolveElementalHit(enemy, s.damage * (s.hitEnemies.size > 1 ? 0.35 : 1) * this._volleyMult(enemy, s.volleyId), 'ice');
+                            if (_rd5235 === null) continue;
+                            enemy.health -= _rd5235;
+                            this.showDamageNumber(ex, ey - 10, Math.round(_rd5235), '#aaeeff');
                             this.updateEnemyHealthBar(enemy);
                             if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
 
                             // ── Mark upgrade logic ───────────────────────
-                            if (enemy._shatterMarked && !enemy._purpleMarked) {
+                            // Purple only from a LATER volley, as on the boss path: the three spikes
+                            // of one volley used to gold-mark and upgrade it to purple in one click.
+                            if (enemy._shatterMarked && !enemy._purpleMarked && enemy._goldVolley !== s.volleyId) {
                                 // Upgrade gold → purple
                                 this._applyPurpleMark(enemy, ex, ey);
-                            } else if (!enemy._purpleMarked) {
+                            } else if (!enemy._shatterMarked && !enemy._purpleMarked) {
                                 // Fresh gold mark
                                 this._applyGoldMark(enemy, ex, ey);
+                                enemy._goldVolley = s.volleyId;
                             }
                             // Already purple — do nothing extra
 
                             // Freeze if not already frozen
-                            if (!enemy.isFrozen) {
+                            if (!enemy._iceCube) {
                                 this._destroyChillIndicator(enemy);
-                                this.freezeEnemy(enemy, 4500);
-                                enemy._justFrozenAt = this.time.now; // prevent same-frame shatter
-                                this.gainUltCharge(this.ultChargePerFreeze);
+                                this.makeIceCube(enemy, 4500);
+                                enemy._justFrozenAt = this.time.now;
+                                this.gainUltCharge(this.ultChargePerFreeze, 'ice');
                                 const ff = this.add.graphics().setDepth(4);
                                 ff.x = ex; ff.y = ey;
                                 ff.fillStyle(0xaaeeff, 0.45); ff.fillCircle(0, 0, 12);
@@ -4213,11 +6669,11 @@ class WeaponSystem {
                             }
                         } else if (enemy.iceImmune) {
                             // Pierce spike bypasses ice immunity — instantly freezes ice elementals
-                            if (!enemy.isFrozen) {
+                            if (!enemy._iceCube) {
                                 this._destroyChillIndicator(enemy);
-                                this.freezeEnemy(enemy, 4500);
+                                this.makeIceCube(enemy, 4500);
                                 enemy._justFrozenAt = this.time.now;
-                                this.gainUltCharge(this.ultChargePerFreeze);
+                                this.gainUltCharge(this.ultChargePerFreeze, 'ice');
                                 this.showStatusText(ex, ey - 10, 'PIERCED!', '#ffffff');
                                 const ff = this.add.graphics().setDepth(4);
                                 ff.x = ex; ff.y = ey;
@@ -4225,11 +6681,12 @@ class WeaponSystem {
                                 ff.fillStyle(0xaaeeff, 0.6); ff.fillCircle(0, 0, 10);
                                 this.tweens.add({ targets: ff, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 220, onComplete: () => ff.destroy() });
                             }
-                            // Mark upgrade for ice elementals too
-                            if (enemy._shatterMarked && !enemy._purpleMarked) {
+                            // Mark upgrade for ice elementals too (purple from a later volley)
+                            if (enemy._shatterMarked && !enemy._purpleMarked && enemy._goldVolley !== s.volleyId) {
                                 this._applyPurpleMark(enemy, ex, ey);
-                            } else if (!enemy._purpleMarked) {
+                            } else if (!enemy._shatterMarked && !enemy._purpleMarked) {
                                 this._applyGoldMark(enemy, ex, ey);
+                                enemy._goldVolley = s.volleyId;
                             }
                         }
                         // Keep mark visual following enemy each frame
@@ -4241,7 +6698,7 @@ class WeaponSystem {
                         // Pierce spike instant-freezes queen portals on tile
                         const piercePortal = this.getPortalAt(tileX, tileY);
                         if (piercePortal) {
-                            this.damagePortal(piercePortal, s.damage, { freeze: true });
+                            this.damagePortal(piercePortal, s.damage, { freeze: true, src: s });
                         }
                         // Apply instant freeze to boss if hit
                         if (typeof this.freezeBossFromIceWeapon === 'function') {
@@ -4257,17 +6714,25 @@ class WeaponSystem {
                         // Splitter fragment — damages, shatters frozen, small AoE, pierces
                         if (s.hitEnemies.has(enemy)) continue;
                         s.hitEnemies.add(enemy);
-                        const hitDmg = s.isRecalling ? (s._recallDamage || s.damage * 2.2) : s.damage;
+                        const hitDmg = (s.isRecalling ? (s._recallDamage || s.damage * 2.2) : s.damage) * this._volleyMult(enemy, s.volleyId);
                         // Shatter mark multiplier — 4× purple, 3× gold
-                        const markMult = enemy._purpleMarked ? 4.0 : enemy._shatterMarked ? 3.0 : 1.0;
+                        // Marks: purple is x1.5 on everything now (in the resolve), so the splitter adds
+                        // nothing of its own to it; gold pays x1.25. They were 4x / 3x on top of brittle.
+                        const markMult = enemy._purpleMarked ? 1.0 : enemy._shatterMarked ? 1.25 : 1.0;
                         const finalHitDmg = hitDmg * markMult;
                         // Check frozen BEFORE immunity — frozen iceImmune enemies shatter
                         if (enemy.isFrozen) {
-                            this._triggerShatterBurst(enemy);
+                            this._triggerShatterBurst(enemy, 1.6);   // fractal's shatter, as its spikes'
                         } else if (!enemy.iceImmune && !enemy.fireImmune && !enemy.elementImmune) {
-                            enemy.health -= finalHitDmg;
+                            if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                            // The fan is ice's ground-cover: each fragment that connects chills
+                            // (at splash weight: there are 35 of them a cast). It chilled nothing.
+                            this.applyChill(enemy, this._chillCfg().SPLASH);
+                            const _rd5317 = this.resolveElementalHit(enemy, finalHitDmg, 'ice');
+                            if (_rd5317 === null) continue;
+                            enemy.health -= _rd5317;
                             const dmgCol = enemy._purpleMarked ? '#cc44ff' : enemy._shatterMarked ? '#ffdd44' : s.isRecalling ? '#ffffff' : '#66ccff';
-                            this.showDamageNumber(ex, ey - 10, Math.round(finalHitDmg), dmgCol);
+                            this.showDamageNumber(ex, ey - 10, Math.round(_rd5317), dmgCol);
                             this.updateEnemyHealthBar(enemy);
                             this.gainUltCharge(this.ultChargePerHit);
                             if (enemy.health <= 0) {
@@ -4283,17 +6748,20 @@ class WeaponSystem {
                         // Marked hits flash gold/yellow instead of blue
                         const aoeCol = enemy._purpleMarked ? 0xaa22ff : enemy._shatterMarked ? 0xffdd44 : s.isRecalling ? 0xffffff : 0xaaeeff;
                         const aoeMid = enemy._purpleMarked ? 0xdd88ff : enemy._shatterMarked ? 0xffff88 : s.isRecalling ? 0xffffff : 0xddf8ff;
-                        aoeG.fillStyle(aoeCol, (enemy._purpleMarked || enemy._shatterMarked) ? 0.40 : s.isRecalling ? 0.22 : 0.30); aoeG.fillCircle(0, 0, AOE_RADIUS * ((enemy._purpleMarked || enemy._shatterMarked) ? 1.4 : 1.0));
-                        aoeG.fillStyle(0xffffff, 0.65); aoeG.fillCircle(0, 0, AOE_RADIUS * 0.35);
-                        aoeG.lineStyle(1.2, aoeMid, 0.70); aoeG.strokeCircle(0, 0, AOE_RADIUS * 0.80);
+                        // rings and a star, not filled discs (a volley's hits overlap, and stacked fills read as one flat blob)
+                        const marked = enemy._purpleMarked || enemy._shatterMarked, R2 = AOE_RADIUS * (marked ? 1.2 : 1);
+                        aoeG.fillStyle(aoeCol, marked ? 0.14 : 0.1); aoeG.fillCircle(0, 0, R2 * 0.7);
+                        aoeG.fillStyle(0xffffff, 0.8); aoeG.fillCircle(0, 0, 2.5);
+                        aoeG.lineStyle(marked ? 2 : 1.4, aoeMid, 0.85); aoeG.strokeCircle(0, 0, R2 * 0.8);
+                        if (marked) { aoeG.lineStyle(1, aoeCol, 0.6); aoeG.strokeCircle(0, 0, R2 * 0.55); }
                         for (let ai = 0; ai < 5; ai++) {
-                            const aa = (ai / 5) * Math.PI * 2;
-                            aoeG.lineStyle(0.9, 0xffffff, 0.55);
-                            aoeG.beginPath(); aoeG.moveTo(Math.cos(aa)*5, Math.sin(aa)*5); aoeG.lineTo(Math.cos(aa)*AOE_RADIUS*0.75, Math.sin(aa)*AOE_RADIUS*0.75); aoeG.strokePath();
+                            const aa = (ai / 5) * Math.PI * 2 + ex * 0.01;
+                            aoeG.lineStyle(1, ai % 2 ? aoeMid : 0xffffff, 0.7);
+                            aoeG.beginPath(); aoeG.moveTo(Math.cos(aa)*4, Math.sin(aa)*4); aoeG.lineTo(Math.cos(aa)*R2*0.75, Math.sin(aa)*R2*0.75); aoeG.strokePath();
                         }
-                        this.tweens.add({ targets: aoeG, scaleX: 1.8, scaleY: 1.8, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => aoeG.destroy() });
+                        this.tweens.add({ targets: aoeG, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => aoeG.destroy() });
                         // Damage nearby enemies in AoE radius
-                        for (const nearEnemy of this.enemies) {
+                        for (const nearEnemy of [...this.enemies]) {
                             if (nearEnemy === enemy || s.hitEnemies.has(nearEnemy)) continue;
                             if (!nearEnemy.sprite?.active) continue;
                             const aex = nearEnemy.sprite.x, aey = nearEnemy.sprite.y;
@@ -4304,9 +6772,11 @@ class WeaponSystem {
                             if (nearEnemy.isFrozen) {
                                 this._triggerShatterBurst(nearEnemy);
                             } else if (!nearEnemy.iceImmune && !nearEnemy.fireImmune && !nearEnemy.elementImmune) {
-                                const aoeDmg = finalHitDmg * 0.6;
-                                nearEnemy.health -= aoeDmg;
-                                this.showDamageNumber(aex, aey - 10, Math.round(aoeDmg), s.isRecalling ? '#ffffff' : '#88ddff');
+                                const aoeDmg = finalHitDmg * 0.35;   // was 0.6
+                                const _rd5357 = this.resolveElementalHit(nearEnemy, aoeDmg, 'ice');
+                                if (_rd5357 === null) continue;
+                                nearEnemy.health -= _rd5357;
+                                this.showDamageNumber(aex, aey - 10, Math.round(_rd5357), s.isRecalling ? '#ffffff' : '#88ddff');
                                 this.updateEnemyHealthBar(nearEnemy);
                                 if (nearEnemy.health <= 0) this.killEnemy(nearEnemy);
                             }
@@ -4353,36 +6823,28 @@ class WeaponSystem {
                                 }
                                 this.tweens.add({ targets: shb, scaleX: 2.8, scaleY: 2.8, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => shb.destroy() });
                             } else if (enemy.iceImmune) {
-                                // Ice elementals: apply chill stack toward freeze (no chip damage)
-                                if (!enemy.chillStacks) enemy.chillStacks = 0;
-                                enemy.chillStacks = Math.min(3, enemy.chillStacks + 1);
-                                enemy.lastChillTime = time;
-                                this._updateChillIndicator(enemy);
-                                if (enemy.chillStacks >= 3) {
-                                    enemy.chillStacks = 0;
-                                    this._destroyChillIndicator(enemy);
-                                    this.freezeEnemy(enemy, 1500);
-                                    this.gainUltCharge(this.ultChargePerFreeze);
-                                }
+                                // Ice elementals: no chip damage, chill is all they take.
+                                // Was freezeEnemy(1500) -- a hard stun, which also left them
+                                // eligible for shatter-on-hit while every other enemy was not.
+                                this.applyChill(enemy, this._chillCfg().IMMUNE);
                                 // Heal 1hp per hit even on iceImmune
                                 this.health = Math.min((this.maxHealth || 100) + (s._healMaxOverheal || 25), this.health + 1);
                                 if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
                             } else {
                                 // Normal enemy — damage + chill + heal
-                                enemy.health -= s.damage;
-                                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, Math.round(s.damage), '#44ffaa');
+                                if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                                const _rd5422 = this.resolveElementalHit(enemy, s.damage, 'ice');
+                                if (_rd5422 === null) continue;
+                                enemy.health -= _rd5422;
+                                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, Math.round(_rd5422), '#44ffaa');
                                 this.updateEnemyHealthBar(enemy);
-                                if (enemy.health <= 0) this.killEnemy(enemy);
-                                if (!enemy.chillStacks) enemy.chillStacks = 0;
-                                enemy.chillStacks = Math.min(3, enemy.chillStacks + 1);
-                                enemy.lastChillTime = time;
-                                this._updateChillIndicator(enemy);
-                                if (enemy.chillStacks >= 3) {
-                                    enemy.chillStacks = 0;
-                                    this._destroyChillIndicator(enemy);
-                                    this.freezeEnemy(enemy, 1500);
-                                    this.gainUltCharge(this.ultChargePerFreeze);
-                                }
+                                const _died = enemy.health <= 0;
+                                if (_died) this.killEnemy(enemy);
+                                // Chill only applies to something still alive -- stacking it
+                                // on a corpse rebuilt the indicator after killEnemy removed
+                                // it. Cannot early-out here: the heal below still owes the
+                                // player its hitpoint whether or not the enemy died.
+                                if (!_died) this.applyChill(enemy, this._chillCfg().DIRECT);
                                 // Heal 1hp per hit
                                 this.health = Math.min((this.maxHealth || 100) + (s._healMaxOverheal || 25), this.health + 1);
                                 if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
@@ -4413,21 +6875,19 @@ class WeaponSystem {
                             } else if (enemy.isFrozen) {
                                 this._triggerShatterBurst(enemy, 1 / 7.5);
                             } else if (!enemy.iceImmune) {
-                                enemy.health -= s.damage;
-                                this.showDamageNumber(ex, ey - 8, Math.round(s.damage), '#44ffaa');
+                                if (this._phasedOut(enemy)) continue;   // phased out: not in the world
+                                const _rd5474 = this.resolveElementalHit(enemy, s.damage, 'ice');
+                                if (_rd5474 === null) continue;
+                                enemy.health -= _rd5474;
+                                this.showDamageNumber(ex, ey - 8, Math.round(_rd5474), '#44ffaa');
                                 this.updateEnemyHealthBar(enemy);
-                                if (enemy.health <= 0) { this.killEnemy(enemy); }
-                                // 1 chill stack
-                                if (!enemy.chillStacks) enemy.chillStacks = 0;
-                                enemy.chillStacks++;
-                                enemy.lastChillTime = this.time.now;
-                                this._updateChillIndicator(enemy);
-                                if (enemy.chillStacks >= 3) {
-                                    enemy.chillStacks = 0; enemy.frozenAt = this.time.now;
-                                    this._destroyChillIndicator(enemy);
-                                    this.freezeEnemy(enemy, 10000);
-                                    this.gainUltCharge(this.ultChargePerFreeze);
-                                }
+                                // Every other ice hit site returns or continues here. This
+                                // one fell through, so it killed the enemy and THEN stacked
+                                // chill on the corpse -- which rebuilt the chill dots after
+                                // killEnemy had destroyed them, on something already spliced
+                                // out of this.enemies, so nothing could ever clean them up.
+                                if (enemy.health <= 0) { this.killEnemy(enemy); break; }
+                                this.applyChill(enemy, this._chillCfg().SPLASH);
                             }
                             // Heal per mini shard hit
                             this.health = Math.min((this.maxHealth || 100) + 25, this.health + (s._healAmount || 1));
@@ -4439,7 +6899,7 @@ class WeaponSystem {
                             hpG.fillStyle(0xffffff, 0.85); hpG.fillCircle(0, 0, 2);
                             this.tweens.add({ targets: hpG, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 200, onComplete: () => hpG.destroy() });
                             // Destroy on first hit
-                            this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), s.damage);
+                            this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), undefined, 'ice');
                             const _hsTX = Math.floor(ex / this.TILE_SIZE), _hsTY = Math.floor(ey / this.TILE_SIZE);
                             const _hsP = this.getPortalAt(_hsTX, _hsTY);
                             if (_hsP) this.damagePortal(_hsP, s.damage, { chill: true });
@@ -4450,9 +6910,9 @@ class WeaponSystem {
                             this.spawnBounceImpact(ex, ey);
                             const _csTX = Math.floor(s.sprite.x / this.TILE_SIZE);
                             const _csTY = Math.floor(s.sprite.y / this.TILE_SIZE);
-                            this.damageBossAtTile(_csTX, _csTY, s.damage);
+                            this.damageBossAtTile(_csTX, _csTY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice');
                             const _csP = this.getPortalAt(_csTX, _csTY);
-                            if (_csP) this.damagePortal(_csP, s.damage, { chill: true });
+                            if (_csP) this.damagePortal(_csP, s.damage, { chill: true, src: s });
                             if (s.isPiercing) {
                                 s.pierceCount++;
                                 if (s.pierceCount >= s.maxPierces) {
@@ -4470,7 +6930,7 @@ class WeaponSystem {
                             this._triggerShatterBurst(enemy);
                         } else {
                             this.damageEnemyIce(enemy, s.damage);
-                            this.freezeEnemy(enemy, 2800);
+                            this.makeIceCube(enemy, 2800);
                             this.spawnIceSplinter(ex, ey);
                         }
 
@@ -4483,8 +6943,8 @@ class WeaponSystem {
                         }
                     } else {
                         // Small shard
-                        if (Math.random() < this.iceShardFreezeChance && !enemy.isFrozen) {
-                            this.freezeEnemy(enemy, 1500);
+                        if (Math.random() < this.iceShardFreezeChance && !enemy._iceCube) {
+                            this.makeIceCube(enemy, 1500);
                         }
                         s.hitEnemies.add(enemy);
                         if (this.ultDrainActive) {
@@ -4509,12 +6969,12 @@ class WeaponSystem {
             // Tile-based boss fallback — only fires if pixel check didn't already handle it
             if (!destroyed && !s._hitBossThisFrame &&
                 (s.isCannonShard || s.isPierceSpike || s.isSplitter || s.isHealSplinter)) {
-                this.damageBossAtTile(tileX, tileY, s.damage, s.createdAt);
+                this.damageBossAtTile(tileX, tileY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice');
                 // Also hit queen portal on current tile — chill for ice shards
                 const fbPortal = this.getPortalAt(tileX, tileY);
                 if (fbPortal) {
                     const isIceShard = s.isCannonShard || s.isPierceSpike || s.isSplitter || s.isHealSplinter;
-                    this.damagePortal(fbPortal, s.damage, isIceShard ? { chill: true } : {});
+                    this.damagePortal(fbPortal, s.damage, isIceShard ? { chill: true, src: s } : { src: s });
                 }
             }
 
@@ -4560,34 +7020,12 @@ class WeaponSystem {
     }
 
     // Generic helper — call after moving any player projectile to check crack collision (Level 4 Fracture Core).
-    // Projectiles PIERCE cracks — shrinking every crack they currently touch (each on its own cooldown).
-    // Does not destroy or stop the projectile.
-    _checkProjectileCrackShrink(wx, wy) {
-        if (!this.isLevel4 || !this.fractureCore?.active || !this._cracks?.length) return false;
-        const TS = this.TILE_SIZE;
-        const time = this.time.now;
-        let hitAny = false;
-        for (const crack of this._cracks) {
-            const halfW = crack.width * TS / 2;
-            const pts = crack.points;
-            for (let i = 0; i < pts.length - 1; i++) {
-                const x1 = pts[i].x * TS, y1 = pts[i].y * TS;
-                const x2 = pts[i+1].x * TS, y2 = pts[i+1].y * TS;
-                const d = Utils.distancePointToSegment(wx, wy, x1, y1, x2, y2);
-                if (d < halfW) {
-                    if (this._shrinkCrack(crack, time)) hitAny = true;
-                    break; // one hit per crack per check, regardless of segment count
-                }
-            }
-        }
-        return hitAny;
-    }
-
     updateFireballs(delta) {
         const deltaSeconds = delta / 1000;
 
         for (let i = this.fireballs.length - 1; i >= 0; i--) {
             const fireball = this.fireballs[i];
+            this._ultHit = fireball._ult || null;   // the fire ult's fireballs deal ult damage (GameScene clears it after)
 
             fireball.sprite.x += fireball.vx * deltaSeconds;
             fireball.sprite.y += fireball.vy * deltaSeconds;
@@ -4608,8 +7046,33 @@ class WeaponSystem {
                 continue;
             }
 
+            // Magma Staff: a spinning lump of lava rock, its cracks glowing, in a heat haze. The fire ult's
+            // shots are the same meteors, a size up; its stage-2 supernova a great one burning blue.
+            if (((fireball.isStaffBall && !fireball._isSupernova) || fireball._isShotgun) && fireball.sprite?.active) {
+                if (!fireball._rock) {
+                    const v = (this._magmaRockN = ((this._magmaRockN || 0) + 1) % WeaponSystem.MAGMA_VARIANTS);
+                    const key = ElementSystem.meteorKey(this, v % 3), nova = fireball._isSupernova, big = fireball._isShotgun;   // the same molten rock as the fire ult's meteors
+                    fireball._spin = (0.006 + Math.random() * 0.01) * (Math.random() < 0.5 ? -1 : 1);
+                    const haze = this.add.image(0, 0, 'vfx_glow').setTint(nova ? 0x4a8aff : 0xff6a1a).setBlendMode(Phaser.BlendModes.ADD).setScale(nova ? 0.7 : big ? 0.52 : 0.42).setAlpha(0.45);
+                    const rock = this.add.image(0, 0, key).setScale((nova ? 2.3 : big ? 1.75 : 1.4) * 18 / 32);
+                    if (nova) rock.setTint(0xaaccff);
+                    fireball._hazeS = haze.scale;
+                    fireball.fireGraphics?.clear();
+                    fireball.sprite.add([haze, rock]);
+                    fireball._rock = rock; fireball._haze = haze;
+                }
+                fireball._rock.rotation += delta * fireball._spin;
+                // magma dripping off it: a droplet that sags and cools behind the rock
+                if (Math.random() < 0.18) {
+                    const dx = fireball.sprite.x - fireball.dirX * 8 + (Math.random() - 0.5) * 8, dy = fireball.sprite.y - fireball.dirY * 8 + (Math.random() - 0.5) * 8;
+                    const drop = this.add.circle(dx, dy, 1.6 + Math.random(), 0xff7a22, 0.95).setDepth(fireball.sprite.depth - 0.01);
+                    this.tweens.add({ targets: drop, y: dy + 7, scaleX: 0.6, scaleY: 1.5, alpha: 0, duration: 380, ease: 'Quad.easeIn', onUpdate: (tw) => drop.setFillStyle(tw.progress > 0.5 ? 0x8a2a0c : 0xff7a22, 0.95), onComplete: () => drop.destroy() });
+                }
+                fireball._haze.setScale(fireball._hazeS * (0.95 + 0.12 * Math.sin(this.time.now * 0.03)));
+                if (Math.random() < 0.5) this._vfxTrail?.fire?.emitParticleAt(fireball.sprite.x - fireball.dirX * 6, fireball.sprite.y - fireball.dirY * 6, 1);
+            }
             // Draw fireball visual
-            if (this.time.now - fireball.lastFlameTime > 25) {
+            else if (this.time.now - fireball.lastFlameTime > 25) {
                 fireball.lastFlameTime = this.time.now;
                 const g = fireball.fireGraphics;
                 g.clear();
@@ -4697,6 +7160,7 @@ class WeaponSystem {
                 tileY < 0 || tileY >= this.WORLD_HEIGHT ||
                 this.world[tileX][tileY] === this.WALL ||
                 this.isInLockedRoom(tileX, tileY)) {
+                VisualFX.wallImpact(this, fireball.sprite.x, fireball.sprite.y, 'fire', fireball.vx, fireball.vy);
                 // Only max-stack staff balls (leavesTrail) leave a lava pool on wall impact
                 if (fireball.isStaffBall && fireball.leavesTrail) this.spawnFireballLavaPool(tileX, tileY);
                 fireball.sprite.destroy();
@@ -4707,11 +7171,12 @@ class WeaponSystem {
 
             // Ult shotgun — pierce enemies, spawn lava on each hit
             if (this.ignitionActive && fireball._isShotgun) {
-                for (let enemy of this.enemies) {
+                for (let enemy of [...this.enemies]) {
                     if (fireball.piercedEnemies && fireball.piercedEnemies.has(enemy)) continue;
                     const ex = enemy.sprite.x, ey = enemy.sprite.y;
                     if (Math.abs(ex - fireball.sprite.x) < 10 && Math.abs(ey - fireball.sprite.y) < 10) {
-                        this.damageEnemy(enemy, fireball.damage);
+                        this.damageEnemy(enemy, fireball.damage, 'fire');
+                        if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);   // a pellet is a stack
                         if (fireball._isSupernova) {
                             // Apply ignition mark — explodes after 2s, cascades
                             this._applyIgnitionMark(enemy);
@@ -4723,8 +7188,8 @@ class WeaponSystem {
                     }
                 }
                 // Damage boss if fireball passes through its tile
-                if (this.damageBossAtTile(tileX, tileY, fireball.damage, fireball.createdAt)) {
-                    if (fireball.isStaffBall && typeof this.applyBurnStackBoss === 'function') this.applyBurnStackBoss();
+                if (this.damageBossAtTile(tileX, tileY, fireball.damage, fireball, 'fire')) {
+                    if (typeof this.applyBurnStackBoss === 'function') this.applyBurnStackBoss();   // a pellet is a stack
                 }
                 // Also damage portals (Queen Slimes) in proximity
                 if (this.portals) {
@@ -4734,7 +7199,7 @@ class WeaponSystem {
                         const ppy = portal.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
                         if (Math.abs(ppx - fireball.sprite.x) < this.TILE_SIZE * 2 &&
                             Math.abs(ppy - fireball.sprite.y) < this.TILE_SIZE * 2) {
-                            this.damagePortal(portal, fireball.damage);
+                            this.damagePortal(portal, fireball.damage, { src: fireball });
                         }
                     }
                 }
@@ -4743,7 +7208,7 @@ class WeaponSystem {
 
             // Normal hit — no lava pool
             let hitEnemy = false;
-            for (let enemy of this.enemies) {
+            for (let enemy of [...this.enemies]) {
                 const spriteTileX = Math.floor(enemy.sprite.x / this.TILE_SIZE);
                 const spriteTileY = Math.floor(enemy.sprite.y / this.TILE_SIZE);
                 const onTile = (enemy.x === tileX && enemy.y === tileY)
@@ -4753,15 +7218,30 @@ class WeaponSystem {
                 if (fireball.sprite.y >= tileY * this.TILE_SIZE + this.TILE_SIZE * 0.25) {
                     // Staff balls apply burn to ALL non-iceImmune enemies including fire elementals
                     // (fire elementals are immune to direct damage but accumulate burn stacks)
+                    // Read the burn ALREADY on the target, before this hit adds to it, so
+                    // a fresh enemy is worth +0% and only a target you have been working
+                    // on pays the focus bonus.
+                    const _preStacks = Math.min(enemy.burnStacks || 0, 5);
                     if (fireball.isStaffBall && typeof this.applyBurnStack === 'function') {
                         if (!fireball._burnApplied?.has(enemy)) {
                             fireball._burnApplied?.add(enemy);
+                            // Heat BEFORE the stack lands, for the same reason.
+                            if (typeof this._addMagmaHeat === 'function') this._addMagmaHeat(enemy);
                             this.applyBurnStack(enemy);
                         }
                     }
+                    let _dmg = fireball.damage * this._volleyMult(enemy, fireball.volleyId);
+                    if (fireball._focus && typeof this._magmaCfg === 'function') {
+                        _dmg *= 1 + this._magmaCfg().FOCUS_PER_STACK * _preStacks;
+                    }
                     if (!enemy.iceImmune) {
-                        this.damageEnemy(enemy, fireball.damage);
-                        this.fireballSplash(fireball.sprite.x, fireball.sprite.y, fireball.damage, enemy);
+                        // Typed: the fire ult's pellets still in flight when it ends land here, and
+                        // untyped they hit as whatever you hold (ice: chilling, and charging ice).
+                        this.damageEnemy(enemy, _dmg, 'fire');
+                        // Magma Staff: only the 4 tiles beside it, at 30% (fire is single-target; at 2 tiles
+                        // and 40% it out-crowded Ball Lightning, 262 dps to 218)
+                        if (fireball.isStaffBall) this.fireballSplash(fireball.sprite.x, fireball.sprite.y, _dmg, enemy, 1, 0.3);
+                        else this.fireballSplash(fireball.sprite.x, fireball.sprite.y, _dmg, enemy);
                     }
                     hitEnemy = true;
                     if (fireball.piercedEnemies) fireball.piercedEnemies.add(enemy);
@@ -4769,14 +7249,21 @@ class WeaponSystem {
                 }
             }
             // Also check boss — fireballs deal full damage on contact
-            if (!hitEnemy && this.damageBossAtTile(tileX, tileY, fireball.damage)) {
+            if (!hitEnemy && this.damageBossAtTile(tileX, tileY, fireball.damage * this._volleyMult(this._bossVolleyKey(), fireball.volleyId), undefined, 'fire')) {
                 hitEnemy = true;
                 // Staff balls apply burn stack to boss on hit
                 if (fireball.isStaffBall && typeof this.applyBurnStackBoss === 'function') {
+                    // Bosses are the target this weapon exists for; they must feed it too.
+                    if (typeof this._addMagmaHeat === 'function') {
+                        this._addMagmaHeat(this.voidSovereignBoss?.active ? this.voidSovereignBoss
+                                         : this.voltslimeBoss?.active ? this.voltslimeBoss : null);
+                    }
                     this.applyBurnStackBoss();
                 }
             }
 
+            // Staff fireballs boil off whatever they fly over, trail or not.
+            if (fireball.isStaffBall) this._evaporate(tileX, tileY, 6);
             // Max-stack staff balls leave a lava tile as they fly
             if (fireball.isStaffBall && fireball.leavesTrail) {
                 this.spawnIgnitionTrail(
