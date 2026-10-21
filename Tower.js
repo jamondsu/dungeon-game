@@ -26,22 +26,51 @@ class TowerFloors {
         PAY0: 10, PAY_GROWTH: 1.12, BOSS_PAY: 5, BOSS_EVERY: 10,
         KILL_SHARE: 0.6, KILL_DUST: 0.5, SEED_FLOOR: 0.2, BOOK0: 0.02, BOOK_STEP: 0.006, BOOK_MAX: 0.3,   // BOOK_*: a floor's sealed-book chance, bookChance(); KILL_DUST: this share of the floor's dust comes off its kills too   // a floor's pay: this share comes off its kills (the rest on the clear); a seed / a sealed book per floor, rolled per kill
         HEAL_ON_CLEAR: 0.15,             // of max HP, when a floor is cleared
+        INTRO: [0.45, 0.6, 0.72, 0.84, 0.93],   // floors 1-5: HP and damage eased in by these (2026-10-20: floor 1 at full strength was no introduction)
+        INTRO_CROWD: [5, 6, 7],          // and fewer of them on floors 1-3
         TELEGRAPH_MS: 800, WAVE_GAP_MS: 1200,
     };
 
     // The pool, in story order: cost (budget points) and the first floor it can appear on.
     // `make` gets (scene, x, y) and returns the enemy; room 0 is the arena.
     static POOL = [
-        { id: 'slime',     cost: 1, from: 1,  make: (S, x, y) => S.createEnemy(x, y) },
-        { id: 'ranged',    cost: 2, from: 1,  make: (S, x, y) => S.createRangedEnemy(x, y, 0) },
-        { id: 'berserker', cost: 3, from: 3,  make: (S, x, y) => S.createBerserker(x, y, 0) },
-        { id: 'splitter',  cost: 2, from: 4,  make: (S, x, y) => S.createSplitter(x, y, 0) },
-        { id: 'mortar',    cost: 3, from: 6,  make: (S, x, y) => S.createMortar(x, y, 0) },
-        { id: 'rooter',    cost: 3, from: 7,  make: (S, x, y) => S.createRooter(x, y, 0) },
-        { id: 'healer',    cost: 3, from: 8,  make: (S, x, y) => S.createHealerTotem(x, y, 0) },
-        { id: 'anchor',    cost: 4, from: 12, make: (S, x, y) => S.createAnchorSlime(x, y, 0) },
-        { id: 'sniper',    cost: 3, from: 14, make: (S, x, y) => S.createUpgradedSniper(x, y, 0) },
+        { id: 'slime',     cost: 1, from: 1, role: 'melee',  make: (S, x, y) => S.createEnemy(x, y) },
+        { id: 'ranged',    cost: 2, from: 2, role: 'ranged',  make: (S, x, y) => S.createRangedEnemy(x, y, 0) },
+        { id: 'berserker', cost: 3, from: 3, role: 'melee',  make: (S, x, y) => S.createBerserker(x, y, 0) },
+        { id: 'splitter',  cost: 2, from: 4, role: 'melee',  make: (S, x, y) => S.createSplitter(x, y, 0) },
+        { id: 'mortar',    cost: 3, from: 6, role: 'ranged',  make: (S, x, y) => S.createMortar(x, y, 0) },
+        { id: 'rooter',    cost: 3, from: 7, role: 'ranged',  make: (S, x, y) => S.createRooter(x, y, 0) },
+        { id: 'healer',    cost: 3, from: 8, role: 'support',  make: (S, x, y) => S.createHealerTotem(x, y, 0) },
+        { id: 'anchor',    cost: 4, from: 12, role: 'support', make: (S, x, y) => S.createAnchorSlime(x, y, 0) },
+        { id: 'leech',     cost: 2, from: 7, role: 'ranged',  make: (S, x, y) => S.createLeech(x, y, 0) },
+        { id: 'diver',     cost: 3, from: 9, role: 'ranged',  make: (S, x, y) => S.createTorpedoDiver(x, y, 0) },
+        { id: 'wraith',    cost: 4, from: 12, role: 'support', make: (S, x, y) => S.createWraith(x, y, 0) },
+        { id: 'gem',       cost: 5, from: 14, role: 'elite', make: (S, x, y) => (S.enemies || []).some(e => e._isGem && e.sprite?.active) ? S.createEnemy(x, y) : S.createGem(x, y, 0) },   // one at a time
+        { id: 'ceo',       cost: 6, from: 16, role: 'elite', make: (S, x, y) => S.createSlimeCeo(x, y, 0) },
+        { id: 'shade',     cost: 8, from: 18, role: 'elite', make: (S, x, y) => S.createAdaptiveShade(x, y, 0) },
+        { id: 'armored',   cost: 4, from: 8, role: 'melee',  make: (S, x, y) => S.createArmoredSlime(x, y, 0) },
+        { id: 'hunter',    cost: 4, from: 11, role: 'melee', make: (S, x, y) => S.createHunterSlime(x, y, 0) },
+        { id: 'bud',       cost: 3, from: 10, role: 'melee', make: (S, x, y) => S.createBuddingSlime(x, y, 0) },
+        { id: 'sniper',    cost: 3, from: 14, role: 'ranged', make: (S, x, y) => S.createUpgradedSniper(x, y, 0) },
     ];
+    // A normal floor's PLAN (from floor PLAN_FROM): how many come (count), how strong each can be (budget), who's
+    // likelier (roles), and the layouts that suit it. Rolled with the arena (generateTowerArena), named in the banner.
+    static PLAN_FROM = 4;
+    static PLANS = {
+        mixed: { name: '',              w: 4,   count: 1,    budget: 1,   roles: {},                  layouts: ['pillars', 'bunkers', 'cross', 'ring', 'columns', 'lanes', 'pools'] },
+        swarm: { name: 'A SWARM',       w: 2,   count: 1.5,  budget: 0.55, roles: { melee: 2.5 },     layouts: ['lanes', 'cross', 'ring'] },
+        elite: { name: 'ELITES',        w: 1.5, count: 0.55, budget: 2.2, roles: { elite: 4, melee: 0.6 }, heavy: true, layouts: ['ring', 'pillars'] },   // heavy: dearer kinds likelier
+        nest:  { name: "SNIPERS' NEST", w: 1.5, count: 1,    budget: 1,   roles: { ranged: 3 },       layouts: ['columns', 'bunkers'] },
+        brawl: { name: 'A BRAWL',       w: 1.5, count: 1.15, budget: 1,   roles: { melee: 3 },        layouts: ['pillars', 'cross', 'pools'] },
+        court: { name: 'THE COURT',     w: 1,   count: 0.9,  budget: 1.2, roles: { support: 3, elite: 1.5 }, layouts: ['ring', 'bunkers', 'pools'] },
+    };
+    static rollPlan(floor, R) {
+        if (floor < TowerFloors.PLAN_FROM) return 'mixed';
+        const P = Object.entries(TowerFloors.PLANS), tot = P.reduce((a, [, p]) => a + p.w, 0);
+        let r = R() * tot;
+        for (const [id, p] of P) if ((r -= p.w) < 0) return id;
+        return 'mixed';
+    }
     static BOSSES = ['voltslime', 'sovereign', 'brood'];   // floor 10, 20, 30, then round again
 
     // Floor twists: every TWIST_EVERY-th floor from floor 5 (boss floors aside) bends one
@@ -211,13 +240,13 @@ class TowerFloors {
         const T = S.towerRun, C = TowerFloors.CFG;
         if (!T || T.state === 'clear' || !e?.sprite) return;
         const x = e.sprite.x, y = e.sprite.y - 6, pay = TowerFloors.pay(T.floor) * (S._mods?.pay ?? 1) * (T.twist ? TowerFloors.TWIST_PAY : 1);
-        const budget = Math.round(pay * C.KILL_SHARE), each = Math.max(1, Math.round(budget / TowerFloors.crowd(T.floor))), give = Math.min(each, budget - (T.killPaid || 0));
+        const budget = Math.round(pay * C.KILL_SHARE), each = Math.max(1, Math.round(budget / (T.total || TowerFloors.crowd(T.floor)))), give = Math.min(each, budget - (T.killPaid || 0));
         if (give > 0) { T.killPaid = (T.killPaid || 0) + give; TowerFloors.flyGlorps(S, x, y, give); }
-        const dustAll = TowerFloors.floorDust(T), dEach = Math.max(1, Math.round(dustAll * C.KILL_DUST / TowerFloors.crowd(T.floor))), dGive = Math.min(dEach, Math.round(dustAll * C.KILL_DUST) - (T.killDust || 0));
+        const dustAll = TowerFloors.floorDust(T), dEach = Math.max(1, Math.round(dustAll * C.KILL_DUST / (T.total || TowerFloors.crowd(T.floor)))), dGive = Math.min(dEach, Math.round(dustAll * C.KILL_DUST) - (T.killDust || 0));
         if (dGive > 0 && typeof Enchants !== 'undefined') { T.killDust = (T.killDust || 0) + dGive; Enchants.addDust(dGive); TowerFloors.flyDust(S, x, y, dGive, true); }
         T.lastKill = { x, y };   // where the clear's dust comes out
         if (T.boss) return;   // a boss floor pays its loot on the clear
-        const n = TowerFloors.crowd(T.floor);
+        const n = T.total || TowerFloors.crowd(T.floor);
         if (typeof Garden !== 'undefined' && Math.random() < C.SEED_FLOOR / n) {
             const id = Garden.drop(T.floor, true), got = Garden.give(id), Sd = Garden.seed(id);
             const tex = typeof GardenScene !== 'undefined' ? GardenScene.prototype._seedTex.call(S, Sd) : null;
@@ -286,7 +315,7 @@ class TowerFloors {
                 });
             } });
     }
-    static crowd(floor) { const C = TowerFloors.CFG; return Math.min(C.CROWD_CAP, C.CROWD0 + Math.floor((floor - 1) / C.CROWD_EVERY)); }
+    static crowd(floor) { const C = TowerFloors.CFG; return C.INTRO_CROWD[floor - 1] ?? Math.min(C.CROWD_CAP, C.CROWD0 + Math.floor((floor - 1) / C.CROWD_EVERY)); }
     // Scene data for a fresh run, from floor 1 or a later one (a skip: owed catch-up boons).
     static newRun(floor = 1) { return { seed: (Math.random() * 1e9) | 0, floor, t0: Date.now(), best0: TowerFloors.best(), owed: TowerFloors.owed(floor) }; }
     // Skipping: start on any floor up to your best minus SKIP_BACK, for twice what it pays (boss bonus aside).
@@ -299,8 +328,9 @@ class TowerFloors {
     // From GameScene.create (before anything spawns): this floor's scaling.
     towerScaling() {
         const C = TowerFloors.CFG, f = this.towerRun.floor;
-        this.enemyHealthScale = C.BASE_HP * Math.pow(C.HP_STEP, f - 1);
-        this.enemyDamageScale = C.BASE_DMG * Math.pow(C.DMG_STEP, f - 1);
+        const ease = C.INTRO[f - 1] ?? 1;
+        this.enemyHealthScale = C.BASE_HP * Math.pow(C.HP_STEP, f - 1) * ease;
+        this.enemyDamageScale = C.BASE_DMG * Math.pow(C.DMG_STEP, f - 1) * ease;
         return { floor: f, hp: this.enemyHealthScale, dmg: this.enemyDamageScale };
     }
 
@@ -317,7 +347,11 @@ class TowerFloors {
         const room = { x: Math.floor(W / 2 - w / 2), y: Math.floor(H / 2 - h / 2), w, h, isArena: true };
         this.carveRoom(world, room);
         const cx = room.x + (w >> 1), cy = room.y + (h >> 1);
-        const style = boss ? 'pillars' : ['pillars', 'walls', 'ring', 'scatter'][Math.floor(R() * 4)];
+        const plan = boss ? null : TowerFloors.rollPlan(this.towerRun.floor, R);
+        this.towerRun.plan = plan;
+        const pick = plan ? TowerFloors.PLANS[plan].layouts : ['pillars'];
+        const style = this.towerRun.floor < TowerFloors.PLAN_FROM && !boss ? ['pillars', 'bunkers', 'cross'][Math.floor(R() * 3)] : pick[Math.floor(R() * pick.length)];
+        this._towerPools = null;
         this._towerBlocks(world, room, style);
         this.addWalls(world);
         this.rooms = [room];
@@ -330,17 +364,50 @@ class TowerFloors {
     _towerBlocks(world, room, style, busy = null) {
         const R = this.rng, w = room.w, h = room.h, cx = room.x + (w >> 1), cy = room.y + (h >> 1);
         const blocks = [];
-        if (style === 'pillars') {
-            const dx = Math.floor(w / 4), dy = Math.floor(h / 4);
-            for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) blocks.push([cx + sx * dx, cy + sy * dy, 2, 2]);
+        // mirrored left to right, so a layout reads as built: block [x, y, w, h] and its twin
+        const twin = (bx, by, bw, bh) => { blocks.push([bx, by, bw, bh]); const mx = 2 * room.x + w - bx - bw; if (mx !== bx) blocks.push([mx, by, bw, bh]); };
+        const qx = Math.floor(w / 4), qy = Math.floor(h / 4);
+        if (style === 'pillars') {            // heavy cover to fight round
+            for (const sy of [-1, 1]) twin(cx - qx - 1, cy + sy * qy - 1, 2, 2);
+            twin(room.x + 3, cy - 1, 2, 2);
+        } else if (style === 'bunkers') {     // L-shaped cover in each quarter, open toward the middle: shelter from shooters
+            for (const sy of [-1, 1]) {
+                const by = cy + sy * qy;
+                twin(cx - qx - 2, by, 4, 1);                                // its long side, facing out
+                twin(cx - qx - 2, sy < 0 ? by - 2 : by + 1, 1, 2);         // its back
+            }
+            twin(room.x + 3, cy - 1, 1, 3);                                 // and a wall to duck behind on each side
+        } else if (style === 'cross') {       // arms from the walls toward the middle: four quarters joined through gaps
+            twin(room.x + 2, cy, Math.max(2, cx - room.x - 6), 1);
+            blocks.push([cx, room.y + 2, 1, Math.max(2, cy - room.y - 5)]);
+            twin(cx - qx, room.y + 2, 1, 2);
+        } else if (style === 'ring') {        // a wall round the middle with four doors: the inside or the outside
+            const rx = Math.floor(w / 3), ry = Math.floor(h / 3);
+            for (let i = 0; i < 64; i++) {
+                const t = i / 64 * Math.PI * 2, x = Math.round(cx + Math.cos(t) * rx), y = Math.round(cy + Math.sin(t) * ry);
+                if (Math.abs(x - cx) <= 1 || Math.abs(y - cy) <= 1) continue;   // the doors
+                if (!blocks.some(([bx, by]) => bx === x && by === y)) blocks.push([x, y, 1, 1]);
+            }
+        } else if (style === 'columns') {     // rows of columns that break sight lines: shooters have to come round
+            for (let y = room.y + 3; y < room.y + h - 4; y += 4) for (let x = room.x + 3 + ((y >> 2) % 2) * 2; x < cx - 1; x += 4) twin(x, y, 1, 2);
+        } else if (style === 'lanes') {       // two long walls with gaps: three lanes and the doors between them
+            const lx = cx - Math.max(3, Math.floor(w / 5));
+            const g1 = room.y + Math.floor(h / 3), g2 = room.y + Math.floor(2 * h / 3);
+            twin(lx, room.y + 2, 1, g1 - room.y - 3);
+            twin(lx, g1 + 2, 1, g2 - g1 - 3);
+            twin(lx, g2 + 2, 1, Math.max(1, room.y + h - 4 - g2 - 2));
+        } else if (style === 'pools') {       // light cover and mirrored pools of water (fire dries them; some slimes love them)
+            for (const sy of [-1, 1]) twin(cx - qx - 1, cy + sy * qy, 1, 1);
+            const pools = this._towerPools = [];
+            for (const sy of [-1, 1]) for (let dx = 0; dx < 3; dx++) for (let dy = 0; dy < 2; dy++) {
+                const x = room.x + 3 + dx, y = cy + sy * (qy - 1) + dy;
+                pools.push([x, y], [2 * room.x + w - 1 - x, y]);
+            }
         } else if (style === 'walls') {
             for (let i = 0; i < 4; i++) {
                 const horiz = R() < 0.5, len = 3 + Math.floor(R() * 4);
                 blocks.push([room.x + 2 + Math.floor(R() * (w - 6)), room.y + 2 + Math.floor(R() * (h - 6)), horiz ? len : 1, horiz ? 1 : len]);
             }
-        } else if (style === 'ring') {
-            const rx = Math.floor(w / 3), ry = Math.floor(h / 3);
-            for (let a = 0; a < 12; a++) if (a % 3) blocks.push([Math.round(cx + Math.cos(a / 12 * Math.PI * 2) * rx), Math.round(cy + Math.sin(a / 12 * Math.PI * 2) * ry), 1, 1]);
         } else {
             for (let i = 0; i < 9; i++) blocks.push([room.x + 2 + Math.floor(R() * (w - 4)), room.y + 2 + Math.floor(R() * (h - 4)), 1, 1]);
         }
@@ -401,7 +468,15 @@ class TowerFloors {
         T.best0 ??= T.best;
         T.newBest = T.best > T.best0;   // beaten earlier this run (the death screen's NEW BEST)
         T.boss = T.floor % C.BOSS_EVERY === 0;
+        this._hurtTotal = 0;
         T.wave = 0; T.waves = T.boss ? 1 : C.WAVES;
+        // how many this floor, and how they're split over the waves: from floor PLAN_FROM a little random, and uneven
+        const P = TowerFloors.PLANS[T.plan || 'mixed'], late = T.floor >= TowerFloors.PLAN_FROM, R = this.rng;
+        T.total = Math.max(3, Math.round(TowerFloors.crowd(T.floor) * P.count * (late ? 0.8 + R() * 0.4 : 1)));
+        const sp = Array.from({ length: C.WAVES }, () => late ? 0.7 + R() * 0.6 : 1), st = sp.reduce((a, v) => a + v, 0);
+        T.split = sp.map(v => v / st);
+        T.kinds = {};
+        if (this._towerPools) for (const [x, y] of this._towerPools) this.addWater?.(x, y, 0);
         T.shifted = false;
         // the floor's twist, if it has one
         T.twist = TowerFloors.twistOf(T.floor, T.seed);
@@ -417,7 +492,7 @@ class TowerFloors {
             .setOrigin(0.5, 0).setScrollFactor(0).setDepth(30);
         T.sub = this.add.text(W / 2, 63, '', { fontSize: '12px', fontFamily: 'monospace', color: '#b8a888', stroke: '#05060a', strokeThickness: 3 })
             .setOrigin(0.5, 0).setScrollFactor(0).setDepth(30);
-        this._towerBanner(T.boss ? `FLOOR ${T.floor}  ·  BOSS` : T.twist ? `FLOOR ${T.floor}  ·  ${T.twist.name}` : `FLOOR ${T.floor}`, T.boss ? '#ff8a6a' : T.twist ? '#7ad8f0' : '#f3e3b8');
+        this._towerBanner(T.boss ? `FLOOR ${T.floor}  ·  BOSS` : T.twist ? `FLOOR ${T.floor}  ·  ${T.twist.name}` : TowerFloors.PLANS[T.plan]?.name ? `FLOOR ${T.floor}  ·  ${TowerFloors.PLANS[T.plan].name}` : `FLOOR ${T.floor}`, T.boss ? '#ff8a6a' : T.twist ? '#7ad8f0' : '#f3e3b8');
         if (T.twist) this.time.delayedCall(900, () => this.showStatusText(this.player.x, this.player.y - 40, T.twist.text, '#a8e8f8'));
         this._towerLabel();
         this._towerArriveFx();
@@ -557,11 +632,11 @@ class TowerFloors {
         for (const e of this.enemies || []) if (e.sprite?.active) busy.push([e.x, e.y, 0]);
         for (const b of [this.voltslimeBoss, this.voidSovereignBoss, ...(this.portals || [])]) if (b?.active && b.tileX != null) busy.push([b.tileX, b.tileY, 2]);
         for (const p of this.towerRun.pending || []) busy.push([p.x, p.y, 0]);
-        const styles = ['pillars', 'walls', 'ring', 'scatter'].filter(s => s !== A.style);
+        const styles = ['pillars', 'bunkers', 'cross', 'ring', 'columns', 'lanes'].filter(s => s !== A.style);
         A.style = styles[Math.floor(this.rng() * styles.length)];
         this._towerBlocks(W, room, A.style, (x, y) => busy.some(([bx, by, r]) => Math.abs(bx - x) <= r && Math.abs(by - y) <= r));
         const changed = before.filter(([x, y, t]) => W[x][y] !== t).map(([x, y]) => [x, y]);
-        for (const [x, y] of changed) if (W[x][y] === this.WALL) { this.waterTiles?.delete(x + ',' + y); this.steamTiles?.delete?.(x + ',' + y); }
+        for (const [x, y] of changed) if (W[x][y] === this.WALL) { this.waterTiles?.delete(x + ',' + y); this.steamTiles?.delete?.(x + ',' + y); this._fogOff(x + ',' + y); }
         this.cameras.main.flash(220, 255, 244, 214);
         this.cameras.main.shake(380, 0.008);
         Sfx.play(this, 'collapse');
@@ -579,13 +654,25 @@ class TowerFloors {
             Sfx.play(this, 'roar');
             return;
         }
-        const n = Math.ceil(TowerFloors.crowd(T.floor) * (T.twist?.id === 'swarm' ? 1.5 : 1) / C.WAVES) + (T.wave === C.WAVES ? 1 : 0);
+        const P = TowerFloors.PLANS[T.plan || 'mixed'];
+        const n = Math.max(1, Math.round((T.total || TowerFloors.crowd(T.floor)) * (T.split?.[T.wave - 1] ?? 1 / C.WAVES) * (T.twist?.id === 'swarm' ? 1.5 : 1))) + (T.wave === C.WAVES ? 1 : 0);
         const pool = TowerFloors.POOL.filter(p => p.from <= T.floor);
-        let budget = Math.round(n * (1.2 + T.floor / 12));
+        let budget = Math.round(n * (1.2 + T.floor / 12) * P.budget);
         const spots = this._towerSpots(n);
+        // the plan's roles weigh the draw; a floor holds two of any heavy kind at most, and one of each elite.
+        // The last wave opens with its headliner: the dearest thing it can afford.
+        const kinds = T.kinds ||= {};
+        const allowed = p => !((p.cost >= 4 && (kinds[p.id] || 0) >= 2) || (p.role === 'elite' && (kinds[p.id] || 0) >= 1));
         for (let i = 0; i < n && spots.length; i++) {
-            const can = pool.filter(p => p.cost <= Math.max(1, budget - (n - i - 1)));
-            const pick = can[Math.floor(R() * can.length)] || pool[0];
+            const can = pool.filter(p => p.cost <= Math.max(1, budget - (n - i - 1)) && allowed(p));
+            let pick;
+            if (i === 0 && T.wave === C.WAVES && T.floor >= TowerFloors.PLAN_FROM) pick = can.reduce((a, p) => !a || p.cost > a.cost ? p : a, null);
+            else {
+                const wts = can.map(p => (P.roles[p.role] ?? 1) * (P.heavy ? p.cost * p.cost : p.cost > 1 ? 1 : 0.8)), tot = wts.reduce((a, v) => a + v, 0);
+                let r = R() * tot; pick = can.find((p, k) => (r -= wts[k]) < 0);
+            }
+            pick ||= pool[0];
+            kinds[pick.id] = (kinds[pick.id] || 0) + 1;
             budget -= pick.cost;
             const [x, y] = spots.pop();
             T.pending.push(this._towerTelegraph(x, y, { kind: pick }, C.TELEGRAPH_MS + i * 70));
@@ -625,9 +712,9 @@ class TowerFloors {
         const e = p.kind.make(this, x, y);
         if (!e) return;
         this._vfxSpawn?.(e);
-        // elites, from floor 15: some arrive resisting an element (switch to break them)
         const T = this.towerRun;
-        if (T.twist?.id === 'warded' || (T.floor >= 15 && this.rng() < Math.min(0.5, 0.15 + (T.floor - 15) * 0.01))) this._tagResist(e, ['fire', 'ice', 'lightning'][Math.floor(this.rng() * 3)]);
+        // some arrive resisting an element (switch to break them): from floor 4, more the higher you go; doubles, and from 15 the odd triple
+        if (T.twist?.id === 'warded' || (T.floor >= 4 && this.rng() < Math.min(0.5, 0.12 + T.floor * 0.012))) this._tagResist(e, this._rollResist(this.rng, T.floor >= 15));
     }
 
     // A story boss, scaled to the floor (their HP is fixed in the story, so it's set here).
@@ -656,6 +743,7 @@ class TowerFloors {
         if (T.floor > TowerFloors.best()) { try { localStorage.setItem('tower_best', String(T.floor)); } catch (e) {} T.best = T.floor; T.newBest = T.floor > T.best0; }
         this.health = Math.min(this.maxHealth, this.health + this.maxHealth * (C.HEAL_ON_CLEAR + this._mods.heal));
         Telemetry.end(this, 'clear');
+        Achievements.onFloor(this, T);
         Sfx.play(this, T.boss ? 'fanfare' : 'clear');
         this._towerBanner(`FLOOR ${T.floor} CLEARED`, '#9be08a');
         this.showStatusText(this.player.x, this.player.y - 34, `FLOOR PAY +${pay} ✦`, '#ffd34a');

@@ -12,6 +12,10 @@ class BootScene extends Phaser.Scene {
         });
         // the menus' level pictures and the loader show the game's own slimes (Menus.js diorama)
         for (const c of ['red', 'orange', 'purple']) this.load.spritesheet('slime_' + c, `assets/Slime_${c[0].toUpperCase() + c.slice(1)}_32x32.png`, { frameWidth: 32, frameHeight: 32 });
+        // and the level's own sheets, so entering one never waits on a load (a scene loading draws nothing: a black frame,
+        // left on screen while a big level builds)
+        this.load.spritesheet('tiles', 'assets/roguelikeDungeon_transparent.png', { frameWidth: 17, frameHeight: 17 });
+        this.load.spritesheet('cloud_storm', 'assets/cloud_storm.png', { frameWidth: 280, frameHeight: 70 });
     }
 
     create() {

@@ -186,6 +186,7 @@ class WeaponSystem {
             case 'lightning_fists': this.lightningFistsAttack(targetX, targetY); break;
             case 'orb_emitter':     this.orbEmitterAttack(targetX, targetY); break;
             case 'ball_lightning': this.ballLightningAttack(targetX, targetY); break;
+            case 'conductor':      this.conductorAttack(targetX, targetY); break;
             // Unreachable in the overworld -- no shop card, no equip path. Kept because
             // TowerDefenseScene sets this id and routes its Wrench upgrade tree through it.
             case 'engineering_degree': this.engineeringDegreeAttack(targetX, targetY); break;
@@ -262,6 +263,7 @@ class WeaponSystem {
 
             // Damage enemies on that tile
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
                 // Route through damageEnemy rather than writing enemy.health directly.
                 // The inline version re-implemented immunity as three hard bail-outs, so
@@ -320,6 +322,7 @@ class WeaponSystem {
         this.tweens.add({ targets: iceFlash, alpha: 0, duration: 300, onComplete: () => iceFlash.destroy() });
 
         for (const enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
             this.applyIceFistsHit(enemy);
         }
@@ -396,6 +399,7 @@ class WeaponSystem {
         const dmg = 14 * this.damageScaling;
         let hitEnemy = null;
         for (const enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
             // A wet target conducts: more damage, same number of chain targets.
             const _wet = (typeof this.isWaterAt === 'function' && this.isWaterAt(enemy.x, enemy.y));
@@ -432,14 +436,14 @@ class WeaponSystem {
         // of them once a room fills up.
         //   crowd 0-1 -> 1 hop      4-5 -> 3 hops
         //   crowd 2-3 -> 2 hops     8+  -> 5 hops
-        const crowd = this.enemies.filter(e => e.sprite?.active && e !== hitEnemy &&
+        const crowd = this.enemies.filter(e => !this._phasedOut?.(e) && e.sprite?.active && e !== hitEnemy &&
             Math.abs(e.x - tile.x) + Math.abs(e.y - tile.y) <= CHAIN_RANGE + 2).length;
         const MAX_CHAINS = Math.min(5, 1 + Math.floor(crowd / 2));
         const chainDmg = dmg * CHAIN_FALLOFF;
 
         // Collect candidates sorted by distance from hit tile
         const candidates = this.enemies
-            .filter(e => e !== hitEnemy && e.sprite?.active)
+            .filter(e => !this._phasedOut?.(e) && e !== hitEnemy && e.sprite?.active)
             .map(e => ({
                 enemy: e,
                 dist: Math.abs(e.x - tile.x) + Math.abs(e.y - tile.y)
@@ -540,6 +544,7 @@ class WeaponSystem {
         // ── Damage ───────────────────────────────────────────────────────
         let hit = false;
         for (const enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (enemy.x !== tile.x || enemy.y !== tile.y) continue;
             if (!enemy.sprite?.active) continue;
             this.damageEnemy(enemy, damage);
@@ -567,8 +572,8 @@ class WeaponSystem {
         // Direction toward mouse
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
-        const px = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const py = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const px = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const py = this._shotY();
         const dx = worldX - px, dy = worldY - py;
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
 
@@ -643,6 +648,7 @@ class WeaponSystem {
             // ── Strong pull — drags enemies along with the projectile ──────────
             s.dotTimer += delta;
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite?.active) continue;
                 const ex = enemy.sprite.x, ey = enemy.sprite.y;
                 const dist = Math.hypot(ex - s.gfx.x, ey - s.gfx.y);
@@ -793,6 +799,7 @@ class WeaponSystem {
 
         // Damage enemies in radius
         for (const enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (!enemy.sprite?.active) continue;
             if (Math.hypot(enemy.sprite.x - ex, enemy.sprite.y - ey) <= R) {
                 this.damageEnemy(enemy, dmg);
@@ -929,6 +936,7 @@ class WeaponSystem {
         for (const orb of this._collapseOrbs) {
             if (!orb.gfx?.active) continue;
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite?.active) continue;
                 if (Math.hypot(enemy.sprite.x - orb.gfx.x, enemy.sprite.y - orb.gfx.y) < 14) {
                     this.damageEnemy(enemy, 5 * this.damageScaling);
@@ -1025,19 +1033,8 @@ class WeaponSystem {
         g.clear();
         g.x = 0; g.y = 0;
 
-        // Background
-        g.fillStyle(0x110022, 0.75); g.fillRect(bx - 1, by - 1, BAR_W + 2, BAR_H + 2);
-
-        // Fill — pulses when full
         const isFull = pct >= 1;
-        const fillAlpha = isFull ? (0.75 + 0.25 * Math.sin(this.time.now * 0.012)) : 0.9;
-        const fillColor = isFull ? 0xdd88ff : 0x9900ff;
-        g.fillStyle(fillColor, fillAlpha);
-        g.fillRect(bx, by, BAR_W * pct, BAR_H);
-
-        // Border
-        g.lineStyle(1, isFull ? 0xffffff : 0xcc44ff, 0.7);
-        g.strokeRect(bx - 1, by - 1, BAR_W + 2, BAR_H + 2);
+        UIKit.rBar(g, bx + 4, by, BAR_W, pct, { col: 0xb04aff, hot: 0xe8c0ff, dark: 0x110022, time: this.time.now });
 
         // "READY" label when full
         if (isFull) {
@@ -1120,6 +1117,7 @@ class WeaponSystem {
 
             // Pierce damage — hit any enemy in range that hasn't been hit yet
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite?.active) continue;
                 if (o.hitEnemies.has(enemy)) continue;
                 if (Math.hypot(enemy.sprite.x - o.gfx.x, enemy.sprite.y - o.gfx.y) < TS * 0.6) {
@@ -1375,6 +1373,426 @@ class WeaponSystem {
         };
     }
 
+    // ═══ THE CONDUCTOR ═══════════════════════════════════════════════════════
+    // The Circuit Breaker: a staff that throws wires. A click shoots one at the enemy nearest the cursor (inside
+    // CURSOR_R of it and RANGE of you) and clamps on; you're the other end. Up to WIRES at once (a new one drops the
+    // oldest), one throw every CD; a clamp that bites dazes its enemy for LAND_DAZE. R sends a CURRENT down the wire
+    // nearest your aim: a blob that runs out to the enemy, on
+    // through the arcs, and home along the last wire, dazing (PULSE_DAZE) and hitting (PULSE_DMG) each enemy it passes.
+    // That's your hand in it once the web is up (R, at the wire nearest your aim). Each clamp is one of three, cycled with the secondary key:
+    //   LIVE       current runs through it: it takes WIRE_DMG a TICK
+    //   INSULATOR  it takes only INS_TAKE of that, and the whole web (every clamp, line, burst and current) does
+    //              INS_NERF as much per insulator, but every daze lasts INS_DAZE longer: control for damage
+    //   CAPACITOR  it takes nothing; the current it would have taken is stored, and every CAP_MS it bursts: CAP_BASE
+    //              plus CAP_X times what it stored, forked out and shared between everything within CAP_R (+CAP_SPREAD
+    //              of the total for each enemy past the first), so it spreads damage where a live wire focuses it
+    // Any other enemy touching a wire or an arc takes CROSS_DMG a tick. Wired enemies inside ARC_R of each other arc
+    // together and close a CIRCUIT through you: its wires and arc run CIRCUIT times hotter. So a lone live wire is
+    // weak; the damage is in building the circuit. A line snaps past SNAP tiles or behind a wall or gate; when a
+    // wired enemy dies the clamp jumps to the nearest unwired enemy in JUMP_R.
+    _conductorCfg() {
+        const reach = WeaponLevels.perk('conductor', 'reach'), more = WeaponLevels.perk('conductor', 'wires');
+        return { CD: 650, PULSE_CD: 420, PULSE_SPEED: 620, PULSE_DMG: 6, PULSE_DAZE: 450, LAND_DAZE: 400, INS_NERF: 0.65, INS_DAZE: 0.6, RANGE: 8 + reach, CURSOR_R: 2.5, SNAP: 18 + reach, FLY_MS: 150, SLING: 330, WIRES: 3 + more, ARC_R: 6, JUMP_R: 3, CROSS_R: 0.65,
+            TICK: 300, LATCH_DMG: 3, WIRE_DMG: 4, CROSS_DMG: 5, INS_TAKE: 0.3,
+            CIRCUIT: 2, CAP_MS: 3000, CAP_R: 2.5, CAP_BASE: 3, CAP_X: 0.6, CAP_SPREAD: 0.3,
+            COL: 0xffe14a, HOT: 0xfff8c0, MODES: ['live', 'ins', 'cap'], MCOL: { live: 0xffe14a, ins: 0x7fd0ff, cap: 0xff9a3a } };
+    }
+    // Queens and bosses aren't in the enemy list: each gets a stand-in the wires can hold (the same one every frame,
+    // so a wire knows its own), whose hits go through damagePortal / damageBossAtTile
+    _condBigs() {
+        const T = this.TILE_SIZE, map = this._condBigMap ||= new Map(), out = [];
+        const mk = (o, at, hit) => {
+            let q = map.get(o);
+            if (!q) { q = { _big: o, get x() { return this.sprite.x / T; }, get y() { return this.sprite.y / T; }, get health() { return this._big.active && this.sprite?.active ? 1 : 0; } }; map.set(o, q); }
+            q.sprite = at; q.hit = hit; out.push(q);
+        };
+        for (const p of this.portals || []) if (p.active && p.container) mk(p, p.container, d => this.damagePortal(p, d));
+        for (const bo of [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore]) {
+            if (!bo?.active || !bo.container) continue;
+            mk(bo, bo.container, d => { const bx = bo.tileX ?? Math.floor(bo.container.x / T), by = bo.tileY ?? Math.floor(bo.container.y / T); this.damageBossAtTile(bx, by, d, undefined, 'lightning'); });
+        }
+        return out;
+    }
+    _condTargets() { return [...this.enemies.filter(e => !this._phasedOut(e)), ...this._condBigs()]; }
+    _condHit(e, d) { if (e._big) { e.hit(d); this._dmgLanded = true; } else this.damageEnemy(e, d, 'lightning'); }
+    _condSC(e, ms) { if (!e._big) this._superconduct(e, ms); }
+    // the web's damage and its dazes, with the insulators on it counted
+    _condWebMul(on) { const C = this._conductorCfg(), n = on.filter(w => w.mode === 'ins').length; return { dmg: Math.pow(C.INS_NERF, n), daze: 1 + C.INS_DAZE * n }; }
+    _condDaze(e, ms) {
+        if (e._big || !e.sprite?.active || e.health <= 0) return;
+        e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, this.time.now + ms);
+    }
+    _condTip() { const t = this._condWielding() && typeof CreatureFX !== 'undefined' && CreatureFX.gearTip?.(this); return t || { x: this._shotX(), y: this._shotY() }; }   // the staff's head (you, while you hold something else)
+    _condWielding() { return this.currentElement === 'lightning' && this.equippedWeapons?.lightning === 'conductor' && this.player?.active; }
+    conductorAttack(targetX, targetY) {
+        const C = this._conductorCfg(), now = this.time.now, T = this.TILE_SIZE;
+        const wx = targetX + this.cameras.main.scrollX, wy = targetY + this.cameras.main.scrollY, { x: px, y: py } = this._condTip();
+        const wires = this._condWires ||= [];
+        const aim = Math.atan2(wy - py, wx - px);
+        const near = this._condTargets().filter(e => e.sprite?.active && e.health > 0 && Math.hypot(e.sprite.x - wx, e.sprite.y - wy) < C.CURSOR_R * T && Math.hypot(e.sprite.x - px, e.sprite.y - py) < C.RANGE * T && this._condClear(this.player.x, this.player.y, e.sprite.x, e.sprite.y))   // (from you, not the staff head, which can poke into a wall)
+            .sort((a, b) => Math.hypot(a.sprite.x - wx, a.sprite.y - wy) - Math.hypot(b.sprite.x - wx, b.sprite.y - wy));
+        const e = near.find(q => !wires.some(w => w.e === q));   // an unwired enemy under the cursor gets a wire (R sends the currents)
+        if (now - (this._condLast || 0) < C.CD) return;
+        this._condLast = now;
+        this._gearFiredAt = now;
+        Sfx.play(this, 'zap');
+        if (!e) {   // nothing there: the line flies out, drops slack on the floor, and reels back in
+            const L = Math.min(C.RANGE * T * 0.7, Math.max(T * 2, Math.hypot(wx - px, wy - py)));
+            (this._condMisses ||= []).push({ t0: now, a: aim, L, side: Math.random() < 0.5 ? 1 : -1, path: [{ x: 0, y: 0 }], mode: this._condMode || 'live', seed: Math.random() * 10 });   // (its path kept relative to the staff, so it travels with you)
+            return;
+        }
+        if (wires.length >= C.WIRES) this._condSnap(wires.shift());
+        wires.push({ e, t0: now, seed: Math.random() * 10, fx: null, mode: this._condMode || 'live', store: 0, ...this._condThrow(px, py, e) });
+        const a = Math.atan2(e.sprite.y - py, e.sprite.x - px), fl = this.add.image(px, py, 'vfx_glow').setTint(C.HOT).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.3).setScale(0.15);   // the staff kicks: a flare, a spray of sparks down the line
+        this.tweens.add({ targets: fl, scale: 0.55, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
+        for (let k = 0; k < 8; k++) this._condSpark(px + Math.cos(a) * 8, py + Math.sin(a) * 8, 1);
+        VisualFX.ripple(this, px, py, 3, 16, C.COL, { duration: 160, alpha: 0.9 });
+    }
+    // a fresh throw from (x, y) at enemy e: where the clamp is, which way it swings, the path it lays
+    _condThrow(x, y, e) {
+        return { bx: x, by: y, hx: x, hy: y, lx: x, ly: y, path: [{ x, y, t: this.time.now }], side: Math.random() < 0.5 ? 1 : -1, d0: Math.max(1, Math.hypot(e.sprite.x - x, e.sprite.y - 4 - y)), relax: null };
+    }
+    // n points spaced evenly along a polyline
+    _condResample(src, n) {
+        const d = [0]; for (let i = 1; i < src.length; i++) d.push(d[i - 1] + Math.hypot(src[i].x - src[i - 1].x, src[i].y - src[i - 1].y));
+        const L = d[d.length - 1] || 1, out = []; let j = 1;
+        for (let k = 0; k < n; k++) {
+            const t = L * k / (n - 1); while (j < src.length - 1 && d[j] < t) j++;
+            const a = src[j - 1], b = src[j], f = (t - d[j - 1]) / ((d[j] - d[j - 1]) || 1);
+            out.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+        }
+        return out;
+    }
+    // A current down wire w: out to its enemy, on through the arcs to each wired enemy not yet reached (nearest-first
+    // chain), then home along the last one's wire, completing the circuit (back down w if it reached no one else)
+    _condPulse(w) {
+        const pairs = this._condPairs || [], route = [{ w }], seen = new Set([w]);
+        let cur = w;
+        for (;;) {
+            const next = pairs.map(([a, b]) => a === cur ? b : b === cur ? a : null).find(q => q && !seen.has(q) && q.on);
+            if (!next) break;
+            route.push({ a: cur.e, b: next.e }); seen.add(next); cur = next;
+        }
+        route.push({ w: cur, back: true });
+        (this._condPulses ||= []).push({ route, i: 0, d: 0, hit: new Set(), trail: [] });
+        const { x, y } = this._condTip();
+        this._condSpark(x, y, 10);
+        VisualFX.ripple(this, x, y, 4, 22, this._conductorCfg().HOT, { duration: 200 });
+        Sfx.play(this, 'zap');
+    }
+    // sparks from the Conductor's own emitter
+    _condSpark(x, y, n) {
+        if (!this._condSparks?.active) this._condSparks = this.add.particles(0, 0, 'vfx_dot', {
+            emitting: false, lifespan: { min: 260, max: 560 }, speed: { min: 50, max: 170 }, gravityY: 320,
+            scale: { start: 0.75, end: 0 }, alpha: { start: 1, end: 0.2 }, tint: [0xffe14a, 0xfff8c0, 0xffffff], blendMode: 'ADD', maxParticles: 260,
+        }).setDepth(4.2);
+        this._condSparks.emitParticleAt(x, y, n);
+    }
+    // a line let go: it whips down and fades
+    _condSnap(w) {
+        if (!w?.e?.sprite) return;
+        const C = this._conductorCfg(), g = this.add.graphics().setDepth(1.5), x = w.e.sprite.x, y = w.e.sprite.y;
+        g.setBlendMode(Phaser.BlendModes.ADD); this._strokeFork(g, x, y - 4, x + (Math.random() - 0.5) * 30, y + 14, C.HOT, 0.9, 1);
+        this.tweens.add({ targets: g, alpha: 0, duration: 240, onComplete: () => g.destroy() });
+        this._condSpark(x, y - 4, 6);
+    }
+    // a gold cable: a dark edge, two gold strands twisted round each other catching the light, and the current
+    // riding it in the clamp's colour (a glow, a flickering thread, brighter with k). g draws the copper, gl (additive)
+    // the current; pass the same graphics for both when there's only one.
+    _condCable(g, gl, pts, time, seed, k = 1, col) {
+        const C = this._conductorCfg(), c = col ?? C.COL, n = pts.length;
+        const off = (s, amp, f, ph) => pts.map((p, i) => {
+            if (!i || i === n - 1) return p;
+            const q = pts[i + 1], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1, o = s * amp * Math.sin(i * f + ph);
+            return { x: p.x - dy / L * o, y: p.y + dx / L * o };
+        });
+        g.lineStyle(5, 0x2e2004, 1); g.strokePoints(pts, false);
+        g.lineStyle(3.4, 0xb08a1c, 1); g.strokePoints(pts, false);
+        g.lineStyle(1.3, 0x7a5a0e, 1); g.strokePoints(off(1, 1.1, 2.2, seed), false);   // the twist: a dark strand and a bright one
+        g.lineStyle(1.3, 0xffd84a, 1); g.strokePoints(off(-1, 1.1, 2.2, seed), false);
+        for (let i = 1; i < n - 1; i += 2) { const p = pts[i], q = pts[i + 1]; g.lineStyle(1, 0xfff4c0, 0.85); g.lineBetween(p.x, p.y - 1.2, (p.x + q.x) / 2, (p.y + q.y) / 2 - 1.2); }   // light along its top
+        gl.lineStyle(9, c, 0.12 * k); gl.strokePoints(pts, false);
+        const thread = pts.map((p, i) => !i || i === n - 1 ? p : { x: p.x + (Math.random() - 0.5) * 4, y: p.y + (Math.random() - 0.5) * 4 });
+        gl.lineStyle(1.2, c, Math.min(1, 0.75 * k)); gl.strokePoints(thread, false);
+    }
+    // a capacitor clamp: two plates over its enemy, and a ring round it filling with its charge
+    _condCapDraw(gl, glow, w, x, y, time) {
+        const C = this._conductorCfg(), k = w.charge || 0, py = y - 20, col = C.MCOL.cap;
+        gl.lineStyle(2, col, 1);
+        gl.lineBetween(x - 3, py - 5, x - 3, py + 5); gl.lineBetween(x + 3, py - 5, x + 3, py + 5);
+        gl.lineBetween(x - 8, py, x - 3, py); gl.lineBetween(x + 3, py, x + 8, py);
+        if (k > 0) {
+            const pts = []; for (let i = 0; i <= 24; i++) { const a = -Math.PI / 2 + i / 24 * Math.PI * 2 * k; pts.push({ x: x + Math.cos(a) * 11, y: y + Math.sin(a) * 11 }); }
+            gl.lineStyle(4, col, 0.4); gl.strokePoints(pts, false); gl.lineStyle(1.5, 0xffffff, 0.95); gl.strokePoints(pts, false);
+            if (k > 0.8) glow(x, y, 0.2 + 0.3 * (k - 0.8) * 5, col, 0.7);
+        }
+    }
+    // an insulator clamp: a stack of ceramic discs over its enemy, a cool shell of light round it
+    _condInsDraw(gl, glow, x, y, time) {
+        const col = this._conductorCfg().MCOL.ins, py = y - 22;
+        for (let k = 0; k < 3; k++) { gl.lineStyle(2, col, 1); gl.strokeEllipse(x, py + k * 4, 12 - k * 2, 4); }
+        gl.lineStyle(1.5, col, 0.35 + 0.15 * Math.sin(time / 120)); gl.strokeEllipse(x, y + 4, 30, 14);
+        glow(x, y, 0.3, col, 0.35);
+    }
+    // a wire can't pass walls or a sealed room's laser gate
+    _condClear(ax, ay, bx, by) {
+        const T = this.TILE_SIZE, n = Math.ceil(Math.hypot(bx - ax, by - ay) / (T / 3));
+        const gates = this._condGateSet?.src === this.lockedDoorTiles && this._condGateSet.n === (this.lockedDoorTiles?.length || 0) ? this._condGateSet.set
+            : (this._condGateSet = { src: this.lockedDoorTiles, n: this.lockedDoorTiles?.length || 0, set: new Set((this.lockedDoorTiles || []).map(t => t.x + ',' + t.y)) }).set;
+        for (let i = 1; i < n; i++) {
+            const tx = Math.floor((ax + (bx - ax) * i / n) / T), ty = Math.floor((ay + (by - ay) * i / n) / T);
+            if (this.world[tx]?.[ty] !== this.FLOOR || gates.has(tx + ',' + ty) || this.isInLockedRoom?.(tx, ty)) return false;
+        }
+        return true;
+    }
+    // the slack curve of a wire from (ax, ay) to (bx, by): it sags more the less taut it is, and sways
+    _condCurve(ax, ay, bx, by, seed, time, C) {
+        const len = Math.hypot(bx - ax, by - ay), sag = Phaser.Math.Clamp((C.SNAP * this.TILE_SIZE - len) * 0.09, 3, 26) * (1 + 0.12 * Math.sin(time / 280 + seed));
+        const cx = (ax + bx) / 2, cy = (ay + by) / 2 + sag * 2, pts = [];
+        for (let i = 0; i <= 16; i++) { const t = i / 16, u = 1 - t; pts.push({ x: u * u * ax + 2 * u * t * cx + t * t * bx, y: u * u * ay + 2 * u * t * cy + t * t * by }); }
+        return pts;
+    }
+    // Every frame: wires flying and clamped, the arcs, the ticks, the meter
+    _conductorTick(time, delta) {
+        const C = this._conductorCfg(), T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
+        const g = this._condG?.active ? this._condG : (this._condG = this.add.graphics().setDepth(1.5));
+        const gl = this._condGL?.active ? this._condGL : (this._condGL = this.add.graphics().setDepth(1.49).setBlendMode(ADD));
+        g.clear(); gl.clear(); this._condLights = [];
+        const pool = this._condPool = (this._condPool || []).filter(i => i.active); let used = 0;
+        const glow = (x, y, s, col, a) => { const i = pool[used] || (pool[used] = this.add.image(0, 0, 'vfx_glow').setBlendMode(ADD).setDepth(1.55)); used++; i.setPosition(x, y).setScale(s).setTint(col).setAlpha(a).setVisible(true); };
+        const wires = this._condWires ||= [];
+        const wield = this._condWielding();
+        if (this.equippedWeapons?.lightning !== 'conductor' || !this.player?.active) { for (const w of wires.splice(0)) this._condSnap(w); }   // the wires stay on you through an element switch, so you can set the web and fight with something else; only unequipping it lets go
+        // upkeep: snapped, dead (the clamp jumps), arriving
+        for (const w of [...wires]) {
+            const e = w.e;
+            if (!e.sprite?.active || e.health <= 0) {
+                const x = e._condPx ?? e.sprite?.x, y = e._condPy ?? e.sprite?.y;
+                const next = this._condTargets().filter(o => o.sprite?.active && o.health > 0 && !wires.some(q => q.e === o) && Math.hypot(o.sprite.x - x, o.sprite.y - y) < C.JUMP_R * T)
+                    .sort((a, b) => Math.hypot(a.sprite.x - x, a.sprite.y - y) - Math.hypot(b.sprite.x - x, b.sprite.y - y))[0];
+                if (next) { Object.assign(w, { e: next, t0: time, on: false, bite: 0 }, this._condThrow(x, y, next)); this._condSpark(x, y, 12); }   // the clamp slings on to the next one
+                else { wires.splice(wires.indexOf(w), 1); if (x != null) this._condSpark(x, y, 8); }
+                continue;
+            }
+            e._condPx = e.sprite.x; e._condPy = e.sprite.y;
+            if (this._phasedOut(e) || Math.hypot(e.sprite.x - this.player.x, e.sprite.y - this.player.y) > C.SNAP * T || (w.on && time - (w.losAt || 0) > 120 && (w.losAt = time) && !this._condClear(this.player.x, this.player.y, e.sprite.x, e.sprite.y))) { wires.splice(wires.indexOf(w), 1); this._condSnap(w); continue; }   // too far, or a wall or gate between
+            if (!w.on) {   // in flight: the clamp homes on its enemy, swinging out to one side and back, laying the cable where it goes
+                const tx = e.sprite.x, ty = e.sprite.y - 4, step = C.SLING * Math.min(50, delta || 16) / 1000, d = Math.hypot(tx - w.bx, ty - w.by);
+                if (d > step + 4) {
+                    w.bx += (tx - w.bx) / d * step; w.by += (ty - w.by) / d * step;
+                    const u = Phaser.Math.Clamp(1 - Math.hypot(tx - w.bx, ty - w.by) / w.d0, 0, 1), L = Math.hypot(tx - w.lx, ty - w.ly) || 1, o = w.side * Math.sin(u * Math.PI) * Math.min(36, w.d0 * 0.2);
+                    w.hx = w.bx - (ty - w.ly) / L * o; w.hy = w.by + (tx - w.lx) / L * o;
+                    w.path.push({ x: w.hx, y: w.hy, t: time });
+                } else { w.hx = tx; w.hy = ty; }
+            }
+            if (!w.on && w.hx === e.sprite.x && w.hy === e.sprite.y - 4) {   // it bites
+                w.on = true; w.bite = time; w.relax = null;
+                this.cameras.main.shake(50, 0.0015);
+                VisualFX.ripple(this, e.sprite.x, e.sprite.y - 4, 4, 26, C.HOT, { duration: 220 });
+                this._condHit(e, C.LATCH_DMG * this.damageScaling);
+                this._condDaze(e, C.LAND_DAZE * this._condWebMul(wires.filter(q => q.on)).daze);
+                if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit * 0.6, 'lightning');
+                this._condSpark(e.sprite.x, e.sprite.y - 4, 14);
+                this._vfxFlash?.(e.sprite.x, e.sprite.y, 40, C.COL, 220, 0.8);
+            }
+            if (w.on && e.health > 0) this._condSC(e, 700);
+        }
+        const on = wires.filter(w => w.on && w.e.sprite?.active && w.e.health > 0);
+        const pairs = this._condPairs = [];   // wired enemies close enough arc together, and each arc closes a circuit through you
+        for (const w of on) { w.was = w.closed; w.closed = false; }
+        for (let i = 0; i < on.length; i++) for (let j = i + 1; j < on.length; j++) {
+            const a = on[i].e.sprite, b = on[j].e.sprite;
+            if (Math.hypot(a.x - b.x, a.y - b.y) > C.ARC_R * T || !this._condClear(a.x, a.y, b.x, b.y)) continue;
+            pairs.push([on[i], on[j]]); on[i].closed = on[j].closed = true;
+        }
+        if (on.some(w => w.closed && !w.was)) {   // a loop just closed
+            for (const w of on) if (w.closed && !w.was) { this._condSpark(w.e.sprite.x, w.e.sprite.y - 4, 12); VisualFX.ripple(this, w.e.sprite.x, w.e.sprite.y - 4, 4, 22, 0xffffff, { duration: 220 }); }
+            if (!on.some(w => w.was)) this.showStatusText(this.player.x, this.player.y - 30, 'CIRCUIT', '#fff08a');
+        }
+        // the lines that hurt what they cross: each wire, and arcs between wired enemies close enough
+        const { x: sx, y: sy } = this._condTip(), segs = [];
+        for (const w of wires) {
+            const e = w.e; if (!e.sprite?.active) continue;
+            const ex = e.sprite.x, ey = e.sprite.y - 4, hx = w.on ? ex : w.hx, hy = w.on ? ey : w.hy;
+            const plucked = time - (w.pluck || -1e9) < 160, surge = w.bite ? (time - w.bite) / 220 : 2;
+            let pts;
+            if (!w.on) {   // in flight: the cable runs from the staff along the path the clamp flew, shivering behind it
+                pts = this._condResample([{ x: sx, y: sy }, ...w.path, { x: hx, y: hy }], 17);
+                const droop = Math.min(20, (time - w.t0) * 0.05);   // slack: the cable sags into a belly as it pays out
+                pts.forEach((p, i) => { if (!i || i === 16) return; const t = i / 16, wv = 2.5 * Math.sin(t * 12 - time / 30) * Math.sin(t * Math.PI); p.x += wv; p.y += wv * 0.5 + droop * Math.sin(t * Math.PI); });
+                w.relax = pts.map(p => ({ ...p }));
+            } else {
+                pts = this._condCurve(sx, sy, hx, hy, w.seed, time, C);
+                if (w.relax && surge < 1) { const t = 1 - (1 - surge) ** 3; pts = pts.map((p, i) => ({ x: w.relax[i].x + (p.x - w.relax[i].x) * t, y: w.relax[i].y + (p.y - w.relax[i].y) * t })); }   // it snaps taut
+            }
+            this._condCable(g, gl, pts, time, w.seed, !w.on ? 0.5 : plucked ? 1.8 : w.closed ? 1.5 : 1, C.MCOL[w.mode]);
+            w.pts = pts;   // (a current rides it: _condPulse)
+            if (w.closed) { gl.lineStyle(2, 0xffffff, 0.55 + 0.25 * Math.sin(time / 70)); gl.strokePoints(pts, false); }   // a closed loop runs white-hot
+            if (w.on) {
+                for (let q = 0; q < 2; q++) {   // current flowing out along it
+                    const t = ((time / 520) + q / 2 + w.seed) % 1, p = pts[Math.floor(t * (pts.length - 1))];
+                    glow(p.x, p.y, 0.16, C.COL, 0.9); glow(p.x, p.y, 0.06, 0xffffff, 1);
+                }
+                // the clamp: a ring of current biting into it
+                gl.lineStyle(2, C.HOT, 1); gl.strokeCircle(ex, ey, 5 + Math.sin(time / 50) * 0.8);
+                glow(ex, ey, 0.28 + 0.05 * Math.sin(time / 60), C.COL, 0.55);
+                if (Math.random() < 0.12) this._condSpark(ex, ey, 1);
+                this._condLights.push({ x: ex, y: ey, r: 34, color: C.COL, a: 0.6, g: 0.25 }, { x: pts[8].x, y: pts[8].y, r: 26, color: C.COL, a: 0.35, g: 0.15 });
+                pts.hot = w.closed ? C.CIRCUIT : 1; segs.push(pts);
+                if (w.mode === 'cap') this._condCapDraw(gl, glow, w, ex, ey, time);
+                else if (w.mode === 'ins') this._condInsDraw(gl, glow, ex, ey, time);
+                if (surge < 1) {   // the bite: a white surge rushing down the line to the clamp
+                    const p = pts[Math.floor(Math.min(1, surge * 1.6) * (pts.length - 1))];
+                    gl.lineStyle(5, 0xffffff, 0.8 * (1 - surge)); gl.strokePoints(pts, false);
+                    glow(p.x, p.y, 0.35, C.HOT, 1); glow(p.x, p.y, 0.12, 0xffffff, 1);
+                }
+            } else {   // the clamp in flight: a glowing copper barb, crackling, shedding sparks
+                const a = time / 45;   // the clamp tumbling through the air
+                for (const s of [-1, 1]) { const ba = a + Math.PI + s * 0.6; gl.lineStyle(2.5, C.HOT, 1).lineBetween(hx, hy, hx + Math.cos(ba) * 7, hy + Math.sin(ba) * 7); }
+                g.fillStyle(0xffffff, 1).fillCircle(hx, hy, 2.5);
+                glow(hx, hy, 0.3, C.COL, 0.8); glow(hx, hy, 0.1, 0xffffff, 1);
+                this._strokeFork(gl, hx, hy, hx + Math.cos(a) * 14 + (Math.random() - 0.5) * 10, hy + Math.sin(a) * 14 + (Math.random() - 0.5) * 10, C.HOT, 0.9, 1);
+                this._condSpark(hx, hy, 1);
+            }
+        }
+        if (on.length) glow(sx, sy, 0.2, C.COL, 0.7);
+        for (const m of [...(this._condMisses || [])]) {   // a missed throw: out, slack on the floor, reeled back
+            const age = time - m.t0, fly = m.L / C.SLING * 1000, lie = 220, reel = 300;
+            if (age > fly + lie + reel) { this._condMisses.splice(this._condMisses.indexOf(m), 1); continue; }
+            if (age <= fly) {
+                const u = age / fly, o = m.side * Math.sin(u * Math.PI) * Math.min(30, m.L * 0.2);
+                const bx = Math.cos(m.a) * m.L * u, by = Math.sin(m.a) * m.L * u;
+                m.path.push({ x: bx - Math.sin(m.a) * o, y: by + Math.cos(m.a) * o });
+            }
+            let path = m.path.map(p => ({ x: p.x + sx, y: p.y + sy }));
+            if (age > fly + lie) { const k = (age - fly - lie) / reel; path = path.slice(0, Math.max(1, Math.round(path.length * (1 - k)))); }   // reeling in
+            const head = path[path.length - 1];
+            if (path.length < 2) continue;
+            const pts = this._condResample([{ x: sx, y: sy }, ...path.slice(1)], 17), droop = Math.min(26, age * 0.05);
+            pts.forEach((p, i) => { p.y += droop * Math.sin(i / 16 * Math.PI) * (age > fly ? 1 : 0.6); });
+            this._condCable(g, gl, pts, time, m.seed, 0.35, C.MCOL[m.mode]);
+            const hx = pts[16].x, hy = pts[16].y;
+            for (const s of [-1, 1]) { const ba = time / 45 + s * 0.6; g.lineStyle(2, 0xffd84a, 1).lineBetween(hx, hy, hx + Math.cos(ba) * 6, hy + Math.sin(ba) * 6); }   // the clamp, tumbling
+            if (age > fly && age < fly + 40) this._condSpark(hx, hy, 4);   // it hits the floor
+        }
+        for (const P of [...(this._condPulses || [])]) {   // currents: a big blob running the circuit
+            const seg = P.route[P.i];
+            const pts = !seg ? null : seg.w ? (seg.w.on && seg.w.e.sprite?.active ? (seg.back ? [...seg.w.pts].reverse() : seg.w.pts) : null)
+                : (seg.a.sprite?.active && seg.b.sprite?.active ? [{ x: seg.a.sprite.x, y: seg.a.sprite.y - 4 }, { x: seg.b.sprite.x, y: seg.b.sprite.y - 4 }] : null);
+            if (!pts) { this._condPulses.splice(this._condPulses.indexOf(P), 1); continue; }
+            let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+            P.d += C.PULSE_SPEED * Math.min(50, delta || 16) / 1000;
+            let d = Math.min(P.d, L), x = pts[0].x, y = pts[0].y;
+            for (let i = 1; i < pts.length; i++) { const sl = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (d <= sl) { const f = d / (sl || 1); x = pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f; y = pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f; break; } d -= sl; x = pts[i].x; y = pts[i].y; }
+            P.trail.unshift({ x, y }); if (P.trail.length > 6) P.trail.pop();
+            P.trail.forEach((q, k) => glow(q.x, q.y, 0.34 - k * 0.045, C.COL, 0.6 - k * 0.08));
+            glow(x, y, 0.5, C.HOT, 0.8); glow(x, y, 0.16, 0xffffff, 1);
+            for (let k = 0; k < 2; k++) { const fa = Math.random() * Math.PI * 2; this._strokeFork(gl, x, y, x + Math.cos(fa) * 12, y + Math.sin(fa) * 12, 0xffffff, 0.9, 1); }
+            if (Math.random() < 0.5) this._condSpark(x, y, 1);
+            if (P.d >= L) {   // reached the end of this stretch: if it's an enemy, it's hit
+                const hit = seg.w ? (seg.back ? null : seg.w.e) : seg.b;
+                if (hit && hit.health > 0 && !P.hit.has(hit)) {
+                    P.hit.add(hit);
+                    const web = this._condWebMul(on);
+                    this._condHit(hit, C.PULSE_DMG * web.dmg * this.damageScaling);
+                    this._condDaze(hit, C.PULSE_DAZE * web.daze);
+                    VisualFX.ripple(this, hit.sprite.x, hit.sprite.y - 4, 6, 30, C.HOT, { duration: 260 });
+                    this._vfxFlash?.(hit.sprite.x, hit.sprite.y, 60, C.COL, 240, 0.9);
+                    this._condSpark(hit.sprite.x, hit.sprite.y - 4, 10);
+                }
+                P.i++; P.d = 0;
+                if (P.i >= P.route.length) this._condPulses.splice(this._condPulses.indexOf(P), 1);
+            }
+        }
+        for (const [wa, wb] of pairs) {   // the arcs: raw lightning between the clamps, closing the loop
+            const a = wa.e.sprite, b = wb.e.sprite, pts = this._arcPath(a.x, a.y - 4, b.x, b.y - 4, 9, 0.14);
+            gl.lineStyle(10, C.COL, 0.2); gl.strokePoints(pts, false);
+            this._strokeFork(gl, a.x, a.y - 4, b.x, b.y - 4, 0xffffff, 0.95, 2);
+            pts.hot = C.CIRCUIT; segs.push(pts);
+        }
+        // who's touching a line (not a wired one)
+        const wired = new Set(on.map(w => w.e)), touch = new Map();
+        const targets = this._condTargets();
+        for (const pts of segs) for (const e of targets) {
+            if (wired.has(e) || !e.sprite?.active || e.health <= 0) continue;
+            for (let i = 1; i < pts.length; i++) {
+                const p = pts[i - 1], q = pts[i], dx = q.x - p.x, dy = q.y - p.y, t = Phaser.Math.Clamp(((e.sprite.x - p.x) * dx + (e.sprite.y - 4 - p.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+                if (Math.hypot(p.x + dx * t - e.sprite.x, p.y + dy * t - e.sprite.y + 4) < C.CROSS_R * T) { touch.set(e, (touch.get(e) || 0) + pts.hot); break; }   // a closed loop's lines count for more
+            }
+        }
+        for (const e of touch.keys()) {   // shocked: it crackles where the line runs through it
+            for (let k = 0; k < 2; k++) { const fa = Math.random() * Math.PI * 2; this._strokeFork(gl, e.sprite.x, e.sprite.y - 4, e.sprite.x + Math.cos(fa) * 13, e.sprite.y - 4 + Math.sin(fa) * 13, 0xffffff, 0.9, 1); }
+            glow(e.sprite.x, e.sprite.y - 4, 0.22, C.COL, 0.6);
+        }
+        for (let i = used; i < pool.length; i++) pool[i].setVisible(false);
+        this._condTouch = touch;
+        for (const w of on) if (w.mode === 'cap') {   // capacitors charge, then burst with what they stored
+            w.charge = (w.charge || 0) + (delta || 16) / C.CAP_MS;
+            if (w.charge < 1) continue;
+            w.charge = 0;
+            const e = w.e, x = e.sprite.x, y = e.sprite.y - 4;
+            const hit = this._condTargets().filter(o => o.sprite?.active && o.health > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= C.CAP_R && (o === e || this._condClear(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y)));
+            const share = (C.CAP_BASE + C.CAP_X * w.store) * (1 + C.CAP_SPREAD * (hit.length - 1)) / Math.max(1, hit.length) * this.damageScaling;   // one charge, split between them
+            w.store = 0;
+            for (const o of hit) {
+                if (o !== e) { this._strokeFork(gl, x, y, o.sprite.x, o.sprite.y - 4, 0xffffff, 1, 2); this._strokeFork(gl, x, y, o.sprite.x, o.sprite.y - 4, C.MCOL.cap, 0.9, 1); }
+                this._condHit(o, share);
+            }
+            VisualFX.ripple(this, x, y, 8, C.CAP_R * T, C.MCOL.cap, { duration: 320 });
+            this._vfxFlash?.(x, y, 90, C.MCOL.cap, 300, 1);
+            this._condSpark(x, y, 18);
+            this.cameras.main.shake(70, 0.003);
+            Sfx.play(this, 'zap');
+        }
+        // the bite
+        if (on.length && time - (this._condTickAt || 0) >= C.TICK) {
+            this._condTickAt = time;
+            const web = this._condWebMul(on).dmg * this.damageScaling;   // insulators damp the whole web
+            let landed = 0;
+            this._noFlash = true;   // it ticks constantly: a white flash each time would wash the pack out
+            try {
+                for (const w of on) {
+                    if (w.e.health <= 0) continue;
+                    const cur = C.WIRE_DMG * (w.closed ? C.CIRCUIT : 1);
+                    if (w.mode === 'cap') { w.store += cur * this._condWebMul(on).dmg; continue; }   // banked, not taken
+                    this._condHit(w.e, cur * web * (w.mode === 'ins' ? C.INS_TAKE : 1));
+                    if (this._dmgLanded) landed++;
+                }
+                for (const [e, n] of touch) if (e.health > 0) { this._condHit(e, C.CROSS_DMG * Math.min(2 * C.CIRCUIT, n) * web); if (this._dmgLanded) { landed++; this._condSpark(e.sprite.x, e.sprite.y - 4, 3); } }
+            } finally { this._noFlash = false; }
+            if (landed) {
+                this.gainUltCharge(this.ultChargePerLightningHit * 0.1 * Math.min(6, landed), 'lightning');
+            }
+        }
+        // held R keeps the currents coming, one each time it's ready (the key press itself fires the first: GameScene)
+        if (wield && !this._pauseMenuOpen) {
+            const rk = this._condRKey ||= this.input.keyboard.addKey(Settings.key('surge'), false);   // (cleared each level start: GameScene)
+            if (rk?.isDown && time - (rk.timeDown || 0) > 250) this._conductorOverload(true);
+        }
+        // the meter over you
+        if (!wield) { this._condBar?.destroy(); this._condBar = null; return; }
+        const bar = (this._condBar?.active ? this._condBar : (this._condBar = this.add.graphics().setDepth(6))).clear();
+        UIKit.rBar(bar, this.player.x - 18, this.player.y - 17, 40, Math.min(1, (time - (this._condPulseAt || 0)) / C.PULSE_CD), { col: C.COL, hot: C.HOT, dark: 0x14100a, time });   // R: the current, filling back
+        const ix = this.player.x + 31, iy = this.player.y - 14, mode = this._condMode || 'live', mc = C.MCOL[mode];   // what the next clamp is
+        bar.fillStyle(0x14100a, 0.85).fillRect(ix - 7, iy - 6, 14, 12);
+        bar.lineStyle(1, mc, 1).strokeRect(ix - 7, iy - 6, 14, 12);
+        bar.lineStyle(1.5, mc, 1);
+        if (mode === 'live') bar.strokePoints([{ x: ix + 2, y: iy - 5 }, { x: ix - 2, y: iy }, { x: ix + 2, y: iy }, { x: ix - 2, y: iy + 5 }], false);   // a bolt
+        else if (mode === 'ins') for (let k = 0; k < 3; k++) bar.strokeEllipse(ix, iy - 3 + k * 3, 9 - k * 2, 2.5);   // a stack of insulator discs
+        else { bar.lineBetween(ix - 2, iy - 4, ix - 2, iy + 4); bar.lineBetween(ix + 2, iy - 4, ix + 2, iy + 4); bar.lineBetween(ix - 6, iy, ix - 2, iy); bar.lineBetween(ix + 2, iy, ix + 6, iy); }   // capacitor plates
+    }
+    // R: a current down the wire nearest your cursor's direction (ready every PULSE_CD)
+    _conductorOverload(quiet = false) {
+        const C = this._conductorCfg(), now = this.time.now, cam = this.cameras.main, p = this.input.activePointer, ap = this._aim?.(p) || p;
+        const { x: px, y: py } = this._condTip(), aim = Math.atan2(ap.y + cam.scrollY - py, ap.x + cam.scrollX - px);
+        const best = (this._condWires || []).filter(w => w.on && w.e.sprite?.active && w.e.health > 0)
+            .map(w => [w, Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(w.e.sprite.y - py, w.e.sprite.x - px) - aim))]).sort((a, b) => a[1] - b[1])[0];
+        if (!best) { if (!quiet) { this.showStatusText(this.player.x, this.player.y - 28, 'NO WIRES OUT', '#c8b060'); Sfx.play(this, 'deny'); } return; }
+        if (now - (this._condPulseAt || 0) < C.PULSE_CD) return;
+        this._condPulseAt = now; this._gearFiredAt = now;
+        this._condPulse(best[0]);
+    }
+
     ballLightningAttack(targetX, targetY) {
         const C = this._blCfg();
         const now = this.time.now;
@@ -1383,7 +1801,7 @@ class WeaponSystem {
         this._gearFiredAt = now;   // the held weapon swings now (Creatures.gear)
 
         const TS = this.TILE_SIZE;
-        const px = this.playerX * TS + TS / 2, py = this.playerY * TS + TS / 2;
+        const px = this._shotX(), py = this._shotY();   // from the slime as drawn
         const wx = targetX + this.cameras.main.scrollX;
         const wy = targetY + this.cameras.main.scrollY;
         const dx = wx - px, dy = wy - py;
@@ -1534,7 +1952,7 @@ class WeaponSystem {
         let frontier = seeds.map(e => ({ fx: originX, fy: originY, to: e, tier: 0 }));
         // Tracks how many times an enemy has RELAYED, not how often it was hit -- a relay hub
         // that fans out on every tier would double back and loop.
-        const relayed = new Set();
+        const relayed = new Set(), zapSeen = [];
 
         while (frontier.length && arcs < C.FORK_CAP) {
             const next = [];
@@ -1562,6 +1980,7 @@ class WeaponSystem {
                     this.gainUltCharge(this.ultChargePerLightningHit * 0.2);
                     if (e.health <= 0) { this.killEnemy(e); continue; }
                 }
+                this._zapBosses(e, dmg, C.FORK_LINK_R, zapSeen);   // and Queens and bosses in reach, once a cascade
 
                 if (link.tier >= C.FORK_TIERS || relayed.has(e)) continue;
                 relayed.add(e);
@@ -1573,7 +1992,7 @@ class WeaponSystem {
                 const wet = typeof this.isWaterAt === 'function' && this.isWaterAt(e.x, e.y);
                 if (wet && typeof this.enemiesSharingPool === 'function') {
                     const shared = this.enemiesSharingPool(e.x, e.y, C.WATER_POOL_CAP)
-                        .filter(o => o !== e && !relayed.has(o));
+                        .filter(o => o !== e && !relayed.has(o) && !this._phasedOut(o));
                     if (shared.length) {
                         for (const o of shared.slice(0, C.WATER_RELAY_N)) {
                             next.push({ fx: tx, fy: ty, to: o, tier: link.tier + 1, viaWater: true });
@@ -1699,7 +2118,7 @@ class WeaponSystem {
     // and ends on a timer rather than on geometry.
     _updateEmbeddedBall(orb, time, C) {
         const host = orb.host;
-        if (host?.sprite?.active) {
+        if (host?.sprite?.active && !this._phasedOut(host)) {
             orb.gfx.x = host.sprite.x;
             orb.gfx.y = host.sprite.y;
             orb._hostWasAt = { x: host.sprite.x, y: host.sprite.y };
@@ -2190,6 +2609,10 @@ class WeaponSystem {
     // ══════════════════════════════════════════════════════════════════════
     // ORB EMITTER — bouncing electric orb, marks + forks lightning on hit
     // ══════════════════════════════════════════════════════════════════════
+    // Where a shot leaves from: the slime as it's drawn, not its tile (a dash moves the tile at once and the body
+    // catches up, so shots fired mid-dash came out of the far end)
+    _shotX() { return this.player?.active ? this.player.x : this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2; }
+    _shotY() { return this.player?.active ? this.player.y - (this.SLIME_Y_OFFSET || 0) : this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2; }
     orbEmitterAttack(targetX, targetY) {
         const currentTime = this.time.now;
         if (currentTime - (this._lastOrbTime || 0) < 700) return;
@@ -2241,6 +2664,7 @@ class WeaponSystem {
             gfx._glow.setScale(0.28 + 0.04 * Math.sin(now * 0.04) + Math.random() * 0.03);
             let n = 0;
             for (const e of this.enemies || []) {
+                if (this._phasedOut?.(e)) continue;
                 if (n >= 3 || !e.sprite?.active) continue;
                 const ex = e.sprite.x - gfx.x, ey = e.sprite.y - gfx.y;
                 if (ex * ex + ey * ey > (TS * 2.6) ** 2 || Math.random() < 0.35) continue;
@@ -2286,7 +2710,8 @@ class WeaponSystem {
     // Superconduct an enemy (lightning carries further from it): the Orb Emitter's hits, and
     // Ball Lightning while it's embedded in one. Refreshes the mark if it's already on.
     _superconduct(enemy, ms = this.superConductDuration || 5000) {
-        if (!enemy?.sprite?.active) return;
+        if (!enemy?.sprite?.active || this._phasedOut(enemy)) return;
+        if (enemy._immuneFx === 'lightning') { if (enemy.sprite?.active && this.time.now - (enemy._fxNoAt || 0) > 900) { enemy._fxNoAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 30, "CAN'T CONDUCT", '#fff080'); } return; }   // an Adaptive Shade in its lightning form
         enemy.isSuperConducted = true;
         enemy.superConductUntil = Math.max(enemy.superConductUntil || 0, this.time.now + ms);
         if (enemy.superConductVisual?.container?.active) return;
@@ -2295,6 +2720,29 @@ class WeaponSystem {
         enemy.superConductVisual = { container: mark, g: mark };
     }
 
+    // A Queen or a boss struck: its damage, the charge, the forks out to what's round it, then on to the next
+    // bounce, as with any enemy (it used to take the hit and the orb just went out)
+    _orbHitBig(orb, big, tx, ty, hit) {
+        const T = this.TILE_SIZE, px = tx * T + T / 2, py = ty * T + T / 2, from = { x: tx, y: ty, sprite: { x: px, y: py } };
+        const hitDamage = orb.damage * (orb._struck ? 1 : 1.8);
+        orb._struck = true; orb.damage *= 0.75;
+        orb.hitEnemies.add(big);
+        hit(hitDamage);
+        this.gainUltCharge(this.ultChargePerLightningHit, 'lightning');
+        Sfx.play(this, 'orbhit');
+        const FORK_DMG = hitDamage * 0.38;
+        for (const e of this.enemies.filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - tx, e.y - ty) <= orb.forkRange)) {
+            this.drawLightningBolt(from, e);
+            this.damageEnemy(e, FORK_DMG, 'lightning');
+            if (this._dmgLanded && e.health > 0) this._superconduct(e);
+        }
+        this._zapBosses(from, FORK_DMG, orb.forkRange, [...orb.hitEnemies]);
+        if (orb.bouncesLeft > 0) {
+            const t = this._orbBounceTarget(orb, tx, ty);
+            if (t) { orb.bounceTarget = t; orb.bouncesLeft--; return; }
+        }
+        orb._done = true;
+    }
     _orbHitEnemy(orb, enemy) {
         const TS = this.TILE_SIZE;
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
@@ -2329,16 +2777,17 @@ class WeaponSystem {
         }
         const FORK_R = orb.forkRange;
         const FORK_DMG = hitDamage * 0.38;   // 0.35, then 0.5; 0.38 2026-10-19: a tier 2 out-valued the tier 3s and 4s in a crowd
-        const forkCandidates = this.enemies.filter(e =>
+        const forkCandidates = this.enemies.filter(e =>!this._phasedOut?.(e) && 
             e !== enemy && e.sprite?.active &&
             Math.abs(e.x - enemy.x) + Math.abs(e.y - enemy.y) <= FORK_R
         );
+        this._zapBosses(enemy, FORK_DMG, FORK_R, []);   // and Queens and bosses in reach
         for (const forkTarget of forkCandidates) {
             this.drawLightningBolt({ sprite: { x: ex, y: ey } }, forkTarget);
             this.damageEnemy(forkTarget, FORK_DMG, 'lightning');
             // Forks superconduct what they hit, so the orb can bounce on into the crowd (the bounce
             // goes only to superconducted enemies, and only a direct hit used to make one).
-            if (this._dmgLanded && forkTarget.health > 0) {
+            if (this._dmgLanded && forkTarget.health > 0 && forkTarget._immuneFx !== 'lightning') {
                 forkTarget.isSuperConducted = true;
                 forkTarget.superConductUntil = Math.max(forkTarget.superConductUntil || 0, this.time.now + (this.superConductDuration || 5000));
             }
@@ -2349,15 +2798,13 @@ class WeaponSystem {
         // Bounce — ONLY to superconducted enemies within range
         if (orb.bouncesLeft > 0) {
             orb.hitEnemies.add(enemy);
-            const bounceTarget = this.enemies
-                .filter(e => e.sprite?.active && !orb.hitEnemies.has(e) && e.isSuperConducted)
-                .map(e => ({ e, d: Math.abs(e.x - enemy.x) + Math.abs(e.y - enemy.y) }))
-                .filter(c => c.d <= 6)
-                .sort((a, b) => a.d - b.d)[0]?.e;
+            const bounceTarget = this._orbBounceTarget(orb, enemy.x, enemy.y);
+            orb.bounceTarget = bounceTarget;   // it steers onto it, and picks again if it dies first (updateLightningOrbs)
 
             if (bounceTarget) {
-                const tdx = bounceTarget.sprite.x - ex;
-                const tdy = bounceTarget.sprite.y - ey;
+                const bb = this.enemies.includes(bounceTarget) ? bounceTarget.sprite : bounceTarget.container;
+                const tdx = bb.x - ex;
+                const tdy = bb.y - ey;
                 const tlen = Math.sqrt(tdx*tdx + tdy*tdy) || 1;
                 orb.vx = (tdx/tlen) * 320;
                 orb.vy = (tdy/tlen) * 320;
@@ -2365,7 +2812,7 @@ class WeaponSystem {
                 // Bounce arc flash
                 const arc = this.add.graphics().setDepth(3.5);
                 arc.lineStyle(2, 0xffff00, 0.70);
-                arc.beginPath(); arc.moveTo(ex, ey); arc.lineTo(bounceTarget.sprite.x, bounceTarget.sprite.y); arc.strokePath();
+                arc.beginPath(); arc.moveTo(ex, ey); arc.lineTo(bb.x, bb.y); arc.strokePath();
                 this.tweens.add({ targets: arc, alpha: 0, duration: 120, onComplete: () => arc.destroy() });
                 return; // keep orb alive, heading to bounce target
             }
@@ -2374,6 +2821,16 @@ class WeaponSystem {
         orb._done = true;
     }
 
+    // The next superconducted enemy for a bounce, nearest first: not one already hit, not one that won't live till it
+    // arrives (a sliver of health that's burning, or already at nothing)
+    _orbBounceTarget(orb, x, y) {
+        const doomed = e => e.health <= 0 || (e.health <= orb.damage * 0.25 && ((e.burnStacks || 0) > 0 || e.isBurning));
+        const near = (list, at) => list.map(e => ({ e, d: Math.hypot(at(e)[0] - x, at(e)[1] - y) })).filter(c => c.d <= 6).sort((a, b) => a.d - b.d)[0]?.e || null;
+        const T = this.TILE_SIZE;
+        return near(this.enemies.filter(e => !this._phasedOut?.(e) && e.sprite?.active && !orb.hitEnemies.has(e) && e.isSuperConducted && !doomed(e)), e => [e.x, e.y])
+            || near([...(this.portals || []), this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore].filter(b => b?.active && b.container?.active && !orb.hitEnemies.has(b)),   // a Queen or a boss, when no enemy will do
+                    b => [b.tileX ?? b.container.x / T, b.tileY ?? b.container.y / T]);
+    }
     updateLightningOrbs(delta) {
         if (!this.lightningOrbs?.length) return;
         const ds = delta / 1000;
@@ -2404,6 +2861,18 @@ class WeaponSystem {
                 continue;
             }
 
+            // On a bounce: home in on its target; it died on the way, so pick another, or pop if there's none
+            if (orb.bounceTarget) {
+                let t = orb.bounceTarget;
+                const big = o => !this.enemies.includes(o), alive = o => big(o) ? o.active && o.container?.active : o.sprite?.active && o.health > 0;   // (a Queen has a sprite too, inside her container)
+                if (!alive(t)) {
+                    t = orb.bounceTarget = this._orbBounceTarget(orb, orb.gfx.x / TS - 0.5, orb.gfx.y / TS - 0.5);
+                    if (!t) { orb._done = true; continue; }
+                }
+                const body = big(t) ? t.container : t.sprite;
+                const tdx = body.x - orb.gfx.x, tdy = body.y - orb.gfx.y, tl = Math.hypot(tdx, tdy) || 1, sp = Math.hypot(orb.vx, orb.vy) || 320;
+                orb.vx = tdx / tl * sp; orb.vy = tdy / tl * sp;
+            }
             // Move
             orb.gfx.x += orb.vx * ds;
             orb.gfx.y += orb.vy * ds;
@@ -2430,6 +2899,7 @@ class WeaponSystem {
 
             // Enemy collision
             for (const enemy of this.enemies) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite?.active || orb.hitEnemies.has(enemy)) continue;
                 const edx = orb.gfx.x - enemy.sprite.x, edy = orb.gfx.y - enemy.sprite.y;
                 if (Math.sqrt(edx*edx + edy*edy) < TS * 0.75) {
@@ -2438,22 +2908,22 @@ class WeaponSystem {
                 }
             }
 
-            // Portal collision (queen slime)
-            const portalHit = this.getPortalAt(tx, ty);
-            if (portalHit) {
-                this.damagePortal(portalHit, orb.damage);
-                orb._done = true;
+            if (orb._done) continue;
+            // Portal collision (queen slime): struck like any enemy (forks, bounces on)
+            const portalHit = this.getPortalAt(tx, ty) || (this.portals || []).find(q => q.active && q.container?.active && !orb.hitEnemies.has(q) && Math.hypot(orb.gfx.x - q.container.x, orb.gfx.y - q.container.y) < TS * 1.2);   // her tile, or her body (a bounce homes on the body)
+            if (portalHit && !orb.hitEnemies.has(portalHit)) {
+                this._orbHitBig(orb, portalHit, portalHit.tileX, portalHit.tileY, d => this.damagePortal(portalHit, d));
                 continue;
             }
 
-            // Boss collision
+            // Boss collision: the same
             for (const boss of [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore].filter(Boolean)) {
-                if (!boss.active) continue;
+                if (!boss.active || orb.hitEnemies.has(boss)) continue;
                 const bx = boss.container?.x ?? boss.tileX * TS;
                 const by = boss.container?.y ?? boss.tileY * TS;
                 if (Math.hypot(orb.gfx.x - bx, orb.gfx.y - by) < TS * 2) {
-                    this.damageBossAtTile(boss.tileX, boss.tileY, orb.damage);
-                    orb._done = true;
+                    const btx = boss.tileX ?? Math.floor(bx / TS), bty = boss.tileY ?? Math.floor(by / TS);
+                    this._orbHitBig(orb, boss, btx, bty, d => this.damageBossAtTile(btx, bty, d, undefined, 'lightning'));
                     break;
                 }
             }
@@ -2462,7 +2932,7 @@ class WeaponSystem {
 
     applyIceFistsHit(enemy) {
         // Ice fists only — do not call from other weapons
-        if (enemy._sniperInvisible) return; // invisible snipers immune to chill/freeze
+        if (enemy._sniperInvisible || this._phasedOut(enemy)) return; // invisible snipers immune to chill/freeze
         if (enemy.fireImmune) {
             if (enemy.sprite?.active) this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#ff8844');
             return;
@@ -2491,7 +2961,7 @@ class WeaponSystem {
 
     applyIcicleCannonHit(enemy, damage, shatterMult = 0.5, chillWeight = 1) {
         // Icicle cannon — completely independent of ice fists
-        if (enemy._sniperInvisible) return; // invisible snipers immune to chill/freeze/slow
+        if (enemy._sniperInvisible || this._phasedOut(enemy)) return; // invisible snipers immune to chill/freeze/slow
         if (enemy.fireImmune) {
             if (enemy.sprite?.active) this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#ff8844');
             return;
@@ -2517,7 +2987,7 @@ class WeaponSystem {
     applyFractalShardHit(enemy, damage) {
         // Fractal shard hit — independent of all other ice weapons
         // No brittle, own chill/freeze/shatter, own ult charge
-        if (enemy._sniperInvisible) return; // invisible snipers immune to chill/freeze
+        if (enemy._sniperInvisible || this._phasedOut(enemy)) return; // invisible snipers immune to chill/freeze
         if (enemy.fireImmune) {
             if (enemy.sprite?.active) this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', '#ff8844');
             return;
@@ -2834,6 +3304,7 @@ class WeaponSystem {
                         if (enemy.sprite?.active && !enemy.isFrozen && typeof enemy.sprite.clearTint === 'function') enemy.sprite.clearTint();
                     };
                     for (const enemy of this.enemies) {
+                        if (this._phasedOut?.(enemy)) continue;
                         if (enemy.x !== tx || enemy.y !== ty) continue;
                         if (enemy.isWet) {
                             enemy.wetUntil = this.time.now + WET_DURATION;
@@ -2854,18 +3325,21 @@ class WeaponSystem {
     }
 
     fractalShardAttack(targetX, targetY) {
-        const currentTime = this.time.now;
-        if (currentTime - (this.lastFractalShardTime || 0) < 600 * WeaponLevels.cdMult('fractal_shard')) return;
+        const currentTime = this.time.now, FC = this._fractalCfg(), cd = WeaponLevels.cdMult('fractal_shard');
+        const mode = (this._fracMode?.until || 0) > currentTime ? this._fracMode.kind : null;   // R's gamble: every shot one attack, quicker
+        if (currentTime - (this.lastFractalShardTime || 0) < (mode === 'spike' ? FC.SPIKE_CD : 600) * cd) return;
         this.lastFractalShardTime = currentTime;
+        if (mode) this._fractalPhase = mode === 'spike' ? 0 : 1;
         this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
 
         if (this._fractalPhase === undefined) this._fractalPhase = 0;
 
-        const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPx = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const playerPy = this._shotY();
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
         const angle = Math.atan2(worldY - playerPy, worldX - playerPx);
+        if (mode === 'spike') { this._fractalDeadly(worldX, worldY); this._fractalPhase = 0; return; }
 
         if (this._fractalPhase === 0) {
             // ── PHASE 1: PIERCING FREEZE SPIKE ───────────────────────────
@@ -2934,19 +3408,24 @@ class WeaponSystem {
             // same target like a shotgun.
             // One shard, and up to two more with Splinter, spread a little either side. Only the
             // centre one plants the totem, so a volley leaves one pillar.
-            const SHOTGUN_SPREAD = 0.10 * Enchants.spread('fractal_shard'); // ~5.7° half-angle — tight, still reads as one attack (True Aim narrows it)
-            const volleyId = Math.random().toString(36).slice(2), n = 1 + WeaponLevels.perk('fractal_shard', 'shards');
-            this._fractalSpikeDmg = [17, 11, 8][n - 1];   // the spike sets up (cubes: brittle); the burst is the damage. 14, 9, 7 until 2026-10-19: a tier 4 hit one target softer than the free Ice Fists
-            for (let i = 0; i < n; i++) this._spawnPierceSpike(playerPx, playerPy, angle + (n === 1 ? 0 : (i / (n - 1) - 0.5) * 2 * SHOTGUN_SPREAD), volleyId, i === Math.floor(n / 2));
+            // Three PARALLEL spikes (2026-10-20): the middle one on your aim, one half a tile either side, all flying straight.
+            // The longest, fastest sniper shot in the game; they cube what they hit. (The gold and purple marks are gone:
+            // marking an enemy for more damage is Hex's job, and it plants no totem any more.) Splinter: they hit harder.
+            // Deadly Accuracy (R): five of them, closer set, harder, every shot.
+            const volleyId = Math.random().toString(36).slice(2), off = this.TILE_SIZE * (mode ? 0.4 : 0.5), nx = -Math.sin(angle) * off, ny = Math.cos(angle) * off;
+            this._fractalSpikeDmg = 8 * (1 + 0.2 * WeaponLevels.perk('fractal_shard', 'shards')) * (mode ? FC.SPIKE_MULT : 1);
+            for (const k of (mode ? [-2, -1, 0, 1, 2] : [-1, 0, 1])) this._spawnPierceSpike(playerPx + nx * k, playerPy + ny * k, angle, volleyId, false);
+            if (mode) this._fractalPhase = 0;
 
         } else {
             // ── PHASE 2: UNSTABLE SPLITTER ────────────────────────────────
-            this._fractalPhase = 0;
-            // Phase 2 has a longer effective cooldown — override timer
-            this.lastFractalShardTime = currentTime + 1400 * WeaponLevels.cdMult('fractal_shard'); // total ~2s before next shot (Rapid Facets: both strikes)
+            this._fractalPhase = mode ? 1 : 0;
+            // Phase 2 has a longer effective cooldown — override timer (Shard Storm: FAN_CD between fans)
+            this.lastFractalShardTime = mode ? currentTime - 600 * cd + FC.FAN_CD * cd : currentTime + 1400 * cd; // total ~2s before next shot (Rapid Facets: both strikes)
 
-            // Muzzle flash — unstable crackling burst
-            const muzzle = this.add.graphics().setDepth(4);
+            // Muzzle flash — unstable crackling burst (Shard Storm: a small spark, at four fans a second the full one whited out the screen)
+            if (mode) this._vfxFlash?.(playerPx, playerPy, 22, 0x9fe8ff, 90, 0.5);
+            const muzzle = this.add.graphics().setDepth(4).setVisible(!mode);
             muzzle.x = playerPx; muzzle.y = playerPy;
             muzzle.fillStyle(0xffffff, 0.85); muzzle.fillCircle(0, 0, 8);
             muzzle.fillStyle(0xaaeeff, 0.40); muzzle.fillCircle(0, 0, 18);
@@ -2979,14 +3458,253 @@ class WeaponSystem {
             // shards into a tighter arc means more of them overlap a single target, so the weapon
             // loses area and GAINS single-target burst. Holding angular density fixed at 15 deg
             // apart (7 over 90 -> 5 over 60) cuts coverage without handing back focused damage.
-            const FAN_COUNT = 5 + 2 * WeaponLevels.perk('fractal_shard', 'fan');   // Burst Fan: more
+            const FAN_COUNT = (mode ? FC.FAN_N : 5) + 2 * WeaponLevels.perk('fractal_shard', 'fan');   // Burst Fan: more (Shard Storm: a wide one)
             this._fractalVolley = Math.random().toString(36).slice(2);   // the burst's shards fall off on one target
-            const FAN_HALF  = Math.PI / 6;      // 30 deg either side = a 60 deg fan
+            const FAN_HALF  = mode ? FC.FAN_HALF : Math.PI / 6;      // 30 deg either side = a 60 deg fan
             for (let i = 0; i < FAN_COUNT; i++) {
                 const t = FAN_COUNT === 1 ? 0.5 : i / (FAN_COUNT - 1);
                 this._spawnSplitterShard(playerPx, playerPy, angle - FAN_HALF + t * (FAN_HALF * 2), 0);
             }
         }
+    }
+
+    // The Fractal Shard's pixel art (ShopScene.icon, outlined like the weapon icons), all pointing up: the spike's crystal
+    // needle, the fan's jagged shard in five shades (it darkens each time it splits), and the mark's floating crystal.
+    static fractalArt(scene) {
+        if (WeaponSystem._fracArt && scene.textures.exists('fx_frac_spike')) return WeaponSystem._fracArt;
+        const I = ShopScene.icon;
+        const spike = I(scene, 'fx_frac_spike', 16, { I: '#5fb8e0', i: '#bff4ff', d: '#2a6a9a' }, m => {
+            m.poly([[8, 0], [10, 5], [10, 13], [8.6, 16], [7.4, 16], [6, 13], [6, 5]], 'I');
+            m.rect(7, 3, 1, 10, 'i'); m.line(9, 6, 9, 13, 'd');
+            m.poly([[8, 0], [9.2, 3], [6.8, 3]], 'W'); m.set(7, 6, 'W'); m.set(7, 10, 'W');
+        });
+        const SH = [['#88ddff', '#ddf8ff', '#ffffff'], ['#44bbdd', '#aaeeff', '#ddf8ff'], ['#2299bb', '#77ccee', '#bbefff'], ['#116688', '#44aacc', '#88ddee'], ['#0a3344', '#226688', '#55aabb']];
+        const shard = SH.map(([B, L, R], k) => I(scene, 'fx_frac_shard_' + k, 12, { B, L, R }, m => {
+            m.poly([[6, 0], [9.5, 4], [8.5, 8], [6.5, 11.5], [4.5, 9], [2.5, 4.5]], 'B');
+            m.line(5, 2, 4, 8, 'L'); m.line(6, 3, 6, 9, 'L');
+            m.set(6, 1, 'R'); m.set(6, 2, 'R'); if (k < 3) m.set(5, 5, 'R');
+        }));
+        const mark = I(scene, 'fx_frac_mark', 10, { i: '#9fe8ff', I: '#5fb8e0' }, m => {
+            m.poly([[5, 0], [9, 5], [5, 10], [1, 5]], 'i'); m.poly([[5, 0], [9, 5], [5, 10]], 'I'); m.set(4, 3, 'W'); m.set(3, 5, 'W');
+        });
+        const lance = I(scene, 'fx_frac_lance', 22, { k: '#06121c', D: '#1e5a86', I: '#4aa8dc', i: '#9fe4ff', W: '#ffffff', g: '#dff8ff' }, m => {   // Deadly Accuracy's: a long faceted lance, its edge lit
+            m.poly([[11, 0], [14, 6], [13.5, 17], [11, 22], [8.5, 17], [8, 6]], 'D');
+            m.poly([[11, 0], [14, 6], [13.5, 17], [11, 22]], 'I');
+            m.poly([[11, 1], [12.5, 6], [11, 18]], 'i');
+            m.line(11, 2, 11, 19, 'W'); m.set(12, 4, 'W'); m.set(12, 9, 'g'); m.set(10, 13, 'g');
+            m.poly([[11, 22], [9, 19], [13, 19]], 'D');
+        });
+        return (WeaponSystem._fracArt = { spike, shard, mark, lance });
+    }
+    // A spike hit: crystal chips spraying off the target, spinning as they fall
+    static fractalBurst(scene, x, y, crit) {
+        const A = WeaponSystem.fractalArt(scene);
+        for (let i = 0; i < (crit ? 7 : 4); i++) {
+            const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 16;
+            const c = scene.add.image(x, y, A.shard[Math.floor(Math.random() * 3)]).setScale(0.55).setRotation(a).setDepth(4.6);
+            scene.tweens.add({ targets: c, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.7 + 6, rotation: a + 4, alpha: 0, scale: 0.3, duration: 320 + Math.random() * 120, ease: 'Quad.easeOut', onComplete: () => c.destroy() });
+        }
+        if (crit) scene._vfxFlash?.(x, y, 40, 0xffffff, 140, 0.8);
+    }
+
+    // ── FRACTAL SHARD'S R (2026-10-20): the combo, and a gamble ──────────────
+    // A spike MARKS what it hits (a charge mark, no damage: that's Hex's job). A fan shard on a marked enemy uses the mark
+    // up for a charge (one a fan); CHARGES of them fill R. R flips a coin for MODE_MS: DEADLY ACCURACY (every shot a five-spike volley,
+    // SPIKE_CD apart, xSPIKE_MULT) or SHARD STORM (every shot a FAN_N-shard fan, FAN_HALF either side, FAN_CD apart).
+    // DEADLY ACCURACY: five shards orbit you; a click lines them up a tile apart facing the cursor, and they converge on that point
+    // and fly on past it, every hit a crit (_fractalDeadly). The gamble is a slot machine (_fractalGamble): a reel that slows, then lands.
+    // SHARD STORM is the ult charger: it heals STORM_HEAL of max HP when it lands (no overheal), ice ult charge xSTORM_ULT while it
+    // runs, and chip fans (xSTORM_DMG damage) every FAN_CD.
+    _fractalCfg() { return { MARK_MS: 6000, CHARGES: 5, MODE_MS: 6000, SPIKE_CD: 420, SPIKE_MULT: 1.5, FAN_CD: 350, FAN_N: 7, FAN_HALF: Math.PI / 4, FORM_MS: 190, ORBIT_R: 34,
+        STORM_HEAL: 0.1, STORM_ULT: 2, STORM_DMG: 0.5 }; }   // (STORM_ULT 2.5 with splitting shards filled ~45% of a gem a storm)
+    _fractalMark(e) {
+        if (!e?.sprite?.active || this._phasedOut(e)) return;
+        e._fracMarkUntil = this.time.now + this._fractalCfg().MARK_MS;
+        if (!e._fracMarkG?.active) { e._fracMarkG = this.add.image(e.sprite.x, e.sprite.y - 26, WeaponSystem.fractalArt(this).mark).setDepth(4.4); this._vfxSort?.(e._fracMarkG); }
+        (this._fracMarked ||= new Set()).add(e);
+    }
+    // An ice shard landing on a boss counts toward its weapon's signature as one on an enemy does (boss hits never did):
+    // an icicle toward the Frost Shield, a Fractal spike marks the boss, a fan shard on that mark charges R
+    _shardBossSig(s) {
+        if (s.isCannonShard && !(this._frostShieldUntil > this.time.now)) { this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1); this._updateIcicleChargeBar(); }
+        const b = [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore].find(o => o?.active && o.container);
+        if (!b) return;
+        const m = b._fracPseudo ||= {};
+        m.sprite = { x: b.container.x, y: b.container.y - 40, active: true };
+        if (s.isPierceSpike) this._fractalMark(m); else if (s.isSplitter) this._fractalConsume(m);
+    }
+    _fractalConsume(e) {
+        if (!((e?._fracMarkUntil || 0) > this.time.now)) return;
+        if ((this._fracMode?.until || 0) > this.time.now) return;   // (no charging while R runs)
+        if (this._fracChargedBy === this._fractalVolley) return;   // one charge a fan, so a pack fills it no faster than one enemy (the other marks wait)
+        this._fracChargedBy = this._fractalVolley;
+        const FC = this._fractalCfg();
+        e._fracMarkUntil = 0; e._fracMarkG?.destroy(); e._fracMarkG = null; this._fracMarked?.delete(e);
+        this._fracCharge = Math.min(FC.CHARGES, (this._fracCharge || 0) + 1);
+        const p = e.sprite; if (p?.active) { this._vfxFlash?.(p.x, p.y, 36, 0x9fe8ff, 160, 0.7); this.showStatusText(p.x, p.y - 30, this._fracCharge >= FC.CHARGES ? 'R READY' : `+1  ${this._fracCharge}/${FC.CHARGES}`, '#bff4ff'); }
+    }
+    _fractalGamble() {
+        const FC = this._fractalCfg(), p = this.player;
+        if (this._fracSpin) return;
+        if ((this._fracCharge || 0) < FC.CHARGES) { this.showStatusText(p.x, p.y - 28, `NOT CHARGED  ${this._fracCharge || 0}/${FC.CHARGES}`, '#8ab8d0'); return; }
+        this._fracCharge = 0; this._fracSpin = true;
+        const kind = Math.random() < 0.5 ? 'spike' : 'fan', W = this.scale.width, cx = W / 2, cy = Math.round(this.scale.height * 0.24), D = 40;
+        const NAME = { spike: 'DEADLY ACCURACY', fan: 'SHARD STORM' }, COL = { spike: '#ffffff', fan: '#9fe8ff' };
+        // the machine: an iron-dark frame, an ice rim, a reel window, the name rolling in it
+        const box = this.add.graphics().setScrollFactor(0).setDepth(D);
+        const drawBox = (glow) => { box.clear(); box.fillStyle(0x06101a, 0.92); box.fillRoundedRect(cx - 190, cy - 34, 380, 68, 10);
+            box.lineStyle(3, glow, 1); box.strokeRoundedRect(cx - 190, cy - 34, 380, 68, 10); box.lineStyle(1, 0xdff8ff, 0.35); box.strokeRoundedRect(cx - 176, cy - 24, 352, 48, 6); };
+        drawBox(0x5fb8e0);
+        const label = this.add.text(cx, cy, '', { fontFamily: UIKit.FONT.title, fontSize: '30px', fontStyle: 'bold', color: '#ffffff', stroke: '#06101a', strokeThickness: 6 }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
+        const objs = [box, label]; objs.forEach(o => this._vfxSort?.(o));
+        const gaps = [45, 50, 55, 62, 70, 80, 92, 106, 124, 146, 172, 205, 245, 300];   // the reel slowing
+        const other = kind === 'spike' ? 'fan' : 'spike';   // the reel flips gaps.length + 1 times before it stops: start where that lands on `kind`
+        let face = (gaps.length + 1) % 2 === 1 ? other : kind, i = 0;
+        const tick = () => {
+            face = face === 'spike' ? 'fan' : 'spike';
+            label.setText(NAME[face]).setColor(COL[face]).setY(cy - 10).setAlpha(0.6);
+            this.tweens.add({ targets: label, y: cy, alpha: 1, duration: Math.min(90, gaps[Math.min(i, gaps.length - 1)] * 0.7) });
+            Sfx.play(this, 'click');
+            if (i < gaps.length) { this.time.delayedCall(gaps[i++], tick); return; }
+            // it lands: boom
+            this._fracSpin = false;
+            this._fracMode = { kind, until: this.time.now + FC.MODE_MS };
+            if (kind === 'spike') this._fractalDeadlyOpen();
+            if (kind === 'fan' && this.health > 0) {   // Shard Storm lands with a heal (never past max)
+                const before = this.health; this.health = Math.min(this.maxHealth, this.health + this.maxHealth * FC.STORM_HEAL);
+                const h = Math.round(this.health - before); if (h > 0 && this.player?.active) this.showStatusText(this.player.x, this.player.y - 30, `+${h} HP`, '#7dff9a');
+                this.updateHUD?.();
+            }
+            drawBox(kind === 'spike' ? 0xffffff : 0x9fe8ff);
+            label.setScale(1.7); this.tweens.add({ targets: label, scale: 1, duration: 260, ease: 'Back.easeOut' });
+            const flash = this.add.rectangle(W / 2, this.scale.height / 2, W, this.scale.height, kind === 'spike' ? 0xffffff : 0x9fe8ff, 0.35).setScrollFactor(0).setDepth(D - 1);
+            this._vfxSort?.(flash); this.tweens.add({ targets: flash, alpha: 0, duration: 320, onComplete: () => flash.destroy() });
+            this.cameras.main.shake(260, 0.012);
+            const pp = this.player; if (pp?.active) { this._vfxBursts?.ice?.explode(40, pp.x, pp.y); this._vfxFlash?.(pp.x, pp.y, 160, kind === 'spike' ? 0xffffff : 0x9fe8ff, 400, 0.9); }
+            Sfx.play(this, 'shatter'); Sfx.play(this, 'freeze');
+            this.time.delayedCall(900, () => { for (const o of objs) this.tweens.add({ targets: o, alpha: 0, duration: 260, onComplete: () => o.destroy() }); });
+        };
+        tick();
+    }
+    // Deadly Accuracy's shot: the orbiting shards form a line a tile apart, facing the point you clicked, then each flies through
+    // that point and on to the end of its range. Every one crits (s._crit).
+    // Deadly Accuracy opening: a crystal sigil blooms out under you, six lances rise out of it in a ring of light and
+    // take their places round you
+    _fractalDeadlyOpen() {
+        const p = this.player; if (!p?.active) return;
+        const ADD = Phaser.BlendModes.ADD, cx = p.x, cy = p.y + 4;
+        const g = this.add.graphics().setDepth(1.05).setBlendMode(ADD).setPosition(cx, cy), t = { k: 0 };
+        this.tweens.add({ targets: t, k: 1, duration: 520, ease: 'Cubic.easeOut', onUpdate: () => {
+            const k = t.k, R = 70 * k; g.clear();
+            for (let ring = 0; ring < 3; ring++) {   // three hexagons, each turned and a size down
+                const r = R * (1 - ring * 0.28), rot = ring * Math.PI / 6 + k * 0.6, pts = [];
+                for (let i = 0; i <= 6; i++) { const a = rot + i * Math.PI / 3; pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * 0.5 }); }
+                g.lineStyle(2 - ring * 0.5, ring ? 0x9fe8ff : 0xffffff, (1 - k) * 0.9 + 0.1).strokePoints(pts, false);
+            }
+            for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + k; g.lineStyle(1, 0xdff8ff, 0.6 * (1 - k)).lineBetween(Math.cos(a) * R * 0.25, Math.sin(a) * R * 0.12, Math.cos(a) * R, Math.sin(a) * R * 0.5); }
+        }, onComplete: () => this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() }) });
+        const flash = this.add.image(cx, cy - 6, 'vfx_glow').setTint(0xdff8ff).setBlendMode(ADD).setDepth(4.7).setScale(0.3);
+        this.tweens.add({ targets: flash, scale: 1.6, alpha: 0, duration: 420, onComplete: () => flash.destroy() });
+        for (let i = 0; i < 18; i++) {   // splinters thrown out
+            const a = Math.random() * Math.PI * 2, d = 30 + Math.random() * 50;
+            const sh = this.add.image(cx, cy - 6, WeaponSystem.fractalArt(this).shard[i % 5]).setDepth(4.6).setScale(0.7).setRotation(a);
+            this.tweens.add({ targets: sh, x: cx + Math.cos(a) * d, y: cy - 6 + Math.sin(a) * d * 0.6, rotation: a + 4, alpha: 0, scale: 0.2, duration: 500 + Math.random() * 200, ease: 'Quad.easeOut', onComplete: () => sh.destroy() });
+        }
+        this.cameras.main.shake(90, 0.003);
+    }
+    _fractalDeadly(tx, ty) {
+        const FC = this._fractalCfg(), T = this.TILE_SIZE, p = this.player, ADD = Phaser.BlendModes.ADD;
+        const ang = Math.atan2(ty - p.y, tx - p.x), px = -Math.sin(ang), py = Math.cos(ang), orbs = this._fracOrbs || [];
+        this._fracOrbBusy = this.time.now + FC.FORM_MS + 300;
+        this._fracHalo?.clear();
+        const spots = [-2, -1, 0, 1, 2].map(k => ({ x: p.x + px * k * T * 0.55, y: p.y - 4 + py * k * T * 0.55 }));
+        // they snap into a line facing the click, each drawing a thin aim line to the point; a crosshair closes on it
+        const aim = this.add.graphics().setDepth(4.5).setBlendMode(ADD), mark = this.add.graphics().setDepth(4.7).setPosition(tx, ty);
+        const t = { k: 0 };
+        this.tweens.addCounter({ from: 0, to: 1, duration: FC.FORM_MS, onUpdate: tw => {
+            const k = tw.getValue();
+            aim.clear(); mark.clear();
+            orbs.forEach(o => { if (o?.active) { aim.lineStyle(1, 0xffffff, 0.15 + 0.5 * k).lineBetween(o.x, o.y, tx, ty); } });
+            const r = 22 - 14 * k;
+            mark.lineStyle(2, 0xffffff, 0.5 + 0.5 * k).strokeCircle(0, 0, r);
+            for (const q of [0, 1, 2, 3]) { const qa = q * Math.PI / 2 + k * 0.8; mark.lineBetween(Math.cos(qa) * (r + 2), Math.sin(qa) * (r + 2), Math.cos(qa) * (r + 7), Math.sin(qa) * (r + 7)); }
+        } });
+        spots.forEach((s, k) => { const o = orbs[k]; if (o?.active) this.tweens.add({ targets: o, x: s.x, y: s.y, rotation: ang + Math.PI / 2, scale: 1.1, alpha: 1, duration: FC.FORM_MS * 0.8, ease: 'Back.easeOut' }); });
+        this.time.delayedCall(FC.FORM_MS, () => {
+            aim.destroy();
+            this.tweens.add({ targets: mark, scale: 1.6, alpha: 0, duration: 260, onComplete: () => mark.destroy() });
+            const volleyId = Math.random().toString(36).slice(2);
+            this._fractalSpikeDmg = 8 * (1 + 0.2 * WeaponLevels.perk('fractal_shard', 'shards')) * FC.SPIKE_MULT;
+            for (const s of spots) {
+                const a2 = Math.atan2(ty - s.y, tx - s.x);
+                this._spawnPierceSpike(s.x, s.y, a2, volleyId, false);
+                const sh = this.iceShards[this.iceShards.length - 1]; if (sh) sh._crit = true;
+                const streak = this.add.graphics().setDepth(4.6).setBlendMode(ADD);   // a white-hot streak down its line
+                const ex = s.x + Math.cos(a2) * T * 9, ey = s.y + Math.sin(a2) * T * 9;
+                streak.lineStyle(5, 0x4aa8dc, 0.35).lineBetween(s.x, s.y, ex, ey);
+                streak.lineStyle(2.5, 0x9fe8ff, 0.7).lineBetween(s.x, s.y, ex, ey);
+                streak.lineStyle(1, 0xffffff, 1).lineBetween(s.x, s.y, ex, ey);
+                for (let d = 18; d < T * 9; d += 22) {   // crystal flecks hanging in its wake, shimmering out one after another
+                    const fx = s.x + Math.cos(a2) * d, fy = s.y + Math.sin(a2) * d;
+                    const fl = this.add.image(fx + (Math.random() - 0.5) * 6, fy + (Math.random() - 0.5) * 6, WeaponSystem.fractalArt(this).shard[Math.floor(Math.random() * 3)]).setScale(0.45).setRotation(Math.random() * 6).setDepth(4.55).setAlpha(0.9);
+                    this.tweens.add({ targets: fl, alpha: 0, scale: 0.15, y: fl.y - 6, delay: d * 0.6, duration: 380, onComplete: () => fl.destroy() });
+                }
+                this.tweens.add({ targets: streak, alpha: 0, duration: 200, ease: 'Quad.easeIn', onComplete: () => streak.destroy() });
+                const flash = this.add.image(s.x, s.y, 'vfx_glow').setTint(0xdff8ff).setBlendMode(ADD).setDepth(4.7).setScale(0.25);
+                this.tweens.add({ targets: flash, scale: 0.35, alpha: 0, duration: 160, onComplete: () => flash.destroy() });
+            }
+            for (const o of orbs) if (o?.active) o.setAlpha(0).setScale(0.9);
+            this.cameras.main.shake(70, 0.003);
+            Sfx.play(this, 'w_fractal_shard');
+        });
+    }
+    // Every frame: the marks over their enemies (gone when they lapse or die) and, while it's out, the charge over you
+    _updateFractalBar() {
+        const now = this.time.now, FC = this._fractalCfg();
+        for (const e of [...(this._fracMarked || [])]) {
+            const g = e._fracMarkG;
+            if (!e.sprite?.active || !((e._fracMarkUntil || 0) > now) || !g?.active) { g?.destroy(); e._fracMarkG = null; this._fracMarked.delete(e); continue; }
+            const s = e.sprite, k = (e._fracMarkUntil - now) / FC.MARK_MS;   // a little crystal bobbing and turning, fading as it lapses
+            g.setPosition(s.x, s.y - 26 + Math.sin(now * 0.008) * 1.5).setScale(Math.abs(Math.cos(now * 0.004)) * 0.6 + 0.4, 1).setAlpha(0.5 + 0.5 * Math.min(1, k * 3));
+        }
+        const out = this.currentElement === 'ice' && this.equippedWeapons?.ice === 'fractal_shard' && this.player?.active;
+        // Deadly Accuracy's five shards, circling you while it lasts (they form up and fire in _fractalDeadly)
+        const deadly = out && this._fracMode?.kind === 'spike' && this._fracMode.until > now;
+        if (deadly) {
+            const art = WeaponSystem.fractalArt(this);
+            if (!this._fracOrbs?.[0]?.active) this._fracOrbs = Array.from({ length: 5 }, () => this.add.image(this.player.x, this.player.y, art.lance).setDepth(4.6).setScale(0.9));
+            const halo = this._fracHalo ||= this.add.graphics().setDepth(1.05).setBlendMode(Phaser.BlendModes.ADD);   // under you
+            const scope = this._fracScope ||= this.add.graphics().setDepth(5.5).setBlendMode(Phaser.BlendModes.ADD);   // on the cursor
+            halo.clear(); scope.clear();
+            const cx = this.player.x, cy = this.player.y + 6, pulse = 0.5 + 0.5 * Math.sin(now / 200);
+            for (let ring = 0; ring < 2; ring++) {   // a slowly turning crystal sigil on the floor
+                const r = (ring ? 24 : 36), rot = (ring ? -1 : 1) * now * 0.0008 + ring * Math.PI / 6, pts = [];
+                for (let i = 0; i <= 6; i++) { const a = rot + i * Math.PI / 3; pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r * 0.45 }); }
+                halo.lineStyle(ring ? 1 : 1.5, ring ? 0x9fe8ff : 0xdff8ff, (ring ? 0.35 : 0.5) + 0.2 * pulse).strokePoints(pts, false);
+                if (!ring) for (const q of pts.slice(0, 6)) halo.fillStyle(0xffffff, 0.5 + 0.4 * pulse).fillRect(q.x - 1, q.y - 1, 2, 2);
+            }
+            if (now >= (this._fracOrbBusy || 0)) {   // the lances circle you, points out, each with a fading trail
+                this._fracOrbs.forEach((o, i) => {
+                    const a = now * 0.0028 + i * Math.PI * 2 / 5, x = cx + Math.cos(a) * FC.ORBIT_R, y = cy - 14 + Math.sin(a) * FC.ORBIT_R * 0.5;
+                    o.setPosition(x, y + Math.sin(now / 160 + i) * 2).setRotation(a + Math.PI / 2).setAlpha(Math.min(1, o.alpha + 0.08));
+                    if (Math.random() < 0.3) {
+                        const ghost = this.add.image(o.x, o.y, art.lance).setRotation(o.rotation).setScale(0.9).setDepth(4.55).setTint(0x7fd8ff).setAlpha(0.35).setBlendMode(Phaser.BlendModes.ADD);
+                        this.tweens.add({ targets: ghost, alpha: 0, duration: 260, onComplete: () => ghost.destroy() });
+                    }
+                });
+            }
+            const cam = this.cameras.main, ap = this._aim?.(this.input.activePointer), mx = ap ? ap.x + cam.scrollX : cx, my = ap ? ap.y + cam.scrollY : cy;
+            const r0 = 14, spin = now * 0.002;   // a scope on your cursor: a ring, four ticks closing and opening, a dot
+            scope.lineStyle(1.5, 0xffffff, 0.75).strokeCircle(mx, my, r0);
+            scope.lineStyle(1, 0x9fe8ff, 0.5).strokeCircle(mx, my, r0 + 5);
+            for (let q = 0; q < 4; q++) { const a = spin + q * Math.PI / 2, i0 = r0 - 6 - 2 * pulse; scope.lineStyle(2, 0xffffff, 0.9).lineBetween(mx + Math.cos(a) * i0, my + Math.sin(a) * i0, mx + Math.cos(a) * (r0 + 9), my + Math.sin(a) * (r0 + 9)); }
+            scope.fillStyle(0xffffff, 1).fillRect(mx - 1, my - 1, 2, 2);
+        } else if (this._fracOrbs) { for (const o of this._fracOrbs) o?.destroy(); this._fracOrbs = null; this._fracHalo?.destroy(); this._fracHalo = null; this._fracScope?.destroy(); this._fracScope = null; }
+        if (!out) { if (this._fracBar?.active) this._fracBar.destroy(); this._fracBar = null; return; }
+        if (!this._fracBar?.active) this._fracBar = this.add.graphics().setDepth(6);
+        const g = this._fracBar.clear(), x0 = this.player.x - 21, y0 = this.player.y - (this._fracOrbs ? 34 : 16), mode = (this._fracMode?.until || 0) > now ? this._fracMode : null;
+        if (mode) return UIKit.rBar(g, x0, y0, 42, (mode.until - now) / FC.MODE_MS, { col: mode.kind === 'spike' ? 0xffffff : 0x7fe0ff, hot: 0xffffff, dark: 0x08141c, time: now, ready: false, gem: false });   // R running: the time left
+        UIKit.rBar(g, x0 + 3, y0, 39, (this._fracCharge || 0) / FC.CHARGES, { col: 0x9fe8ff, hot: 0xffffff, dark: 0x08141c, time: now, segs: FC.CHARGES });   // a notch a combo
     }
 
     // ── PHASE 1: Piercing freeze spike ────────────────────────────────────
@@ -3003,6 +3721,7 @@ class WeaponSystem {
     }
 
     _applyGoldMark(enemy, ex, ey) {
+        if (this._phasedOut(enemy)) return;
         const MARK_DURATION = 6000;
         this._clearShatterMark(enemy);
         enemy._shatterMarked = true;
@@ -3025,6 +3744,7 @@ class WeaponSystem {
 
     _applyPurpleMark(enemy, ex, ey) {
         // Upgrade from gold — 1.5× damage from ALL sources (resolveElementalHit, damageEnemy, bosses), longer duration
+        if (this._phasedOut(enemy)) return;
         const MARK_DURATION = 7000;
         this._clearShatterMark(enemy);
         enemy._shatterMarked = true;
@@ -3117,38 +3837,13 @@ class WeaponSystem {
     }
 
     _spawnPierceSpike(x, y, angle, volleyId = null, plantsTotem = false) {
-        const SPEED  = 580;  // very fast — feels like a bullet
+        const SPEED  = 900;  // the fastest shot in the game (580 till 2026-10-20)
         const DAMAGE = (this._fractalSpikeDmg || 12) * this.damageScaling;
         const vx = Math.cos(angle) * SPEED;
         const vy = Math.sin(angle) * SPEED;
 
-        // Main bullet — elongated bright needle, pointed forward
-        const g = this.add.graphics().setDepth(3.5);
-        g.x = x; g.y = y;
-
-        // Pierce spike — crisp arrow-head needle, pixel-art style
-        const LEN = 20, WID = 4;
-
-        // Deep blue body
-        g.fillStyle(0x1166bb, 1.0);
-        g.beginPath(); g.moveTo(0, -LEN); g.lineTo(WID, -LEN*0.2); g.lineTo(WID*0.6, LEN*0.5); g.lineTo(-WID*0.6, LEN*0.5); g.lineTo(-WID, -LEN*0.2); g.closePath(); g.fillPath();
-
-        // Lit left face
-        g.fillStyle(0x44aaee, 0.75);
-        g.beginPath(); g.moveTo(0, -LEN); g.lineTo(-WID, -LEN*0.2); g.lineTo(-WID*0.6, LEN*0.5); g.lineTo(0, LEN*0.35); g.closePath(); g.fillPath();
-
-        // Bright edge line
-        g.lineStyle(1.5, 0x99ddff, 0.90);
-        g.beginPath(); g.moveTo(-WID*0.8, -LEN*0.15); g.lineTo(-WID*0.4, LEN*0.4); g.strokePath();
-
-        // Pure white tip
-        g.fillStyle(0xffffff, 1.0);
-        g.beginPath(); g.moveTo(0, -LEN); g.lineTo(2.5, -LEN*0.6); g.lineTo(-2.5, -LEN*0.6); g.closePath(); g.fillPath();
-
-        // Bright outline
-        g.lineStyle(1.2, 0xaaddff, 0.85);
-        g.beginPath(); g.moveTo(0, -LEN); g.lineTo(WID, -LEN*0.2); g.lineTo(WID*0.6, LEN*0.5); g.lineTo(-WID*0.6, LEN*0.5); g.lineTo(-WID, -LEN*0.2); g.closePath(); g.strokePath();
-
+        // pixel art (WeaponSystem.fractalArt): a crystal needle, pointing up; rotated to its flight each frame
+        const g = this.add.image(x, y, WeaponSystem.fractalArt(this).spike).setDepth(3.5).setScale(1.3);
         g._glow = null;
 
         const shardObj = {
@@ -3248,6 +3943,7 @@ class WeaponSystem {
                 const tpx = Math.floor(px / this.TILE_SIZE);
                 const tpy = Math.floor(py / this.TILE_SIZE);
                 for (const enemy of this.enemies) {
+                    if (this._phasedOut?.(enemy)) continue;
                     if (!enemy.sprite?.active || enemy.health <= 0) continue;
                     if (enemy.fireImmune || enemy.elementImmune) continue;
                     if (enemy.isFrozen) continue; // already frozen — don't re-stack chill
@@ -3316,7 +4012,8 @@ class WeaponSystem {
         const SIZES      = [8,    6,   5,   4,  3];
 
         const speed  = SPEEDS[gen];
-        const damage = DAMAGES[gen] * this.damageScaling;
+        const storm = this._fracMode?.kind === 'fan' && this._fracMode.until > this.time.now;   // Shard Storm's fans chip
+        const damage = DAMAGES[gen] * this.damageScaling * (storm ? (this._fractalCfg?.().STORM_DMG ?? 1) : 1);
         const size   = SIZES[gen];
         const vx = Math.cos(angle) * speed;
         const vy = Math.sin(angle) * speed;
@@ -3332,57 +4029,8 @@ class WeaponSystem {
         ];
         const col = colours[Math.min(gen, colours.length - 1)];
 
-        const g = this.add.graphics().setDepth(3 + gen * 0.05);
-        g.x = x; g.y = y;
-
-        const S = size;
-        // Body — asymmetric jagged crystal (not symmetric icicle, looks "unstable")
-        const jag = 0.15 + gen * 0.08; // more jagged each generation
-        g.fillStyle(col.body, 0.88);
-        g.beginPath();
-        g.moveTo(0, -S);
-        g.lineTo(S*(0.55+jag), -S*0.2);
-        g.lineTo(S*(0.8-jag),   S*0.3);
-        g.lineTo(S*0.2,         S*(0.7+jag));
-        g.lineTo(-S*0.2,        S*(0.7+jag));
-        g.lineTo(-S*(0.8-jag),  S*0.3);
-        g.lineTo(-S*(0.55+jag), -S*0.2);
-        g.closePath();
-        g.fillPath();
-
-        // Lit face
-        g.fillStyle(col.mid, 0.45);
-        g.beginPath();
-        g.moveTo(0, -S);
-        g.lineTo(-S*(0.55+jag), -S*0.2);
-        g.lineTo(-S*(0.3),        S*0.5);
-        g.lineTo(0, S*0.6);
-        g.closePath();
-        g.fillPath();
-
-        // Central highlight
-        g.fillStyle(col.rim, 0.55);
-        g.beginPath(); g.moveTo(0, -S*0.9); g.lineTo(S*0.18, -S*0.1); g.lineTo(S*0.10, S*0.4); g.lineTo(-S*0.10, S*0.4); g.lineTo(-S*0.18, -S*0.1); g.closePath(); g.fillPath();
-
-        // Crack lines (more cracks = higher gen)
-        g.lineStyle(0.7, col.rim, 0.35);
-        g.beginPath(); g.moveTo(-S*0.35, -S*0.15); g.lineTo(S*0.25, S*0.35); g.strokePath();
-        if (gen >= 1) { g.beginPath(); g.moveTo(S*0.30, -S*0.10); g.lineTo(-S*0.15, S*0.40); g.strokePath(); }
-        if (gen >= 2) { g.lineStyle(0.5, col.rim, 0.25); g.beginPath(); g.moveTo(-S*0.20, S*0.15); g.lineTo(S*0.35, S*0.50); g.strokePath(); }
-
-        // Tip flash
-        g.fillStyle(col.rim, 0.95);
-        g.beginPath(); g.moveTo(0, -S); g.lineTo(S*0.18, -S*0.55); g.lineTo(-S*0.18, -S*0.55); g.closePath(); g.fillPath();
-
-        // Outline
-        g.lineStyle(0.9, col.mid, 0.65);
-        g.beginPath();
-        g.moveTo(0, -S);
-        g.lineTo(S*(0.55+jag), -S*0.2); g.lineTo(S*(0.8-jag), S*0.3);
-        g.lineTo(S*0.2, S*(0.7+jag)); g.lineTo(-S*0.2, S*(0.7+jag));
-        g.lineTo(-S*(0.8-jag), S*0.3); g.lineTo(-S*(0.55+jag), -S*0.2);
-        g.closePath(); g.strokePath();
-
+        // pixel art (WeaponSystem.fractalArt): a jagged crystal, darker and smaller each split
+        const g = this.add.image(x, y, WeaponSystem.fractalArt(this).shard[Math.min(gen, 4)]).setDepth(3 + gen * 0.05).setScale(size * 2 / 12);
         g._glow = null;
 
         const shardObj = {
@@ -3395,7 +4043,7 @@ class WeaponSystem {
             isSplitter: true,
             volleyId: this._fractalVolley,   // the burst it came from (_volleyMult)
             splitterGen: gen,
-            splitterCanSplit: gen < MAX_GEN,
+            splitterCanSplit: gen < MAX_GEN && !storm,   // (Shard Storm's don't split: four fans a second of splitting shards was hundreds of them)
             splitterAngle: angle,
             hitEnemies: new Set(),
             piercedEnemies: new Set(),
@@ -3502,8 +4150,8 @@ class WeaponSystem {
         // Spread Shot: +1, +2 icicles; at its max it's a double barrel instead, two volleys a shot (the second 140ms on)
         const spreadLv = WeaponLevels.perk('icicle_cannon', 'pellets'), doubleBarrel = spreadLv >= 3;
         const PELLETS         = 5 + Math.min(2, spreadLv);
-        const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPx = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const playerPy = this._shotY();
         const worldX   = targetX + this.cameras.main.scrollX;
         const worldY   = targetY + this.cameras.main.scrollY;
         const cursorDx = worldX - playerPx;
@@ -3598,6 +4246,7 @@ class WeaponSystem {
 
                         // Splash damage + 1 chill stack to nearby enemies
                         for (const nearEnemy of [...this.enemies]) {
+                            if (this._phasedOut?.(nearEnemy)) continue;
                             // the pellet's own target is at distance 0: it took a second +50% and chill
                             if (nearEnemy === enemy || !nearEnemy.sprite?.active) continue;
                             const sdx = nearEnemy.sprite.x - sx, sdy = nearEnemy.sprite.y - sy;
@@ -3641,7 +4290,7 @@ class WeaponSystem {
                     }
 
                     // each icicle that lands is one of the 28 that charge the Frost Shield
-                    this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1);
+                    if (!(this._frostShieldUntil > this.time.now)) this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1);   // (not while the shield is up)
                     this._updateIcicleChargeBar();
                 }
             });
@@ -3760,6 +4409,7 @@ class WeaponSystem {
 
                     // Splash damage to nearby enemies within SPLASH_R
                     for (const other of [...this.enemies]) {
+                        if (this._phasedOut?.(other)) continue;
                         if (other === enemy || !other.sprite?.active) continue;
                         const edx = other.sprite.x - enemy.sprite.x, edy = other.sprite.y - enemy.sprite.y;
                         if (edx*edx + edy*edy > SPLASH_R*SPLASH_R) continue;
@@ -3945,8 +4595,8 @@ class WeaponSystem {
 
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
-        const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPx = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const playerPy = this._shotY();
 
         const dx = worldX - playerPx, dy = worldY - playerPy;
         const facingAngle = Math.atan2(dy, dx);
@@ -4010,32 +4660,37 @@ class WeaponSystem {
         const damage = 20 * this.damageScaling;   // was 12, see MAX_TILES
 
         // ── Arc sweep visual ───────────────────────────────────────────────
-        const arcRadius = 2.6 * this.TILE_SIZE;
-        const arcGfx = this.add.graphics().setDepth(3);
-        arcGfx.x = playerPx; arcGfx.y = playerPy;
-
-        const SWING_DURATION = 200;
-        const startAngle = facingAngle + halfSpread;
-        const endAngle   = facingAngle - halfSpread;
-        let elapsed = 0;
-        this.time.addEvent({
-            delay: 16,
-            repeat: Math.floor(SWING_DURATION / 16),
-            callback: () => {
-                elapsed += 16;
-                const t = Math.min(elapsed / SWING_DURATION, 1);
-                const curEnd = startAngle + (endAngle - startAngle) * t;
-                arcGfx.clear();
-                arcGfx.fillStyle(0xff6600, 0.16); arcGfx.slice(0, 0, arcRadius + 8, startAngle, curEnd, true); arcGfx.fillPath();
-                arcGfx.fillStyle(0xff8800, 0.50); arcGfx.slice(0, 0, arcRadius,     startAngle, curEnd, true); arcGfx.fillPath();
-                arcGfx.fillStyle(0xffdd66, 0.72); arcGfx.slice(0, 0, arcRadius*0.4, startAngle, curEnd, true); arcGfx.fillPath();
-                arcGfx.lineStyle(2, 0xffffff, 0.45 * (1 - t));
-                arcGfx.beginPath(); arcGfx.moveTo(0, 0);
-                arcGfx.lineTo(Math.cos(curEnd) * arcRadius, Math.sin(curEnd) * arcRadius);
-                arcGfx.strokePath();
-                if (t >= 1) this.tweens.add({ targets: arcGfx, alpha: 0, duration: 80, onComplete: () => arcGfx.destroy() });
+        // A crescent of flame that chases the blade's edge: a white-hot leading edge, banded
+        // yellow, orange and ember red behind it, thinning toward its tail, embers off the tip.
+        const T = this.TILE_SIZE, rOut = 2.3 * T, rIn0 = 0.62 * T;
+        const arcGfx = this.add.graphics().setDepth(3).setPosition(playerPx, playerPy);
+        const SWING_DURATION = 170;
+        const startAngle = facingAngle + halfSpread, endAngle = facingAngle - halfSpread, sweep = endAngle - startAngle;
+        const BANDS = [[0xfffbe8, 1], [0xffe680, 0.95], [0xffb838, 0.9], [0xff8a1e, 0.82], [0xf2661a, 0.7], [0xd84a14, 0.58], [0xb0320e, 0.45], [0x84200a, 0.32], [0x5a1406, 0.2]];
+        const band = (a0, a1, rIn, col, al) => {
+            arcGfx.fillStyle(col, al).beginPath();
+            arcGfx.arc(0, 0, rOut, a0, a1, a1 < a0); arcGfx.arc(0, 0, rIn, a1, a0, a0 < a1);
+            arcGfx.closePath(); arcGfx.fillPath();
+        };
+        const draw = (t) => {
+            const lead = startAngle + sweep * t, step = Math.abs(sweep) / 10 * Math.sign(sweep);
+            arcGfx.clear();
+            for (let i = BANDS.length - 1; i >= 0; i--) {
+                const a0 = lead - step * (i + 1), a1 = lead - step * i;
+                if ((a1 - startAngle) * Math.sign(sweep) <= 0) continue;   // not yet swept
+                const from = (a0 - startAngle) * Math.sign(sweep) < 0 ? startAngle : a0;
+                band(from, a1, rIn0 + (rOut - rIn0) * (i / BANDS.length) * 0.75, BANDS[i][0], BANDS[i][1]);
             }
-        });
+        };
+        this.tweens.addCounter({ from: 0, to: 1, duration: SWING_DURATION, ease: 'Cubic.easeOut',
+            onUpdate: tw => {
+                const t = tw.getValue(); draw(t);
+                const a = startAngle + sweep * t, r = rOut * (0.75 + Math.random() * 0.25);   // embers flung off the edge
+                const m = this.add.image(playerPx + Math.cos(a) * r, playerPy + Math.sin(a) * r, 'vfx_dot').setTint(Math.random() < 0.5 ? 0xffd060 : 0xff7a20).setDepth(3.1).setBlendMode(Phaser.BlendModes.ADD);
+                const out = a - Math.sign(sweep) * Math.PI / 2;
+                this.tweens.add({ targets: m, x: m.x + Math.cos(a) * 14 + Math.cos(out) * 10, y: m.y + Math.sin(a) * 14 + Math.sin(out) * 10 - 6, alpha: 0, scale: 0.4, duration: 300 + Math.random() * 200, onComplete: () => m.destroy() });
+            },
+            onComplete: () => this.tweens.add({ targets: arcGfx, alpha: 0, duration: 110, onComplete: () => arcGfx.destroy() }) });
 
         // ── Hit tiles ─────────────────────────────────────────────────────
         const hitEnemies = new Set();
@@ -4048,7 +4703,7 @@ class WeaponSystem {
             const tpx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
             const tpy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
             this.time.delayedCall(SWING_DURATION * 0.5, () => this.spawnIgnitionTrail(tpx, tpy));
-            this._evaporate(tx, ty, 3);                  // two swings per puddle, six tiles a swing
+            this._evaporate(tx, ty, 6);                  // a swing dries what it hits
 
             // Hit portal if on this tile
             const p = this.getPortalAt(tx, ty);
@@ -4058,6 +4713,7 @@ class WeaponSystem {
             }
 
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (enemy.x !== tx || enemy.y !== ty || hitEnemies.has(enemy)) continue;
                 hitEnemies.add(enemy);
                 // Same routing fix as Flame Fists: the inline version bypassed
@@ -4070,6 +4726,18 @@ class WeaponSystem {
                 this.damageEnemy(enemy, damage, 'fire');
                 if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
             }
+        }
+
+        // ── Three embers flung on ahead: a weak reach for what the blade can't touch ──
+        // They start past the swing and skip what it hit, so up close they add nothing.
+        const B = { N: 3, SPREAD: 0.26, SPEED: 300, RANGE: 7, DMG: 6 };
+        for (let i = 0; i < B.N; i++) {
+            const a = facingAngle + (i - (B.N - 1) / 2) * B.SPREAD, sx = playerPx + Math.cos(a) * T * 0.9, sy = playerPy + Math.sin(a) * T * 0.9;
+            const container = this.add.container(sx, sy).setDepth(2).setScale(0.5), fireGraphics = this.add.graphics();
+            container.add(fireGraphics);
+            this.fireballs.push({ sprite: container, fireGraphics, vx: Math.cos(a) * B.SPEED, vy: Math.sin(a) * B.SPEED, dirX: Math.cos(a), dirY: Math.sin(a),
+                damage: B.DMG * this.damageScaling, startX: sx, startY: sy, splitCount: 0, piercedEnemies: new Set(hitEnemies), createdAt: currentTime, lastFlameTime: 0,
+                _swordBolt: true, _range: B.RANGE });
         }
 
         this.cameras.main.shake(60, 0.005);
@@ -4090,8 +4758,8 @@ class WeaponSystem {
 
         const worldX   = targetX + this.cameras.main.scrollX;
         const worldY   = targetY + this.cameras.main.scrollY;
-        const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPx = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const playerPy = this._shotY();
         const dx = worldX - playerPx, dy = worldY - playerPy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         const baseAngle = Math.atan2(dy, dx);
@@ -4402,6 +5070,11 @@ class WeaponSystem {
             if (blue && r < C.BLUE_BURN) this.applyBlueBurn?.(e);   // Blue Flame: now and then a blue burn stack
             else if (r < ((e._kindleHits || 0) >= C.MAX_HITS ? C.OVER_BURN : C.JET_BURN)) this.applyBurnStack?.(e, 1);
         }
+        const fc = this.fractureCore;   // the Geode in the flame: a hit of fire on the plate facing you (it heats)
+        if (fc?.active && fc.geode && !fc._isInvulnerable && fc.container) {
+            const d = Math.hypot(fc.container.x - px, fc.container.y - py);
+            if (d <= R + T && Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(fc.container.y - py, fc.container.x - px) - ang)) <= C.JET_ARC + 0.3 && now - (fc._jetAt || 0) >= 450) { fc._jetAt = now; this._geodeHit?.((C.CHIP + C.MELT) * (this.damageScaling || 1), 'fire'); }
+        }
         if (this.waterTiles?.size) {   // the flame boils the water it covers off to steam: JET_EVAP of a tile's 6 a tick (Blue Flame all of it)
             const r = Math.ceil(C.JET_R), ptx = Math.floor(px / T), pty = Math.floor(py / T);
             for (let x = ptx - r; x <= ptx + r; x++) for (let y = pty - r; y <= pty + r; y++) {
@@ -4485,8 +5158,8 @@ class WeaponSystem {
         const C = this._kindlingCfg();
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
-        const px = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const py = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const px = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const py = this._shotY();
 
         // Triangular, not uniform: averaging two randoms clusters shots near the centre
         // line with the occasional wider one, which is what a real burst looks like.
@@ -4731,12 +5404,13 @@ class WeaponSystem {
         }
         if (!to) return;
         this._brandEnemy(to);   // makes it a mark (retiring the oldest if the board's full)
-        if (!to._kindleHits) return;
+        if (!to._kindleHits || !this._kindleAlive(to)) return;   // (that mark's own damage can kill it: its position went null and the crash froze the game)
         const wasFull = to._kindleHits >= C.MAX_HITS;
         to._kindleHits = Math.min(C.MAX_HITS, to._kindleHits + Math.round(hits * C.PASS) - 1);
         if (to._kindleHits >= C.MAX_HITS && !wasFull) to._kindleUntil = this.time.now + C.OVER_MS;
         this._updateKindleIndicator(to);
-        const tp = this._kindlePos(to), streak = this.add.image(from.x, from.y, 'vfx_glow').setTint(0xff8a2a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35).setDepth(4.5);
+        const tp = this._kindlePos(to); if (!tp) return;
+        const streak = this.add.image(from.x, from.y, 'vfx_glow').setTint(0xff8a2a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35).setDepth(4.5);
         this.tweens.add({ targets: streak, x: tp.x, y: tp.y, scale: 0.2, duration: 180, ease: 'Quad.easeIn', onComplete: () => streak.destroy() });
         this.showStatusText(tp.x, tp.y - 40, 'HEAT PASSED', '#ffb060');
     }
@@ -5015,21 +5689,14 @@ class WeaponSystem {
         // One bar for both (2026-10-20): the fuel across it, Blue Flame's charge as a pip at its right end.
         const W = 34, H = 5, fuel = Math.max(0, Math.min(1, this._fuel ?? 1)), dry = now < (this._fuelDryUntil || 0), blue = state === 'active';
         const bx = this.player.x - (W + 7) / 2, by = this.player.y - 16;
-        B.bg.clear();
-        B.bg.fillStyle(0x1a0a04, 0.75); B.bg.fillRect(bx - 1, by - 1, W + 2, H + 2); B.bg.fillRect(bx + W + 2, by - 1, H + 2, H + 2);
-        B.bg.lineStyle(1, 0x5a2a12, 0.9); B.bg.strokeRect(bx - 1, by - 1, W + 2, H + 2); B.bg.strokeRect(bx + W + 2, by - 1, H + 2, H + 2);
+        B.bg.clear(); B.fill.clear(); B.glow.clear();
         // fuel: orange, blinking red when low, grey while it's run dry, blue while Blue Flame refills it
         const low = fuel < 0.25 && !blue, blink = low ? 0.55 + 0.45 * Math.sin(now / 70) : 1;
         const body = dry ? 0x5a4a44 : blue ? 0x7fd4ff : low ? 0xff3a2a : 0xff7a22, hot = dry ? 0x8a7a70 : blue ? 0xffffff : 0xffc070;
-        B.fill.clear();
-        const w = Math.round(W * fuel);
-        if (w > 0) { B.fill.fillStyle(body, blink); B.fill.fillRect(bx, by, w, H); B.fill.fillStyle(hot, 0.85 * blink); B.fill.fillRect(bx, by, w, 2); }
-        // the pip: Blue Flame's charge filling up from the bottom, pulsing when R is ready, draining while it burns
-        const pulse = state === 'ready' ? 0.72 + Math.sin(now / 140) * 0.28 : 1, ph = Math.round(H * frac), px = bx + W + 3;
-        if (ph > 0) { B.fill.fillStyle(state === 'recharging' ? 0x2a5a8a : 0x7fd4ff, pulse); B.fill.fillRect(px, by + H - ph, H, ph); }
-        B.glow.clear();
-        if (state !== 'recharging') { B.glow.fillStyle(0x7fd4ff, 0.22 * pulse); B.glow.fillRect(px - 3, by - 3, H + 6, H + 6); }
-        if (low) { B.glow.fillStyle(0xff3a2a, 0.14 * blink); B.glow.fillRect(bx - 3, by - 3, W + 6, H + 6); }
+        B.fill.setAlpha(blink);
+        UIKit.rBar(B.fill, bx + 6, by, W, fuel, { col: body, hot, dark: 0x1a0a04, time: now, h: H, ready: false, gem: false });
+        // the gem: Blue Flame's charge, pulsing when R is ready, draining while it burns
+        UIKit.rGem(B.bg, bx - 2, by + H / 2, frac, { col: state === 'recharging' ? 0x2a5a8a : 0x7fd4ff, hot: 0xffffff, dark: 0x1a0a04, time: now, ready: state === 'ready' });
     }
 
     // Ignition's fuel (FUEL_MS of flame on a full tank, REFUEL_MS to fill it out): it drains while lit and refills while out.
@@ -5225,12 +5892,18 @@ class WeaponSystem {
             o.blueBurn = Math.min(o.blueBurn || 0, o.burnStacks || 0);
         }
         if (!((o.burnStacks || 0) > 0)) o.burnStacks = 0;
+        const was = o.isBurning;
         o.isBurning = o.burnStacks > 0;
+        if (was && !o.isBurning && o.sprite?.active) {   // the last stack gone: the flames and the orange go with it (the expiry in the burn loop never saw this, so they stayed)
+            this.clearBurnVisual(o);
+            if (!o.isFrozen) o.sprite.clearTint();
+        }
     }
 
     // n stacks onto an enemy. Not on ice elementals, not on anything out of the world.
     applyBurnStack(enemy, n = 1) {
         if (!enemy?.sprite?.active || enemy.health <= 0) return;
+        if (enemy._immuneFx === 'fire') { if (enemy.sprite?.active && this.time.now - (enemy._fxNoAt || 0) > 900) { enemy._fxNoAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 30, "CAN'T BURN", '#ffb070'); } return; }   // an Adaptive Shade in its fire form
         if (enemy.iceImmune) return;
         if (this._phasedOut(enemy)) return;
         const B = this._burnCfg(), now = this.time.now;
@@ -5323,7 +5996,7 @@ class WeaponSystem {
 
     // ── Supernova ignition mark — explodes after 2s, cascades to nearby enemies ──
     _applyIgnitionMark(enemy) {
-        if (!enemy.sprite?.active || enemy.health <= 0) return;
+        if (!enemy.sprite?.active || enemy.health <= 0 || this._phasedOut(enemy)) return;
         if (enemy._ignitionMarkActive) return; // already marked
         enemy._ignitionMarkActive = true;
 
@@ -5395,6 +6068,7 @@ class WeaponSystem {
 
             // AoE — damage nearby enemies and cascade ignition marks
             for (const nearby of [...this.enemies]) {
+                if (this._phasedOut?.(nearby)) continue;
                 if (nearby === enemy) continue;
                 if (!nearby.sprite?.active || nearby.health <= 0) continue;
                 const ndx = nearby.sprite.x - ex, ndy = nearby.sprite.y - ey;
@@ -5617,6 +6291,7 @@ class WeaponSystem {
 
         // Fling nearby enemies
         for (const enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (!enemy.sprite?.active) continue;
             const eDist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
             if (eDist > RADIUS) continue;
@@ -5744,18 +6419,14 @@ class WeaponSystem {
         const ready = this._magmaRippleReady === true;
 
         if (!this._magmaRippleBarBg?.active) {   // (dead after a floor change)
-            this._magmaRippleBarBg   = this.add.rectangle(px, py, BAR_W + 4, BAR_H + 4, 0x000000, 0.7).setDepth(5.5);
-            this._magmaRippleBarFill = this.add.rectangle(px - BAR_W / 2, py, 0, BAR_H, 0xff4400, 1).setOrigin(0, 0.5).setDepth(5.6);
+            this._magmaRippleBarBg   = this.add.graphics().setDepth(5.6);
             this._magmaRippleLabel   = this.add.text(px, py + 7, `SURGE [${Settings.label(Settings.key('surge'))}]`, {
                 fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ff8844',
                 stroke: '#1a0806', strokeThickness: 3, resolution: 2
             }).setOrigin(0.5, 0).setDepth(5.7);
         }
-        this._magmaRippleBarBg.x   = px; this._magmaRippleBarBg.y   = py;
-        this._magmaRippleBarFill.x = px - BAR_W / 2; this._magmaRippleBarFill.y = py;
+        UIKit.rBar(this._magmaRippleBarBg.clear(), px - BAR_W / 2 + 4, py - 3, BAR_W, pct, { col: 0xff5a14, hot: 0xffc060, dark: 0x1a0806, time: this.time.now, ready });
         this._magmaRippleLabel.x   = px; this._magmaRippleLabel.y   = py + 7;
-        this._magmaRippleBarFill.width = BAR_W * pct;
-        this._magmaRippleBarFill.setFillStyle(ready ? 0xff8800 : 0xff4400);
         this._magmaRippleLabel.setColor(ready ? '#ffcc44' : '#ff8844');
     }
 
@@ -5940,8 +6611,8 @@ class WeaponSystem {
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
 
-        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPixelX = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const playerPixelY = this._shotY();
 
         const dx = worldX - playerPixelX;
         const dy = worldY - playerPixelY;
@@ -5982,8 +6653,8 @@ class WeaponSystem {
     shootIceShard(targetX, targetY) {
         const worldX = targetX + this.cameras.main.scrollX;
         const worldY = targetY + this.cameras.main.scrollY;
-        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+        const playerPixelX = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
+        const playerPixelY = this._shotY();
 
         const dx = worldX - playerPixelX;
         const dy = worldY - playerPixelY;
@@ -6113,7 +6784,14 @@ class WeaponSystem {
         });
     }
 
-    updateIceShards(delta) {
+    updateIceShards(delta, sub = false) {
+        // A shard moves at most half a tile a step: a long frame (a dip to 15 FPS) runs as several, or the Fractal Shard's spike
+        // (900 px/s) jumped two tiles a frame and flew through the enemy it was aimed at.
+        if (!sub && this.iceShards.length) {
+            let v = 0; for (const q of this.iceShards) v = Math.max(v, Math.hypot(q.vx || 0, q.vy || 0));
+            const steps = Math.min(6, Math.ceil(v * delta / 1000 / (this.TILE_SIZE * 0.5)) || 1);
+            if (steps > 1) { for (let k = 0; k < steps; k++) this.updateIceShards(delta / steps, true); return; }
+        }
         const ds = delta / 1000;
         const time = this.time.now;
 
@@ -6129,7 +6807,7 @@ class WeaponSystem {
                     Math.pow(s.sprite.x - s.startX, 2) +
                     Math.pow(s.sprite.y - s.startY, 2)
                 );
-                const maxRange = s._range || (s.isPierceSpike ? 14 * this.TILE_SIZE : 12 * this.TILE_SIZE);
+                const maxRange = s._range || (s.isPierceSpike ? 20 * this.TILE_SIZE : 12 * this.TILE_SIZE);   // the spike: the longest reach (14 till 2026-10-20)
                 if (distTraveled > maxRange) {
                     // The centre spike plants its totem where it runs out, so the pillar lands at
                     // the far end of the lane you swept rather than at your feet.
@@ -6153,6 +6831,7 @@ class WeaponSystem {
             if (s.isHoming && this.enemies?.length) {
                 let nearestDist = Infinity, nearestEnemy = null;
                 for (const e of this.enemies) {
+                    if (this._phasedOut?.(e)) continue;
                     if (!e.sprite?.active) continue;
                     const dx = e.sprite.x - s.sprite.x;
                     const dy = e.sprite.y - s.sprite.y;
@@ -6277,20 +6956,9 @@ class WeaponSystem {
                             if (typeof this.freezeBossFromIceWeapon === 'function') {
                                 this.freezeBossFromIceWeapon(!!s.isBlock || !!s.isPierceSpike);
                             }
-                            // Apply gold/purple mark on boss — handled below after justFroze
                         }
 
                         const justFroze = !wasAlreadyFrozen && boss._isFrozen;
-                        // Mark logic: gold on first spike, purple on second spike that hits
-                        // an ALREADY-frozen gold-marked boss (wasAlreadyFrozen prevents instant
-                        // purple from a second spike landing in the same volley that froze it)
-                        if (s.isPierceSpike) {
-                            if (boss._shatterMarked && !boss._purpleMarked && wasAlreadyFrozen) {
-                                this._applyPurpleMarkBoss();
-                            } else if (!boss._shatterMarked && !boss._purpleMarked) {
-                                this._applyGoldMarkBoss();
-                            }
-                        }
                         if (justFroze) {
                             // Remember this shard froze the boss — it can't shatter it
                             boss._frozenByShards.add(s._id);
@@ -6405,6 +7073,13 @@ class WeaponSystem {
 
             const hitWallX = outX || (!outY && this.world[nextTileX][tileY] === this.WALL);
             const hitWallY = outY || (!outX && this.world[tileX][nextTileY] === this.WALL);
+            // a fan shard homing back to you ghosts through walls (faded inside them): bouncing off the wall between you, it was stuck there
+            // forever, and every stuck one cost a frame. 2.5s homing at most, whatever happens.
+            if (s.isSplitter && s.isRecalling) {
+                if (time - (s._recallAt ??= time) > 2500) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
+                s.sprite.setAlpha(this.world[tileX]?.[tileY] === this.FLOOR ? 1 : 0.4);
+                if (hitWallX || hitWallY) { s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2); continue; }
+            }
             if ((hitWallX || hitWallY) && !s.isHealShard) VisualFX.wallImpact(this, s.sprite.x, s.sprite.y, 'ice', s.vx, s.vy);
 
             if (hitWallX && !hitWallY) {
@@ -6482,24 +7157,11 @@ class WeaponSystem {
             }
 
             // ── Pierce spike afterimages — ghost copies fading behind ──
-            if (s.isPierceSpike && time - (s._lastAfterimageTime || 0) > 18) {
+            if (s.isPierceSpike && time - (s._lastAfterimageTime || 0) > 30) {   // a pixel ghost of the needle, fading behind it
                 s._lastAfterimageTime = time;
-                const af = this.add.graphics().setDepth(3.0);
-                af.x = s.sprite.x; af.y = s.sprite.y;
-                af.rotation = s.sprite.rotation;
-                // Same shape as main bullet but tinted and smaller
-                const AL = 18, AW = 3.5;
-                const idx2 = Math._afterimageCount = ((Math._afterimageCount || 0) + 1) % 3;
-                const afCol = idx2 === 0 ? 0xaaeeff : idx2 === 1 ? 0x66bbdd : 0x3388aa;
-                af.fillStyle(afCol, 0.55);
-                af.beginPath(); af.moveTo(0, -AL*1.1); af.lineTo(AW, -AL*0.1); af.lineTo(AW*0.7, AL*0.5); af.lineTo(-AW*0.7, AL*0.5); af.lineTo(-AW, -AL*0.1); af.closePath(); af.fillPath();
-                af.fillStyle(0xffffff, 0.40);
-                af.beginPath(); af.moveTo(0, -AL*1.1); af.lineTo(1.5, -AL*0.7); af.lineTo(-1.5, -AL*0.7); af.closePath(); af.fillPath();
-                this.tweens.add({
-                    targets: af, alpha: 0, scaleX: 0.5, scaleY: 0.5,
-                    duration: 90, ease: 'Quad.easeOut',
-                    onComplete: () => af.destroy()
-                });
+                const af = this.add.image(s.sprite.x, s.sprite.y, s.sprite.texture.key).setRotation(s.sprite.rotation).setScale(s.sprite.scaleX * 0.9)
+                    .setTint(s._crit ? 0xffffff : 0x7fd0ff).setAlpha(0.5).setDepth(3.0).setBlendMode(Phaser.BlendModes.ADD);
+                this.tweens.add({ targets: af, alpha: 0, scaleX: af.scaleX * 0.6, scaleY: af.scaleY * 0.6, duration: 110, ease: 'Quad.easeOut', onComplete: () => af.destroy() });
             }
 
             // ── Homing splinter: after burst delay, curve toward nearest enemy ──
@@ -6512,6 +7174,7 @@ class WeaponSystem {
                     let nearest = null, nearestDist2 = Infinity;
                     let nearestFrozen = null, nearestFrozenDist2 = Infinity;
                     for (const enemy of this.enemies) {
+                        if (this._phasedOut?.(enemy)) continue;
                         if (!enemy.sprite?.active || enemy.health <= 0) continue;
                         const edx = enemy.sprite.x - s.sprite.x, edy = enemy.sprite.y - s.sprite.y;
                         const d2  = edx * edx + edy * edy;
@@ -6598,6 +7261,7 @@ class WeaponSystem {
             // Enemy hit
             let destroyed = false;
             for (let enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (s.hitEnemies?.has(enemy)) continue;
                 if (s.piercedEnemies?.has(enemy)) continue;
                 const ex = enemy.sprite.x, ey = enemy.sprite.y;
@@ -6635,26 +7299,17 @@ class WeaponSystem {
                             if (this._phasedOut(enemy)) continue;   // phased out: not in the world
                             // full damage to the first enemy it pierces, 35% to the rest: the
                             // shard is the single-target half of the weapon, the burst the crowd half
+                            this._forceCrit = !!s._crit;   // Deadly Accuracy: every shard crits
                             const _rd5235 = this.resolveElementalHit(enemy, s.damage * (s.hitEnemies.size > 1 ? 0.35 : 1) * this._volleyMult(enemy, s.volleyId), 'ice');
+                            this._forceCrit = false;
                             if (_rd5235 === null) continue;
                             enemy.health -= _rd5235;
                             this.showDamageNumber(ex, ey - 10, Math.round(_rd5235), '#aaeeff');
                             this.updateEnemyHealthBar(enemy);
                             if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
 
-                            // ── Mark upgrade logic ───────────────────────
-                            // Purple only from a LATER volley, as on the boss path: the three spikes
-                            // of one volley used to gold-mark and upgrade it to purple in one click.
-                            if (enemy._shatterMarked && !enemy._purpleMarked && enemy._goldVolley !== s.volleyId) {
-                                // Upgrade gold → purple
-                                this._applyPurpleMark(enemy, ex, ey);
-                            } else if (!enemy._shatterMarked && !enemy._purpleMarked) {
-                                // Fresh gold mark
-                                this._applyGoldMark(enemy, ex, ey);
-                                enemy._goldVolley = s.volleyId;
-                            }
-                            // Already purple — do nothing extra
-
+                            WeaponSystem.fractalBurst(this, ex, ey, !!s._crit);
+                            this._fractalMark?.(enemy);   // R's charge: a fan shard on this mark
                             // Freeze if not already frozen
                             if (!enemy._iceCube) {
                                 this._destroyChillIndicator(enemy);
@@ -6680,13 +7335,6 @@ class WeaponSystem {
                                 ff.fillStyle(0xffffff, 0.9); ff.fillCircle(0, 0, 18);
                                 ff.fillStyle(0xaaeeff, 0.6); ff.fillCircle(0, 0, 10);
                                 this.tweens.add({ targets: ff, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 220, onComplete: () => ff.destroy() });
-                            }
-                            // Mark upgrade for ice elementals too (purple from a later volley)
-                            if (enemy._shatterMarked && !enemy._purpleMarked && enemy._goldVolley !== s.volleyId) {
-                                this._applyPurpleMark(enemy, ex, ey);
-                            } else if (!enemy._shatterMarked && !enemy._purpleMarked) {
-                                this._applyGoldMark(enemy, ex, ey);
-                                enemy._goldVolley = s.volleyId;
                             }
                         }
                         // Keep mark visual following enemy each frame
@@ -6714,6 +7362,7 @@ class WeaponSystem {
                         // Splitter fragment — damages, shatters frozen, small AoE, pierces
                         if (s.hitEnemies.has(enemy)) continue;
                         s.hitEnemies.add(enemy);
+                        this._fractalConsume?.(enemy);   // a spike's mark: R charges
                         const hitDmg = (s.isRecalling ? (s._recallDamage || s.damage * 2.2) : s.damage) * this._volleyMult(enemy, s.volleyId);
                         // Shatter mark multiplier — 4× purple, 3× gold
                         // Marks: purple is x1.5 on everything now (in the resolve), so the splitter adds
@@ -6725,9 +7374,6 @@ class WeaponSystem {
                             this._triggerShatterBurst(enemy, 1.6);   // fractal's shatter, as its spikes'
                         } else if (!enemy.iceImmune && !enemy.fireImmune && !enemy.elementImmune) {
                             if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                            // The fan is ice's ground-cover: each fragment that connects chills
-                            // (at splash weight: there are 35 of them a cast). It chilled nothing.
-                            this.applyChill(enemy, this._chillCfg().SPLASH);
                             const _rd5317 = this.resolveElementalHit(enemy, finalHitDmg, 'ice');
                             if (_rd5317 === null) continue;
                             enemy.health -= _rd5317;
@@ -6741,9 +7387,9 @@ class WeaponSystem {
                                 this.killEnemy(enemy);
                             }
                         }
-                        // Small AoE ice explosion on each fragment hit — also scales with mark
+                        // Small AoE ice explosion on each fragment hit — also scales with mark (not drawn in Shard Storm: dozens a second whited out the screen)
                         const AOE_RADIUS = 28;
-                        const aoeG = this.add.graphics().setDepth(4.5);
+                        const aoeG = this.add.graphics().setDepth(4.5).setVisible(!((this._fracMode?.until || 0) > this.time.now));
                         aoeG.x = ex; aoeG.y = ey;
                         // Marked hits flash gold/yellow instead of blue
                         const aoeCol = enemy._purpleMarked ? 0xaa22ff : enemy._shatterMarked ? 0xffdd44 : s.isRecalling ? 0xffffff : 0xaaeeff;
@@ -6762,6 +7408,7 @@ class WeaponSystem {
                         this.tweens.add({ targets: aoeG, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => aoeG.destroy() });
                         // Damage nearby enemies in AoE radius
                         for (const nearEnemy of [...this.enemies]) {
+                            if (this._phasedOut?.(nearEnemy)) continue;
                             if (nearEnemy === enemy || s.hitEnemies.has(nearEnemy)) continue;
                             if (!nearEnemy.sprite?.active) continue;
                             const aex = nearEnemy.sprite.x, aey = nearEnemy.sprite.y;
@@ -6899,7 +7546,7 @@ class WeaponSystem {
                             hpG.fillStyle(0xffffff, 0.85); hpG.fillCircle(0, 0, 2);
                             this.tweens.add({ targets: hpG, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 200, onComplete: () => hpG.destroy() });
                             // Destroy on first hit
-                            this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), undefined, 'ice');
+                            if (this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), undefined, 'ice')) this._shardBossSig(s);
                             const _hsTX = Math.floor(ex / this.TILE_SIZE), _hsTY = Math.floor(ey / this.TILE_SIZE);
                             const _hsP = this.getPortalAt(_hsTX, _hsTY);
                             if (_hsP) this.damagePortal(_hsP, s.damage, { chill: true });
@@ -6910,7 +7557,7 @@ class WeaponSystem {
                             this.spawnBounceImpact(ex, ey);
                             const _csTX = Math.floor(s.sprite.x / this.TILE_SIZE);
                             const _csTY = Math.floor(s.sprite.y / this.TILE_SIZE);
-                            this.damageBossAtTile(_csTX, _csTY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice');
+                            if (this.damageBossAtTile(_csTX, _csTY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice')) this._shardBossSig(s);
                             const _csP = this.getPortalAt(_csTX, _csTY);
                             if (_csP) this.damagePortal(_csP, s.damage, { chill: true, src: s });
                             if (s.isPiercing) {
@@ -6969,7 +7616,7 @@ class WeaponSystem {
             // Tile-based boss fallback — only fires if pixel check didn't already handle it
             if (!destroyed && !s._hitBossThisFrame &&
                 (s.isCannonShard || s.isPierceSpike || s.isSplitter || s.isHealSplinter)) {
-                this.damageBossAtTile(tileX, tileY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice');
+                if (this.damageBossAtTile(tileX, tileY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice')) this._shardBossSig(s);
                 // Also hit queen portal on current tile — chill for ice shards
                 const fbPortal = this.getPortalAt(tileX, tileY);
                 if (fbPortal) {
@@ -7038,7 +7685,7 @@ class WeaponSystem {
                 Math.pow(fireball.sprite.x - fireball.startX, 2) +
                 Math.pow(fireball.sprite.y - fireball.startY, 2)
             );
-            const maxRange = 15 * this.TILE_SIZE;
+            const maxRange = (fireball._range || 15) * this.TILE_SIZE;
             if (distTraveled > maxRange) {
                 fireball.sprite.destroy();
                 if (fireball.fireGraphics) fireball.fireGraphics.destroy();
@@ -7172,6 +7819,7 @@ class WeaponSystem {
             // Ult shotgun — pierce enemies, spawn lava on each hit
             if (this.ignitionActive && fireball._isShotgun) {
                 for (let enemy of [...this.enemies]) {
+                    if (this._phasedOut?.(enemy)) continue;
                     if (fireball.piercedEnemies && fireball.piercedEnemies.has(enemy)) continue;
                     const ex = enemy.sprite.x, ey = enemy.sprite.y;
                     if (Math.abs(ex - fireball.sprite.x) < 10 && Math.abs(ey - fireball.sprite.y) < 10) {
@@ -7209,6 +7857,7 @@ class WeaponSystem {
             // Normal hit — no lava pool
             let hitEnemy = false;
             for (let enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 const spriteTileX = Math.floor(enemy.sprite.x / this.TILE_SIZE);
                 const spriteTileY = Math.floor(enemy.sprite.y / this.TILE_SIZE);
                 const onTile = (enemy.x === tileX && enemy.y === tileY)
@@ -7241,6 +7890,7 @@ class WeaponSystem {
                         // Magma Staff: only the 4 tiles beside it, at 30% (fire is single-target; at 2 tiles
                         // and 40% it out-crowded Ball Lightning, 262 dps to 218)
                         if (fireball.isStaffBall) this.fireballSplash(fireball.sprite.x, fireball.sprite.y, _dmg, enemy, 1, 0.3);
+                        else if (fireball._swordBolt) this.applyBurnStack?.(enemy);   // the Flame Sword's bolts: a stack, no splash
                         else this.fireballSplash(fireball.sprite.x, fireball.sprite.y, _dmg, enemy);
                     }
                     hitEnemy = true;
@@ -7264,6 +7914,7 @@ class WeaponSystem {
 
             // Staff fireballs boil off whatever they fly over, trail or not.
             if (fireball.isStaffBall) this._evaporate(tileX, tileY, 6);
+            else if (fireball._swordBolt) this._evaporate(tileX, tileY, 3);   // the Flame Sword's embers: half a tile each
             // Max-stack staff balls leave a lava tile as they fly
             if (fireball.isStaffBall && fireball.leavesTrail) {
                 this.spawnIgnitionTrail(

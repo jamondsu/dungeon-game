@@ -166,10 +166,10 @@ class HUD {
         this.updateIciclePips();
 
         const elementSymbols = {
-            'fire': '🔥 FIRE',
-            'ice': '❄️ ICE',
-            'lightning': '⚡ LIGHTNING',
-            'cosmic': '🌌 COSMIC'
+            'fire': 'FIRE',
+            'ice': 'ICE',
+            'lightning': 'LIGHTNING',
+            'cosmic': 'COSMIC'
         };
 
         let ready;
@@ -463,7 +463,7 @@ class HUD {
         };
         g.clear();
         for (const u of this._ultGemUI) {
-            const col = C.COLORS[u.el];
+            const col = this._elStolen?.[u.el] ? 0x5a5a64 : C.COLORS[u.el];   // a Leech has it: grey, and the Leech sits on it (LevelManager._leechHud)
             const fill = Math.min(1, (this.ultGems[u.el] || 0) / max);
             const full = fill >= 1;
             const held = this.currentElement === u.el;
@@ -578,10 +578,7 @@ class HUD {
 
         // Create bar objects once
         if (!this._icicleBarBg?.active) {   // (dead after a floor change: the scene object outlives it)
-            this._icicleBarBg       = this.add.rectangle(px, py,   BAR_W + 4, BAR_H + 4, 0x001122, 0.80).setDepth(5.8);
-            this._icicleBarFill     = this.add.rectangle(px - BAR_W/2, py, 0, BAR_H, 0x5ac8ff, 1).setOrigin(0, 0.5).setDepth(5.9);
-            this._icicleHealBg      = this.add.rectangle(px, py - 7, BAR_W + 4, BAR_H + 4, 0x001122, 0.80).setDepth(5.8);
-            this._icicleHealFill    = this.add.rectangle(px - BAR_W/2, py - 7, BAR_W, BAR_H, 0x9fe8ff, 1).setOrigin(0, 0.5).setDepth(5.9);
+            this._icicleBarBg       = this.add.graphics().setDepth(5.9);   // both meters: the charge, and the shield's time above it
             this._icicleBarLabel    = this.add.text(px, py + 6, 'FROST SHIELD', {
                 fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#9fe8ff', stroke: '#05101a', strokeThickness: 3, resolution: 2
             }).setOrigin(0.5, 0).setDepth(6);
@@ -590,39 +587,23 @@ class HUD {
             }).setOrigin(0.5, 1).setDepth(6);
         }
 
-        // Update positions
-        this._icicleBarBg.x    = px; this._icicleBarBg.y    = py;
-        this._icicleBarFill.x  = px - BAR_W/2; this._icicleBarFill.y = py;
-        this._icicleHealBg.x   = px; this._icicleHealBg.y   = py - 7;
-        this._icicleHealFill.x = px - BAR_W/2; this._icicleHealFill.y = py - 7;
         this._icicleBarLabel.x = px; this._icicleBarLabel.y = py + 6;
         this._icicleHealLabel.x = px; this._icicleHealLabel.y = py - 7 - 5;
-
-        // Charge bar — green fill, glows gold when full
-        const chargeW = BAR_W * chargeFrac;
-        this._icicleBarFill.width = chargeW;
-        this._icicleBarFill.setFillStyle(chargeFrac >= 1 ? 0xffdd44 : 0x5ac8ff);
-        this._icicleBarLabel.setColor(chargeFrac >= 1 ? '#ffdd44' : '#33bb77');
-
-        // Heal armed indicator — solid bar pulsing green when armed, hidden otherwise
-        this._icicleHealBg.setVisible(healModeActive);
-        this._icicleHealFill.setVisible(healModeActive);
+        const g = this._icicleBarBg.clear(), now = this.time.now;
+        UIKit.rBar(g, px - BAR_W / 2 + 4, py - BAR_H / 2, BAR_W - 4, chargeFrac, { col: 0x5ac8ff, hot: 0xd8f6ff, dark: 0x001122, time: now, h: BAR_H, segs: 4 });
+        this._icicleBarLabel.setColor(chargeFrac >= 1 ? '#d8f6ff' : '#9fe8ff');
         this._icicleHealLabel.setVisible(healModeActive);
-        if (healModeActive) {
-            this._icicleHealFill.width = BAR_W * (this._frostShieldUntil - this.time.now) / 5000;   // its time left
-            // Pulse alpha on label
-            const pulse = 0.7 + 0.3 * Math.sin(this.time.now / 200);
-            this._icicleHealLabel.setAlpha(pulse);
+        if (healModeActive) {   // the shield's time left
+            UIKit.rBar(g, px - BAR_W / 2 + 4, py - 7 - BAR_H / 2, BAR_W - 4, (this._frostShieldUntil - now) / 5000, { col: 0xbff4ff, hot: 0xffffff, dark: 0x001122, time: now, h: BAR_H, ready: false, gem: false });
+            this._icicleHealLabel.setAlpha(0.7 + 0.3 * Math.sin(now / 200));
         }
 
         // Flash + "HEAL READY" popup when charge first fills
         if (chargeFrac >= 1 && !this._iciclePipsWereFull) {
             this._iciclePipsWereFull = true;
-            this.tweens.killTweensOf(this._icicleBarFill);
-            this.tweens.add({ targets: this._icicleBarFill, scaleY: 2, duration: 100, yoyo: true, ease: 'Quad.easeOut' });
             if (this._icicleReadyText) this._icicleReadyText.destroy();
             const rtx = this.player.x, rty = this.player.y - 46;
-            this._icicleReadyText = this.add.text(rtx, rty, `❄ SHIELD READY · ${Settings.label(Settings.key('surge'))}`, {
+            this._icicleReadyText = this.add.text(rtx, rty, `SHIELD READY · ${Settings.label(Settings.key('surge'))}`, {
                 fontSize: '13px', fontFamily: 'monospace', color: '#00ff88',
                 stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
             }).setOrigin(0.5).setDepth(10);
@@ -812,6 +793,7 @@ class HUD {
     gameOver() {
         if (this._deathScreenActive) return;
         Telemetry.death(this); Telemetry.end(this, 'death');
+        if (!this.towerRun && !this.trainingRun) Progress.lost(Progress.BY_LEVEL_INDEX[this.currentLevelIndex]);   // two in a row: the lobby suggests the Tower
         this._deathScreenActive = true;
         this.closePauseMenu();
         this.input.keyboard.enabled = false;
@@ -1128,17 +1110,19 @@ class HUD {
         return END;
     }
 
-    // ── BOSS BAR ─────────────────────────────────────────────────────────────
-    // One bar across the top for the boss you are fighting: its name over it, a pale chunk that
-    // trails the fill down when it is hurt, a line under it for what it is doing. The boss's
-    // update calls it every frame; _bossBarHide when it is gone.
-    _bossBar(frac, name, col, sub = '') {
-        let B = this._bossBarUI;
+    // ── BOSS BARS ────────────────────────────────────────────────────────────
+    // A bar across the top for each boss you are fighting (two Queens, a Queen and a boss), stacked
+    // one under the next: its name over it, a pale chunk that trails the fill down when it is hurt,
+    // a line under it for what it is doing. `key` tells one from another; Bosses.js lists them every
+    // frame and _bossBarsKeep(keys) lets the rest fade; _bossBarHide takes them all down.
+    _bossBar(frac, name, col, sub = '', key = 'boss', slot = 0) {
+        const all = this._bossBarUIs ||= {};
+        let B = all[key];
         if (!B?.g?.active) {
             const T = (size, style) => this.add.text(0, 0, '', { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: style, color: '#f3e3b8', stroke: '#07060a', strokeThickness: 4 })
                 .setScrollFactor(0).setDepth(41).setAlpha(0);
-            B = this._bossBarUI = { g: this.add.graphics().setScrollFactor(0).setDepth(40).setAlpha(0), title: T('18px', 'bold').setOrigin(0.5, 1),
-                sub: T('13px', 'italic').setOrigin(0.5, 0).setColor('#cdbf9f'), trail: frac, hitAt: 0, a: 0 };
+            B = all[key] = { g: this.add.graphics().setScrollFactor(0).setDepth(40).setAlpha(0), title: T('18px', 'bold').setOrigin(0.5, 1),
+                sub: T('13px', 'italic').setOrigin(0.5, 0).setColor('#cdbf9f'), trail: frac, hitAt: 0, a: 0, y: null };
             this.tweens.add({ targets: B, a: 1, duration: 500 });
         }
         frac = Math.max(0, Math.min(1, frac));
@@ -1146,7 +1130,10 @@ class HUD {
         if (frac < (B.last ?? frac)) B.hitAt = now;
         B.last = frac;
         if (now - B.hitAt > 450) B.trail = Math.max(frac, B.trail - 0.0125);   // the trail catches up after a beat
-        const W = this.scale.width, BW = Math.round(Math.min(620, W * 0.46)), BH = 12, x = Math.round(W / 2 - BW / 2), y = 88;
+        const W = this.scale.width, BW = Math.round(Math.min(620, W * 0.46)), BH = 12, x = Math.round(W / 2 - BW / 2);
+        const want = 88 + slot * (sub ? 50 : 40);
+        B.y = B.y == null ? want : B.y + (want - B.y) * 0.2;   // slides to its place when one above it goes
+        const y = Math.round(B.y);
         const g = B.g; g.clear().setAlpha(B.a);
         g.fillStyle(0x000000, 0.45); g.fillRoundedRect(x - 6, y - 5, BW + 12, BH + 10, 5);
         g.fillStyle(0x1a1410, 1); g.fillRect(x, y, BW, BH);
@@ -1160,12 +1147,19 @@ class HUD {
         B.title.setText(name).setPosition(W / 2, y - 6).setAlpha(B.a);
         B.sub.setText(sub).setPosition(W / 2, y + BH + 6).setAlpha(B.a * 0.9);
     }
-    _bossBarHide() {
-        const B = this._bossBarUI;
-        if (!B) return;
-        this._bossBarUI = null;
-        const all = [B.g, B.title, B.sub].filter(o => o?.active);
-        this.tweens.add({ targets: all, alpha: 0, duration: 600, delay: 300, onComplete: () => all.forEach(o => o.destroy()) });
+    // Every bar not in `keys` fades out
+    _bossBarsKeep(keys) {
+        for (const k of Object.keys(this._bossBarUIs || {})) if (!keys.includes(k)) this._bossBarHide(k);
+    }
+    _bossBarHide(key) {
+        const all = this._bossBarUIs || {};
+        for (const k of key ? [key] : Object.keys(all)) {
+            const B = all[k];
+            delete all[k];
+            if (!B) continue;
+            const objs = [B.g, B.title, B.sub].filter(o => o?.active);
+            this.tweens.add({ targets: objs, alpha: 0, duration: 600, delay: 300, onComplete: () => objs.forEach(o => o.destroy()) });
+        }
     }
 
     showRoomName(name) {

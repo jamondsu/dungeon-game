@@ -31,6 +31,9 @@ class CreatureFX {
         return (CreatureFX._art = /*ART*/{
  "eyes": {
   "friend": {"at": [[12, 26], [19, 26]], "open": [["wk", "kk"], ["wk", "kk"]], "blink": [["..", "kk"], ["..", "kk"]], "wince": [["k..", ".k.", "k.."], ["..k", ".k.", "..k"]], "wince_at": [[11, 25], [19, 25]], "x": [["k.k", ".k.", "k.k"], ["k.k", ".k.", "k.k"]], "x_at": [[11, 25], [19, 25]]},
+  "kind": {"at": [[12, 25], [19, 25]], "open": [["wk", "kk", "kk"], ["wk", "kk", "kk"]], "blink": [["..", "..", "kk"], ["..", "..", "kk"]], "wince": [["k..", ".k.", "k.."], ["..k", ".k.", "..k"]], "wince_at": [[11, 25], [19, 25]], "x": [["k.k", ".k.", "k.k"], ["k.k", ".k.", "k.k"]], "x_at": [[11, 25], [19, 25]]},
+  "calm": {"at": [[11, 26], [19, 26]], "open": [["kkk", ".wk"], ["kkk", "kw."]], "blink": [["...", "kkk"], ["...", "kkk"]], "wince": [["k..", ".k.", "k.."], ["..k", ".k.", "..k"]], "wince_at": [[11, 25], [19, 25]], "x": [["k.k", ".k.", "k.k"], ["k.k", ".k.", "k.k"]], "x_at": [[11, 25], [19, 25]]},
+  "sly": {"at": [[11, 27], [19, 27]], "open": [["kkw"], ["wkk"]], "blink": [["kkk"], ["kkk"]], "wince": [["k..", ".k.", "k.."], ["..k", ".k.", "..k"]], "wince_at": [[11, 25], [19, 25]], "x": [["k.k", ".k.", "k.k"], ["k.k", ".k.", "k.k"]], "x_at": [[11, 25], [19, 25]]},
   "angry": {"at": [[11, 26], [19, 26]], "c": [["kkw", ".wk"], ["wkk", "kw."]], "l": [["kkw", ".kw"], ["wkk", "kw."]], "r": [["kkw", ".wk"], ["wkk", "wk."]], "blink": [["kk.", ".kk"], [".kk", "kk."]], "wince": [["k..", ".k.", "k.."], ["..k", ".k.", "..k"]], "wince_at": [[11, 25], [19, 25]], "x": [["k.k", ".k.", "k.k"], ["k.k", ".k.", "k.k"]], "x_at": [[11, 25], [19, 25]]}
  },
  "hats": {
@@ -42,6 +45,44 @@ class CreatureFX {
     ".kkkkkkk."]},
   "sprout": {"x": 12, "y": 17, "pal": {"L": "#b6ff7a", "l": "#46c24e", "s": "#2c8a3a"}, "rows": [
     ".kk...kk.", "kLlk.klLk", "klllklllk", ".kklslkk.", "...ksk...", "...ksk...", "....k...."]},
+  "bud": {"x": 12, "y": 15, "pal": {"P": "#ffb0dc", "p": "#e0609e", "L": "#b6ff7a", "l": "#46c24e"}, "rows": [
+    "...kkk...", "..kPPpk..", ".kPPPppk.", ".kPPpppk.", "..kpppk..", "kk.klk.kk", "kLkklkkLk", ".kLLlLLk.", "..kkkkk.."]},
+  "ears": {"x": 9, "y": 15, "pal": {"E": "#3a2a32", "e": "#5a4048", "r": "#c8303a", "R": "#ff6a6a"}, "rows": [
+    "kk.........kk", "kEk.......kEk", "kEek.....keEk", "kEeEk...kEeEk", "kEEEkkkkkEEEk", "krrRrrrrrrRrk", ".kkkkkkkkkkk."]},
+  "flamecrown": {"x": 10, "y": 16, "pal": {"F": "#ffd04a", "f": "#ff7a1a", "r": "#c02a0a"}, "rows": [
+    "..k...k...k..", ".kFk.kFk.kFk.", ".kfFkFffkFfk.", "kfffffrfffffk", "krrrrrrrrrrrk", ".kkkkkkkkkkk."]},
+  "tophat": {"x": 11, "y": 16, "pal": {"B": "#1a1420", "b": "#3a2e48", "g": "#ffd84a"}, "rows": [
+    "..kkkkkkk..", "..kBBBBBk..", "..kBbBBBk..", "..kBbBBBk..", "..kgggggk..", "kkkBBBBBkkk", "kBBBBBBBBBk", ".kkkkkkkkk."]},
+  "medic": {"x": 11, "y": 18, "pal": {"W": "#f4fff8", "w": "#c8e8d8", "G": "#3ad86a"}, "rows": [
+    "...kkkkk...", "..kWWGWWk..", ".kWWGGGWWk.", ".kWWWGWWWk.", "kwwwwwwwwwk", ".kkkkkkkkk."]},
+  "anchorhat": {"x": 12, "y": 14, "pal": {"S": "#8aa4c0", "s": "#4a6078"}, "rows": [
+    "...kkk...", "...kSk...", ".kkkSkkk.", ".kSSSSSk.", "...kSk...", "k..kSk..k", "kSkkSkkSk", ".kSSsSSk.", "..kkkkk.."]},
+  "goggles": {"x": 7, "y": 20, "pal": {"B": "#1a2a3a", "L": "#9fe8ff", "l": "#3aa8d8", "W": "#ffffff"}, "rows": [
+    "...kkkk....kkkk...", "..kLWLLkBBkLWLLk..", "..kLllLk..kLllLk..", "...kkkk....kkkk..."]},
+  "shades": {"x": 10, "y": 25, "pal": {"P": "#c070ff", "p": "#7a30c0"}, "rows": [
+    "kkkkkkkkkkkkk", "kPPpk...kPPpk", ".kkk.....kkk."]},
+  "mask": {"x": 9, "y": 28, "pal": {"M": "#3a2450", "m": "#24163a"}, "rows": [
+    "kMMMMMMMMMMMMMk", ".kmmmmmmmmmmmk."]},
+  "fangs": {"x": 15, "y": 29, "pal": {"W": "#ffffff", "R": "#d01a1a"}, "rows": [
+    "W.W", "R.R"]},
+  "terminals": {"x": 11, "y": 18, "pal": {"W": "#ffe08a", "R": "#d83a2a", "D": "#2a2a2a"}, "rows": [
+    ".kWk...kWk.", ".kRk...kDk.", ".kRk...kDk.", "kkkkk.kkkkk"]},
+  "bud0": {"x": 14, "y": 19, "pal": {"S": "#a0703a", "s": "#6a4a20"}, "rows": [
+    ".kk.", "kSsk", ".kk."]},
+  "bud1": {"x": 13, "y": 17, "pal": {"L": "#7ad84a", "G": "#3a8a2a"}, "rows": [
+    ".L.L.", "LkGkL", "..G..", "..G..", "..G.."]},
+  "bud2": {"x": 13, "y": 15, "pal": {"B": "#5ab83a", "b": "#2a7a22", "L": "#7ad84a", "G": "#3a8a2a"}, "rows": [
+    "..k..", ".kBk.", ".kbk.", "L.G.L", ".LGL.", "..G..", "..G.."]},
+  "bud3": {"x": 12, "y": 14, "pal": {"P": "#ff9ad8", "p": "#ffd0ec", "L": "#7ad84a", "G": "#3a8a2a"}, "rows": [
+    "..kpk..", ".kpPpk.", ".kPPPk.", "..kGk..", ".L.G.L.", "..LGL..", "...G...", "...G..."]},
+  "wisps": {"x": 10, "y": 16, "pal": {"W": "#f6f0ff", "B": "#cbbcf0", "b": "#7a68b0"}, "rows": [
+    ".k....k....k.", "kWk..kWk..kWk", "kBk..kBWk.kBk", ".kBkkBbBkkBk.", "..kbbbbbbbk..", "...kkkkkkk..."]},
+  "voidcrown": {"x": 10, "y": 16, "pal": {"V": "#c08aff", "v": "#6a2ab8", "S": "#fff0a0"}, "rows": [
+    "......k......", ".k...kSk...k.", "kVk.kVvVk.kVk", "kvVkVvvvVkVvk", "kvvvvvSvvvvvk", ".kkkkkkkkkkk."]},
+  "frostspikes": {"x": 10, "y": 16, "pal": {"I": "#e8fbff", "i": "#8fd8f8", "d": "#3a7ab0"}, "rows": [
+    "..k.......k..", ".kIk..k..kIk.", ".kIk.kIk.kik.", "kiIikkIikkIik", "kdddiiiiidddk", ".kkkkkkkkkkk."]},
+  "boltcrown": {"x": 10, "y": 16, "pal": {"Y": "#fff27a", "y": "#e0b020", "W": "#ffffff"}, "rows": [
+    ".k...kk...k..", "kYk..kYk.kYk.", ".kYk.kYYk.kYk", "kYyk.kyYkkYyk", "kyyyyyWyyyyyk", ".kkkkkkkkkkk."]},
   "seam": {"x": 14, "y": 23, "pal": {"t": "#f4ead2"}, "rows": [
     "..k..", ".tkt.", "..k..", ".tkt.", "..k.."]},
   "spout": {"x": 12, "y": 27, "pal": {"r": "#5a0c1c", "p": "#ff9fb4"}, "rows": [
@@ -80,10 +121,13 @@ class CreatureFX {
   "crown": {"x": 10, "y": 17, "pal": {"g": "#ffd84a", "G": "#fff3a8", "d": "#b8892a", "c": "#5ff4ff", "y": "#ff5a8a"}, "rows": [
     "k.....k.....k", "kk...kGk...kk", "kgk..kgk..kgk", "kggkkgGgkkggk", "kGcgGgygGgcGk", "kdddddddddddk",
     ".kkkkkkkkkkk."]},
+  "icecrown": {"x": 10, "y": 13, "pal": {"W": "#ffffff", "I": "#9fe8ff", "i": "#5fb8e0", "d": "#2a6a9a"}, "rows": [
+    "......k......", ".....kWk.....", "..k..kIk..k..", ".kWk.kIk.kWk.", ".kIkkiIikkIk.", "kiIiiIIIiiIik", "kiiiiiiiiiiik",
+    "kdddddddddddk", ".kkkkkkkkkkk."]},
   "qcrown": {"x": 11, "y": 18, "pal": {"g": "#ffd84a", "G": "#fff3a8", "d": "#b8892a", "r": "#ff3a5a", "c": "#5ff4ff"}, "rows": [
     "k....k....k", "kk..kGk..kk", "kGk.kgk.kGk", "kgrkgGgkrgk", "kgggggcgggk", "kdddddddddk", ".kkkkkkkkk."]}
  },
- "sets": {"berserker": ["horns"], "ranged": ["spout"], "rooter": ["sprout"], "splitter": ["seam"], "mortar": ["mortar"], "voidsniper": ["hood"], "sniper": ["hood", "monocle"], "lightningelem": ["storm"], "singularity": ["halo"], "drowner": ["weeds"], "ripplerunner": ["antennae"], "tidecaller": ["cloud"], "waverider": ["fin"], "tidalguard": ["helm"], "wishingwell": ["roof"], "conduit": ["rod"], "volt": ["crown"], "queen": ["qcrown"]},
+ "sets": {"berserker": ["horns"], "rooter": ["sprout"], "voidsniper": ["shades", "mask"], "sniper": ["hood", "monocle"], "lightningelem": ["storm"], "drowner": ["weeds"], "tidecaller": ["cloud"], "tidalguard": ["helm"], "frost": ["icecrown"], "wishingwell": ["roof"], "conduit": ["terminals"], "volt": ["crown"], "queen": ["qcrown"], "bud": ["bud"], "bud0": ["bud0"], "bud1": ["bud1"], "bud2": ["bud2"], "bud3": ["bud3"], "leech": ["fangs"], "hunter": ["ears", "fangs"], "shade": ["voidcrown"], "shade_fire": ["flamecrown"], "shade_ice": ["frostspikes"], "shade_lightning": ["boltcrown"], "wraith": ["wisps"], "diver": ["goggles"], "ceo": ["tophat"], "healer": ["medic"], "anchor": ["anchorhat"]},
  "bits": {
   "star": {"pal": {"Y": "#ffe94a", "W": "#ffffff"}, "rows": [
     "...k...", "..kYk..", ".kkYkk.", "kYYWYYk", ".kkYkk.", "..kYk..", "...k..."]},
@@ -167,8 +211,13 @@ class CreatureFX {
         const tm = scene?.textures;
         if (!tm || tm.exists('cfx_face')) return !!tm;
         const A = CreatureFX.art();
+        if (!A.hats.ears1) for (let n = 0; n <= 4; n++) {   // the Hunter's ears filling with blood, bottom up, as its rage builds (LevelManager._updateHunters)
+            const ears = A.hats.ears;
+            A.hats['ears' + n] = { ...ears, pal: { ...ears.pal, b: '#a0101e', B: '#ff3a3a' }, rows: ears.rows.map((row, j) => j >= 1 && j <= 4 && j >= 5 - n ? row.replace(/E/g, 'b').replace(/e/g, 'B') : row) };
+            A.sets['hunter' + n] = ['ears' + n, 'fangs'];
+        }
         const cells = [];
-        for (const mood of ['friend', 'angry']) {
+        for (const mood of Object.keys(A.eyes)) {
             const E = A.eyes[mood];
             for (const body of [0, 18]) {
                 const dy = body === 18 ? 1 : 0;
@@ -334,7 +383,7 @@ class CreatureFX {
         let arcs = [], arcAt = 0, boltAt = t0 + 400;
         const tick = () => {
             const now = scene.time.now, life = (now - t0) / ms, tt = now - t0;
-            if (!shell.active) { scene.events.off('update', tick); if (scene._ultArmor === A) scene._ultArmor = null; return; }   // destroyed under it (ended mid-frame, or a floor change / death: scene events outlive the objects). It used to throw here, and a throw in a Phaser step ends the game loop for good
+            if (!shell.active || !rim.active) { scene.events.off('update', tick); if (scene._ultArmor === A) scene._ultArmor = null; return; }   // destroyed under it (ended mid-frame, or a floor change / death: scene events outlive the objects). It used to throw here, and a throw in a Phaser step ends the game loop for good
             if (!p.active || life >= 1) return A.end();
             const fade = Math.min(1, (now - t0) / 200, (ms - (now - t0)) / 300), d = p.depth ?? 1, sx = p.scaleX, sy = p.scaleY, vis = p.visible, al = (p.alpha ?? 1) * fade;
             for (const [o, ds, a, k] of [[shell, 0.0004, K.a, 1], [rim, -0.01, K.ra * (0.7 + 0.3 * Math.sin(now * (el === 'lightning' ? 0.05 : 0.01))), 1.12]])
@@ -484,7 +533,7 @@ class CreatureFX {
             flame_fists: fists, ice_fists: fists, lightning_fists: punch, cosmic_fists: punch,
             flame_sword: blade, void_blade: blade,
             magma_staff: staff, barrier_staff: staff, singularity_staff: staff,
-            ignition: { type: 'gun', s: 0.6, art: 0, ox: 0.28, oy: 0.55 }, icicle_cannon: wand, orb_emitter: wand,
+            ignition: { type: 'gun', s: 0.6, art: 0, ox: 0.28, oy: 0.55 }, icicle_cannon: wand, orb_emitter: wand, conductor: staff,
             ball_lightning: { type: 'orb', s: 0.48 }, astrolabe: { type: 'orb', s: 0.52, spin: 0.0012 }, fractal_shard: { type: 'orb', s: 0.52 },
         });
     }
@@ -630,7 +679,7 @@ class CreatureFX {
     // size, origin, scale and position, so their pixels line up with its pixels whatever it is
     // doing. Synced after every update (postupdate), from the sprite: its idle frame, where it
     // is, how faded, squashed or cropped. Works on a sprite inside a container (the bosses).
-    //   mood   'friend' (round eyes with a shine) or 'angry' (brows down)
+    //   mood   'friend' (round eyes with a shine), 'angry' (brows down), 'kind' (tall soft eyes), 'calm' (flat lids) or 'sly' (slits)
     //   hat    a set name from art().sets, or null
     //   eye    a tint for the eyes ('angry' void types glow pink)
     //   look   a function giving the world x to look toward, or 'pointer'; default: the player
@@ -652,7 +701,7 @@ class CreatureFX {
             }
             return img.setVisible(false);
         };
-        const mood = o.mood === 'friend' ? 'friend' : 'angry';
+        const mood = CreatureFX.art().eyes[o.mood] ? o.mood : 'angry';
         const u = {
             s: sprite, mood, set: o.hat || null, eye: o.eye ?? 0xffffff, look: o.look,
             eyes: mk(`e_${mood}_0_c`), hat: null, expr: null, hidden: false,
@@ -674,6 +723,12 @@ class CreatureFX {
         }
         return u;
     }
+
+    // The eyes an enemy wears, by what it does: carers look kind, the stubborn ones calm, the sneaky ones sly, the rest angry
+    static MOODS = { healer: 'kind', tidecaller: 'kind', wishingwell: 'kind',
+        armored: 'calm', encased: 'calm', gem: 'calm', anchor: 'calm', shade: 'calm', frost: 'calm', tidalguard: 'calm', conduit: 'calm',
+        wraith: 'sly', leech: 'angry', hunter: 'sly', drowner: 'sly', voidsniper: 'sly', ceo: 'sly' };
+    static moodOf(key) { return CreatureFX.MOODS[key] || 'angry'; }
 
     // Changes what an existing face wears (or its eye colour).
     static dress(u, set, eye) {
@@ -768,20 +823,35 @@ class CreatureFX {
             // old floating marks the hat replaces (those stop drawing; the game still owns them).
             TYPES: {
                 berserker:     { hat: 'berserker' },
-                ranged:        { hat: 'ranged', mute: ['_rangedMark'] },
+                ranged:        { hat: null, mute: ['_rangedMark'] },
                 rooter:        { hat: 'rooter', mute: ['_rooterMark'] },
-                splitter:      { hat: 'splitter', mute: ['_splitterMark'] },
-                mortar:        { hat: 'mortar', mute: ['_mortarGfx'] },
+                splitter:      { hat: null, mute: ['_splitterMark'] },
+                mortar:        { hat: null, mute: ['_mortarGfx'] },
                 voidsniper:    { hat: 'voidsniper', eye: 0xff8cff, mute: ['_sniperMark'] },
                 lightningelem: { hat: 'lightningelem', eye: 0xfff6a0, mute: ['_lightningMark'] },
-                singularity:   { hat: 'singularity', eye: 0xff8cff },
+                singularity:   { hat: null, eye: 0xff8cff },
                 drowner:       { hat: 'drowner' },
-                ripplerunner:  { hat: 'ripplerunner', mute: ['_cisternMark'] },
+                ripplerunner:  { hat: null, mute: ['_cisternMark'] },
                 tidecaller:    { hat: 'tidecaller', mute: ['_cisternMark', '_rangedMark'] },
-                waverider:     { hat: 'waverider', mute: ['_cisternMark'] },
+                waverider:     { hat: null, mute: ['_cisternMark'] },
                 tidalguard:    { hat: 'tidalguard', mute: ['_cisternMark'] },
+                frost:         { hat: 'frost', eye: 0xdff8ff, mute: ['_cisternMark'] },   // a crown of icicles
                 wishingwell:   { hat: 'wishingwell', mute: ['_cisternMark'] },
                 conduit:       { hat: 'conduit', mute: ['_cisternMark'] },
+                bud:           { hat: 'bud0', eye: 0xffd0ec },   // its head grows seed to flower as its clock runs (LevelManager._updateBudding)
+                budcopy:       { eye: 0xffd0ec },   // a Budding Slime's copy: bare-headed, so the original stands out
+                shade:         { hat: 'shade', eye: 0xd8a0ff },   // its four forms (LevelManager._shadeForm re-dresses it)
+                shade_fire:    { hat: 'shade_fire', eye: 0x3a0800 },
+                shade_ice:     { hat: 'shade_ice', eye: 0x0a2a44 },
+                shade_lightning: { hat: 'shade_lightning', eye: 0x3a2a00 },
+                wraith:        { hat: 'wraith', eye: 0x9fe8ff },
+                diver:         { hat: 'diver', eye: 0xbff0ff },
+                leech:         { hat: 'leech', eye: 0xff4aff },   // its eyes take its colour (LevelManager._leechPick)
+                ceo:           { hat: 'ceo', eye: 0xffd84a },
+                gem:           {},
+                healer:        { hat: 'healer', eye: 0xc8ffd8 },
+                anchor:        { hat: 'anchor', eye: 0xc8dcf0 },
+                hunter:        { hat: 'hunter', eye: 0xffe8d0 },   // red when it frenzies (LevelManager._hunterFrenzy)
             },
             // The warnings that fade in over a head ("!") keep their timing; only the drawing
             // changes. Field -> colour (null: read it off the game's own text).
@@ -792,7 +862,7 @@ class CreatureFX {
             DRIP_MS: 230,
             ARC: { COLOR: 0xfff27a, EVERY: 55 },
             MOTE: { MAX: 5, SPIN: 0.004 },
-            POISON_MS: 160,
+            POISON_MS: 80,   // bubbles off you while poisoned (160 was easy to miss)
         });
     }
 
@@ -871,6 +941,7 @@ class CreatureFX {
             if (!e._cfxDressed) this._cfxDress(e);
             this._cfxMarks(e);
             this._cfxStatus(e, now, dt);
+            this._cfxBodyDrips(e, now);
         }
         for (const e of this._cfxLive) if (!seen.has(e)) { this._cfxClear(e); this._cfxLive.delete(e); }
         this._cfxBosses();
@@ -878,11 +949,27 @@ class CreatureFX {
         this._cfxPuppetSync();
     }
 
+    // Now and then a drop runs off it: water off the Drowner's mossy head, a thick blob of goo off the Singularity Slime
+    _cfxBodyDrips(e, now) {
+        const D = { drowner: { col: 0x7fd0ff, every: 900, sz: 0.5, fall: 16 }, singularity: { col: 0x9a50e0, every: 650, sz: 0.85, fall: 10 } }[e._cfxType];
+        const s = e.sprite;
+        if (!D || !s?.visible || s.alpha < 0.3 || now < (e._dripAt || 0) || !this.textures.exists('vfx_dot')) return;
+        e._dripAt = now + D.every * (0.6 + Math.random() * 0.8);
+        const sy = Math.abs(s.scaleY || 1), x = s.x + (Math.random() - 0.5) * 14 * sy, y = s.y + 8 * sy;
+        const d = this.add.image(x, y, 'vfx_dot').setTint(D.col).setScale(D.sz, D.sz * 1.4).setDepth((s.depth ?? 1) + 0.01);
+        this._vfxSort?.(d);
+        this.tweens.add({ targets: d, y: y + D.fall * sy, scaleY: D.sz * 2, duration: 420, ease: 'Quad.easeIn', onComplete: () => {
+            this.tweens.add({ targets: d, scaleX: D.sz * 2.2, scaleY: D.sz * 0.6, alpha: 0, duration: 220, onComplete: () => d.destroy() });   // it splats
+        } });
+    }
+
     // The enemy's type picks its hat and eye colour; the floating mark the hat replaces stops
     // drawing. Its health bar moves up out of the hat's way.
     _cfxDress(e) {
         e._cfxDressed = true;
         const ts = e.sprite;
+        const mk = this._enemyTypeKey?.(e);
+        if (mk && typeof SlimeModels !== 'undefined' && SlimeModels.DEFS[mk]) SlimeModels.wear(this, ts, mk);   // its own body (SlimeModels.js), not a tint
         if (ts?._cfxTint) ts._cfxTint.settled = true;
         else if (ts) {
             const clean = !ts.tintFill && !e.isFrozen && !e._iceCube && !((e.burnStacks || 0) > 0) && !e.isBurning && !e.isWet && !e.isSuperConducted;
@@ -894,8 +981,9 @@ class CreatureFX {
         let set = T.hat || null;
         if (e._upgradedSniper) set = 'sniper';
         e._cfxType = key; e._cfxMute = T.mute || [];
-        const u = e.sprite._cfx || CreatureFX.face(this, e.sprite, { mood: 'angry' });
+        const u = e.sprite._cfx || CreatureFX.face(this, e.sprite, { mood: CreatureFX.moodOf(key) });
         if (!u) return;
+        u.mood = CreatureFX.moodOf(key);   // (a face made before its type was known)
         CreatureFX.dress(u, set, T.eye ?? 0xffffff);
         u.look = () => this.player?.x;
         // the health bar sits on the sprite's centre (frame row 16); a hat reaching higher than
@@ -1355,31 +1443,19 @@ class CreatureFX {
     // hat and glaring, instead of a flat disc.
     _cfxPortrait(panel, portrait, key, entry) {
         if (!panel || !portrait || !CreatureFX.sheets(this)) return;
-        const TINT = { slime: null, berserker: 0xff4444, ranged: 0xffee88, rooter: 0x226633, anchor: 0x7f93b5, healer: 0x66ddaa,
-                       splitter: 0xff6600, mortar: 0x445566, voidsniper: 0x6a3aa8, lightningelem: 0xe8ff3a, singularity: 0x440088,
-                       drowner: 0x5a2d6b, ripplerunner: 0x66f0ff, tidecaller: 0x2a5cc8, waverider: 0xdff3ff, tidalguard: 0xb8912f,
-                       wishingwell: 0x6b8f7a, conduit: 0xe8ff3a };
-        const purple = key === 'voidsniper' || key === 'singularity';
         portrait.clear();
         portrait.fillStyle(0x000000, 0.45); portrait.fillCircle(0, 0, 36);
         portrait.fillStyle(entry.tint, 0.16); portrait.fillCircle(0, 0, 33);
         portrait.lineStyle(2, entry.tint, 0.75); portrait.strokeCircle(0, 0, 36);
         portrait.lineStyle(1, 0xffffff, 0.18); portrait.strokeCircle(0, 0, 31);
-        if (key === 'anchor' || key === 'healer') {   // these two are their own bodies, not slimes
-            const img = this.make.image({ x: portrait.x, y: portrait.y, key: 'cfx_bits', frame: key === 'anchor' ? 'anchor' : 'totem' }, false)
-                .setScale(key === 'anchor' ? 1.9 : 1.75);
-            panel.add(img);
-            return;
-        }
-        const tex = purple ? 'slime_purple' : 'slime_red';
-        if (!this.textures.exists(tex)) return;
-        const spr = this.make.sprite({ x: portrait.x, y: portrait.y - 22, key: tex, frame: 0 }, false).setScale(3.4);
-        if (TINT[key]) spr.setTint(TINT[key]);
-        const anim = purple ? 'purple_idle' : 'red_idle';
-        if (this.anims.exists(anim)) spr.play(anim);
+        const L = LevelManager.look(this, key);   // its body, as the game draws it (LevelManager.LOOKS)
+        if (!this.textures.exists(L.tex)) return;
+        const spr = this.make.sprite({ x: portrait.x, y: portrait.y - 22, key: L.tex, frame: 0 }, false).setScale(3.4);
+        if (L.tint) spr.setTint(L.tint);
+        if (this.anims.exists(L.anim)) spr.play(L.anim);
         panel.add(spr);
         const T = this._cfxCfg().TYPES[key] || {};
-        CreatureFX.face(this, spr, { mood: 'angry', hat: T.hat || null, eye: T.eye, look: () => null });
+        CreatureFX.face(this, spr, { mood: CreatureFX.moodOf(key), hat: T.hat || null, eye: T.eye, look: () => null });
     }
 
     // ── LIGHT ────────────────────────────────────────────────────────────────

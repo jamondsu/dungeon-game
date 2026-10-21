@@ -453,7 +453,7 @@ class CosmicSystem {
     _csSwitchMult() { return this._csAscending() ? 0 : 1; }
 
     _csMark(e, n = 1) {
-        if (!e) return;
+        if (!e || this._phasedOut?.(e)) return;
         const max = this.cosmicMaxMarks || 3;
         e.cosmicMarks = Math.min(max, (e.cosmicMarks || 0) + n);
         e._csMarkAt = this.time.now;
@@ -506,7 +506,12 @@ class CosmicSystem {
     // (_csUpdateMarks). Every cosmic Hex goes through here (the fluid, Retribution, collapses).
     // `ms`: how long this source's Hex lasts; a shorter one never cuts a longer one short.
     _csHex(e, ms = this._csCfg().BLADE.HEX_MS) {
+        if (this._phasedOut?.(e)) return;
         const now = this.time.now;
+        if (e._hexImmune) {   // the Adaptive Shade: hex slides off it
+            if (e.sprite?.active && now - (e._hexNoAt || 0) > 900) { e._hexNoAt = now; this.showStatusText(e.sprite.x, e.sprite.y - 30, 'IMMUNE TO HEX', '#d8a0ff'); }
+            return;
+        }
         if ((e._csHexUntil || 0) <= now) e._csHexStacks = 0;
         const n = Math.min(3, (e._csHexStacks || 0) + 1), grew = n !== e._csHexStacks;
         e._csHexStacks = n;
@@ -564,7 +569,7 @@ class CosmicSystem {
         const blocked = (x, y) => this.world?.[x]?.[y] !== this.FLOOR || this.getEnemyAt(x, y) || (x === px && y === py) || this.isInLockedRoom?.(x, y);
         let n = 0;
         for (const e of this.enemies || []) {
-            if (!e.sprite?.active || e.health <= 0 || e.isMortar || e.isHealerTotem || e.isAnchor || e._drownSubmerged || e._displacerHeld) continue;
+            if (!e.sprite?.active || e.health <= 0 || e.isMortar || e.isHealerTotem || e.isAnchor || this._phasedOut?.(e)) continue;
             const dx = e.x - px, dy = e.y - py, d = Math.hypot(dx, dy);
             if (d > C.SHOVE_R + 0.01) continue;
             // straight away from you: along the bigger axis, or diagonally when it's level
@@ -956,6 +961,7 @@ class CosmicSystem {
         g.lineStyle(1.2, 0xffffff, 0.9); g.strokeCircle(hx, hy, 4.2);   // its event horizon, a hairline of light
         if (Math.random() < 0.5) { const a = Math.random() * Math.PI * 2, m = this.add.rectangle(hx + Math.cos(a) * 14, hy + Math.sin(a) * 14, 2, 2, col.lilac).setDepth(3.41).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: m, x: hx, y: hy, alpha: 0.2, duration: 160, onComplete: () => m.destroy() }); }   // motes falling in
         for (const e of this.enemies || []) {
+            if (this._phasedOut?.(e)) continue;
             if (!e.sprite?.active || e.health <= 0 || B.hit.has(e)) continue;
             if (Math.hypot(e.sprite.x - hx, e.sprite.y - hy) > T * 0.75) continue;
             B.hit.add(e); this._csHex(e, C.BEAM_HEX_MS);
@@ -994,6 +1000,7 @@ class CosmicSystem {
         this.tweens.add({ targets: ring, scale: 0.05, alpha: 0.2, duration: 240, ease: 'Quad.easeIn', onComplete: () => { ring.destroy(); this._vfxFlash?.(W.x, W.y, W.r * T, this._csCfg().COL.violet, 300, 0.8); } });
         this.cameras.main.shake(90, 0.004);
         for (const e of this.enemies || []) {
+            if (this._phasedOut?.(e)) continue;
             if (!e.sprite?.active || e.health <= 0 || Math.hypot(e.x - W.tx, e.y - W.ty) > W.r + 0.01) continue;
             e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, now + C.END_DAZE_MS);
             this.showStatusText(e.sprite.x, e.sprite.y - 10, 'DAZED', '#d8a8ff');
@@ -1523,7 +1530,7 @@ class CosmicSystem {
         // the ult blockers stop this too
         for (const e of this.enemies || []) {
             if (!e.ultInhibitor && !e.isUltAbsorber) continue;
-            if (Math.abs(e.x - this.playerX) + Math.abs(e.y - this.playerY) <= (e.ultInhibitRadius || (e.isUltAbsorber ? 4 : 3))) {
+            if (Math.hypot(e.x - this.playerX, e.y - this.playerY) <= (e.ultInhibitRadius || (e.isUltAbsorber ? 4 : 3)) + 0.25) {
                 this.showStatusText(this.player.x, this.player.y - 20, 'ULT BLOCKED!', '#ff2200');
                 return;
             }
@@ -1986,6 +1993,7 @@ class CosmicSystem {
                 // pierce: everything it passes, once
                 const tx = Math.floor(x / T), ty = Math.floor(y / T);
                 for (const e of this.enemies || []) {
+                    if (this._phasedOut?.(e)) continue;
                     if (o.hit.has(e) || !e.sprite?.active || e.health <= 0) continue;
                     if (Math.abs(e.x - tx) > 0 || Math.abs(e.y - ty) > 0) continue;
                     o.hit.add(e); Sfx.play(this, 'cspierce'); this.damageEnemy(e, C.PIERCE_DMG * ds * (S.tf?.full ? this._csCfg().TF3 : C).PIERCE_SHARE, 'cosmic');
@@ -2023,6 +2031,7 @@ class CosmicSystem {
         if (tf && !tf.full) {
             const cx = Math.round(tx), cy = Math.round(ty), now = this.time.now;
             for (const e of this.enemies || []) {
+                if (this._phasedOut?.(e)) continue;
                 if (!e.sprite?.active || e.health <= 0 || e.isMortar || e.isHealerTotem || e.isAnchor) continue;
                 if (Math.hypot(e.x - tx, e.y - ty) > C.PULL_R) continue;
                 for (let k = 0; k < C.PULL; k++) { e._csDragAt = 0; this._csDragToward(e, cx, cy, now); }
@@ -2111,6 +2120,7 @@ class CosmicSystem {
         for (let i = 1; i < pts.length; i++) {
             const a = pts[i - 1], b = pts[i], vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy || 1;
             for (const e of this.enemies || []) {
+                if (this._phasedOut?.(e)) continue;
                 if (hit.has(e) || !e.sprite?.active || e.health <= 0) continue;
                 const ex = e.x * T + T / 2, ey = e.y * T + T / 2, t = Math.max(0, Math.min(1, ((ex - a.x) * vx + (ey - a.y) * vy) / l2));
                 if (Math.hypot(a.x + vx * t - ex, a.y + vy * t - ey) <= C.BEAM_W * T) hit.add(e);
@@ -2395,7 +2405,7 @@ class CosmicSystem {
 
     // One tile toward the well, if that tile is free. Things rooted to the spot stay put.
     _csPull(e, W) {
-        if (e.isMortar || e.isHealerTotem || e.isAnchor || e._drownSubmerged || e._displacerHeld) return;
+        if (e.isMortar || e.isHealerTotem || e.isAnchor || this._phasedOut?.(e)) return;
         const ddx = W.tx - e.x, ddy = W.ty - e.y;
         if (Math.abs(ddx) + Math.abs(ddy) <= 0) return;
         const steps = Math.abs(ddx) >= Math.abs(ddy)

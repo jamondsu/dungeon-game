@@ -33,7 +33,7 @@ const Settings = {
         { id: 'gadget1',    label: 'Gadget 1',           def: 'Q' },
         { id: 'gadget2',    label: 'Gadget 2',           def: 'F' },
         { id: 'surge',      label: 'Weapon ability',     def: 'R' },
-        { id: 'detonate',   label: 'Detonate kindles',   def: 'G' },   // Ignition: every kindled mark goes off at once   // Magma surge, Icicle heal, Ignition... (each weapon's own)
+        { id: 'detonate',   label: 'Weapon secondary',   def: 'G' },   // Ignition: every kindled mark goes off at once   // Magma surge, Icicle heal, Ignition... (each weapon's own)
         { id: 'mute',       label: 'Mute',               def: 'M' },
     ],
     // Keys the game keeps for itself (pause, the dev console), never bindable.
@@ -85,6 +85,19 @@ const Settings = {
     GLOW: [['ON', 1], ['OFF', 0]],
     glow() { return this._get('glow') === '0' ? 0 : 1; },
     setGlow(v) { this._set('glow', String(v)); },
+    // GRAPHICS: LOW is for weak machines: no bloom, the light drawn coarser and less often, no drifting dust, and on a big
+    // window the game drawn at fewer pixels and stretched (never under 1280x720, so the menus still fit). AUTO starts on
+    // high and drops to low by itself if the first level runs slow (perf_low). The resolution part takes effect on the next launch.
+    QUALITY: [['AUTO', 'auto'], ['HIGH', 'high'], ['LOW', 'low']],
+    quality() { const v = this._get('quality'); return v === 'high' || v === 'low' ? v : 'auto'; },
+    setQuality(v) { this._set('quality', v); if (v !== 'auto') this._set('perf_low', '0'); },
+    low() { const q = this.quality(); return q === 'low' || (q === 'auto' && this._get('perf_low') === '1'); },
+    // the share of the window's pixels the game draws at (1: all of them)
+    renderScale() {
+        if (!this.low()) return 1;
+        const w = window.innerWidth || 1280, h = window.innerHeight || 720;
+        return Math.min(1, Math.max(0.6, 1280 / w, 720 / h));
+    },
     // a frame counter in the corner (fpsMeter): the frame rate, and the worst frame of the last second
     FPS: [['ON', 1], ['OFF', 0]],
     fps() { return this._get('fps') === '0' ? 0 : 1; },
@@ -93,7 +106,7 @@ const Settings = {
     // Green from 55 fps, amber from 30, red under; "low" is the slowest frame of the last second, where a hitch shows.
     fpsMeter(game) {
         const el = document.createElement('div');
-        el.style.cssText = 'position:fixed;left:50%;top:46px;transform:translateX(-50%);z-index:10;font:bold 12px monospace;padding:2px 6px;border-radius:4px;background:rgba(5,6,10,0.7);pointer-events:none;';
+        el.style.cssText = 'position:fixed;right:8px;bottom:30px;z-index:10;font:bold 12px monospace;padding:2px 6px;border-radius:4px;background:rgba(5,6,10,0.7);pointer-events:none;';
         document.body.appendChild(el);
         let n = 0, t0 = performance.now(), last = t0, worst = 0;
         const tick = (now) => {
@@ -126,6 +139,7 @@ const DevSave = {
         levels:   { name: 'Cleared levels',       keys: ['unlocked_lightning', 'unlocked_cosmic', 'unlocked_ice', 'iceTutorialComplete', 'fireTutorialComplete'], prefixes: ['cleared_', 'bossKilled_'] },
         glorps:   { name: 'Glorps',               keys: ['glorps'] },
         garden:   { name: 'Garden',               keys: ['garden2', 'slime_hat'] },
+        feats:    { name: 'Achievements',         keys: ['ach_stats', 'ach_done'] },
     },
     reset(part) {
         const P = this.PARTS[part];

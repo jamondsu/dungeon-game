@@ -27,6 +27,7 @@ class ShopScene extends Phaser.Scene {
         this.anims.resumeAll();   // the game's pause freezes every animation game-wide; never carry that into a menu
         const W = this.scale.width, H = this.scale.height;
         Music.play(this, 'shop');
+        if (data?.tab != null) this.time.delayedCall(0, () => this.switchShopTab?.(data.tab));   // opened on a tab (the lobby's gadget sockets)
         this._siphonA = null;   // the scene object outlives a visit
         this.glorps = parseInt(localStorage.getItem('glorps') || '0');
         this.fragments = parseInt(localStorage.getItem('ultFragments') || '0');
@@ -238,7 +239,8 @@ class ShopScene extends Phaser.Scene {
             const el = ELEMENTS[this._shopEl], acc = EL[el].accent, list = weaponsOf(el);
             this._shopWi = ((this._shopWi % list.length) + list.length) % list.length;
             const w = list[this._shopWi];
-            const owned = w.unlocked, equipped = this.equipped[el] === w.id, canBuy = !owned && this.glorps >= w.cost;
+            const sealed = !ShopScene.elementOpen(el);   // lightning and cosmic stay shut until their level gives them
+            const owned = w.unlocked && !sealed, equipped = this.equipped[el] === w.id && !sealed, canBuy = !owned && !sealed && this.glorps >= w.cost;
 
             // Shelf: every weapon of the element standing on the plank; locked ones in shadow
             // with a price tag; the selected one marked from below.
@@ -249,11 +251,12 @@ class ShopScene extends Phaser.Scene {
                 const on = k === this._shopWi;
                 if (key) {
                     const ic = track(weaponObjs, this.add.sprite(x, SHELF_Y + 2, key, '0').setOrigin(0.5, 1).setScale((on ? 2.6 : 2.2) * this._layout.UI).setDepth(3));
-                    if (!it.unlocked) ic.setTint(0x3a3028);
+                    if (!it.unlocked || sealed) ic.setTint(0x3a3028);
                     if (on) ic.play(key);
                     if (it.unlocked) this._enchAura(ic, it.id).forEach(o => track(weaponObjs, o));   // enchanted: it glows on the shelf
                 }
-                if (!it.unlocked) {
+                if (sealed) track(weaponObjs, UIKit.chains(this, x, SHELF_Y - 26, 58, 52, { depth: 3.5, link: 6, lock: 13 }));   // chained till the story opens it
+                else if (!it.unlocked) {
                     const pt = track(weaponObjs, this.add.text(x, SHELF_Y + 20, '✦' + it.cost, {
                         fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#3b2716', backgroundColor: '#e8d6ae', padding: { x: 4, y: 1 },
                     }).setOrigin(0.5, 0).setDepth(3).setAngle(-4));
@@ -273,14 +276,15 @@ class ShopScene extends Phaser.Scene {
             // The weapon on the turntable, under the spotlight (_turntable).
             const ttObjs = this._turntable(acc, MenuArt.iconSheet(this, w.id), { anim: true, dim: !owned, fromDir, scale: 5.5 });
             ttObjs.forEach(o => weaponObjs.push(o));
+            if (sealed) weaponObjs.push(UIKit.chains(this, this._layout.TT.x, this._layout.TT.y - 90, 210, 170, { depth: 8, link: 11, lock: 26 }));   // chained to the turntable
             const ttIcon = ttObjs.find(o => o.type === 'Sprite' && o.texture?.key === MenuArt.iconSheet(this, w.id));
             if (owned && ttIcon) this._enchAura(ttIcon, w.id).forEach(o => weaponObjs.push(o));   // and on the turntable
 
             // The price tag, hanging from the awning on a string.
-            this._drawTag(TAG, w, el, acc, { owned, equipped, canBuy, list, idx: this._shopWi, glyph: EL[el].glyph, elName: EL[el].name },
+            this._drawTag(TAG, w, el, acc, { owned, equipped, canBuy, sealed, list, idx: this._shopWi, glyph: EL[el].glyph, elName: EL[el].name },
                           () => activate()).forEach(o => weaponObjs.push(o));
 
-            this.setGlurpDialogue(equipped ? `"The ${w.name}! Your current pick. Good taste."`
+            this.setGlurpDialogue(sealed ? `"${ShopScene.SEALED[el].glurp}"` : equipped ? `"The ${w.name}! Your current pick. Good taste."`
                 : owned ? `"You own the ${w.name}. Want it back on?"`
                 : canBuy ? `"The ${w.name}! Only ${w.cost} glorps. Bargain!"`
                 : `"The ${w.name}... ${w.cost - this.glorps} glorps short, friend."`);
@@ -314,7 +318,9 @@ class ShopScene extends Phaser.Scene {
         // Buy, equip, or say why not: one path for the stamp, Enter and Space.
         const activate = () => {
             const el = ELEMENTS[this._shopEl], w = weaponsOf(el)[this._shopWi];
-            if (!w || this.equipped[el] === w.id) return;
+            if (!w) return;
+            if (!ShopScene.elementOpen(el)) { Sfx.play(this, 'deny'); this.setGlurpDialogue(`"${ShopScene.SEALED[el].glurp}"`); return; }
+            if (this.equipped[el] === w.id) return;
             if (w.unlocked) { Sfx.play(this, 'click'); this.equip(w, el); return; }
             if (this.glorps >= w.cost) { this.buy(w, null, 0, el); return; }
             Sfx.play(this, 'hurt');
@@ -620,6 +626,7 @@ class ShopScene extends Phaser.Scene {
             row('PRICE', w.defaultWeapon ? 'Free (starter)' : `✦ ${w.cost}`);
             row('YOURS', 'Not yet', '#8a2a1a');
             row('YOUR PURSE', `✦ ${this.glorps}`, st.canBuy ? '#3a7a2a' : '#8a2a1a');
+            if (st.sealed) row('SEALED', ShopScene.SEALED[el].short, '#8a2a1a');
         } else {
             // Upgrades (Stats.js WeaponLevels): Power, no cap (none on cosmic weapons); each perk, capped.
             row('YOURS', st.equipped ? 'Equipped' : 'Owned', '#3a7a2a');
@@ -664,7 +671,7 @@ class ShopScene extends Phaser.Scene {
             box.lineStyle(3, 0x3a7a2a, 0.9); box.strokeRect(-s.width / 2, -s.height / 2, s.width, s.height);
             box.setAngle(-6);
         } else {
-            const label = st.owned ? 'EQUIP' : st.canBuy ? `BUY  ✦ ${w.cost}` : `✦ ${w.cost}  ·  NEED ${w.cost - this.glorps}`;
+            const label = st.sealed ? 'SEALED' : st.owned ? 'EQUIP' : st.canBuy ? `BUY  ✦ ${w.cost}` : `✦ ${w.cost}  ·  NEED ${w.cost - this.glorps}`;
             const b = UIKit.button(this, { x: T.x + T.w / 2, y: sy, w: T.w - 40, h: 48, label,
                                            accent: st.owned ? UIKit.PALETTE.accentGreen : st.canBuy ? UIKit.PALETTE.accentRed : UIKit.PALETTE.line,
                                            fontSize: '18px', depth: D + 2, fireOn: 'down', onClick: onStamp });
@@ -877,9 +884,10 @@ class ShopScene extends Phaser.Scene {
             const k = ShopScene.keyword(w), kx = x + wOf(lines[li].slice(0, col)), ky = y + li * lh, ww = wOf(w);
             col += w.length;
             if (!k) continue;
-            keep(this.add.text(kx, ky, w, { ...style, color: '#6a2a8a', wordWrap: null }).setDepth(D + 0.1));
+            const kc = style.kwColor || '#6a2a8a';   // (a dark panel passes a light one)
+            keep(this.add.text(kx, ky, w, { ...style, color: kc, wordWrap: null }).setDepth(D + 0.1));
             const u = keep(this.add.graphics().setDepth(D + 0.1));
-            u.lineStyle(1, 0x6a2a8a, 0.6);
+            u.lineStyle(1, Phaser.Display.Color.HexStringToColor(kc).color, 0.6);
             for (let ux = kx; ux < kx + ww - 1; ux += 4) u.lineBetween(ux, ky + lh - 4, Math.min(ux + 2, kx + ww), ky + lh - 4);
             this._tipZone(keep, kx + ww / 2, ky + lh / 2, ww, lh, D, () => ({ title: k[0], body: k[1], accent: 0x9a5ad0 }));
         }
@@ -897,7 +905,7 @@ class ShopScene extends Phaser.Scene {
     }
     _showTip(px, py, { title, body, accent }) {
         this._hideTip();
-        const D = 60, tw = 270;
+        const D = this._tipDepth || 60, tw = 270;   // (over whatever panel it's in: the lobby's guide sits at 200)
         const head = this.add.text(0, 0, title, { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold',
             color: accent != null ? UIKit._hex(accent) : '#3b2716', wordWrap: { width: tw - 28 } }).setDepth(D + 1);
         const text = this.add.text(0, 0, String(body).replace(/\*/g, ''), { fontSize: '11px', fontFamily: 'monospace', color: '#5a3e22',   // a body's *keywords* read plain here
@@ -1701,7 +1709,12 @@ class ShopScene extends Phaser.Scene {
         } else if (owned && !r.corrupt && Relics.owned().filter(id => !Relics.def(id)?.corrupt).length >= 2)
             objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: by - 34, w: bw, h: 26, depth: D + 2, fontSize: '12px', fireOn: 'down', label: 'SIPHON (fuse two into a corrupted one)', accent: 0x3a8a2a,
                 onClick: () => { this._siphonA = r.id; Sfx.play(this, 'click'); this.setGlurpDialogue(`"Siphon the ${r.name}? Both go for good, and what comes out keeps half of each, plus a curse. Pick the other one."`); this._showRelicTab(); } }).objs);
+        if (!ShopScene.upgradesOpen()) { label = 'SEALED'; accent = UIKit.PALETTE.line; }
         objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: by, w: bw, h: 46, depth: D + 2, fontSize: '17px', fireOn: 'down', label, accent, onClick: () => this._relicActivate() }).objs);
+        if (!ShopScene.upgradesOpen()) {   // sealed: the case chained shut, the tag says why
+            objs.push(UIKit.chains(this, standX, L.TT.y - 90, 210, 170, { depth: 8, link: 11, lock: 26 }));   // on the relic's own stand
+            keep(this.add.text(T.x + T.w / 2, by - 60, `SEALED  ·  ${ShopScene.UPGRADES_SEALED.short}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#8a2a1a' }).setOrigin(0.5).setDepth(D + 3));
+        }
         this._relicTabObjs = objs;
     }
     // ← → along a layer (off its end onto the next shelf), ↑ ↓ between the tiers, Q / E a whole shelf.
@@ -1736,6 +1749,7 @@ class ShopScene extends Phaser.Scene {
     }
     // Enter, or the tag's button: buy it if it's in stock, else wear it or take it off.
     _relicActivate() {
+        if (!ShopScene.upgradesOpen()) { Sfx.play(this, 'deny'); this.setGlurpDialogue(`"${ShopScene.UPGRADES_SEALED.glurp}"`); return; }
         const r = Relics.all()[this._relicSel ?? 0];
         if (this._siphonA) return this._siphonPick(r);
         if (!Relics.has(r.id)) {
@@ -1793,7 +1807,8 @@ class ShopScene extends Phaser.Scene {
         this._ultSel ??= { r: 0, k: 1 };
         const sel = this._ultSel, U = ELS[sel.r], acc = { fire: UIKit.PALETTE.accentOrange, ice: UIKit.PALETTE.accentBlue, lightning: UIKit.PALETTE.accentGold, cosmic: UIKit.PALETTE.accentPurple };
         const stageOf = key => parseInt(localStorage.getItem('ultStage_' + key) || '1');
-        const a = acc[U.key], cur = stageOf(U.key);
+        const a = acc[U.key], cur = stageOf(U.key), sealed = !ShopScene.elementOpen(U.key) || !ShopScene.upgradesOpen();
+        const sealWhy = !ShopScene.upgradesOpen() ? ShopScene.UPGRADES_SEALED : ShopScene.SEALED[U.key];
 
         // the elements, as banners: each shows the stage you have
         this._awning(a, ELS.map((u, r) => ({ label: { fire: 'FIRE', ice: 'ICE', lightning: 'BOLT', cosmic: 'VOID' }[u.key], on: r === sel.r,
@@ -1810,9 +1825,10 @@ class ShopScene extends Phaser.Scene {
             const owned = cur >= n, isCur = cur === n, next = n === cur + 1, soon = !!st.soon;
             const rk = ShopScene.relicIcon(this, U.key, n);
             const ic = keep(this.add.sprite(x, SY + 2, rk, '0').setOrigin(0.5, 1).setScale((on ? 2.3 : 1.9) * this._layout.UI).setDepth(3));
-            if (!owned) ic.setTint(soon ? 0x2a2420 : 0x6a5a48); else if (on || isCur) ic.play(rk);
+            if (!owned || sealed) ic.setTint(soon || sealed ? 0x2a2420 : 0x6a5a48); else if (on || isCur) ic.play(rk);
             if (isCur) { const gl = keep(this.add.image(x, SY - 22, 'mn_glow').setTint(a).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(70, 70).setAlpha(0.45).setDepth(2.9)); this.tweens.add({ targets: gl, alpha: 0.75, duration: 900, yoyo: true, repeat: -1 }); }
-            const label = isCur ? '★' : owned ? '✓' : soon ? 'SOON' : next ? `◈${st.fragCost} ✦${st.glorpCost}` : `◈${st.fragCost}`;
+            if (sealed) keep(UIKit.chains(this, x, SY - 26, 58, 52, { depth: 3.5, link: 6, lock: 13 }));
+            const label = sealed ? 'SEALED' : isCur ? '★' : owned ? '✓' : soon ? 'SOON' : next ? `◈${st.fragCost} ✦${st.glorpCost}` : `◈${st.fragCost}`;
             keep(this.add.text(x, SY + 20, label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold',
                 color: isCur || owned ? '#1b1612' : '#3b2716', backgroundColor: isCur ? '#7fd06a' : owned ? '#d2bf98' : '#e8d6ae', padding: { x: 4, y: 1 } })
                 .setOrigin(0.5, 0).setDepth(3).setAngle(owned ? 0 : -4).setAlpha(soon ? 0.6 : on ? 1 : 0.8));
@@ -1831,6 +1847,7 @@ class ShopScene extends Phaser.Scene {
         const n0 = sel.k + 1, st0 = U.stages[sel.k];
         const tt = this._turntable(a, ShopScene.relicIcon(this, U.key, n0), { anim: true, dim: cur < n0, fromDir, scale: 5 });
         tt.forEach(o => objs.push(o));
+        if (sealed) objs.push(UIKit.chains(this, L.TT.x, L.TT.y - 90, 210, 170, { depth: 8, link: 11, lock: 26 }));
         if (st0.soon) tt.forEach(o => o.type === 'Sprite' && o.setTint(0x2a2420));
         if (bought === U.key) {
             const sp = keep(this.add.particles(L.TT.x, L.TT.y - 82, 'mn_px2', { speed: { min: 60, max: 200 }, lifespan: 800, scale: { start: 2.4, end: 0 },
@@ -1841,7 +1858,7 @@ class ShopScene extends Phaser.Scene {
         // the tag: the chosen stage
         const st = U.stages[sel.k], n = sel.k + 1;
         const owned = cur >= n, next = n === cur + 1, soon = !!st.soon;
-        const can = next && !soon && this.glorps >= st.glorpCost && this.fragments >= st.fragCost;
+        const can = next && !soon && !sealed && this.glorps >= st.glorpCost && this.fragments >= st.fragCost;
         const T = L.TAG, g = this._tagSheet(T, keep, D), INK = '#3b2716', Lx = T.x + 20, R = T.x + T.w - 20;
         let y = T.y + 30;
         keep(this.add.text(Lx, y, `${U.label}  ·  STAGE ${['I', 'II', 'III'][sel.k]}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(MenuArt.mix(acc[U.key], 0x3b2716, 0.45)) }).setDepth(D + 1));
@@ -1857,7 +1874,8 @@ class ShopScene extends Phaser.Scene {
         if (n > 1) row('COSTS', `◈ ${st.fragCost}  ·  ✦ ${st.glorpCost}`);
         row('YOURS', cur === n ? 'Active' : owned ? 'Owned' : soon ? 'Not built yet' : 'Not yet', owned ? '#3a7a2a' : '#8a2a1a');
         if (!owned && !soon) row('YOUR PURSE', `◈ ${this.fragments}  ·  ✦ ${this.glorps}`, can ? '#3a7a2a' : '#8a2a1a');
-        const label = owned ? (cur === n ? 'ACTIVE' : 'OWNED') : soon ? 'COMING SOON' : !next ? `STAGE ${cur + 1} FIRST` : can ? 'UPGRADE  ▸' : 'NOT ENOUGH';
+        if (sealed) row('SEALED', sealWhy.short, '#8a2a1a');
+        const label = sealed ? 'SEALED' : owned ? (cur === n ? 'ACTIVE' : 'OWNED') : soon ? 'COMING SOON' : !next ? `STAGE ${cur + 1} FIRST` : can ? 'UPGRADE  ▸' : 'NOT ENOUGH';
         objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: T.y + T.h - 46, w: T.w - 40, h: 46, depth: D + 2, fontSize: '18px', fireOn: 'down', label,
             accent: can ? acc[U.key] : UIKit.PALETTE.line, onClick: () => this._ultActivate() }).objs);
         this._ultTabObjs = objs;
@@ -1871,6 +1889,8 @@ class ShopScene extends Phaser.Scene {
     _ultActivate() {
         const sel = this._ultSel ?? { r: 0, k: 1 }, U = ShopScene.ULTS[sel.r], st = U.stages[sel.k], n = sel.k + 1;
         const cur = parseInt(localStorage.getItem('ultStage_' + U.key) || '1');
+        if (!ShopScene.upgradesOpen()) { Sfx.play(this, 'deny'); this.setGlurpDialogue(`"${ShopScene.UPGRADES_SEALED.glurp}"`); return; }
+        if (!ShopScene.elementOpen(U.key)) { Sfx.play(this, 'deny'); this.setGlurpDialogue(`"${ShopScene.SEALED[U.key].glurp}"`); return; }
         if (st.soon) { this.setGlurpDialogue('"That one\'s still on my workbench!"'); return; }
         if (cur >= n) { this.setGlurpDialogue('"Already yours!"'); return; }
         if (n !== cur + 1) { this.setGlurpDialogue(`"Stage ${cur + 1} first, then we'll talk."`); return; }
@@ -1883,30 +1903,32 @@ class ShopScene extends Phaser.Scene {
 }
 
 // ── THE STOCK ────────────────────────────────────────────────────────────────
-// Every weapon, by element, in shelf order. Prices: fire 0/100/350/500, lightning 0/200/300,
-// ice 0/210/340 (ice was 0/80/150 until its freeze loop was fixed; see git history). Cosmic
+// Every weapon, by element, in shelf order. Priced by tier (ShopScene.TIER): 150 / 400 / 700 for
+// tiers 2 / 3 / 4 (till 2026-10-20 each had its own: a tier-3 cannon cost less than a tier-2 orb). Cosmic
 // weapons are buffs (Cosmic.js): switch to cosmic, cast, switch back.
 ShopScene.CATALOGUE = [
     { id: 'flame_fists', name: 'Flame Fists', element: 'fire', cost: 0, defaultWeapon: true,
       desc: 'Quick 1-tile punch. Leaves a small *lava* patch on every hit. Default weapon.' },
-    { id: 'flame_sword', name: 'Flame Sword', element: 'fire', cost: 100,
-      desc: 'A narrow, hard swing: the 3 tiles in front and the one beyond. *Lava* on every tile hit; each hit applies a *Burn* stack.' },
-    { id: 'magma_staff', name: 'Magma Staff', element: 'fire', cost: 350,
+    { id: 'flame_sword', name: 'Flame Sword', element: 'fire', cost: 150,
+      desc: 'A narrow, hard swing: the 3 tiles in front and the one beyond. *Lava* on every tile hit; each hit applies a *Burn* stack. Every swing also flings 3 weak embers ahead that apply a *Burn* stack to what they hit.' },
+    { id: 'magma_staff', name: 'Magma Staff', element: 'fire', cost: 400,
       desc: 'Heats up as you land hits: more fireballs, faster, and they splash. Press R: *Magma Surge*.' },
-    { id: 'ignition', name: 'Ignition', element: 'fire', cost: 500,
+    { id: 'ignition', name: 'Ignition', element: 'fire', cost: 700,
       desc: 'Flamethrower. Click to light it or put it out; the cursor aims it. It runs on fuel (9s lit, refills while it\'s out; run it dry and it sputters out for a moment). A long, wide fan of fire that *kindles* the first two enemies it finds and stays on them: weak chip (plus 0.1% of their max HP a tick) while it fills, then they melt. Everything in the flame can catch a *Burn* stack. Press G (Detonate) to set every kindled mark off. Press R: *Blue Flame*.' },
     { id: 'ice_fists', name: 'Ice Fists', element: 'ice', cost: 0, defaultWeapon: true,
       desc: '1-tile ice punch. Every hit applies *Chill*; a full bar freezes the enemy into a cube and applies *Brittle*. Default weapon.' },
-    { id: 'icicle_cannon', name: 'Icicle Cannon', element: 'ice', cost: 210,
+    { id: 'icicle_cannon', name: 'Icicle Cannon', element: 'ice', cost: 400,
       desc: 'An ice shotgun: a cone of icicles that splash and apply *Chill*. Up close every icicle lands; far off, fewer. 28 hits charge a *Frost Shield* (R).' },
-    { id: 'fractal_shard', name: 'Fractal Shard', element: 'ice', cost: 340,
-      desc: 'Alternates. First: piercing spikes that freeze what they hit into a cube (applying *Brittle*), apply a *gold* mark and plant a frost *totem*. Spike a gold mark again and it turns *purple*. Second: a fan of shards that split and apply *Chill*.' },
+    { id: 'fractal_shard', name: 'Fractal Shard', element: 'ice', cost: 700,
+      desc: 'Alternates. First: three parallel spikes, the longest and fastest shot there is. They pierce, freeze what they hit into a cube (applying *Brittle*) and mark it. Second: a fan of shards that split; one that hits a marked enemy charges R. Press R at five: a gamble for 6s, *Deadly Accuracy* or *Shard Storm*.' },
     { id: 'lightning_fists', name: 'Storm Fists', element: 'lightning', cost: 0, defaultWeapon: true,
       desc: '1-tile punch that chains lightning to nearby enemies. Default weapon.' },
-    { id: 'orb_emitter', name: 'Orb Emitter', element: 'lightning', cost: 200,
+    { id: 'orb_emitter', name: 'Orb Emitter', element: 'lightning', cost: 150,
       desc: 'Fires a bouncing electric orb that chains to every nearby enemy. Its forks apply *Superconducted* to what they hit.' },
-    { id: 'ball_lightning', name: 'Ball Lightning', element: 'lightning', cost: 300,
+    { id: 'ball_lightning', name: 'Ball Lightning', element: 'lightning', cost: 400,
       desc: 'Slow orb. Forks chain enemy to enemy, and further through water. Embeds on contact, applying *Superconducted* to its host, then bursts into seekers.' },
+    { id: 'conductor', name: 'Circuit Breaker', element: 'lightning', cost: 700,
+      desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. Press R to send a *current* down the wire nearest your aim. G picks the next clamp: *live wire*, *insulator* or *capacitor*. Lines shock what they touch, and wired enemies close together close a *circuit* for double. Wires stay on when you switch element.' },
     { id: 'cosmic_fists', name: 'Void Fists', element: 'cosmic', cost: 0, defaultWeapon: true,
       desc: 'Punch and dash to build *Momentum* (max 3).' },
     { id: 'barrier_staff', name: 'Barrier Staff', element: 'cosmic', cost: 150,
@@ -1919,11 +1941,21 @@ ShopScene.CATALOGUE = [
       desc: 'Hold to charge, release to slash: up to 18 tiles long, 3 wide, applying *Stunned* for up to 3.5s. Leaves *cosmic fluid* that applies *Hex* for longer than anything else (up to 14s). The longer the charge, the more of all of it.' },
 ];
 
+// Lightning and cosmic are sealed in the shop (weapons and ult stages) until the story gives them (devMode opens all).
+// Relics and ult stages open once the tutorial's done and Tower floor 1 is cleared (devMode opens them)
+ShopScene.upgradesOpen = () => localStorage.getItem('devMode') === 'true' || (localStorage.getItem('cleared_tutorial') === '1' && (parseInt(localStorage.getItem('tower_best') || '0', 10) || 0) >= 1);
+ShopScene.UPGRADES_SEALED = { short: 'the tutorial, then Tower floor 1', glurp: "Relics and ult stages? Finish the tutorial and clear the Tower's first floor, then we'll talk." };
+ShopScene.elementOpen = el => (el !== 'lightning' && el !== 'cosmic') || localStorage.getItem('unlocked_' + el) === 'true' || localStorage.getItem('devMode') === 'true';
+ShopScene.SEALED = {
+    lightning: { short: 'clear the Gauntlet', glurp: "Lightning's still sealed, friend. Clear the Gauntlet and it's yours to shop." },
+    cosmic:    { short: 'clear the Void Rift', glurp: "Cosmic? Not till you've cleared the Void Rift. I don't sell what you can't hold." },
+};
+
 // Tiers, from Weapons not listed there show none.
 ShopScene.TIER = {
     flame_fists: 1, flame_sword: 2, magma_staff: 3, ignition: 4,
     ice_fists: 1, icicle_cannon: 3, fractal_shard: 4,
-    lightning_fists: 1, orb_emitter: 2, ball_lightning: 3,
+    lightning_fists: 1, orb_emitter: 2, ball_lightning: 3, conductor: 4,
     cosmic_fists: 1, singularity_staff: 3,
 };
 
@@ -1937,19 +1969,39 @@ ShopScene.TIER = {
 ShopScene.RATINGS = {
     flame_fists: [6, 2, 1], flame_sword: [6, 3, 1], magma_staff: [8, 4, 2], ignition: [10, 2, 1],
     ice_fists: [4, 2, 7], icicle_cannon: [5, 5, 7], fractal_shard: [6, 6, 9],
-    lightning_fists: [2, 6, 3], orb_emitter: [1, 7, 7], ball_lightning: [2, 9, 5],
+    lightning_fists: [2, 6, 3], orb_emitter: [1, 7, 7], ball_lightning: [2, 9, 5], conductor: [2, 10, 6],
 };
 
 // Measured damage per second [one target, group of 5], against dummies. Re-measure and update
 // these after any weapon change. Cosmic weapons are movement-based and unmeasured.
-ShopScene.DPS = {   // re-measured 2026-10-19 after brittle became the swap payoff (ice's solo numbers fell on purpose)
-    // fire re-measured 2026-10-20 with dummies at a real max HP (burn's share of max HP read 1e7 before)
-    flame_fists: [48.8, 47.9], flame_sword: [50.6, 101.9], magma_staff: [71.4, 146.5], ignition: [150, 113],
-    ice_fists: [33.1, 34.1], icicle_cannon: [38, 95.5], fractal_shard: [33.3, 111],
-    lightning_fists: [27.6, 78.4], orb_emitter: [25.6, 145.6], ball_lightning: [22.5, 185.4],
+ShopScene.DPS = {   // re-measured 2026-10-20 (Ignition as the flamethrower: lit, fuel managed, detonated at the stored ring)
+    flame_fists: [48.4, 47.9], flame_sword: [50.6, 101.9], magma_staff: [71.4, 179.4], ignition: [125.3, 326.5],
+    ice_fists: [31.9, 37.5], icicle_cannon: [35.9, 107.1], fractal_shard: [32.1, 131.3],
+    lightning_fists: [27.3, 78.4], orb_emitter: [26.1, 152.1], ball_lightning: [22.5, 183.1], conductor: [30, 125],   // conductor: 3 live wires on a pack of 6 plus a current every 0.42s
 };
 // What the *keywords* in the shop's descriptions mean (ShopScene._richText's popouts).
 ShopScene.KEYWORDS = {
+    // (the guide's words: LevelSelectScene's guide pages use them too)
+    circuit: ['Circuit', 'With the Circuit Breaker: when two of your wired enemies arc to each other, the loop through you closes and glows white. Its wires and arc do double.'],
+    'live wire': ['Live Wire', 'The Circuit Breaker\'s plain clamp (yellow): current runs through the enemy and hurts it every 0.3s.'],
+    insulator: ['Insulator (G)', 'A Circuit Breaker clamp (blue): its enemy takes only 30% of the current, and the whole web (lines, clamps, bursts and currents) does 35% less for each insulator on it, but every daze the web gives lasts 60% longer. Control for damage.'],
+    current: ['Current (R)', 'Press R: a big blob of current runs down the wire nearest your aim, on through the arcs, and back to you along the last wire. Every enemy it passes is dazed and takes a small hit.'],
+    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). A closed circuit and insulators fill it faster.'],
+    reaction: ['Reaction', 'A hit on an enemy carrying another element\'s status (burning, chilled or cubed, superconducted, hexed). It charges your ult three times as much as a plain hit.'],
+    residue: ['Residue', 'A hit on an enemy another element hit in the last 1.5s, with no status of it left: ult charge x1.75.'],
+    resist: ['Resistance', 'A ring under an enemy in an element\'s colour: that element\'s hits land at 40%. A ring split in two or three resists two or three elements. Nothing resists cosmic.'],
+    cube: ['Ice cube', 'A full chill bar freezes an enemy into a cube: it can barely move, and it shatters by itself after a few seconds. While it holds it is *Brittle*.'],
+    poison: ['Poison', 'Damage over time on you. Only one dose at a time: a new one restarts the clock, it never stacks.'],
+    bleed: ['Bleed', 'On you: a little damage every 0.6s, and any healing you get is cut by 60% while it lasts. From a Hunter\'s slashes and a Torpedo Diver.'],
+    dripping: ['Dripping', 'On you: every tile you walk becomes water for a while. Dangerous with water enemies about.'],
+    root: ['Rooted', 'On you: stuck where you stand for a moment. You can still attack.'],
+    water: ['Water', 'Supercharges the water enemies standing in it: Wave Riders charge sooner, Ripplerunners race, a Tidal Guard\'s hit pins you, a Tidecaller makes everything in it hit half again as hard. Fire dries it to *fog*.'],
+    fog: ['Fog', 'Water your fire dried. It takes no new water until it clears.'],
+    drowner: ['Drowner', 'Sinks to attack. If you\'re standing in water when it commits, it lands instantly: there\'s no dodge. Fight it on dry ground.'],
+    tidecaller: ['Tidecaller', 'Doesn\'t fight: every enemy standing in water near it hits half again as hard.'],
+    'poison pool': ['Poison pool', 'Left by Rooters and Budding Slimes. Standing in it doses you with *poison*.'],
+    'lava tile': ['Lava tile', 'A molten tile your fire leaves behind. Enemies standing on it take a *Burn* stack every 0.8s.'],
+    chevron: ['Chevrons', 'Little arrows over anything moving faster (up) or slower (down) than usual, you included.'],
     hex: ['Hex', 'Cosmic\'s mark on an enemy, its stacks orbiting it (up to 3). Takes more damage from everything: +7% at one stack, +15% at two, +25% at three, and slowed. Fire, ice or lightning hitting a hexed enemy is a reaction (ult charge x3). Ascend\'s supernova hits harder for each stack. How long it lasts depends on where it came from: the Void Blade\'s lasts longest.'],
     voidlet: ['Voidlets', 'Little void allies that draw enemy attention. Warriors chase and punch. Voidbeams lock on, then fire a wide beam that pierces and ricochets off walls. They stay with you until they fall.'],
     daze: ['Dazed', 'Stunned for a moment: no moving, no attacking. Deals no damage by itself.'],
@@ -1961,7 +2013,7 @@ ShopScene.KEYWORDS = {
     gold: ['Gold mark', 'Left by Fractal Shard\'s spikes, for 6s. A spike hits a gold-marked enemy 25% harder, and turns the mark *purple*.'],
     purple: ['Purple mark', 'An upgraded gold mark: the enemy takes x1.5 damage from everything for 7s.'],
     totem: ['Frost totem', 'Planted by every Fractal Shard spike volley: applies *Chill* to everything within 2 tiles every 0.5s, for 5s.'],
-    brittle: ['Brittle', 'An ice cube: 20% of its max HP is cut off (6% on a boss), never below 1. Damage from fire, lightning and cosmic while it holds locks that much in for good; whatever is left grows back over 3s once it ends. When it breaks it adds back part of what they dealt.'],
+    brittle: ['Brittle', 'While an enemy is an ice cube, 20% of its max HP is cut off (6% on a boss). When the cube ends that health slowly grows back; damage from fire, lightning and cosmic while it holds locks part of it in for good.'],
     'super burn': ['Super Burn', 'Burn\'s bigger form, from the fire ult: 3 stacks at most, ticking five times a second for a little flat damage plus a share of max HP (3 stacks: 30 a second plus 2.5% of max HP; bosses take a quarter of the share). It lasts far longer than Burn (8s, then a stack every 2.5s), and any Burn landing on it keeps it going, though only the fire ult adds stacks. It melts things rather than thudding them.'],
     burn: ['Burn', 'Fire damage over time, up to 5 stacks: a little flat damage plus a share of the enemy\'s max HP every half second (5 stacks: 20 a second plus 1% of max HP; bosses take a quarter of the share). Stacks from different hits add up, and fire weapons feed it.'],
     lava: ['Lava', 'A molten patch on the floor. It deals no damage itself: it applies a *Burn* stack to anything standing in it every 0.8s.'],
@@ -1970,13 +2022,15 @@ ShopScene.KEYWORDS = {
     'blue burn': ['Blue Burn', 'A burn stack from Blue Flame. It does not tick: when the burn\'s hold runs out it spreads, turning the ordinary stacks blue one by one, then each blue stack bursts for 25 + 2% of max HP through resistance (bosses take a quarter of the share). Shorter than Burn, far more damage in all.'],
     ignition: ['Ignition (R)', 'Ignition\'s ability, now *Blue Flame*: press R for 5s of blue-hot flame that ticks faster and ignores resistance.'],
     'magma surge': ['Magma Surge (R)', 'Dump the staff\'s stored heat: everything round you is thrown back and gets *Burn*, and a wave of *lava* rolls outward. More heat, a bigger surge. Spending it drops the staff back to its first tier.'],
+    'deadly accuracy': ['Deadly Accuracy (R)', 'One side of the Fractal Shard\'s gamble: for 6s five shards circle you. Click and they line up a tile apart, converge on that point and fly on past it, half again as hard, and every hit a crit.'],
+    'shard storm': ['Shard Storm (R)', 'The other side of the Fractal Shard\'s gamble, the ult charger: it heals 10% of your max HP when it lands, and for 6s ice ult charge is doubled and every shot is a wide fan of seven chip shards, about three a second.'],
     'frost shield': ['Frost Shield (R)', '5s of 35% less damage taken, and it applies *Chill* to whoever hits you.'],
     superconduct: ['Superconducted', 'Lightning carries further from this enemy: forks and chains reach past it.'],
     momentum: ['Momentum', 'Stacks from punching and dashing: +7% damage and +8% speed each. Fades if you stop.'],
     ward: ['Wards', 'Orbiting shields. Each one eats one projectile, then shoves nearby enemies back.'],
     mark: ['Mark', 'An astral mark, a gold ring left by the Astrolabe\'s stars. Hitting the enemy pops it for ult charge.'],
     supernova: ['Supernova', 'A blast at the end of Ascend: more damage for every Hex stack on each enemy in reach.'],
-    'cosmic fluid': ['Cosmic fluid', 'Void Blade\'s trail. It applies *Hex* to enemies standing in it every 2s. Lasts longer the longer you charged.'],
+    'cosmic fluid': ['Cosmic fluid', 'Cosmic\'s ground: left by the Void Blade, the cosmic dash and Ascend. Enemies standing in it gain *Hex* every 2s. How long it lasts depends on where it came from (a fully charged Void Blade\'s lasts longest).'],
     'rift drop': ['Rift drop', 'You pick a spot within 14 tiles and slam down onto it. Enemies under you take a hit and are slowed.'],
     'twin collapse': ['Twin Collapse', 'Click to place the anchor (right-click moves it). Every click after throws: the anchored star and its twin rush together and implode where you clicked, pulling enemies in and applying *Hex* to what they pass. The farther from the anchor, the harder and wider.'],
 };

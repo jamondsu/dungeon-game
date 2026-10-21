@@ -106,7 +106,7 @@ class LevelManager {
 
     _drawPipeMouths() {
         const TS = this.TILE_SIZE, g = this._pipeGfx;
-        if (!g?.active) return;
+        if (!g?.active || !g.clear) return;   // (already baked)
         const ACC = this._pipeCfg().ACCENT;
         g.clear();
         for (const p of this._pipes) {
@@ -154,6 +154,11 @@ class LevelManager {
             const lip = pt(p.kind === 'line' ? 0.46 : 0.44, 0);
             g.fillStyle(0x9fe8ff, 0.8);
             g.fillCircle(lip.x, lip.y, 2.0);
+        }
+        if (this._pipes.length) {   // they never change: one image, not ~4000 commands tessellated every frame
+            const xs = this._pipes.map(p => p.mx), ys = this._pipes.map(p => p.my);
+            const x0 = (Math.min(...xs) - 1) * TS, y0 = (Math.min(...ys) - 1) * TS;
+            this._pipeGfx = UIKit.bake(this, g, x0, y0, (Math.max(...xs) + 2) * TS - x0, (Math.max(...ys) + 2) * TS - y0);
         }
     }
 
@@ -230,7 +235,7 @@ class LevelManager {
     // Seeded per level and enemy, so a level reads the same way every time you play it.
     // Hand-placed traits count toward the share; the tutorials keep only theirs.
     _spreadResistance() {
-        const SHARE = { 1: 0.15, 2: 0.2, 3: 0.25, 4: 0.3, 5: 0.35 };
+        const SHARE = { 1: 0.2, 2: 0.3, 3: 0.35, 4: 0.4, 5: 0.45 };   // (0.15-0.35 till 2026-10-20)
         const i = this.currentLevelIndex ?? 0;
         if (i === 0) return;
         const share = SHARE[i] ?? 0.3;
@@ -241,8 +246,32 @@ class LevelManager {
         const KINDS = ['fire', 'ice', 'lightning'];
         while (need-- > 0 && pool.length) {
             const e = pool.splice(Math.floor(R() * pool.length), 1)[0];
-            this._tagResist(e, KINDS[Math.floor(R() * 3)]);
+            this._tagResist(e, this._rollResist(R, i >= 4));
         }
+    }
+    // After a level spawns: a few of its enemies block ults in a zone round them (TutorialManager._ultBlockerFx),
+    // seeded so a level is the same every time. Not in the first room, not on a boss's room's guards, not on anything
+    // already special.
+    _spreadUltBlockers() {
+        const N = { 2: 1, 3: 2, 4: 2, 5: 3 }[this.currentLevelIndex];
+        if (!N || this.towerRun || this.trainingRun) return;
+        const bossRooms = new Set(this.enemies.filter(e => e.isBoss).map(e => e.tutorialRoomIndex));
+        const pool = this.enemies.filter(e => e?.sprite?.active && !e.isUltAbsorber && !e.ultInhibitor && (e.tutorialRoomIndex ?? 0) > 0 && !bossRooms.has(e.tutorialRoomIndex)
+            && !e._isGem && !e._isShade && !e.isFragment && !e._trainImmortal);
+        const R = MenuArt.rng(7717 + this.currentLevelIndex * 97), used = new Set();
+        for (let k = 0; k < N && pool.length; k++) {
+            const fresh = pool.filter(e => !used.has(e.tutorialRoomIndex));   // one a room
+            const list = fresh.length ? fresh : pool, e = list[Math.floor(R() * list.length)];
+            pool.splice(pool.indexOf(e), 1); used.add(e.tutorialRoomIndex);
+            this._ultBlockerFx(e, false);
+        }
+    }
+    // What one resists: one element; now and then two (DOUBLE); rarely, where `deep`, three (TRIPLE)
+    _rollResist(R, deep) {
+        const K = ['fire', 'ice', 'lightning'], r = R(), DOUBLE = 0.14, TRIPLE = 0.04;
+        if (deep && r < TRIPLE) return [...K];
+        if (r < (deep ? TRIPLE : 0) + DOUBLE) { const a = Math.floor(R() * 3); return [K[a], K[(a + 1 + Math.floor(R() * 2)) % 3]]; }
+        return K[Math.floor(R() * 3)];
     }
 
     // The ward: a sigil on the ground under the enemy, in the colour of what it resists. A
@@ -265,35 +294,46 @@ class LevelManager {
     _buildResistAura(enemy) {
         if (!enemy?.sprite) return;
         if (enemy._resistMark?.active) { this.tweens.killTweensOf(enemy._resistMark); enemy._resistMark.destroy(); }
+        const sup = enemy._resistSuppressed; enemy._resistSuppressed = false;   // what it resists underneath (grounded, it resists nothing for now, but keeps its ring, grey)
         const traits = (typeof ElementResist !== 'undefined') ? ElementResist.traitsOf(enemy) : [];
+        enemy._resistSuppressed = sup;
         if (!traits.length) return;
-        const COL = { fire: 0xff8844, ice: 0x88eeff, lightning: 0xffe14a };
+        const grey = !!enemy._resistSuppressed;   // grounded (the Grounding Spike): the same ring, gone grey
+        const COL = grey ? { fire: 0x6e6c72, ice: 0x6e6c72, lightning: 0x6e6c72 } : { fire: 0xff8844, ice: 0x88eeff, lightning: 0xffe14a };
         const base = COL[traits[0]] ?? 0xb388ff, R = 17;
-        // drawn flat, then squashed into the floor's perspective
-        const ring = this.add.graphics();
-        ring.lineStyle(2, base, 0.85); ring.strokeCircle(0, 0, R);
-        ring.lineStyle(1, base, 0.45); ring.strokeCircle(0, 0, R - 4);
-        for (let k = 0; k < 12; k++) {                    // rune ticks between the two rings
-            const a = k / 12 * Math.PI * 2;
-            ring.lineStyle(1.5, base, k % 4 === 0 ? 1 : 0.5);
-            ring.lineBetween(Math.cos(a) * (R - 3), Math.sin(a) * (R - 3), Math.cos(a) * (R - (k % 4 === 0 ? 0 : 1.5)), Math.sin(a) * (R - (k % 4 === 0 ? 0 : 1.5)));
-        }
-        for (let k = 0; k < 3; k++) {                     // three glyph notches on the rim
-            const a = k / 3 * Math.PI * 2 - Math.PI / 2, x = Math.cos(a) * R, y = Math.sin(a) * R;
-            ring.fillStyle(0x0d0a08, 1); ring.fillCircle(x, y, 3.4);
-            ring.fillStyle(base, 1);
-            if (traits[0] === 'fire') ring.fillTriangle(x - 2, y + 2, x + 2, y + 2, x, y - 3);
-            else if (traits[0] === 'ice') { ring.fillRect(x - 0.5, y - 2.5, 1, 5); ring.fillRect(x - 2.5, y - 0.5, 5, 1); }
-            else ring.fillTriangle(x + 1, y - 3, x - 2, y + 1, x + 1, y + 0.5);
-        }
-        traits.slice(1).forEach((t, n) => { ring.lineStyle(1.6, COL[t] ?? 0xb388ff, 0.8); ring.strokeCircle(0, 0, R - 7 - n * 3); });
+        // drawn flat, then squashed into the floor's perspective; drawn once per look and kept as a texture
+        const rkey = 'resist_ring_' + traits.join('_') + (grey ? '_g' : '');
+        const ring = this.make.graphics({}, false);
+        // one element: the whole ring its colour; two or three: the ring split into halves or thirds, each part
+        // in its element's colour with its glyph, so you can read a double resistance at a glance
+        const n = traits.length, span = Math.PI * 2 / n;
+        const arc = (r, w, a0, a1, col, al) => { ring.lineStyle(w, col, al); ring.beginPath(); ring.arc(0, 0, r, a0, a1); ring.strokePath(); };
+        traits.forEach((t, i) => {
+            const col = COL[t] ?? 0xb388ff, a0 = i * span - Math.PI / 2, a1 = a0 + span;
+            arc(R, 2, a0 + 0.04, a1 - 0.04, col, 0.85);
+            arc(R - 4, 1, a0 + 0.04, a1 - 0.04, col, 0.45);
+            for (let k = 0; k < 12 / n; k++) {             // rune ticks between the two rings
+                const a = a0 + (k + 0.5) / (12 / n) * span, big = k % 4 === 0;
+                ring.lineStyle(1.5, col, big ? 1 : 0.5);
+                ring.lineBetween(Math.cos(a) * (R - 3), Math.sin(a) * (R - 3), Math.cos(a) * (R - (big ? 0 : 1.5)), Math.sin(a) * (R - (big ? 0 : 1.5)));
+            }
+            for (let k = 0; k < (n === 1 ? 3 : 1); k++) {  // its glyph on the rim: three for one element, one per part otherwise
+                const a = n === 1 ? k / 3 * Math.PI * 2 - Math.PI / 2 : a0 + span / 2, x = Math.cos(a) * R, y = Math.sin(a) * R;
+                ring.fillStyle(0x0d0a08, 1); ring.fillCircle(x, y, 3.4);
+                ring.fillStyle(col, 1);
+                if (t === 'fire') ring.fillTriangle(x - 2, y + 2, x + 2, y + 2, x, y - 3);
+                else if (t === 'ice') { ring.fillRect(x - 0.5, y - 2.5, 1, 5); ring.fillRect(x - 2.5, y - 0.5, 5, 1); }
+                else ring.fillTriangle(x + 1, y - 3, x - 2, y + 1, x + 1, y + 0.5);
+            }
+        });
+        const ringImg = UIKit.bake(this, ring, -(R + 5), -(R + 5), 2 * (R + 5), 2 * (R + 5), rkey).setOrigin(0.5).setPosition(0, 0);
         const glow = this.add.graphics();
         glow.fillStyle(base, 0.14); glow.fillCircle(0, 0, R + 2);
         // at the feet: the slime fills only the bottom of its frame, ~20px below the sprite's origin
         // just under the slime (it stands in the ring rather than behind a sticker), still above
         // the water (0.4) and the darkness (0.3)
-        const c = this.add.container(enemy.sprite.x, enemy.sprite.y + 20, [glow, ring]).setDepth(Math.max(0.5, (enemy.sprite.depth ?? 1) - 0.04)).setScale(1, 0.5);
-        this.tweens.add({ targets: ring, angle: 360, duration: 9000, repeat: -1 });
+        const c = this.add.container(enemy.sprite.x, enemy.sprite.y + 20, [glow, ringImg]).setDepth(Math.max(0.5, (enemy.sprite.depth ?? 1) - 0.04)).setScale(1, 0.5);
+        this.tweens.add({ targets: ringImg, angle: 360, duration: 9000, repeat: -1 });
         this.tweens.add({ targets: glow, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         enemy._resistMark = c;
     }
@@ -344,6 +384,8 @@ class LevelManager {
         this.waterTiles = new Map();     // 'x,y' -> { tx, ty, hp, until }   until 0 = permanent
         this.steamTiles = new Map();     // 'x,y' -> expiry timestamp
         this._waterDirty = true;
+        this._waterSlow = false; this._waterSettleAt = 0;   // (the scene outlives a restart)
+        this._fogImgs = new Map();
         // TWO layers, matching the shatter puddle: a 0x0055aa base with a brighter
         // 0x3388cc inset shimmer breathing over it.
         //
@@ -388,8 +430,8 @@ class LevelManager {
             else ex.until = 0;
         } else {
             this.waterTiles.set(k, { tx, ty, hp: C.HP, until });
+            if (!this._waterPatch?.(tx, ty, 'water')) this._waterDirty = true;   // a new tile patched into the baked water (a pipe refilling, a wave)
         }
-        this._waterDirty = true;
         return true;
     }
 
@@ -402,14 +444,30 @@ class LevelManager {
         if (!t) return false;
         t.hp -= (power || 1);
         if (t.hp > 0) return false;   // (not dirty: a chip changes nothing drawn, and a redraw re-bakes the whole map's water; the flamethrower chips dozens a tick)
-        this._waterDirty = true;
         this.waterTiles.delete(k);
         this.steamTiles.set(k, this.time.now + this._waterCfg().STEAM_MS);
-        this._steamPuff(tx, ty);
+        if (!this._waterPatch?.(tx, ty, null)) this._waterDirty = true;   // the water wiped from the bake (a full redraw took ~400ms in the Cistern)
+        this._fogOn(tx, ty);
         return true;
     }
 
+    // A fog tile's smoke (Visuals.js paints and drifts it); and gone again
+    _fogOn(tx, ty) {
+        const k = tx + ',' + ty, T = this.TILE_SIZE, M = this._fogImgs ||= new Map();
+        if (M.get(k)?.active || !this._vfxFogTile) return;
+        const img = this._vfxFogTile(tx * T + T / 2, ty * T + T / 2);
+        img._fx = img.x; img._fy = img.y;
+        M.set(k, img);
+    }
+    _fogOff(k) {
+        const img = this._fogImgs?.get(k);
+        if (img?.active) img.destroy();
+        this._fogImgs?.delete(k);
+    }
     _steamPuff(tx, ty) {
+        const now = this.time.now;   // a few at a time: the flamethrower or a meteor dries a field at once, and a puff each was hundreds of objects
+        if (now - (this._puffWin || 0) > 150) { this._puffWin = now; this._puffN = 0; }
+        if (++this._puffN > 6) return;
         if (this._vfxSteamPuff?.(tx, ty)) return;   // Visuals.js: vapour, droplets, a ring
         const TS = this.TILE_SIZE;
         const px = tx * TS + TS / 2, py = ty * TS + TS / 2;
@@ -551,12 +609,77 @@ class LevelManager {
         if (!this.waterTiles) return;
         let dirty = false;
         for (const [k, t] of this.waterTiles) {
-            if (t.until && time >= t.until) { this.waterTiles.delete(k); dirty = true; }
+            if (t.until && time >= t.until) { this.waterTiles.delete(k); if (!this._waterPatch?.(t.tx, t.ty, null)) dirty = true; }
         }
         for (const [k, exp] of this.steamTiles) {
-            if (time >= exp) { this.steamTiles.delete(k); dirty = true; }
+            if (time < exp) continue;
+            this.steamTiles.delete(k); this._fogOff(k);
+            const c = k.indexOf(',');
+            if (!this._waterPatch?.(+k.slice(0, c), +k.slice(c + 1), null)) dirty = true;   // fog clearing: the tile's patch wiped, not a redraw
         }
-        if (dirty || this._waterDirty) { this._redrawWater(); this._waterDirty = false; }
+        if (dirty) this._waterDirty = true;
+        // patches are plain squares: once they stop coming, a full redraw gives the pools their edges back (unless redraws are slow here)
+        if (this._waterSettleAt && time >= this._waterSettleAt) { this._waterSettleAt = 0; if (!this._waterSlow) this._waterDirty = true; }
+        // a full redraw re-bakes the whole map's water (~400ms in the Cistern): at most every WATER_REDRAW_MS, whatever asks
+        if (this._waterDirty && time - (this._waterDrawnAt || -1e9) >= 400) {
+            const t0 = performance.now();
+            this._waterBakeMade = false;
+            this._redrawWater(); this._waterDirty = false; this._waterDrawnAt = time;
+            if (!this._waterBakeMade && performance.now() - t0 > 150) this._waterSlow = true;   // a big map (the Cistern took ~400ms): keep to patches from here on
+        }
+    }
+
+    // One tile changed in the baked water (_bakeWater): wiped, then painted as `kind` ('fog', 'water', or null for bare floor).
+    // False if there's no bake to patch (then the caller asks for a full redraw). A patched water tile is plain water, without
+    // the lips and foam a full redraw gives pool edges: close enough, and it keeps the full redraw for the level's first draw.
+    // Painted on the bake's canvas, and only that tile's square sent to the GPU.
+    _waterPatch(tx, ty, kind) {
+        const B = this._waterBaked, T = this.TILE_SIZE;
+        if (!B?.base?.tex || !B.base.img?.visible || B.px == null) return false;
+        const x = tx * T - B.px, y = ty * T - B.py;
+        if (x < 0 || y < 0 || x + T > B.base.w || y + T > B.base.h) return false;
+        const rgba = (c, a) => `rgba(${c >> 16 & 255},${c >> 8 & 255},${c & 255},${a})`;
+        const paint = (b, col, a, px, py, w, h) => { b.tex.context.fillStyle = rgba(col, a); b.tex.context.fillRect(px, py, w, h); };
+        for (const b of [B.base, B.shimmer]) b?.tex?.context.clearRect(x, y, T, T);
+        if (kind === 'fog') {   // fog's damp stone, as _vfxDrawWater paints it
+            paint(B.base, 0x06080b, 0.34, x, y, T, T);
+            paint(B.base, 0xd7e6ec, 0.09, x + 2, y + 2, T - 4, T - 4);
+        } else if (kind === 'water') {
+            paint(B.base, 0x0f4573, 0.88, x, y, T, T);
+            const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;   // a glint, as the shimmer layer has
+            if (B.shimmer?.tex) paint(B.shimmer, 0xa8e4ff, 0.6, x + 2 + h % (T - 8), y + 3 + (h >>> 5) % (T - 6), 4, 1);
+        }
+        for (const b of [B.base, B.shimmer]) if (b?.tex) (b.dirty ||= []).push([x, y]);
+        if (!B.flushQueued) { B.flushQueued = true; this.events.once('prerender', () => this._waterFlush()); }   // uploaded once, before the frame draws
+        this._waterSettleAt = this.time.now + 900;   // tidy up with a full redraw once things go quiet (updateWater)
+        return true;
+    }
+    // The tiles patched since the last frame, sent up: each tile's square, or the whole bake once if a lot changed
+    // (a level filling its pools at the start patches a thousand tiles in one go)
+    _waterFlush() {
+        const B = this._waterBaked, T = this.TILE_SIZE;
+        if (!B) return;
+        B.flushQueued = false;
+        for (const b of [B.base, B.shimmer]) {
+            if (!b?.tex || !b.dirty?.length) continue;
+            if (b.dirty.length > 40) b.tex.refresh();
+            else for (const [x, y] of b.dirty) this._texPatchUpload(b.tex, x, y, T, T);
+            b.dirty = [];
+        }
+    }
+    // Send one rectangle of a canvas texture to the GPU (texSubImage2D), as Phaser's own full upload does it but a tile's
+    // worth instead of the whole 3000px bake.
+    _texPatchUpload(tex, x, y, w, h) {
+        const R = this.game.renderer, gl = R?.gl, glt = tex.source?.[0]?.glTexture;
+        if (!gl || !glt) { tex.refresh(); return; }
+        R.flush?.();   // anything already batched drew with the old pixels
+        const img = tex.context.getImageData(x, y, w, h);
+        gl.activeTexture(gl.TEXTURE0);
+        const was = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.bindTexture(gl.TEXTURE_2D, glt);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        if (was) gl.bindTexture(gl.TEXTURE_2D, was);
     }
 
     // Perimeter-only stroking: an edge is drawn where a wet tile borders a dry one, so a
@@ -596,17 +719,29 @@ class LevelManager {
 
     // The water as two images, not two Graphics. A Graphics is re-tessellated every frame it's drawn, and a flooded
     // level's water is ~90k commands (the Cistern: 1600 tiles, half its frame time). Redrawn only when the water changes,
-    // so it's stamped into a texture each time it does and the Graphics are hidden. The shimmer's breathing tween moves
+    // so it's painted into a texture each time it does and the Graphics are hidden. Painted on the CPU into a canvas
+    // (Graphics.generateTexture) and uploaded, not drawn on the GPU into a DynamicTexture: making a 3000px render target
+    // stalled the GPU for seconds as the Cistern loaded. The shimmer's breathing tween moves
     // to its image. Falls back to the Graphics where there's no DynamicTexture or the water's bounds won't fit one.
     _bakeWater() {
         const g = this._waterGfx, sh = this._waterShimmerGfx, T = this.TILE_SIZE, TX = this.textures;
-        if (!g?.active || !TX.addDynamicTexture) return;
+        if (!g?.active || !TX.createCanvas || !g.generateTexture) return;
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const t of this.waterTiles?.values() || []) { x0 = Math.min(x0, t.tx); y0 = Math.min(y0, t.ty); x1 = Math.max(x1, t.tx); y1 = Math.max(y1, t.ty); }
         for (const k of this.steamTiles?.keys() || []) { const [sx, sy] = k.split(',').map(Number); x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy); }
         const B = this._waterBaked ||= {};
         if (!(x1 >= x0)) { for (const k in B) B[k].img?.setVisible(false); g.setVisible(true); sh?.setVisible(true); return; }   // no water: nothing to show
-        const px = (x0 - 1) * T, py = (y0 - 1) * T, w = (x1 - x0 + 3) * T, h = (y1 - y0 + 3) * T;
+        let px = (x0 - 1) * T, py = (y0 - 1) * T, w = (x1 - x0 + 3) * T, h = (y1 - y0 + 3) * T;
+        // the bake is kept while the water still fits in it (making one is the cost, ~100ms; drawing into it is nothing);
+        // outgrown, the new one takes in the old and PAD tiles more each way, so it's rarely outgrown again
+        const o = B.base, PAD = 6 * T;
+        if (o?.img?.active && B.px <= px && B.py <= py && B.px + o.w >= px + w && B.py + o.h >= py + h) { px = B.px; py = B.py; w = o.w; h = o.h; }
+        else {
+            const ax = Math.min(px, o?.img?.active ? B.px : px) - PAD, ay = Math.min(py, o?.img?.active ? B.py : py) - PAD;
+            const bx = Math.max(px + w, o?.img?.active ? B.px + o.w : 0) + PAD, by = Math.max(py + h, o?.img?.active ? B.py + o.h : 0) + PAD;
+            px = Math.max(0, ax); py = Math.max(0, ay); w = Math.min(this.WORLD_WIDTH * T, bx) - px; h = Math.min(this.WORLD_HEIGHT * T, by) - py;
+        }
+        B.px = px; B.py = py;   // (_waterPatch works in its space)
         if (w > 4096 || h > 4096) { for (const k in B) B[k].img?.setVisible(false); g.setVisible(true); sh?.setVisible(true); return; }
         for (const [name, gfx] of [['base', g], ['shimmer', sh]]) {
             if (!gfx?.active) continue;
@@ -614,14 +749,20 @@ class LevelManager {
             if (!b || !b.img?.active || b.w !== w || b.h !== h) {   // (re)made at the water's size
                 b?.img?.destroy(); if (b?.key) TX.remove(b.key);
                 const key = 'water_baked_' + name + '_' + (this._waterBakeN = (this._waterBakeN || 0) + 1);
-                const dt = TX.addDynamicTexture(key, w, h);
+                const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+                cv.getContext('2d', { willReadFrequently: true });   // kept on the CPU: a patch reads its tile back, and a GPU canvas stalls on every read
+                const tex = TX.addCanvas(key, cv);
                 const img = this.add.image(px, py, key).setOrigin(0).setDepth(gfx.depth);
                 if (name === 'shimmer') { img.setAlpha(0.67); this.tweens.killTweensOf(gfx); this.tweens.add({ targets: img, alpha: 1, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); }
-                b = B[name] = { key, dt, img, w, h };
+                b = B[name] = { key, tex, img, w, h };
+                this._waterBakeMade = true;   // (a made bake is the slow part, and doesn't count against redrawing: updateWater)
             }
-            const a = gfx.alpha; gfx.setAlpha(1).setVisible(true);
-            b.dt.clear(); b.dt.draw(gfx, -px, -py);   // (draw puts the object AT x, y: shifting it back by the corner)
-            gfx.setAlpha(a).setVisible(false);
+            const a = gfx.alpha, sf = [gfx.scrollFactorX, gfx.scrollFactorY], pos = [gfx.x, gfx.y];
+            b.tex.context.clearRect(0, 0, w, h);
+            gfx.setAlpha(1).setVisible(true).setScrollFactor(0).setPosition(gfx.x - px, gfx.y - py);   // (the texture's camera scrolls with the Graphics unless it ignores scroll: so shift it back by the corner)
+            gfx.generateTexture(b.key, w, h);   // paints into the canvas and uploads it
+            b.dirty = [];
+            gfx.setAlpha(a).setVisible(false).setScrollFactor(...sf).setPosition(...pos);
             b.img.setPosition(px, py).setDepth(gfx.depth).setVisible(true);
         }
     }
@@ -862,15 +1003,19 @@ class LevelManager {
             return;
         } else if (this.currentLevelIndex === 2) {
             this.spawnLevel2Enemies();
+            this._unstick();
             return;
         } else if (this.currentLevelIndex === 3) {
             this.spawnLevel3Enemies();
+            this._unstick();
             return;
         } else if (this.currentLevelIndex === 4) {
             this.spawnLevel4Enemies();
+            this._unstick();
             return;
         } else if (this.currentLevelIndex === 5) {
             this.spawnLevel6Enemies();
+            this._unstick();
             return;
         }
 
@@ -1077,12 +1222,7 @@ class LevelManager {
         // Ult absorber lurking in corner
         { const e = this.createEnemy(74, 50, 65); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
 
-        // R4: spike maze — add ice elemental behind spikes
-        const spikeRow1 = [{ x:67,y:62 },{ x:68,y:62 },{ x:69,y:62 },{ x:72,y:62 },{ x:73,y:62 }];
-        const spikeRow2 = [{ x:67,y:65 },{ x:68,y:65 },{ x:71,y:65 },{ x:72,y:65 },{ x:73,y:65 }];
-        for (const s of spikeRow1) this.spawnSpikeTrap(s.x, s.y);
-        for (const s of spikeRow2) this.spawnSpikeTrap(s.x, s.y);
-        this.spawnPoisonTrap(79, 61); this.spawnPoisonTrap(79, 68);
+        // R4: the lane maze (no traps: its walls are the puzzle)
         [{ x:70,y:62 }, { x:75,y:69 }, { x:82,y:65 }].forEach(p => { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 4; });
         // FIRST RESISTANT ENEMY IN THE GAME. Room 4 of level 2, fire-resistant, answered by
         // switching to ice. One enemy, late, so the aura is a curiosity rather than a wall.
@@ -1171,7 +1311,7 @@ class LevelManager {
         this.tweens.add({ targets:container, y:baseY-8, duration:800, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
 
         this.voltslimeBoss = {
-            tileX, tileY, hp:1500, maxHp:1500, isBoss: true,
+            tileX, tileY, hp:1200, maxHp:1200, isBoss: true,   // 1500 till 2026-10-20: too long a fight
             container, body, hpBar, aura,
             active:true, phase:'waiting', phaseIndex:-1,
             projectiles:[], homingProjectiles:[],
@@ -2071,11 +2211,6 @@ class LevelManager {
                 this.voidSovereignBoss._activated = true;
                 this.time.delayedCall(1800, () => this._voidSovereignNextAttack());
             }
-            // Cosmic tutorial room
-            if (playerRoom === 2 && !this._cosmicTutorialShown) {
-                this._cosmicTutorialShown = true;
-                this._showCosmicTutorial();
-            }
         }
 
         if (!this._roomHadEnemies) this._roomHadEnemies = {};
@@ -2360,8 +2495,11 @@ class LevelManager {
         this.createRangedEnemy(35, 27, 1);
         this.createRangedEnemy(35, 33, 1);
 
-        // R2: x:44,y:10,w:12,h:10 — Cosmic Tutorial (NORTH)
-        [{ x:47,y:12 },{ x:51,y:16 },{ x:47,y:18 }].forEach(p => { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 2; });
+        // R2: x:44,y:10,w:12,h:10 — Cosmic Observatory (NORTH): the Gem watching from the far wall, a Wraith and a Leech
+        [{ x:47,y:17 },{ x:53,y:17 }].forEach(p => { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 2; });
+        this.createGem(50, 11, 2);
+        this.createWraith(47, 13, 2);
+        this.createLeech(53, 14, 2);
 
         // R3: x:63,y:23,w:22,h:14 — Ult Gauntlet (EAST)
         const r3abs = [{ x:66,y:26 },{ x:80,y:26 },{ x:66,y:34 },{ x:80,y:34 }];
@@ -2382,6 +2520,7 @@ class LevelManager {
         const r4ranged  = [{ x:44,y:49 },{ x:44,y:55 },{ x:51,y:49 },{ x:51,y:55 },{ x:58,y:49 },{ x:58,y:55 }];
         for (const p of r4snipers) this.createVoidSniper(p.x, p.y, 4);
         for (const p of r4ranged)  this.createRangedEnemy(p.x, p.y, 4);
+        this.createHunterSlime(50, 50, 4);   // the ambush: it stalks you while the snipers keep you moving
 
         // R5: x:37,y:61,w:26,h:12 — Queen Slime Chamber
         this.createQueenSlimePortal(42, 66, 5, 2);
@@ -3012,19 +3151,32 @@ class LevelManager {
         }
     }
 
-    // ── TIDECALLER — the clock ──────────────────────────────────────────────
-    // Re-floods the ground near you every few seconds. Turns "dry the room" from
-    // a solution into a tactic with a timer, and makes itself the priority target.
+    // ── TIDECALLER — the water's strength ───────────────────────────────────
+    // Doesn't fight. Every enemy standing in water within TIDE_R tiles of it hits for TIDE_MULT
+    // (CombatSystem.takeDamage reads the hitter's _tideUntil). Dry the floor round it, or kill it.
+    // Every frame: its field follows it; everything standing in water inside it is boosted for a moment
+    _tideTick(e, time) {
+        const C = this._tideCfg();
+        if (e._tideAura?.active) { e._tideAura.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, e._tideAura); }
+        for (const o of this.enemies) {
+            if (!o.sprite?.active || o.health <= 0 || Math.hypot(o.x - e.x, o.y - e.y) > C.TIDE_R || !this.isWaterAt(o.x, o.y)) continue;
+            o._tideUntil = time + 250; o._tideMult = C.TIDE_MULT;
+            if (Math.random() < 0.06) {   // charged by the water: a blue spark rising off it
+                const m = this.add.image(o.sprite.x + (Math.random() - 0.5) * 14, o.sprite.y, 'vfx_dot').setTint(0x6ab8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth((o.sprite.depth ?? 1) + 0.05);
+                this.tweens.add({ targets: m, y: m.y - 16, alpha: 0, duration: 500, onComplete: () => m.destroy() });
+            }
+        }
+    }
+    _tideCfg() { return { HP: 120, SPEED: 1.6, TIDE_R: 4, TIDE_MULT: 1.5 }; }
     createTidecaller(x, y, ri) {
-        const e = this.createRangedEnemy(x, y, ri);
+        const C = this._tideCfg();
+        const e = this.createEnemy(x, y, C.HP);
         e.tutorialRoomIndex = ri;
         e._waterNative = true;
         e._isTidecaller = true;
-        e._floodCd = 4500;
-        e._lastFlood = 0;
-        e.health = e.maxHealth = Math.round(95 * (this.enemyHealthScale || 1));
-        this.updateEnemyHealthBar(e);
+        e._moveCdMult = C.SPEED;
         if (e.sprite.setTint) e.sprite.setTint(0x2a5cc8);
+        e._tideAura = VisualFX.aura(this, e.sprite.x, e.sprite.y, C.TIDE_R * this.TILE_SIZE, 0x3a8cff, { alpha: 0.55 });
         this._cisternMark(e, m => {
             m.lineStyle(2, 0x8fd8ff, 0.90);
             for (let i = 0; i < 3; i++) {
@@ -3178,13 +3330,18 @@ class LevelManager {
     // before the ring closes and it's gone for good. Let it thaw and it hatches FROSTBORN:
     // HP_MULT × its health, much faster, MELEE damage per hit, and a haze of HAZE_R tiles that
     // slows you while you're in it (killEnemy calls _frostEncase; _updateCisternEnemies runs it).
-    _frostCfg() { return { STATUE_HP: 1.5, THAW_MS: 7000, HP_MULT: 3, SPEED: 0.45, MELEE: 5, HAZE_R: 2.5, HAZE_SLOW: 1.8 }; }
+    // Its attack is the FROST GRID (2026-10-20): it stops and lights the square of GRID_R tiles round it like a Tidal Guard's aim,
+    // then it all goes off at once. The safe tiles fall at random, never closer than GRID_GAP tiles to each other (GRID_GAP_BORN
+    // for a Frostborn), and as many as fit, so one is always a step or two away.
+    _frostCfg() { return { STATUE_HP: 2.6, THAW_MS: 11000, HP_MULT: 3, SPEED: 0.45, MELEE: 5, HAZE_R: 2.5, HAZE_SLOW: 1.8,   // (the statue: 1.5x and 7s till 2026-10-20)
+        GRID_R: 4, GRID_CD: 4200, GRID_AIM: 1400, GRID_AIM_BORN: 1250, GRID_DMG: 8, GRID_DMG_BORN: 13, GRID_BORN_CD: 0.75, GRID_GAP: 2, GRID_GAP_BORN: 3 }; }
     createFrostSlime(x, y, ri) {
         const e = this.createEnemy(x, y, 120);
         e.tutorialRoomIndex = ri;
         e._waterNative = true;
         e._isFrost = true;
-        if (e.sprite.setTint) e.sprite.setTint(0x9fe8ff);
+        const fk = LevelManager.frostSlimeKey(this, false);   // its own body: the slime recoloured in ice (it was the red one tinted, then your blue one)
+        if (fk) { e.sprite.setTexture(fk, 0); e.sprite.play(fk + '_idle'); }
         this._cisternMark(e, m => {                         // a snowflake
             m.lineStyle(1.6, 0xdff8ff, 0.95);
             for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3; m.lineBetween(-Math.cos(a) * 6, -Math.sin(a) * 6, Math.cos(a) * 6, Math.sin(a) * 6); }
@@ -3200,7 +3357,7 @@ class LevelManager {
         e._frostOrig = e.maxHealth;
         e.maxHealth = e.health = Math.round(e.maxHealth * F.STATUE_HP);
         e._frostUntil = now + F.THAW_MS;
-        e._frostMoveCd = e._moveCdMult; e._moveCdMult = 999;
+        e._frostMoveCd = e._fgAim ? e._fgHold : e._moveCdMult; e._moveCdMult = 999;
         e.isStunned = true; e.stunnedUntil = e._frostUntil;
         this.updateEnemyHealthBar?.(e);
         const key = LevelManager.frostBlockKey(this);
@@ -3216,6 +3373,7 @@ class LevelManager {
     // Frostborn's haze, and you slowed inside it.
     _frostUpdate(e, time) {
         const F = this._frostCfg(), T = this.TILE_SIZE, s = e.sprite;
+        if (e._frostStage !== 'statue') this._frostGridTick(e, time);
         if (e._frostStage === 'statue') {
             const k = 1 - Math.max(0, (e._frostUntil - time) / F.THAW_MS);
             e._frostGfx?.setPosition(s.x + (k > 0.75 ? (Math.random() - 0.5) * 3 * k : 0), s.y + 6);
@@ -3226,7 +3384,7 @@ class LevelManager {
                 g.lineStyle(3, k > 0.75 ? 0xffffff : 0x9fe8ff, 0.95);
                 g.beginPath(); g.arc(0, 0, 18, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.strokePath();
             }
-            if (time >= e._frostUntil) this._frostHatch(e);
+            if (time >= e._frostUntil && !e._frostCine) { e._frostCine = true; this._rebirthCinematic(s.x, s.y, () => { if (e.sprite?.active && e._frostStage === 'statue') this._frostHatch(e); }); }   // the moment it breaks out, shown up close
             return;
         }
         if (e._frostStage === 'awake') {
@@ -3236,8 +3394,1186 @@ class LevelManager {
                 const m = this.add.image(s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.7, 'vfx_dot').setTint(0xdff8ff).setAlpha(0.7).setDepth(4.2);
                 this.tweens.add({ targets: m, y: m.y - 12, alpha: 0, duration: 700, onComplete: () => m.destroy() });
             }
-            if (Math.hypot(this.playerX - e.x, this.playerY - e.y) <= F.HAZE_R) this._frostHazeMult = F.HAZE_SLOW;
+            if (Math.hypot(this.playerX - e.x, this.playerY - e.y) <= F.HAZE_R) {
+                this._frostHazeMult = F.HAZE_SLOW;
+            }
         }
+    }
+    // Inside a Frost Slime's lit grid (its square, while the telegraph runs): no dashing out of it
+    _frostPinned() {
+        const R = this._frostCfg().GRID_R;
+        return (this.enemies || []).some(e => e._isFrost && e._fgAim && e.sprite?.active && Math.max(Math.abs(this.playerX - e.x), Math.abs(this.playerY - e.y)) <= R);
+    }
+    // ── BUDDING SLIME ────────────────────────────────────────────────────────
+    // A clock you can only beat by killing it. Every BUD_MS it plants itself, swells for SWELL_MS and
+    // buds off a copy with its own health, so the family's health doubles each time. Hits don't
+    // touch the clock; freezing or stunning it calls off a swell. So kill them fast, or split them up.
+    // A family stops growing at FAMILY_MAX bodies.
+    // Every bud, the parent and the copy both burst a ring of VOLLEY poison globs (GLOB_DMG each, and POISON_DPS for POISON_MS).
+    _budCfg() { return { HP: 90, BUD_MS: 10000, SWELL_MS: 1500, FAMILY_MAX: 8, TINT: 0x9be05a, VOLLEY: 10, GLOB_SPEED: 170, GLOB_RANGE: 7, GLOB_DMG: 6, POISON: [4, 600, 4000], POOL_R: 2, ALL_MAX: 16 }; }   // POISON: the Rooter's dose (dmg, every ms, for ms); POOL_R: the ring of poison tiles a bud leaves; ALL_MAX: buds alive at once, every family
+    createBuddingSlime(x, y, ri, family) {
+        const B = this._budCfg();
+        const e = this.createEnemy(x, y, B.HP);
+        e.tutorialRoomIndex = ri;
+        e._isBud = true; e._noUlt = true;   // a spawner: no ult charge off any of them
+        e._budFamily = family || {};
+        e._budAt = this.time.now;   // its clock: hits don't touch it
+        const k = LevelManager.bodyKey(this, 'bud');   // spring green, pink speckles
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        return e;
+    }
+    // A ring of poison globs out of it, every way at once
+    _budVolley(e) {
+        const B = this._budCfg(), s = e.sprite;
+        if (!s?.active) return;
+        for (let i = 0; i < B.VOLLEY; i++) {
+            const a = i / B.VOLLEY * Math.PI * 2 + Math.random() * 0.2;
+            const g = this.add.graphics().setDepth(2.8).setPosition(s.x, s.y);
+            g.fillStyle(0x1e3a10, 1).fillCircle(0, 0, 4.5);
+            g.fillStyle(0x8ae04a, 1).fillCircle(0, 0, 3.5);
+            g.fillStyle(0xd4ff9a, 1).fillCircle(-1, -1, 1.3);
+            this.enemyProjectiles.push({ src: e, gfx: g, vx: Math.cos(a) * B.GLOB_SPEED, vy: Math.sin(a) * B.GLOB_SPEED, damage: B.GLOB_DMG * (this.enemyDamageScale || 1),
+                startX: s.x, startY: s.y, maxDist: B.GLOB_RANGE * this.TILE_SIZE, _bfxKind: 'vine', onHit: () => this._poisonPlayer(B.POISON[0] * (this.enemyDamageScale || 1), B.POISON[1], B.POISON[2]) });
+        }
+    }
+    // Every frame, every level: the clock, the swell and its ring
+    _updateBudding(time) {
+        if (!this.enemies?.length || this._devFreezeEnemies) return;
+        const B = this._budCfg(), T = this.TILE_SIZE;
+        for (const e of this.enemies) {
+            if (!e._isBud) continue;
+            if (!e.sprite?.active || e.health <= 0) { e._budRing?.destroy(); e._budRing = null; continue; }
+            const u = e.sprite._cfx, want = e._budSwell ? 'bud' : 'bud' + Math.min(3, Math.floor(4 * (time - (e._budAt || time)) / B.BUD_MS));   // its head: seed, sprout, bud, opening, then in flower as it swells
+            if (u && u.set !== want) CreatureFX.dress(u, want);
+            if (e._budSwell) {
+                const k = (time - e._budSwell) / B.SWELL_MS;
+                if (e.isFrozen || e.isStunned) { this._budCalm(e); e._budAt = time; continue; }   // held mid-swell: called off, its clock started over
+                const g = e._budRing;
+                g.clear().setPosition(e.sprite.x, e.sprite.y + 10);
+                g.fillStyle(B.TINT, 0.12 + 0.18 * k).fillCircle(0, 0, T * (0.45 + 0.25 * k));
+                g.lineStyle(3, 0x1a3a12, 0.7).strokeCircle(0, 0, T * 0.6);
+                g.lineStyle(3, k > 0.7 && (time / 90 | 0) % 2 ? 0xffffff : 0xffb0dc, 0.95);
+                g.beginPath(); g.arc(0, 0, T * 0.6, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.strokePath();
+                if (k >= 1) this._budSplit(e);
+            } else if (time - (e._budAt || 0) >= B.BUD_MS && this.enemies.filter(o => o._budFamily === e._budFamily && o.sprite?.active && o.health > 0).length < B.FAMILY_MAX
+                       && this.enemies.filter(o => o._isBud && o.sprite?.active && o.health > 0).length < B.ALL_MAX) {
+                e._budSwell = time;
+                e._budHold = e._moveCdMult; e._moveCdMult = 999;   // it plants itself to bud
+                e._budRing = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.02);
+                this.showStatusText(e.sprite.x, e.sprite.y - 28, 'BUDDING!', '#ffb0dc');
+            }
+        }
+    }
+    _budCalm(e) {
+        e._budSwell = 0; e._moveCdMult = e._budHold; e._budHold = undefined;
+        e._budRing?.destroy(); e._budRing = null;
+    }
+    // The copy: a free tile beside it, the parent's health and max health
+    _budSplit(e) {
+        this._budCalm(e);
+        e._budAt = this.time.now;
+        const at = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map(([dx, dy]) => [e.x + dx, e.y + dy])
+            .find(([x, y]) => this.world[x]?.[y] === this.FLOOR && !(x === this.playerX && y === this.playerY) && !this.enemies.some(o => o.sprite?.active && o.x === x && o.y === y));
+        if (!at) return;
+        const c = this.createBuddingSlime(at[0], at[1], e.tutorialRoomIndex, e._budFamily);
+        c._budCopy = true;   // a copy: no ult charge off it (the original wears the bud)
+        this._budVolley(e); this._budVolley(c);
+        this._poisonRing(e.x, e.y, this._budCfg().POOL_R);
+        if (!this.trainingRun && this.enemies.filter(o => o._budFamily === e._budFamily && o.sprite?.active).length >= this._budCfg().FAMILY_MAX) Achievements.bump('budFull', 1, this, true);
+        c.maxHealth = e.maxHealth; c.health = e.health;
+        this.updateEnemyHealthBar?.(c);
+        const sc = c.sprite.scaleX;
+        c.sprite.setScale(sc * 0.3);
+        this.tweens.add({ targets: c.sprite, scaleX: sc, scaleY: sc, duration: 260, ease: 'Back.easeOut' });
+        for (let i = 0; i < 8; i++) {
+            const a = i / 8 * Math.PI * 2, m = this.add.image(e.sprite.x, e.sprite.y, 'vfx_dot').setTint(i % 2 ? 0xffb0dc : 0x9be05a).setDepth(4.2);
+            this.tweens.add({ targets: m, x: m.x + Math.cos(a) * 26, y: m.y + Math.sin(a) * 20, alpha: 0, duration: 420, onComplete: () => m.destroy() });
+        }
+        Sfx.play(this, 'pluck');
+    }
+    // ── SPECIAL HITS ─────────────────────────────────────────────────────────
+    // From both damage paths (damageEnemy and resolveElementalHit), after everything else: what
+    // the newer slimes do to a hit. An Adaptive Shade takes the hits of everything in its aura;
+    // an Armored Slime's plates; a Shade's resistance; a CEO's or knight's armour.
+    _specialHit(e, d, el) {
+        if (!e._special && !this._shadeN) return d;
+        if (this._shadeN && !e._isShade) {
+            const sh = this._shadeGuard(e);
+            if (sh) { this._shadeAbsorb(sh, e, d, el); return 0; }
+        }
+        if (e._armorWeak) d *= this._armorMult(e);
+        if (e._isShade) d = this._shadeTake(e, d, el);
+        if (e._plate > 0) d = this._plateTake(e, d);
+        return d;
+    }
+    // Clear line between two tiles (walls block it)
+    _clearShot(ax, ay, bx, by) {
+        let x = ax, y = ay; const dx = Math.abs(bx - ax), dy = Math.abs(by - ay), sx = Math.sign(bx - ax), sy = Math.sign(by - ay);
+        let err = dx - dy;
+        while (x !== bx || y !== by) {
+            const e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 < dx) { err += dx; y += sy; }
+            if ((x !== bx || y !== by) && this.world[x]?.[y] !== this.FLOOR) return false;
+        }
+        return true;
+    }
+    // Every frame, every level: the newer slimes that need a clock
+    _updateElites(time, delta) {
+        this._shadeN = 0;
+        if (!this.enemies?.length) return;
+        const still = this._devFreezeEnemies;   // the Training Ground's Frozen: no attacks, only the looks keep up
+        for (const e of [...this.enemies]) {
+            if (!e.sprite?.active || e.health <= 0) continue;
+            if (e._isShade) this._shadeN++;
+            if (still) {
+                if (e._shroud) this._shroudLook(e);
+                if (e._plate > 0 || e._plateBar) this._plateDraw(e);
+                for (const a of [e._healerAura, e._anchorRing, e._shadeAura, e._tideAura]) if (a?.active) { a.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, a); }
+                continue;
+            }
+            if (e._isShade) this._shadeTick(e, time);
+            if (e._isWraith) { this._wraithTick(e, time); this._wraithDrift(e); }
+            if (e._shroudBy) this._shroudKeep(e, time);
+            if (e._shroud) this._shroudLook(e);
+            if (e._isDiver) this._diverTick(e, time);
+            if (e._isLeech) this._leechTick(e, time);
+            if (e._isCeo) this._ceoTick(e, time);
+            if (e._isGem) this._gemTick(e, time);
+            if (e._isTidecaller) this._tideTick(e, time);
+            if (e._plate > 0 || e._plateBar) this._plateDraw(e);
+            for (const a of [e._healerAura, e._anchorRing]) if (a?.active && (a.x !== e.sprite.x || a.y !== e.sprite.y)) { a.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, a); }   // their fields glide with them, not a step behind
+        }
+    }
+
+    // ── WRAITH ───────────────────────────────────────────────────────────────
+    // You can see it, but it can't be touched or targeted until you're within REVEAL tiles
+    // (the shroud, CombatSystem._phasedOut). Every CLOAK_EVERY it shrouds a random enemy in its
+    // AURA the same way: that one stays shrouded while the Wraith lives, unless it's out of the
+    // aura for LEAVE_MS.
+    _wraithCfg() { return { HP: 160, SPEED: 1.3, REVEAL: 3, AURA: 5, CLOAK_EVERY: 6000, LEAVE_MS: 2000 }; }
+    createWraith(x, y, ri) {
+        const W = this._wraithCfg();
+        const e = this.createEnemy(x, y, W.HP);
+        e.tutorialRoomIndex = ri;
+        e._isWraith = true; e._shroud = true; e._shroudR = W.REVEAL;
+        e._moveCdMult = W.SPEED; e._wraithNext = this.time.now + 2000;
+        const k = LevelManager.wraithBodyKey(this);   // a ghost: pale, a ragged hem, fading below
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        return e;
+    }
+    _wraithTick(w, time) {
+        const W = this._wraithCfg();
+        if (time < w._wraithNext) return;
+        w._wraithNext = time + W.CLOAK_EVERY;
+        const near = this.enemies.filter(o => o !== w && o.sprite?.active && o.health > 0 && !o._shroud && !o._isShade && !o._isWraith && Math.hypot(o.x - w.x, o.y - w.y) <= W.AURA);
+        const o = near[Math.floor(Math.random() * near.length)];
+        if (!o) return;
+        o._shroud = true; o._shroudR = W.REVEAL; o._shroudBy = w; o._shroudOut = 0;
+        const g = this.add.graphics().setDepth(3).lineStyle(2, 0xbfd8ff, 0.8).lineBetween(w.sprite.x, w.sprite.y, o.sprite.x, o.sprite.y);
+        this.tweens.add({ targets: g, alpha: 0, duration: 450, onComplete: () => g.destroy() });
+        this.showStatusText(o.sprite.x, o.sprite.y - 28, 'CLOAKED', '#bfd8ff');
+    }
+    // Pale ghost-fire peeling off it and its body wavering, shrouded or not
+    _wraithDrift(w) {
+        const s = w.sprite;
+        s.setScale((w._baseScale ?? this.SLIME_SCALE) * (1 + 0.04 * Math.sin(this.time.now / 220)), (w._baseScale ?? this.SLIME_SCALE) * (1 - 0.04 * Math.sin(this.time.now / 220)));
+        if (Math.random() < 0.3) {
+            const m = this.add.image(s.x + (Math.random() - 0.5) * 18, s.y + 4, 'vfx_dot').setTint(Math.random() < 0.5 ? 0xbfe4ff : 0x7aa8e0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.7 * s.alpha).setDepth((s.depth ?? 1) - 0.02);
+            this.tweens.add({ targets: m, y: m.y - 22, x: m.x + (Math.random() - 0.5) * 10, alpha: 0, scale: 1.6, duration: 900, ease: 'Sine.easeOut', onComplete: () => m.destroy() });
+        }
+    }
+    // A shrouded ally: it stays while its Wraith lives and it hasn't been out of the aura too long
+    _shroudKeep(e, time) {
+        const w = e._shroudBy, W = this._wraithCfg();
+        const out = !w.sprite?.active || w.health <= 0 ? Infinity : Math.hypot(e.x - w.x, e.y - w.y) > W.AURA ? (e._shroudOut ||= time, time - e._shroudOut) : (e._shroudOut = 0);
+        if (out < W.LEAVE_MS) return;
+        e._shroud = false; e._shroudBy = null;
+        e.sprite.setAlpha(1);
+        this.showStatusText(e.sprite.x, e.sprite.y - 28, 'REVEALED', '#e8f0ff');
+    }
+    // Shrouded and out of reach: faint and wavering; in reach: solid
+    _shroudLook(e) {
+        const far = Math.hypot(this.playerX - e.x, this.playerY - e.y) > e._shroudR;
+        e.sprite.setAlpha(far ? 0.28 + 0.08 * Math.sin(this.time.now / 160 + e.x) : 1);
+        if (e._shroudFar !== undefined && far !== e._shroudFar && this.time.now - (e._shroudSaidAt || 0) > 600) {   // says so as you step in and out of reach
+            e._shroudSaidAt = this.time.now;
+            this.showStatusText(e.sprite.x, e.sprite.y - 28, far ? 'CLOAKED' : 'REVEALED!', far ? '#8aa4c8' : '#e8f4ff');
+            if (!far) this._vfxFlash?.(e.sprite.x, e.sprite.y, 26, 0xbfd8ff, 160, 0.5);
+        }
+        e._shroudFar = far;
+    }
+
+    // ── ADAPTIVE SHADE ───────────────────────────────────────────────────────
+    // A cosmic mini-boss. Hex slides off it. Hit by fire, ice or lightning, it adapts DELAY ms
+    // later: its body and crown change to that element's and it takes RESIST of it; it can't
+    // adapt again for CD ms, then the next different element turns it again. It takes the hits
+    // of every enemy in its AURA (their damage lands on it, and counts toward adapting).
+    _shadeCfg() { return { HP: 900, SCALE: 1.6, SPEED: 1.8, MELEE: 6, AURA: 4, RESIST: 0.15, DELAY: 2000, CD: 6000,
+        FORMS: {
+            void:      { pal: [[60, 56, 70], [150, 146, 160], [206, 204, 214], [236, 235, 242], [255, 255, 255]], glint: [255, 206, 70], set: 'shade',           eye: 0xd8a0ff, col: 0xa060ff },
+            fire:      { pal: [[40, 8, 4], [120, 30, 8], [200, 70, 16], [255, 140, 40], [255, 226, 140]], glint: [255, 250, 200], set: 'shade_fire',      eye: 0x3a0800, col: 0xff6a1a },
+            ice:       { pal: [[10, 36, 60], [30, 96, 150], [80, 170, 220], [160, 226, 255], [236, 252, 255]], glint: [255, 255, 255], set: 'shade_ice',   eye: 0x0a2a44, col: 0x7fd8ff },
+            lightning: { pal: [[40, 34, 6], [110, 96, 10], [190, 170, 20], [250, 236, 70], [255, 252, 200]], glint: [255, 255, 255], set: 'shade_lightning', eye: 0x3a2a00, col: 0xffe040 },
+        } }; }
+    createAdaptiveShade(x, y, ri) {
+        const S = this._shadeCfg();
+        const e = this.createEnemy(x, y, S.HP);
+        e.tutorialRoomIndex = ri;
+        e._isShade = true; e._special = true; e._hexImmune = true;
+        e._moveCdMult = S.SPEED; e._meleeDmg = S.MELEE;
+        e._baseScale = this.SLIME_SCALE * S.SCALE; e.sprite.setScale(e._baseScale); LevelManager.seat(e, S.SCALE);
+        e._hpBarYOff = Math.min(e._hpBarYOff, -20);   // over the crown (it's a size up)
+        e._form = 'void'; e._adaptReady = 0;
+        e._shadeAura = VisualFX.aura(this, e.sprite.x, e.sprite.y, S.AURA * this.TILE_SIZE, S.FORMS.void.col, { alpha: 0.5 });
+        this._shadeForm(e, 'void', true);
+        return e;
+    }
+    _shadeForm(e, form, quiet) {
+        const F = this._shadeCfg().FORMS[form];
+        e._form = form;
+        e._immuneFx = form === 'void' ? null : form;   // its element's own effect can't take hold (burn, chill, superconduct)
+        if (form === 'fire') { e.burnStacks = 0; e.blueBurn = 0; this._burnDecay(e, this.time.now); }
+        if (form === 'ice') e.chillStacks = 0;
+        if (form === 'lightning') { e.isSuperConducted = false; e.superConductUntil = 0; }
+        const k = LevelManager.slimeRecolor(this, 'slime_shade_' + form, F.pal, F.glint);
+        if (k) { e.sprite.setTexture(k, e.sprite.frame?.name ?? 0); e.sprite.play(k + '_idle'); }
+        if (e.sprite._cfx) CreatureFX.dress(e.sprite._cfx, F.set, F.eye);
+        e._shadeAura?.setTint(F.col);
+        if (quiet) return;
+        this._vfxFlash?.(e.sprite.x, e.sprite.y, 60, F.col, 260, 0.8);
+        VisualFX.ripple(this, e.sprite.x, e.sprite.y, 10, 70, F.col, { duration: 500 });
+        this.showStatusText(e.sprite.x, e.sprite.y - 40, `RESISTS ${form.toUpperCase()}`, UIKit._hex(F.col));
+        Sfx.play(this, 'roar');
+    }
+    // A hit of `el` landing on it (its own, or one it took for an ally): start adapting if it can
+    _shadeNote(e, el) {
+        const S = this._shadeCfg(), now = this.time.now;
+        if (!S.FORMS[el] || el === 'void' || el === e._form || e._adaptTo || now < e._adaptReady) return;
+        e._adaptTo = el; e._adaptAt = now + S.DELAY;
+        this.showStatusText(e.sprite.x, e.sprite.y - 40, 'ADAPTING...', UIKit._hex(S.FORMS[el].col));
+    }
+    _shadeTake(e, d, el) {
+        this._shadeNote(e, el);
+        if (el !== e._form) return d;
+        if (this.time.now - (e._resistAt || 0) > 800) { e._resistAt = this.time.now; this.showStatusText(e.sprite.x, e.sprite.y - 28, 'ADAPTED', '#c8c8d8'); }
+        return d * this._shadeCfg().RESIST;
+    }
+    // The first Shade whose aura covers `e`
+    _shadeGuard(e) {
+        const R = this._shadeCfg().AURA;
+        return this.enemies.find(s => s._isShade && s !== e && s.sprite?.active && s.health > 0 && Math.hypot(s.x - e.x, s.y - e.y) <= R) || null;
+    }
+    _shadeAbsorb(sh, e, d, el) {
+        const dd = this._shadeTake(sh, d, el);
+        sh.health -= dd;
+        this.updateEnemyHealthBar?.(sh);
+        if (dd >= 1 && sh.sprite?.active) this.showDamageNumber(sh.sprite.x, sh.sprite.y - 16, Math.round(dd), '#d8a0ff');
+        const now = this.time.now;
+        if (e.sprite?.active && now - (e._absorbFxAt || 0) > 140) {   // a thread from what was hit to what took it
+            e._absorbFxAt = now;
+            const g = this.add.graphics().setDepth(3).lineStyle(2, this._shadeCfg().FORMS[sh._form].col, 0.85).lineBetween(e.sprite.x, e.sprite.y, sh.sprite.x, sh.sprite.y);
+            this.tweens.add({ targets: g, alpha: 0, duration: 220, onComplete: () => g.destroy() });
+        }
+        if (sh.health <= 0) this.killEnemy(sh);
+    }
+    _shadeTick(e, time) {
+        const S = this._shadeCfg(), F = S.FORMS[e._form];
+        if (e._shadeAura?.active) { e._shadeAura.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, e._shadeAura); }
+        if (e._adaptTo) {
+            if (time >= e._adaptAt) { const to = e._adaptTo; e._adaptTo = null; e._adaptReady = time + S.CD; this._shadeForm(e, to); }
+            else if (time - (e._adaptFxAt || 0) > 120) {   // its new element gathering round it
+                e._adaptFxAt = time;
+                const col = S.FORMS[e._adaptTo].col, a = Math.random() * Math.PI * 2;
+                const m = this.add.image(e.sprite.x + Math.cos(a) * 34, e.sprite.y + Math.sin(a) * 22, 'vfx_dot').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setDepth((e.sprite.depth ?? 1) + 0.06);
+                this.tweens.add({ targets: m, x: e.sprite.x, y: e.sprite.y, alpha: 0.2, duration: 380, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+            }
+        }
+        if (Math.random() < 0.35) {   // its element coming off it
+            const m = this.add.image(e.sprite.x + (Math.random() - 0.5) * 30, e.sprite.y + (Math.random() - 0.3) * 14, 'vfx_dot').setTint(F.col).setBlendMode(Phaser.BlendModes.ADD).setDepth((e.sprite.depth ?? 1) + 0.05).setScale(0.7);
+            const up = e._form === 'ice' ? 10 : -14;
+            this.tweens.add({ targets: m, y: m.y + up, alpha: 0, duration: 600, onComplete: () => m.destroy() });
+        }
+    }
+
+    // ── TORPEDO DIVER ────────────────────────────────────────────────────────
+    // Aims down a line at you, then fires itself along it like a bullet, through you and on to
+    // the wall, leaving water. The shot is always instant: what's fair is the aim. The farther
+    // away it is, the shorter the aim (TELL_FAR at FAR tiles and beyond: you won't get out of
+    // the way); close up, the aim is long enough to step aside. The lit lane shows where it will
+    // go. A hit is DMG, and you drip and bleed.
+    _diverCfg() { return { HP: 110, SPEED: 1.2, CD: 5000, NEAR: 3, FAR: 8, TELL_NEAR: 1500, TELL_FAR: 220, DMG: 18, ZIP_MS: 12, BLEED_MS: 4000, WATER_MS: 12000, MAX_RUN: 40 }; }
+    createTorpedoDiver(x, y, ri) {
+        const D = this._diverCfg();
+        const e = this.createEnemy(x, y, D.HP);
+        e.tutorialRoomIndex = ri;
+        e._isDiver = true; e._waterNative = true;
+        e._moveCdMult = D.SPEED; e._diveNext = this.time.now + 2500;
+        const k = LevelManager.bodyKey(this, 'diver');
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        return e;
+    }
+    _diverTick(e, time) {
+        const D = this._diverCfg();
+        if (e._diving || time < e._diveNext || e.isFrozen || e.isStunned || this._deathScreenActive) return;
+        const d = Math.hypot(this.playerX - e.x, this.playerY - e.y);
+        if (d < 2 || d > 16 || !this._clearShot(e.x, e.y, this.playerX, this.playerY)) return;
+        // the line: from it, through where you stand, on until a wall
+        const dx = this.playerX - e.x, dy = this.playerY - e.y, n = Math.max(Math.abs(dx), Math.abs(dy));
+        const line = [];
+        for (let i = 1; i <= D.MAX_RUN; i++) {
+            const tx = Math.round(e.x + dx * i / n), ty = Math.round(e.y + dy * i / n);
+            if (this.world[tx]?.[ty] !== this.FLOOR) break;
+            if (!line.length || line[line.length - 1][0] !== tx || line[line.length - 1][1] !== ty) line.push([tx, ty]);
+        }
+        if (!line.length) return;
+        const k = Phaser.Math.Clamp((d - D.NEAR) / (D.FAR - D.NEAR), 0, 1), tell = D.TELL_NEAR + (D.TELL_FAR - D.TELL_NEAR) * k;
+        e._diving = true; e._diveHold = e._moveCdMult; e._moveCdMult = 999;
+        const T = this.TILE_SIZE, g = e._diverTell = this.add.graphics().setDepth(0.9);
+        const t0 = time;
+        const draw = () => {   // the lit lane, like a Tidal Guard's aim: brighter as it nears
+            if (!g.active) return;
+            const a = Math.min(1, (this.time.now - t0) / tell), flash = a > 0.7 && (this.time.now / 70 | 0) % 2;
+            g.clear();
+            for (const [tx, ty] of line) {
+                g.fillStyle(flash ? 0xffffff : 0x4ad0ff, 0.12 + 0.3 * a).fillRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
+                g.lineStyle(1.5, 0x9fe8ff, 0.5 + 0.4 * a).strokeRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
+            }
+        };
+        draw();
+        const tick = this.time.addEvent({ delay: 30, loop: true, callback: draw });
+        this.time.delayedCall(tell, () => {
+            tick.remove(); g.destroy(); e._diverTell = null;
+            if (!e.sprite?.active || e.health <= 0) return;
+            this._diverZip(e, line);
+        });
+    }
+    _diverZip(e, line) {
+        const D = this._diverCfg(), T = this.TILE_SIZE;
+        let hit = false;
+        Sfx.play(this, 'whoosh');
+        line.forEach(([tx, ty], i) => this.time.delayedCall(i * D.ZIP_MS, () => {
+            if (!e.sprite?.active) return;
+            this.addWater(tx, ty, D.WATER_MS);
+            const s = this.add.image(tx * T + T / 2, ty * T + T / 2, 'vfx_dot').setTint(0xbff0ff).setScale(2.2).setAlpha(0.8).setDepth(3);
+            this.tweens.add({ targets: s, scale: 0.4, alpha: 0, duration: 260, onComplete: () => s.destroy() });
+            if (!hit && tx === this.playerX && ty === this.playerY) {
+                hit = true;
+                const before = this.health;
+                this._hitBy = e; this.takeDamage(D.DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
+                if (this.health < before) { this._applyDripping(this.time.now); this._bleedStart(D.BLEED_MS); }
+                this.cameras.main.shake(80, 0.006);
+            }
+        }));
+        // it ends at the last free tile of the lane
+        const free = [...line].reverse().find(([x, y]) => !(x === this.playerX && y === this.playerY) && !this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) || [e.x, e.y];
+        this.tweens.killTweensOf(e.sprite);
+        this.tweens.add({ targets: e.sprite, x: free[0] * T + T / 2, y: free[1] * T + T / 2 + this.SLIME_Y_OFFSET, duration: line.length * D.ZIP_MS, ease: 'Linear', onUpdate: () => this.updateEnemyHealthBar(e),
+            onComplete: () => { e.x = free[0]; e.y = free[1]; e._committedPath = null; e.lastMoveTime = this.time.now; e._diving = false; e._moveCdMult = e._diveHold; e._diveNext = this.time.now + D.CD; } });
+    }
+
+    // ── LEECH ────────────────────────────────────────────────────────────────
+    // It takes on an element's colour and its ring fills over SETTLE ms; for the last WARN ms it
+    // aims a thread at you and that element's gem flashes over your head. Still holding that
+    // element when the ring closes (and it can see you): it STEALS the element itself. You're
+    // thrown onto another and can't switch back (switchToElement) until it's dead. With its
+    // prize it never attacks again: it swells, glows and runs, hiding behind its friends.
+    // Swap off in time and nothing happens; it picks again. The whole time it's after one, that element's gem spins
+    // over your head. The steal tears the gem out of you and it holds it; your gem at the bottom goes grey with the
+    // Leech sat on it, laughing. Kill it and the gem is flung back into you. A thing of the void: with its prize, every
+    // PORT_CD it slips into a portal and comes out PORT_DIST further along its escape.
+    _leechCfg() { return { HP: 70, SPEED: 1.4, SETTLE: 5000, WARN: 1400, STAGGER: 250, FLEE_MS: 300, PORT_CD: 6000, PORT_DIST: 5, PORT_MS: 420,
+        COLS: { fire: 0xff6a1a, ice: 0x7fd8ff, lightning: 0xffe040, cosmic: 0xb070ff },
+        PALS: { fire: [[40, 8, 4], [120, 34, 10], [200, 80, 24], [255, 150, 60], [255, 220, 160]], ice: [[10, 36, 60], [30, 96, 150], [80, 170, 220], [160, 226, 255], [236, 252, 255]],
+                lightning: [[40, 34, 6], [110, 96, 10], [190, 170, 20], [250, 236, 70], [255, 252, 200]], cosmic: [[20, 8, 36], [56, 22, 96], [100, 50, 160], [160, 110, 220], [230, 200, 255]] } }; }
+    createLeech(x, y, ri) {
+        const L = this._leechCfg();
+        const e = this.createEnemy(x, y, L.HP);
+        e.tutorialRoomIndex = ri;
+        e._isLeech = true; e._moveCdMult = L.SPEED;
+        e._leechRing = this.add.graphics().setDepth((e.sprite.depth ?? 1) + 0.04);
+        this._leechPick(e);
+        return e;
+    }
+    _leechPick(e) {
+        const L = this._leechCfg(), els = Object.keys(L.COLS).filter(el => this.unlockedElements?.has(el) && !this._elStolen?.[el]);
+        e._leechEl = els[Math.floor(Math.random() * els.length)] || 'fire';
+        e._leechAt = this.time.now + L.SETTLE;
+        const k = LevelManager.slimeRecolor(this, 'slime_leech_' + e._leechEl, L.PALS[e._leechEl]);
+        if (k) { e.sprite.setTexture(k, e.sprite.frame?.name ?? 0); e.sprite.play(k + '_idle'); }
+        if (e.sprite._cfx) CreatureFX.dress(e.sprite._cfx, 'leech', L.COLS[e._leechEl]);
+    }
+    _leechTick(e, time) {
+        if (time >= (e._twinkleAt || 0) && e.sprite?.visible && e.sprite.alpha > 0.3) {   // stars of the void winking round it
+            e._twinkleAt = time + 260 + Math.random() * 300;
+            const st = this.add.image(e.sprite.x + (Math.random() - 0.5) * 26, e.sprite.y + (Math.random() - 0.5) * 16, 'vfx_dot').setTint(Math.random() < 0.5 ? 0xffffff : 0xc89aff).setBlendMode(Phaser.BlendModes.ADD).setDepth((e.sprite.depth ?? 1) + 0.03).setScale(0.2);
+            this._vfxSort?.(st);
+            this.tweens.add({ targets: st, scale: 0.7, alpha: 0, duration: 420, yoyo: false, onComplete: () => st.destroy() });
+        }
+        if (e._stoleEl) { this._leechFlee(e, time); return; }   // it has what it came for
+        const L = this._leechCfg(), col = L.COLS[e._leechEl], g = e._leechRing;
+        const left = Math.max(0, (e._leechAt - time) / L.SETTLE), warn = e._leechAt - time <= L.WARN;
+        const sees = (e.tutorialRoomIndex === undefined || !this._roomGated?.() || e.tutorialRoomIndex === this.getCurrentPlayerRoom()) && this._clearShot(e.x, e.y, this.playerX, this.playerY);
+        g?.clear().setPosition(e.sprite.x, e.sprite.y + 10);   // the ring of its colour closing round it
+        g?.lineStyle(2, 0x0a0a10, 0.6).strokeCircle(0, 0, 14);
+        g?.lineStyle(2, col, warn && (time / 80 | 0) % 2 ? 0.45 : 0.95);
+        if (g) { g.beginPath(); g.arc(0, 0, 14, -Math.PI / 2, -Math.PI / 2 + (1 - left) * Math.PI * 2); g.strokePath(); }
+        if (warn && sees && this.player?.active) g?.lineStyle(1, col, 0.35 + 0.3 * Math.sin(time / 60)).lineBetween(0, -10, this.player.x - e.sprite.x, this.player.y - e.sprite.y - 10);   // the aim
+        if (this.player?.active) this._leechWarn(e, col, time, warn);   // what it wants, spinning over your head the whole time
+        if (time < e._leechAt || e.isFrozen || e.isStunned) return;
+        if (sees && !this._deathScreenActive && this.currentElement === e._leechEl && !this._elStolen?.[e._leechEl]) { this._leechSteal(e, time); return; }
+        this._leechPick(e);
+    }
+    _leechSteal(e, time) {
+        const L = this._leechCfg(), el = e._leechEl, col = L.COLS[el];
+        e._stoleEl = el; (this._elStolen ||= {})[el] = e;
+        e._leechRing?.destroy(); e._leechRing = null; e._leechIcon?.destroy(); e._leechIcon = null;
+        const gem = e._leechHeld = this.add.image(this.player.x, this.player.y - 6, this._leechGemKey(el)).setDepth(5.3).setScale(1.6);   // torn out of you, into its grip
+        this._vfxSort?.(gem);
+        e._leechHeld.setData('flying', true);
+        const hand = this._leechHand(e);
+        this.tweens.add({ targets: gem, x: hand.x, y: hand.y, duration: 380, ease: 'Back.easeIn', onComplete: () => gem.setData('flying', false) });
+        e._portNext = time + 1500;
+        this._staggerUntil = Math.max(this._staggerUntil || 0, time + L.STAGGER);
+        const beam = this.add.graphics().setDepth(4.4).lineStyle(4, col, 0.95).lineBetween(this.player.x, this.player.y, e.sprite.x, e.sprite.y);
+        this.tweens.add({ targets: beam, alpha: 0, duration: 420, onComplete: () => beam.destroy() });
+        for (let i = 0; i < 10; i++) {   // the element pulled out of you and into it
+            const m = this.add.image(this.player.x, this.player.y, 'vfx_dot').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.5);
+            this.tweens.add({ targets: m, x: e.sprite.x, y: e.sprite.y, delay: i * 40, duration: 320, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+        }
+        this.showStatusText(this.player.x, this.player.y - 34, `${el.toUpperCase()} STOLEN: KILL THE LEECH`, UIKit._hex(col));
+        const to = ['fire', 'ice', 'lightning', 'cosmic'].find(o => o !== el && this.unlockedElements?.has(o) && !this._elStolen[o]);
+        if (to) this.switchToElement(to);
+        e.maxHealth = Math.round(e.maxHealth * 1.3); e.health = Math.round(e.health * 1.3);
+        e._baseScale = this.SLIME_SCALE * 1.3; e.sprite.setScale(e._baseScale); LevelManager.seat(e, 1.3);   // swollen with it
+        e._leechGlow = VisualFX.aura(this, e.sprite.x, e.sprite.y, 34, col, { alpha: 0.95 });
+        Sfx.play(this, 'zap');
+    }
+    // Where it holds its prize: against its side, halfway up its body (the body sits low in its frame, and it's swollen)
+    _leechHand(e) {
+        const s = e.sprite;
+        return { x: s.x + 10 * Math.abs(s.scaleX), y: s.y + (26.5 - s.originY * 32) * s.scaleY - 2 };
+    }
+    // A gem in an element's colour (the one a Leech is after, or holds)
+    _leechGemKey(el) {
+        const col = this._leechCfg().COLS[el];
+        return ShopScene.icon(this, 'fx_leech_gem_' + el, 10, { G: UIKit._hex(col), g: UIKit._hex(MenuArt.mix(col, 0x000000, 0.45)), W: '#ffffff' }, m => {
+            m.poly([[5, 0], [9, 4], [5, 9], [1, 4]], 'G'); m.poly([[5, 0], [9, 4], [5, 9]], 'g'); m.set(4, 3, 'W');
+        });
+    }
+    // The gem it's after, spinning over your head: faint while it settles, bright and flashing as it aims (with a nudge when you're holding it)
+    _leechWarn(e, col, time, warn) {
+        const p = this.player, holding = this.currentElement === e._leechEl, key = this._leechGemKey(e._leechEl);
+        const ic = e._leechIcon?.active ? e._leechIcon : (e._leechIcon = this.add.image(0, 0, key).setDepth(5.2));
+        if (ic.texture.key !== key) ic.setTexture(key);
+        const s = (holding ? 2 : 1.6) * (warn ? 1.1 : 1);
+        ic.setPosition(p.x, p.y - 34 + Math.sin(time / 260) * 2).setScale(s * Math.cos(time / 170), s)   // turning on its axis
+          .setAlpha(warn ? ((time / 120 | 0) % 2 ? 1 : 0.5) : 0.75);
+        if (warn && holding && time - (e._leechNagAt || 0) > 700) { e._leechNagAt = time; this.showStatusText(p.x, p.y - 50, `SWAP OFF ${e._leechEl.toUpperCase()}`, UIKit._hex(col)); }
+    }
+    // While it holds your element: its prize held up beside it, and on your HUD the gem grey with the Leech sat on it, laughing
+    _leechHold(e, time) {
+        const s = e.sprite, held = e._leechHeld;
+        if (held?.active) { const h = this._leechHand(e); held.setPosition(h.x, h.y + Math.sin(time / 200) * 1.5).setScale(1.4 * Math.cos(time / 200), 1.4).setDepth((s.depth ?? 1) + 0.05); }
+        const u = this._ultGemUI?.find(q => q.el === e._stoleEl);
+        if (!u) return;
+        const SC = 2.6;   // sat on your gem: big enough to see, its feet on the gem's middle, its face (and eyes) on
+        if (!e._hudLeech?.active) {
+            e._hudLeech = this.add.sprite(u.x, u.y, s.texture.key, 0).setOrigin(0.5, 1).setScrollFactor(0).setDepth(33).setScale(SC);
+            this._vfxSort?.(e._hudLeech);
+            CreatureFX.face(this, e._hudLeech, { mood: 'angry', hat: 'leech', eye: this._leechCfg().COLS[e._stoleEl], look: () => null });
+        }
+        const hl = e._hudLeech, bob = Math.abs(Math.sin(time / 180)) * 3;
+        hl.setPosition(u.x + Math.sin(time / 140) * 1.5, u.y + u.r * 0.9 - bob);
+        if (time >= (e._laughAt || 0)) {   // now and then a laugh, in a bubble pointing at it
+            e._laughAt = time + 3200 + Math.random() * 1600;
+            const msg = ['blub ha ha!', 'hehe... glorp!', 'BLUB BLUB BLUB', 'mine now! hee'][Math.floor(Math.random() * 4)];
+            const t = this.add.text(0, 0, msg, { fontSize: '11px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#2a1440' }).setOrigin(0.5);
+            const w = t.width + 14, h = t.height + 8, headY = hl.y - 22 * SC * 0.5, bx = hl.x + 18, by = headY - h - 8;
+            const bub = this.add.graphics();
+            bub.fillStyle(0x1a0a2a, 1).fillRoundedRect(-w / 2 - 1, -h / 2 - 1, w + 2, h + 2, 6);
+            bub.fillStyle(0xf6eeff, 1).fillRoundedRect(-w / 2, -h / 2, w, h, 5);
+            bub.fillStyle(0xf6eeff, 1).fillTriangle(-w / 2 + 6, h / 2 - 1, -w / 2 + 16, h / 2 - 1, hl.x - bx, headY - by + 2);   // its tail, down to the Leech's head
+            bub.lineStyle(1, 0x1a0a2a, 1).lineBetween(-w / 2 + 6, h / 2, hl.x - bx, headY - by + 2).lineBetween(-w / 2 + 16, h / 2, hl.x - bx, headY - by + 2);
+            const c = this.add.container(bx, by, [bub, t]).setScrollFactor(0).setDepth(34).setAlpha(0).setScale(0.6);
+            this._vfxSort?.(c);
+            this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 160, ease: 'Back.easeOut' });
+            this.tweens.add({ targets: c, alpha: 0, delay: 1400, duration: 220, onComplete: () => c.destroy() });
+        }
+    }
+    // With your element: it runs, preferring tiles beside its friends (its bar keeps up with it)
+    _leechFlee(e, time) {
+        const L = this._leechCfg(), T = this.TILE_SIZE;
+        e._moveCdMult = 999;   // it moves itself
+        e._leechGlow?.setPosition(e.sprite.x, e.sprite.y);
+        if (!e._leechHeld?.getData?.('flying')) this._leechHold(e, time);
+        this.updateEnemyHealthBar(e);
+        if (e._porting) return;
+        if (time >= (e._portNext || 0) && !e.isFrozen && !e.isStunned && this._leechPort(e, time)) return;
+        if (time - (e._fleeAt || 0) < L.FLEE_MS || e.isFrozen || e.isStunned) return;
+        e._fleeAt = time;
+        let best = null, score = -Infinity;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+            const x = e.x + dx, y = e.y + dy;
+            if (this.world[x]?.[y] !== this.FLOOR || (x === this.playerX && y === this.playerY) || this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) continue;
+            const cover = this.enemies.filter(o => o !== e && o.sprite?.active && Math.abs(o.x - x) + Math.abs(o.y - y) <= 2).length;
+            const sc = Math.hypot(x - this.playerX, y - this.playerY) + 0.7 * cover + Math.random() * 0.3;
+            if (sc > score) { score = sc; best = [x, y]; }
+        }
+        if (!best || score <= Math.hypot(e.x - this.playerX, e.y - this.playerY)) return;
+        e.x = best[0]; e.y = best[1];
+        this.tweens.add({ targets: e.sprite, x: e.x * T + T / 2, y: e.y * T + T / 2 + this.SLIME_Y_OFFSET, duration: L.FLEE_MS * 0.9, ease: 'Sine.easeOut' });
+    }
+    // Into a portal and out of another PORT_DIST tiles on, the furthest open tile from you round there
+    _leechPort(e, time) {
+        const L = this._leechCfg(), T = this.TILE_SIZE, ax = e.x - this.playerX, ay = e.y - this.playerY, len = Math.hypot(ax, ay) || 1;
+        let best = null, bestD = -1;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const x = Math.round(e.x + ax / len * L.PORT_DIST) + dx, y = Math.round(e.y + ay / len * L.PORT_DIST) + dy;
+            if (this.world[x]?.[y] !== this.FLOOR || this.isInLockedRoom?.(x, y) || this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) continue;
+            const d = Math.hypot(x - this.playerX, y - this.playerY);
+            if (d > bestD) { bestD = d; best = [x, y]; }
+        }
+        e._portNext = time + L.PORT_CD;
+        if (!best) return false;
+        e._porting = true;
+        const portal = (x, y) => {   // a swirl of the void opening on the floor, then closing
+            const g = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.03).setPosition(x, y + 8);
+            const st = { k: 0 };
+            this.tweens.add({ targets: st, k: 1, duration: L.PORT_MS, yoyo: true, onUpdate: () => {
+                g.clear().fillStyle(0x0a0418, 0.9).fillEllipse(0, 0, 30 * st.k, 12 * st.k);
+                g.lineStyle(2, 0xb070ff, 0.95).strokeEllipse(0, 0, 30 * st.k, 12 * st.k);
+                g.lineStyle(1, 0xffffff, 0.7).strokeEllipse(0, 0, 18 * st.k, 7 * st.k);
+            }, onComplete: () => g.destroy() });
+            VisualFX.ripple(this, x, y + 8, 6, 26, 0xb070ff, { duration: 300 });
+        };
+        const s = e.sprite, tx = best[0] * T + T / 2, ty = best[1] * T + T / 2 + this.SLIME_Y_OFFSET;
+        portal(s.x, s.y);
+        this.tweens.add({ targets: [s, e._leechHeld].filter(Boolean), alpha: 0, duration: L.PORT_MS * 0.8 });
+        this.time.delayedCall(L.PORT_MS, () => {
+            if (!s.active) return;
+            e.x = best[0]; e.y = best[1]; s.setPosition(tx, ty);
+            portal(tx, ty);
+            this.tweens.add({ targets: [s, e._leechHeld].filter(Boolean), alpha: 1, duration: L.PORT_MS * 0.8, onComplete: () => { e._porting = false; } });
+            this.updateEnemyHealthBar(e);
+        });
+        Sfx.play(this, 'whoosh');
+        return true;
+    }
+    // From killEnemy: the element it stole is yours again
+    _leechDie(e) {
+        e._leechIcon?.destroy(); e._leechGlow?.destroy(); e._hudLeech?.destroy();
+        const el = e._stoleEl, held = e._leechHeld;
+        if (!el || this._elStolen?.[el] !== e) { held?.destroy(); return; }
+        delete this._elStolen[el];
+        const col = this._leechCfg().COLS[el];
+        if (held?.active) {   // flung out of its grip and back into you, in an arc
+            this.tweens.killTweensOf(held);
+            const x0 = held.x, y0 = held.y, st = { t: 0 };
+            this.tweens.add({ targets: st, t: 1, duration: 520, ease: 'Sine.easeIn', onUpdate: () => {
+                if (!this.player) return;
+                const t = st.t; held.setPosition(x0 + (this.player.x - x0) * t, y0 + (this.player.y - 8 - y0) * t - Math.sin(t * Math.PI) * 46).setRotation(t * 9).setAlpha(1);
+            }, onComplete: () => { if (this.player) { VisualFX.ripple(this, this.player.x, this.player.y, 6, 30, col, { duration: 260 }); this._vfxFlash?.(this.player.x, this.player.y, 70, col, 260, 0.9); } held.destroy(); } });
+        }
+        this.showStatusText(this.player.x, this.player.y - 34, `${el.toUpperCase()} RETURNED`, UIKit._hex(col));
+        for (let i = 0; i < 10; i++) {
+            const m = this.add.image(e.sprite.x, e.sprite.y, 'vfx_dot').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.5);
+            this.tweens.add({ targets: m, x: this.player.x, y: this.player.y, delay: i * 35, duration: 380, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+        }
+        Sfx.play(this, 'pickup');
+    }
+
+    // ── THE GEM ──────────────────────────────────────────────────────────────
+    // A crystal that can't be hurt and never moves; it shatters when everything else is dead.
+    // Every EVERY ms a gem of one element's colour starts falling at you from high up, taking
+    // FALL ms, and SAFE circles of that colour open on the floor. When it lands you must be in one
+    // AND holding that element, or it bursts on you for DMG.
+    _gemCfg() { return { EVERY: 22000, FIRST: 6000, FALL: 5000, SAFE: 3, SAFE_R: 1.6, SAFE_GAP: 5, DMG: 38, BURST_R: 2.2,
+        COLS: { fire: 0xff8a2a, ice: 0x6ac8ff, lightning: 0xffe040, cosmic: 0xb070ff } }; }
+    static gemKey(scene, el, col) {
+        return ShopScene.icon(scene, 'fx_gem_' + el, 24, { G: UIKit._hex(col), L: UIKit._hex(MenuArt.mix(col, 0xffffff, 0.45)), D: UIKit._hex(MenuArt.mix(col, 0x000000, 0.45)), K: '#0a0612', W: '#ffffff' }, m => {
+            m.poly([[12, 1], [21, 8], [12, 23], [3, 8]], 'K');
+            m.poly([[12, 3], [19, 8], [12, 21], [5, 8]], 'G');
+            m.poly([[12, 3], [19, 8], [12, 8]], 'L'); m.poly([[5, 8], [12, 8], [12, 21]], 'D');
+            m.line(7, 6, 9, 5, 'W'); m.set(10, 5, 'W');
+        });
+    }
+    createGem(x, y, ri) {
+        const G = this._gemCfg();
+        const e = this.createEnemy(x, y, 999);
+        e.tutorialRoomIndex = ri;
+        e._isGem = true; e._moveCdMult = 999;   // it doesn't move
+        e._gemNext = this.time.now + G.FIRST;
+        e._gemHue = e.sprite.preFX?.addColorMatrix?.() || null;   // its facets' colours turn round the wheel (WebGL)
+        e._gemGlow = VisualFX.aura(this, e.sprite.x, e.sprite.y, 40, 0xd8e8ff, { alpha: 0.7 });
+        return e;
+    }
+    _gemTick(e, time) {
+        const G = this._gemCfg(), s = e.sprite;
+        e.healthBarBg?.setVisible(false); e.healthBarFill?.setVisible(false);
+        const bob = Math.sin(time / 500) * 4;
+        e._gemBody?.setPosition(s.x, s.y - 10 + bob).setRotation(Math.sin(time / 900) * 0.08);
+        e._gemGlow?.setPosition(s.x, s.y - 6);
+        e._gemHue?.hue((time * 0.09) % 360);   // shifting colours
+        if (time >= (e._gemGlintAt || 0)) {   // light catching a facet
+            e._gemGlintAt = time + 180 + Math.random() * 260;
+            const gl = this.add.image(s.x + (Math.random() - 0.5) * 22, s.y + 2 + (Math.random() - 0.5) * 12, 'vfx_dot').setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD).setDepth((s.depth ?? 1) + 0.03).setScale(0.15);
+            this._vfxSort?.(gl);
+            this.tweens.add({ targets: gl, scale: 0.9, alpha: 0, duration: 320, onComplete: () => gl.destroy() });
+        }
+        // it's done when nothing else is left (in the Tower, nothing more coming either; in a level of rooms, nothing left in its room)
+        const T = this.towerRun, more = T && (T.wave < T.waves || T.pending?.length);
+        const roomed = !T && e.tutorialRoomIndex !== undefined && this._roomGated(), mine = o => !roomed || o.tutorialRoomIndex === e.tutorialRoomIndex;
+        if (!more && !this.enemies.some(o => o !== e && !o._isGem && o.sprite?.active && o.health > 0 && mine(o))) {
+            this._gemShatter(e); return;
+        }
+        if (roomed && this.getCurrentPlayerRoom() !== e.tutorialRoomIndex) { e._gemNext = Math.max(e._gemNext, time + 2500); return; }   // not till you're in its room
+        if (time >= e._gemNext && !e._gemDrop && !this._deathScreenActive) { e._gemNext = time + G.EVERY; this._gemDrop(e); }
+    }
+    _gemDrop(e) {
+        const G = this._gemCfg(), T = this.TILE_SIZE;
+        const els = Object.keys(G.COLS).filter(el => this.unlockedElements?.has(el));   // only what you can hold
+        const el = els[Math.floor(Math.random() * els.length)] || 'fire', col = G.COLS[el];
+        e._gemDrop = true;
+        e._gemGlow?.setTint(col);   // its glow takes the colour of what's coming
+        // the safe circles: open floor in your room, apart from each other
+        const room = (this.rooms || []).find(r => this.playerX >= r.x && this.playerX < r.x + r.w && this.playerY >= r.y && this.playerY < r.y + r.h);
+        const zones = [];
+        for (let i = 0; i < 200 && zones.length < G.SAFE; i++) {
+            const x = room ? room.x + 1 + Math.floor(Math.random() * (room.w - 2)) : this.playerX + Math.floor(Math.random() * 17) - 8;
+            const y = room ? room.y + 1 + Math.floor(Math.random() * (room.h - 2)) : this.playerY + Math.floor(Math.random() * 17) - 8;
+            if (this.world[x]?.[y] !== this.FLOOR || zones.some(z => Math.hypot(z.x - x, z.y - y) < G.SAFE_GAP)) continue;
+            zones.push({ x, y, aura: this._gemDome(x * T + T / 2, y * T + T / 2, G.SAFE_R * T, col), rim: VisualFX.aura(this, x * T + T / 2, y * T + T / 2, G.SAFE_R * T, col, { style: 'field', alpha: 0.4 }) });
+        }
+        this.showStatusText(this.player.x, this.player.y - 44, `${el.toUpperCase()} GEM FALLING`, UIKit._hex(col));
+        // the falling gem: high over you, following you down; its shadow grows under you
+        const gem = this.add.image(this.player.x, this.player.y - 200, LevelManager.gemKey(this, el, col)).setDepth(6).setScale(2.2);   // (high enough to read as falling, low enough to stay on screen)
+        const shadow = this.add.ellipse(this.player.x, this.player.y + 8, 10, 5, 0x000000, 0.35).setDepth(0.96);
+        const t0 = this.time.now;
+        const follow = () => {
+            if (!gem.active || !this.player?.active) return;
+            const k = Math.min(1, (this.time.now - t0) / G.FALL), eased = k * k;   // slow at first, quicker at the end
+            gem.setPosition(this.player.x, this.player.y - 200 * (1 - eased) - 8).setRotation(k * 4);
+            shadow.setPosition(this.player.x, this.player.y + 8).setSize(10 + 40 * k, 5 + 18 * k).setAlpha(0.2 + 0.35 * k);
+        };
+        this.events.on('update', follow);
+        this.time.delayedCall(G.FALL, () => {
+            this.events.off('update', follow);
+            const safe = zones.some(z => Math.hypot(z.x - this.playerX, z.y - this.playerY) <= G.SAFE_R) && this.currentElement === el;
+            const px = this.player.x, py = this.player.y;
+            gem.destroy(); shadow.destroy();
+            for (const z of zones) for (const o of [z.aura, z.rim]) if (o.active) { this.tweens.killTweensOf(o); o.destroy(); }
+            e._gemDrop = false;
+            if (safe) {
+                this.showStatusText(px, py - 34, 'SAFE', UIKit._hex(col));
+                VisualFX.ripple(this, px, py, 6, 40, col, { duration: 400 });
+            } else {   // it bursts on you
+                VisualFX.ripple(this, px, py, 10, G.BURST_R * T, col, { duration: 520, alpha: 1 });
+                this._vfxFlash?.(px, py, G.BURST_R * T, col, 300, 0.9);
+                this.cameras.main.shake(160, 0.01);
+                this._hitBy = e; this.takeDamage(G.DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
+            }
+            for (let i = 0; i < 14; i++) {   // shards
+                const a = i / 14 * Math.PI * 2, m = this.add.image(px, py, 'vfx_dot').setTint(i % 2 ? col : 0xffffff).setDepth(5);
+                this.tweens.add({ targets: m, x: px + Math.cos(a) * 50, y: py + Math.sin(a) * 34, alpha: 0, duration: 450, onComplete: () => m.destroy() });
+            }
+            Sfx.play(this, 'shatter');
+        });
+    }
+    // A safe zone: a glassy dome of the gem's colour over a ring on the floor, a sheen across it
+    _gemDome(x, y, R, col) {
+        const g = this.add.graphics().setDepth(4.3).setPosition(x, y);
+        const H = R * 0.95, half = (rx, ry, n = 24) => Array.from({ length: n + 1 }, (_, i) => { const t = Math.PI * i / n; return { x: Math.cos(t) * rx, y: -Math.sin(t) * ry }; });
+        g.fillStyle(col, 0.16).fillEllipse(0, 0, R * 2, R * 0.9);                        // its footprint
+        g.lineStyle(2, col, 0.9).strokeEllipse(0, 0, R * 2, R * 0.9);
+        g.fillStyle(col, 0.14).fillPoints(half(R, H), true);                              // the dome
+        g.lineStyle(1, MenuArt.mix(col, 0xffffff, 0.5), 0.3);
+        for (const k of [0.35, 0.7]) g.strokePoints(half(R * k, H * Math.sqrt(1 - k * k * 0.3)), false);   // meridians
+        g.strokeEllipse(0, -H * 0.55, R * 1.7, R * 0.35);                                 // a band round it
+        g.lineStyle(2, col, 0.85).strokePoints(half(R, H), false);                        // its rim
+        g.lineStyle(3, 0xffffff, 0.45).strokePoints(half(R * 0.8, H * 0.8, 24).slice(14, 21), false);   // the sheen, upper left
+        g.setScale(1, 0.1).setAlpha(0);
+        this.tweens.add({ targets: g, scaleY: 1, alpha: 1, duration: 380, ease: 'Back.easeOut' });   // rising out of the floor
+        this.tweens.add({ targets: g, alpha: 0.75, delay: 400, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        return g;
+    }
+    _gemShatter(e) {
+        const s = e.sprite;
+        for (let i = 0; i < 16; i++) {
+            const a = i / 16 * Math.PI * 2, m = this.add.image(s.x, s.y - 10, 'vfx_dot').setTint(i % 2 ? 0xffffff : 0xd8e8ff).setDepth(5).setScale(1.4);
+            this.tweens.add({ targets: m, x: s.x + Math.cos(a) * 60, y: s.y - 10 + Math.sin(a) * 44, alpha: 0, duration: 600, onComplete: () => m.destroy() });
+        }
+        this.showStatusText(s.x, s.y - 40, 'THE GEM SHATTERS', '#e8f0ff');
+        Sfx.play(this, 'shatter');
+        e._isGem = false;   // (so killEnemy goes through)
+        this.killEnemy(e);
+    }
+
+    // ── ARMOUR (the CEO's and its knights') ──────────────────────────────────
+    // `_plate` up to `_plateMax` (as much as its health): while it holds, every hit does PLATE_TAKE
+    // of its damage to the armour and none to the health; what breaks through goes to health in full.
+    _plateCfg() { return { PLATE_TAKE: 0.4 }; }
+    _plateGive(e, frac = 1) {
+        e._plateMax = e._plate = Math.round(e.maxHealth * frac);
+        e._special = true;
+    }
+    _plateTake(e, d) {
+        const k = this._plateCfg().PLATE_TAKE, chip = d * k;
+        if (chip < e._plate) { e._plate -= chip; return 0; }
+        const over = (chip - e._plate) / k;
+        e._plate = 0;
+        if (e.sprite?.active) { this.showStatusText(e.sprite.x, e.sprite.y - 30, 'ARMOR BROKEN', '#c8d0dc'); Sfx.play(this, 'shatter'); }
+        return over;
+    }
+    // A grey bar over the health bar while the armour holds
+    _plateDraw(e) {
+        const g = e._plateBar ||= this.add.graphics().setDepth(4.75);
+        if (!(e._plate > 0)) { g.destroy(); e._plateBar = null; return; }
+        const bx = e.healthBarBg?.x ?? e.sprite.x, by = (e.healthBarBg?.y ?? e.sprite.y - 20) - 5, w = 24;
+        g.clear().fillStyle(0x000000, 0.8).fillRect(bx - w / 2, by - 2, w, 3);
+        g.fillStyle(0xb8c4d4, 1).fillRect(bx - w / 2, by - 2, w * e._plate / e._plateMax, 3);
+    }
+
+    // ── SLIME CEO ────────────────────────────────────────────────────────────
+    // Armoured from the start (its health again as armour). Every KNIGHT_EVERY it knights an
+    // unarmoured enemy in its AURA (full armour). Every WAVE_EVERY it sends a slow wave out to
+    // the room's edges, a ring a tile further each WAVE_STEP ms, with GAPS openings to step into
+    // (or dash through it). Each ring lights, hits and is gone before the next. It goes off wherever you are.
+    _ceoCfg() { return { HP: 380, SCALE: 1.7, SPEED: 2.0, MELEE: 5, AURA: 5, KNIGHT_EVERY: 8000, WAVE_EVERY: 6500, WINDUP: 700, WAVE_STEP: 460, RING_MS: 240, WAVE_DMG: 12, GAPS: 2, GAP_HALF: 0.42 }; }
+    createSlimeCeo(x, y, ri) {
+        const C = this._ceoCfg();
+        const e = this.createEnemy(x, y, C.HP);
+        e.tutorialRoomIndex = ri;
+        e._isCeo = true; e._moveCdMult = C.SPEED; e._meleeDmg = C.MELEE;
+        e._baseScale = this.SLIME_SCALE * C.SCALE; e.sprite.setScale(e._baseScale); LevelManager.seat(e, C.SCALE);
+        e._hpBarYOff = Math.min(e._hpBarYOff, -20);
+        this._plateGive(e);
+        e._ceoKnightAt = this.time.now + 3000; e._ceoWaveAt = this.time.now + 3500;
+        const k = LevelManager.bodyKey(this, 'ceo');   // a suit, gold at the edges
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        return e;
+    }
+    _ceoTick(e, time) {
+        const C = this._ceoCfg();
+        if (e.isFrozen || e.isStunned) return;
+        if (time >= e._ceoKnightAt) {
+            e._ceoKnightAt = time + C.KNIGHT_EVERY;
+            const near = this.enemies.filter(o => o !== e && o.sprite?.active && o.health > 0 && !(o._plate > 0) && !o._isCeo && !o._isShade && Math.hypot(o.x - e.x, o.y - e.y) <= C.AURA);
+            const o = near[Math.floor(Math.random() * near.length)];
+            if (o) {
+                this._plateGive(o); o._knight = true;
+                const g = this.add.graphics().setDepth(3).lineStyle(3, 0xffd84a, 0.9).lineBetween(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y);
+                this.tweens.add({ targets: g, alpha: 0, duration: 500, onComplete: () => g.destroy() });
+                this.showStatusText(o.sprite.x, o.sprite.y - 30, 'KNIGHTED!', '#ffd84a');
+                Sfx.play(this, 'clink');
+            }
+        }
+        if (time >= e._ceoWaveAt) {
+            e._ceoWaveAt = time + C.WAVE_EVERY;
+            this.showStatusText(e.sprite.x, e.sprite.y - 40, '!', '#ffd84a');
+            VisualFX.ripple(this, e.sprite.x, e.sprite.y, 6, 40, 0xffd84a, { duration: C.WINDUP });
+            this.time.delayedCall(C.WINDUP, () => { if (e.sprite?.active && e.health > 0) this._ceoWave(e); });
+        }
+    }
+    _ceoWave(e) {
+        const C = this._ceoCfg(), T = this.TILE_SIZE, cx = e.x, cy = e.y;
+        const room = (this.rooms || []).find(r => cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h);
+        const x0 = room ? room.x : cx - 14, x1 = room ? room.x + room.w - 1 : cx + 14, y0 = room ? room.y : cy - 14, y1 = room ? room.y + room.h - 1 : cy + 14;
+        const far = Math.ceil(Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.hypot(x - cx, y - cy))));
+        const gaps = Array.from({ length: C.GAPS }, (_, i) => Math.random() * Math.PI * 2 / C.GAPS + i * Math.PI * 2 / C.GAPS);
+        const inGap = (x, y) => { const a = Math.atan2(y - cy, x - cx); return gaps.some(g => Math.abs(Phaser.Math.Angle.Wrap(a - g)) < C.GAP_HALF); };
+        let hit = false;
+        Sfx.play(this, 'fissure');
+        for (let r = 1; r <= far; r++) this.time.delayedCall((r - 1) * C.WAVE_STEP, () => {
+            const g = this.add.graphics().setDepth(0.95);
+            for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+                if (this.world[x]?.[y] !== this.FLOOR || Math.abs(Math.hypot(x - cx, y - cy) - r) >= 0.5 || inGap(x, y)) continue;
+                g.fillStyle(0xffd84a, 0.5).fillRect(x * T + 3, y * T + 3, T - 6, T - 6);
+                g.lineStyle(1.5, 0xfff0b0, 0.8).strokeRect(x * T + 3, y * T + 3, T - 6, T - 6);
+                if (!hit && x === this.playerX && y === this.playerY) {
+                    hit = true;
+                    this._hitBy = e; this.takeDamage(C.WAVE_DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
+                }
+            }
+            this.tweens.add({ targets: g, alpha: 0, duration: C.RING_MS, ease: 'Quad.easeIn', onComplete: () => g.destroy() });   // gone a moment before the next ring
+        });
+    }
+
+    // ── ARMORED SLIME ────────────────────────────────────────────────────────
+    // Built for the Tower: plated on three sides that never turn, open on the fourth. A hit
+    // from a plated side (judged by where you stand) does ARMOR of its damage; from the open
+    // side, WEAK. It's born with the open side away from you, so you have to go round it.
+    _armorCfg() { return { HP: 260, ARMOR: 0.05, WEAK: 1.5, SPEED: 1.5, MELEE: 3, SCALE: 1.45 }; }
+    createArmoredSlime(x, y, ri) {
+        const A = this._armorCfg();
+        const e = this.createEnemy(x, y, A.HP);
+        e.tutorialRoomIndex = ri;
+        e._isArmored = true; e._special = true;
+        const dx = x - this.playerX, dy = y - this.playerY;   // the open side faces away from you
+        e._armorWeak = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'E' : 'W') : (dy >= 0 ? 'S' : 'N');
+        e._moveCdMult = A.SPEED; e._meleeDmg = A.MELEE;
+        const k = LevelManager.bodyKey(this, 'armored');   // steel
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        e._baseScale = this.SLIME_SCALE * A.SCALE; e.sprite.setScale(e._baseScale); LevelManager.seat(e, A.SCALE);   // a big one: it's a tank
+        e._armorGfx = this.add.graphics().setDepth((e.sprite.depth ?? 1) + 0.05);
+        return e;
+    }
+    // Its shields, drawn round its body at (0, 0) in graphics g: a curved steel plate hugging each of three sides (a dark
+    // edge, a lit rim, gold rivets), and on the side it left open a gap where its body glows, gold when you're on that side.
+    static drawArmorShields(g, weak, open, time) {
+        const RX = 11.5, RY = 7, TH = 4, ARC = { E: 0, S: 90, W: 180, N: 270 }, rad = d => d * Math.PI / 180;
+        const pt = (deg, r) => ({ x: Math.cos(rad(deg)) * (RX + r), y: Math.sin(rad(deg)) * (RY + r * 0.7) });
+        for (const side of ['N', 'E', 'W', 'S']) {   // the back first, the front last
+            const c = ARC[side], a0 = c - 46, a1 = c + 46, band = (r0, r1, d0 = a0, d1 = a1) => {
+                const p = []; for (let d = d0; d <= d1; d += 6) p.push(pt(d, r1)); for (let d = d1; d >= d0; d -= 6) p.push(pt(d, r0)); return p;
+            };
+            if (side === weak) {   // the open side: a split in the steel, the slime glowing through
+                const pulse = 0.55 + 0.45 * Math.sin(time / 140), col = open ? 0xffd84a : 0xff6a3a, a = open ? 1 : 0.5 + 0.35 * pulse;
+                g.fillStyle(col, 0.22 * a).fillPoints(band(-2, TH + 2, c - 30, c + 30), true);
+                g.lineStyle(2, col, a).strokePoints(Array.from({ length: 11 }, (_, k) => pt(c - 25 + k * 5, 1)), false);
+                continue;
+            }
+            g.fillStyle(0x14161c, 1).fillPoints(band(-1, TH + 1), true);
+            g.fillStyle(0x7a8498, 1).fillPoints(band(0, TH), true);
+            g.lineStyle(1.5, 0xd6dee8, 1).strokePoints(Array.from({ length: 16 }, (_, k) => pt(a0 + 3 + k * 5.6, TH - 0.5)), false);   // its lit rim
+            g.lineStyle(1, 0x3a4250, 1).strokePoints(Array.from({ length: 16 }, (_, k) => pt(a0 + 3 + k * 5.6, 0.8)), false);
+            for (const d of [c - 28, c, c + 28]) { const p = pt(d, TH / 2); g.fillStyle(0x2a1e06, 1).fillCircle(p.x, p.y, 1.6); g.fillStyle(0xffd84a, 1).fillCircle(p.x - 0.3, p.y - 0.3, 0.9); }   // rivets
+        }
+    }
+    // The side of it you're on: your tile against its, the longer axis deciding (a dead diagonal counts as plated)
+    _armorSide(e) {
+        const dx = this.playerX - e.x, dy = this.playerY - e.y;
+        if (Math.abs(dx) === Math.abs(dy)) return null;
+        return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'E' : 'W') : (dy > 0 ? 'S' : 'N');
+    }
+    _armorMult(e) {
+        const A = this._armorCfg();
+        if (this._armorSide(e) === e._armorWeak) return A.WEAK;
+        if (this.time.now - (e._armorPingAt || 0) > 700 && e.sprite?.active) {   // say so, now and then
+            e._armorPingAt = this.time.now;
+            this.showStatusText(e.sprite.x, e.sprite.y - 26, 'ARMORED', '#b8c4d4');
+            Sfx.play(this, 'clink');
+        }
+        return A.ARMOR;
+    }
+    // Every frame, every level: the plates, and the open side glowing when you're on it
+    _updateArmored(time) {
+        if (!this.enemies?.length) return;
+        for (const e of this.enemies) {
+            if (!e._isArmored) continue;
+            const g = e._armorGfx;
+            if (!e.sprite?.active || e.health <= 0) { g?.destroy(); e._armorGfx = null; continue; }
+            if (!g?.active) continue;
+            const s = e.sprite, base = this.SLIME_SCALE || 1, kx = Math.abs(s.scaleX) / base, ky = s.scaleY / base;   // its size and the hop's squash both carry to the shields
+            g.clear().setPosition(Math.round(s.x), Math.round(s.y + (26.5 - s.originY * 32) * s.scaleY)).setScale(kx, ky).setAlpha(s.alpha);   // round the body, which sits low in its frame
+            const open = this._armorSide(e) === e._armorWeak;
+            LevelManager.drawArmorShields(g, e._armorWeak, open, time);
+        }
+    }
+    // ── CHEVRONS ─────────────────────────────────────────────────────────────
+    // Every frame, every level: chevrons on anything moving faster or slower than its own
+    // usual pace (the pace it was born with; for you, your relics and books included), quicker
+    // the bigger the change. Whatever already runs its own chevrons (chill, the Anchor's pulse)
+    // is left to them.
+    _updateSpeedMarks(time) {
+        const mark = (who, x, y, r, slowType) => {
+            if (Math.abs(r - 1) < 0.12) return;
+            if (time - (who._chevAt || 0) < 460 - 300 * Math.min(1, Math.abs(r - 1))) return;
+            who._chevAt = time;
+            this._spawnSpeedArrow(x, y, r > 1 ? slowType : 'speed_anchor');
+        };
+        for (const e of this.enemies || []) {
+            const s = e.sprite;
+            if (!s?.active || e.health <= 0 || e.isFrozen || e._slowIndTimer || e._speedIndTimer || !s.visible || s.alpha < 0.3) continue;
+            if (e._isRipplerunner || e._frostStage === 'awake') continue;   // their pace is the terrain's, or a new form's: pulses of their own
+            const cd = e._moveCdMult || 1;
+            e._chevBase ??= cd < 50 ? cd : 1;   // its own pace, as born
+            if (cd >= 50) continue;             // planted to cast or encased: not a pace
+            mark(e, s.x, s.y - 10, cd / e._chevBase * (e.isWet ? 2 : 1), e.isWet ? 'slow_ice' : 'slow_goop');
+        }
+        if (this.player?.active && this._stepMul && !this._deathScreenActive) mark(this, this.player.x, this.player.y - 6, this._stepMul, (this._frostHazeMult || 1) > 1 || this._ultMoveMult() > 1 ? 'slow_ice' : 'slow_goop');
+    }
+    // ── HUNTER SLIME ─────────────────────────────────────────────────────────
+    // Starts out crawling (SLOW). Every moment it spends chasing you (within CHASE_R) winds it
+    // up, to FAST after RAMP_MS, its touch hitting harder all the while (a clock, not tiles run:
+    // counting tiles let it wind up faster the faster it got); every time
+    // it attacks, pounce or touch, its rage halves. Within POUNCE_R tiles (more, wound up) it
+    // marks the ground round you, leaps and vanishes into it, then slashes it for FLURRY_MS, more
+    // slashes in that time the angrier it is (SLASHES); the outer tiles cut deepest (RING_MULT). The marked ground grows with it too, from the
+    // 3x3 round you to a 5x5 squircle in a frenzy (AREA_R): out of reach only if you dodge out
+    // during the tell or keep running. Each slash that finds you hurts and makes you BLEED (healing cut by
+    // BLEED_CUT for BLEED_MS). Wound all the way up it FRENZIES: blood-red, red-eyed, leaving
+    // afterimages.
+    _hunterCfg() { return { HP: 140, SLOW: 2.4, FAST: 0.55, RAMP_TILES: 16, RAMP_MS: 12000, MELEE0: 2, MELEE1: 6, CHASE_R: 14,
+        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 7], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], SLASH_DMG: 6, SLASH_RAMP: 0.6,
+        BLEED_MS: 6000, BLEED_CUT: 0.6, BLEED_DMG: 1, BLEED_EVERY: 600, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
+    createHunterSlime(x, y, ri) {
+        const H = this._hunterCfg();
+        const e = this.createEnemy(x, y, H.HP);
+        e.tutorialRoomIndex = ri;
+        e._isHunter = true;
+        e._huntRun = 0;
+        e._huntNext = 0;
+        e._moveCdMult = H.SLOW;
+        e._meleeDmg = H.MELEE0;
+        const k = LevelManager.bodyKey(this, 'hunter');   // charcoal, a red sheen
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        return e;
+    }
+    _hunterReset(e) { e._huntRun *= 0.5; }   // it attacked: its rage halves, wherever it was
+    // Every frame, every level: the chase, the frenzy and the pounce
+    _updateHunters(time, delta) {
+        if (!this.enemies?.length || this._devFreezeEnemies) return;
+        const H = this._hunterCfg();
+        for (const e of this.enemies) {
+            if (!e._isHunter) continue;
+            const s = e.sprite;
+            if (!s?.active || e.health <= 0) { e._huntMark?.destroy(); e._huntMark = null; continue; }
+            if (e._huntPhase === 'tell' || e._huntPhase === 'gone') continue;   // its timers run those
+            const d = Math.hypot(this.playerX - e.x, this.playerY - e.y);
+            const held = e.isFrozen || e.isStunned;
+            if (d <= H.CHASE_R && !held) e._huntRun = Math.min(H.RAMP_TILES, e._huntRun + H.RAMP_TILES * Math.min(100, delta || 16) / H.RAMP_MS);   // (its rage kept in RAMP_TILES units: the cools take fractions of it)
+            const k = e._huntRun / H.RAMP_TILES;
+            e._moveCdMult = H.SLOW + (H.FAST - H.SLOW) * k;
+            e._meleeDmg = H.MELEE0 + (H.MELEE1 - H.MELEE0) * k;
+            this._hunterFrenzy(e, k >= 1, time);
+            const lvl = Math.min(4, Math.floor(k * 4 + 1e-6)), u = s._cfx;   // its ears fill with blood as it winds up
+            if (u && u.set !== 'hunter' + lvl) CreatureFX.dress(u, 'hunter' + lvl);
+            if (d <= H.POUNCE_R + (H.POUNCE_R_MAX - H.POUNCE_R) * k && !held && time >= e._huntNext && !this._deathScreenActive) this._hunterPounce(e, k);
+        }
+    }
+    // Wound all the way up: the blood-red body and red eyes on (or off), afterimages and blood leaking off it
+    _hunterFrenzy(e, on, time) {
+        const H = this._hunterCfg(), s = e.sprite;
+        if (on !== !!e._huntFrenzy) {
+            e._huntFrenzy = on;
+            const k = on ? LevelManager.bodyKey(this, 'hunter_frenzy')
+                         : LevelManager.bodyKey(this, 'hunter');
+            if (k) { s.setTexture(k, s.frame?.name ?? 0); s.play(k + '_idle'); }
+            if (s._cfx) CreatureFX.dress(s._cfx, undefined, on ? H.FRENZY_EYE : H.EYE);
+            if (on) { this.showStatusText(s.x, s.y - 30, 'FRENZY', '#ff2a2a'); Sfx.play(this, 'roar'); }
+        }
+        if (!on) return;
+        if (time - (e._huntGhostAt || 0) > 70) {   // afterimages: the body (and its ears) left behind, fading
+            e._huntGhostAt = time;
+            const parts = [s, s._cfx?.hat].filter(p => p?.active && p.visible);
+            for (const p of parts) {
+                const g = this.add.image(p.x, p.y, p.texture.key, p.frame.name).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX)
+                    .setTint(0xff2a2a).setAlpha(0.42).setDepth((s.depth ?? 1) - 0.06);
+                this.tweens.add({ targets: g, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
+            }
+        }
+        if (Math.random() < 0.5) {   // bloodthirst: red drops seeping off it, rising like steam
+            const m = this.add.image(s.x + (Math.random() - 0.5) * 18, s.y + 2 + Math.random() * 6, 'vfx_dot').setTint(Math.random() < 0.6 ? 0xc0101e : 0xff4a4a).setAlpha(0.85).setScale(0.6 + Math.random() * 0.5).setDepth((s.depth ?? 1) + 0.05);
+            this.tweens.add({ targets: m, y: m.y - 14 - Math.random() * 10, x: m.x + (Math.random() - 0.5) * 8, alpha: 0, scale: 0.2, duration: 500 + Math.random() * 300, onComplete: () => m.destroy() });
+        }
+    }
+    _hunterPounce(e, k) {
+        const H = this._hunterCfg(), T = this.TILE_SIZE, tx = this.playerX, ty = this.playerY;
+        e._huntPhase = 'tell'; e._moveCdMult = 999;
+        // the ground it will strike: tiles inside a squircle growing with its rage (3x3 at a crawl, 5x5 less its corners in a frenzy)
+        const R = H.AREA_R[0] + (H.AREA_R[1] - H.AREA_R[0]) * k, area = [];
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if ((dx ** 4 + dy ** 4) ** 0.25 <= R) area.push([dx, dy]);
+        const inArea = (x, y) => area.some(([dx, dy]) => dx === x && dy === y), Rn = Math.max(...area.map(([dx]) => Math.abs(dx)));
+        const mark = e._huntMark = this.add.graphics().setDepth(0.95).setPosition(tx * T + T / 2, ty * T + T / 2);
+        const ring = (dx, dy) => Math.max(Math.abs(dx), Math.abs(dy));   // 0 the middle, 1, 2 the edge: the edge cuts deepest (RING_MULT)
+        const draw = (a, flash) => {   // a square per tile, apart from its neighbours, redder and brighter toward the edge
+            mark.clear();
+            const pad = 3, sz = T - pad * 2;
+            for (const [dx, dy] of area) {
+                const r = ring(dx, dy), x0 = (dx - 0.5) * T + pad, y0 = (dy - 0.5) * T + pad;
+                const col = r === 2 ? 0xff1a1a : r === 1 ? 0xff5a3a : 0xff9a7a, fa = (r === 2 ? 0.28 : r === 1 ? 0.18 : 0.1) + 0.2 * a;
+                mark.fillStyle(col, fa).fillRect(x0, y0, sz, sz);
+                mark.lineStyle(r === 2 ? 2 : 1, flash ? 0xffffff : col, r === 2 ? 0.95 : 0.7).strokeRect(x0, y0, sz, sz);
+                const s2 = sz * (1 - a) * 0.5;   // each square closing in on its middle as the leap comes
+                if (s2 > 1) mark.lineStyle(1, col, 0.5).strokeRect(x0 + sz / 2 - s2, y0 + sz / 2 - s2, s2 * 2, s2 * 2);
+            }
+        };
+        draw(0, false);
+        this.tweens.addCounter({ from: 0, to: 1, duration: H.TELL, onUpdate: tw => { if (mark.active) draw(tw.getValue(), (this.time.now / 80 | 0) % 2 && tw.getValue() > 0.6); } });
+        this.showStatusText(e.sprite.x, e.sprite.y - 28, '!', '#ff3a3a');
+        Sfx.play(this, 'whoosh');
+        this.time.delayedCall(H.TELL, () => {
+            if (!e.sprite?.active || e.health <= 0) { mark.destroy(); return; }
+            if (e.isFrozen || e.isStunned) { mark.destroy(); e._huntPhase = null; e._huntNext = this.time.now + 1500; return; }   // caught mid-tell: called off
+            e._huntPhase = 'gone';
+            this.tweens.killTweensOf(e.sprite);
+            this.tweens.add({ targets: e.sprite, alpha: 0, y: e.sprite.y - 18, duration: 120 });
+            e.healthBarBg?.setVisible(false); e.healthBarFill?.setVisible(false);
+            const cx = tx * T + T / 2, cy = ty * T + T / 2;
+            const n = Math.round(H.SLASHES[0] + (H.SLASHES[1] - H.SLASHES[0]) * k), every = H.FLURRY_MS / n;   // the flurry always lasts FLURRY_MS; the angrier, the more slashes in it
+            for (let i = 0; i < n; i++) this.time.delayedCall(140 + i * every, () => {
+                if (!e.sprite?.active) return;
+                this._hunterSlash(cx, cy, i, Rn, area);
+                const dx = this.playerX - tx, dy = this.playerY - ty;
+                if (inArea(dx, dy)) {
+                    const before = this.health;
+                    this._hitBy = e; this.takeDamage(H.SLASH_DMG * H.RING_MULT[ring(dx, dy)] * (1 + H.SLASH_RAMP * k) * (this.enemyDamageScale || 1)); this._hitBy = null;
+                    if (this.health < before) this._bleedStart(H.BLEED_MS);
+                }
+            });
+            this.time.delayedCall(140 + H.FLURRY_MS, () => {
+                mark.destroy(); e._huntMark = null;
+                if (!e.sprite?.active) return;
+                // out of the flurry on the free tile in the square nearest its middle
+                const spots = [...area].sort((a, b) => (a[0] ** 2 + a[1] ** 2) - (b[0] ** 2 + b[1] ** 2)).map(([dx, dy]) => [tx + dx, ty + dy])
+                    .filter(([x, y]) => this.world[x]?.[y] === this.FLOOR && !(x === this.playerX && y === this.playerY) && !this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y));
+                if (spots.length) { [e.x, e.y] = spots[0]; }
+                e.sprite.setPosition(e.x * T + T / 2, e.y * T + T / 2 + this.SLIME_Y_OFFSET).setAlpha(1);
+                e.healthBarBg?.setVisible(true); e.healthBarFill?.setVisible(true);
+                e._committedPath = null; e.lastMoveTime = this.time.now;
+                e._huntPhase = null; this._hunterReset(e);   // (its pace and bite follow its rage next frame)
+                e._huntNext = this.time.now + H.POUNCE_CD;
+                this.updateEnemyHealthBar?.(e);
+            });
+        });
+    }
+    // One pass of the flurry: three blade streaks across the square, a different angle each time
+    _hunterSlash(cx, cy, i, n = 1, area = []) {
+        // a rake of claws across the ground: three curved gashes side by side at a fresh angle each pass, red with a white
+        // edge, the tiles they cross flaring and spitting blood
+        const T = this.TILE_SIZE, g = this.add.graphics().setDepth(4.6).setPosition(cx, cy).setBlendMode(Phaser.BlendModes.ADD);
+        const a = [-0.6, 0.9, 0.15, -1.25, 0.5, -0.2, 1.3][i % 7] + (Math.random() - 0.5) * 0.3, R = T * (0.8 + n), bend = (i % 2 ? 1 : -1) * T * 0.35;
+        for (let j = -1; j <= 1; j++) {
+            const off = j * T * 0.45, pts = [];
+            for (let q = 0; q <= 10; q++) {
+                const t = q / 10 * 2 - 1, along = t * R, sweep = bend * (1 - t * t);
+                pts.push({ x: Math.cos(a) * along - Math.sin(a) * (off + sweep), y: Math.sin(a) * along + Math.cos(a) * (off + sweep) });
+            }
+            g.lineStyle(8, 0xc0101e, 0.55).strokePoints(pts, false);
+            g.lineStyle(3, 0xff4a4a, 0.95).strokePoints(pts, false);
+            g.lineStyle(1, 0xffffff, 1).strokePoints(pts.slice(2, 9), false);
+        }
+        for (const [dx, dy] of area) if (Math.random() < 0.35) {   // tiles flaring under it
+            const f = this.add.rectangle(cx + dx * T, cy + dy * T, T - 6, T - 6, 0xff3a3a, 0.45).setDepth(0.96).setBlendMode(Phaser.BlendModes.ADD);
+            this.tweens.add({ targets: f, alpha: 0, duration: 180, onComplete: () => f.destroy() });
+        }
+        for (let q = 0; q < 6; q++) {   // blood flying off
+            const m = this.add.image(cx + (Math.random() - 0.5) * R, cy + (Math.random() - 0.5) * R * 0.6, 'vfx_dot').setTint(0xc0101e).setDepth(4.55).setScale(0.6);
+            this.tweens.add({ targets: m, x: m.x + (Math.random() - 0.5) * 30, y: m.y - 10 - Math.random() * 16, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => m.destroy() });
+        }
+        g.setScale(0.6);
+        this.tweens.add({ targets: g, scale: 1.05, alpha: 0, duration: 220, ease: 'Cubic.easeOut', onComplete: () => g.destroy() });
+        this.cameras.main.shake(40, 0.002);
+        Sfx.play(this, 'clink');
+    }
+    // What's on you, as a row of small pixel icons over your head, each with its time running down beneath:
+    // dripping, bleeding, poisoned, rooted (one graphics, redrawn each frame)
+    _playerStatusRow(time) {
+        const p = this.player;
+        const on = [];
+        if ((this._drippingUntil || 0) > time) on.push(['drip', (this._drippingUntil - time) / (this._dripMs || 8000)]);
+        if ((this._bleedUntil || 0) > time) on.push(['bleed', (this._bleedUntil - time) / this._hunterCfg().BLEED_MS]);
+        if ((this._poisonUntil || 0) > time) on.push(['poison', Math.min(1, (this._poisonUntil - time) / 4000)]);
+        if (this._playerRooted && (this._playerRootUntil || 0) > time) on.push(['root', Math.min(1, (this._playerRootUntil - time) / 1500)]);
+        const g = this._statusRowG;
+        if (!on.length || !p?.active || this._deathScreenActive) { if (g?.active) g.clear(); return; }
+        const G = g?.active ? g : (this._statusRowG = this.add.graphics().setDepth(5.5));
+        G.clear().setPosition(Math.round(p.x), Math.round(p.y - 30));
+        const ART = {   // 7 x 8, 'k' outline
+            drip:   { rows: ['...k...', '..kbk..', '.kbbbk.', 'kbbwbbk', 'kbbbbbk', 'kbbbbbk', '.kbbbk.', '..kkk..'], b: 0x6fd0ee, w: 0xdff6ff },
+            bleed:  { rows: ['...k...', '..krk..', '.krrrk.', 'krrwrrk', 'krrrrrk', 'krrrrrk', '.krrrk.', '..kkk..'], r: 0xd8202e, w: 0xffb0b0 },
+            poison: { rows: ['.k...k.', 'kgk.kwk', '.k.kgk.', '..kgggk', '.kggwgk', 'kggggk.', 'kgggk..', '.kkk...'], g: 0x8ae04a, w: 0xe8ffd0 },
+            root:   { rows: ['..k.k..', '.kvkvk.', '.kvkvk.', '..kvk..', 'k.kvk.k', 'vkkvkkv', '.vvvvv.', '..kkk..'], v: 0x6a4a26 },
+        };
+        const S = 1.5, W = 7 * S, GAP = 4, x0 = -(on.length * (W + GAP) - GAP) / 2;
+        on.forEach(([kind, left], i) => {
+            const A = ART[kind], ox = x0 + i * (W + GAP), bob = Math.sin(time / 260 + i) * 1;
+            A.rows.forEach((row, y) => [...row].forEach((c, x) => {
+                if (c === '.') return;
+                G.fillStyle(c === 'k' ? 0x14090a : A[c], 1).fillRect(ox + x * S, y * S - 12 + bob, S, S);
+            }));
+            G.fillStyle(0x14090a, 0.9).fillRect(ox, 1, W, 2.5);   // its time, running down
+            G.fillStyle(A.b ?? A.r ?? A.g ?? A.v, 1).fillRect(ox + 0.5, 1.5, Math.max(0, (W - 1) * Math.min(1, left)), 1.5);
+        });
+    }
+    // BLEED: healing cut while it lasts. Rather than touch every heal, each frame claws back
+    // that share of whatever health came back since the last.
+    _bleedStart(ms) {
+        if (!(this._bleedUntil > this.time.now)) { this._bleedHp = this.health; this._bleedTickAt = this.time.now; }
+        this._bleedUntil = this.time.now + ms;
+        this.showStatusText(this.player.x, this.player.y - 34, 'BLEEDING', '#ff4a4a');
+    }
+    _updateBleed(time) {
+        if (!this._bleedUntil) return;
+        const p = this.player;
+        if (time >= this._bleedUntil || !p?.active) { this._bleedUntil = 0; return; }
+        const H = this._hunterCfg();
+        if (this.health > this._bleedHp) this.health = this._bleedHp + (this.health - this._bleedHp) * (1 - H.BLEED_CUT);
+        if (time - (this._bleedTickAt || 0) >= H.BLEED_EVERY) {   // and a small trickle of damage while it lasts
+            this._bleedTickAt = time;
+            this.takeDamage(H.BLEED_DMG * (this.enemyDamageScale || 1));
+        }
+        this._bleedHp = this.health;
+        if (time - (this._bleedDripAt || 0) > 150) {   // drips
+            this._bleedDripAt = time;
+            const m = this.add.image(p.x + (Math.random() - 0.5) * 18, p.y + 2, 'vfx_dot').setTint(0xc81e2a).setDepth((p.depth ?? 2) + 0.1).setScale(0.8);
+            this.tweens.add({ targets: m, y: m.y + 14, alpha: 0, duration: 450, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+        }
+    }
+    // The frost grid: aimed when you're in reach and it's ready; it fires itself once the telegraph runs out
+    _frostGridTick(e, time) {
+        const F = this._frostCfg(), born = e._frostStage === 'awake';
+        if (e._fgAim || e.isStunned || e.isFrozen || e._iceCube) return;
+        if (e._fgLast == null) e._fgLast = time - Math.random() * F.GRID_CD;   // a room of them rolls rather than volleys
+        if (time - e._fgLast < F.GRID_CD * (born ? F.GRID_BORN_CD : 1)) return;
+        const R = F.GRID_R; if (Math.max(Math.abs(this.playerX - e.x), Math.abs(this.playerY - e.y)) > R) return;
+        const rr = (this.rooms || []).find(r => e.x >= r.x && e.x < r.x + r.w && e.y >= r.y && e.y < r.y + r.h);
+        const area = [];
+        for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {
+            if (!dx && !dy) continue;
+            const x = e.x + dx, y = e.y + dy;
+            if (this.world?.[x]?.[y] !== this.FLOOR || this.isInLockedRoom(x, y)) continue;
+            if (rr && (x < rr.x || x >= rr.x + rr.w || y < rr.y || y >= rr.y + rr.h)) continue;
+            area.push({ x, y });
+        }
+        // safe tiles at random, none closer than GAP to another, as many as fit (so a gap is always near)
+        const GAP = born ? F.GRID_GAP_BORN : F.GRID_GAP, safe = [];
+        for (let i = area.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [area[i], area[j]] = [area[j], area[i]]; }
+        for (const t of area) if (safe.every(q => Math.max(Math.abs(q.x - t.x), Math.abs(q.y - t.y)) >= GAP)) safe.push(t);
+        const tiles = area.filter(t => !safe.includes(t));
+        const aim = born ? F.GRID_AIM_BORN : F.GRID_AIM, TS = this.TILE_SIZE;
+        e._fgAim = tiles; e._fgHold = e._moveCdMult; e._moveCdMult = 999;   // it stands to cast
+        const g = this.add.graphics().setDepth(0.9);
+        for (const t of tiles) {
+            g.fillStyle(born ? 0x4a9fff : 0x9fe8ff, 0.24); g.fillRect(t.x * TS + 1, t.y * TS + 1, TS - 2, TS - 2);
+            g.lineStyle(1.2, 0xdff8ff, 0.6); g.strokeRect(t.x * TS + 1.5, t.y * TS + 1.5, TS - 3, TS - 3);
+        }
+        this.tweens.add({ targets: g, alpha: 0.45, duration: 160, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        Sfx.play(this, 'freeze');
+        this.time.delayedCall(aim, () => {   // (on its own clock, so a death mid-cast still clears the telegraph)
+            this.tweens.killTweensOf(g); g.destroy();
+            e._fgAim = null; e._fgLast = this.time.now;
+            if (!e.sprite?.active || e._frostStage === 'statue') return;
+            e._moveCdMult = e._fgHold;
+            if (tiles.some(t => t.x === this.playerX && t.y === this.playerY)) {
+                this.takeDamage((born ? F.GRID_DMG_BORN : F.GRID_DMG) * (this.enemyDamageScale || 1));
+                this.showStatusText?.(this.player.x, this.player.y - 30, 'FROSTBITTEN', '#bff4ff');
+            }
+            const f = this.add.graphics().setDepth(2.6);
+            for (const t of tiles) { f.fillStyle(0xffffff, 0.8); f.fillRect(t.x * TS + 3, t.y * TS + 3, TS - 6, TS - 6); f.fillStyle(0x9fe8ff, 0.5); f.fillRect(t.x * TS, t.y * TS, TS, TS); }
+            this.tweens.add({ targets: f, alpha: 0, duration: 280, ease: 'Quad.easeOut', onComplete: () => f.destroy() });
+            this._vfxBursts?.ice?.explode(14, e.sprite.x, e.sprite.y); this.cameras.main.shake(90, 0.004); Sfx.play(this, 'shatter');
+        });
+    }
+    // A rebirth, up close: the fight holds still (GameScene._frame skips play while _cinemaUntil runs), bars slide in, the
+    // camera swoops onto (x, y) as the shell shudders, `hatch` breaks it, the new body lands, and it all swings back.
+    _rebirthCinematic(x, y, hatch) {
+        const cam = this.cameras.main, now = this.time.now, IN = 260, HOLD = 420, AFTER = 650, OUT = 300;
+        if (this._cinemaUntil > now || !cam) { hatch(); return; }   // one at a time: a second goes off as it would
+        this._cinemaUntil = now + IN + HOLD + AFTER + OUT;
+        const z0 = cam.zoom, W = this.scale.width, H = this.scale.height, bh = Math.round(H * 0.09);
+        const bars = [0, 1].map(k => { const b = this.add.rectangle(W / 2, k ? H + bh / 2 : -bh / 2, W, bh, 0x000000, 1).setScrollFactor(0).setDepth(4900); this._vfxSort?.(b); return b; });
+        bars.forEach((b, k) => this.tweens.add({ targets: b, y: k ? H - bh / 2 : bh / 2, duration: IN, ease: 'Cubic.easeOut' }));
+        cam.stopFollow(); cam.pan(x, y, IN, 'Cubic.easeOut'); cam.zoomTo(z0 * 1.9, IN, 'Cubic.easeOut');
+        this.time.delayedCall(IN, () => cam.shake(HOLD, 0.004));   // the shell shudders
+        this.time.delayedCall(IN + HOLD, () => { hatch(); cam.flash(120, 255, 255, 255); });
+        this.time.delayedCall(IN + HOLD + AFTER, () => {
+            cam.zoomTo(z0, OUT, 'Cubic.easeInOut');
+            if (this.player) cam.pan(this.player.x, this.player.y, OUT, 'Cubic.easeInOut');
+            bars.forEach((b, k) => this.tweens.add({ targets: b, y: k ? H + bh / 2 : -bh / 2, duration: OUT, onComplete: () => b.destroy() }));
+            this.time.delayedCall(OUT, () => { if (this.player) cam.startFollow(this.player, true, 0.1, 0.1); this._cinemaUntil = 0; });
+        });
     }
     _frostHatch(e) {
         const F = this._frostCfg(), s = e.sprite;
@@ -3248,13 +4584,200 @@ class LevelManager {
         this.updateEnemyHealthBar?.(e);
         e._frostRing?.destroy(); e._frostRing = null;
         if (e._frostGfx) { const b = e._frostGfx; this.tweens.add({ targets: b, alpha: 0, scale: 2.6, duration: 260, onComplete: () => b.destroy() }); e._frostGfx = null; }
-        if (s?.setTint) s.setTint(0x4a9fff);
+        const bk = LevelManager.frostSlimeKey(this, true);   // the Frostborn's body: deep ice, spikes along its back
+        if (bk && s) { s.setTexture(bk, 0); s.play(bk + '_idle'); }
+        if (s?._cfx) CreatureFX.dress(s._cfx, null);   // the spikes are its crown now
         if (s) { const sc = s.scaleX; this.tweens.add({ targets: s, scaleX: sc * 1.25, scaleY: s.scaleY * 1.25, duration: 200, ease: 'Back.easeOut' }); }
         e._frostHaze = VisualFX.aura(this, s.x, s.y + 8, F.HAZE_R * this.TILE_SIZE, 0x9fe8ff, { alpha: 1 });
         this._vfxBursts?.ice?.explode(30, s.x, s.y);
         Sfx.play(this, 'shatter'); Sfx.play(this, 'roar');
         this.cameras.main.shake(160, 0.006);
         this.showStatusText(s.x, s.y - 30, 'FROSTBORN!', '#4a9fff');
+    }
+    // The Frost Slime's own body (and its Frostborn's, `born`): the slime sheet recoloured pixel by pixel into ice by how light
+    // each pixel is, a frost glint across it, a few sparkles. Made once, with the red slime's frames and an idle anim of its own.
+    // ── LOOKS ───────────────────────────────────────────────────────────────
+    // How each enemy is drawn: a body of its own (the red slime redrawn in PAL, with GLINT speckles), or the red or purple
+    // slime tinted; its hat and eyes are Creatures.js's TYPES. One table, for the game, the new-enemy card and the index.
+    static LOOKS = {
+        bud:           { pal: [[20, 48, 18], [52, 120, 40], [98, 180, 66], [168, 228, 110], [236, 255, 200]], glint: [255, 176, 220] },
+        hunter:        { pal: [[14, 10, 14], [44, 30, 40], [78, 52, 64], [140, 60, 70], [230, 90, 90]] },
+        hunter_frenzy: { pal: [[20, 4, 8], [66, 8, 16], [110, 14, 24], [160, 26, 34], [230, 66, 66]] },
+        armored:       { pal: [[40, 44, 54], [92, 100, 116], [140, 150, 166], [190, 200, 214], [240, 246, 252]] },
+        wraith:        { pal: [[26, 18, 40], [78, 66, 104], [150, 140, 184], [214, 208, 234], [250, 248, 255]] },   // pale ghost-lavender (the Frost Slime is the icy blue)
+        diver:         { pal: [[8, 22, 40], [16, 60, 100], [30, 110, 170], [80, 180, 230], [200, 240, 255]] },
+        ceo:           { pal: [[20, 14, 30], [52, 36, 80], [96, 70, 140], [160, 130, 200], [255, 222, 120]] },
+        anchor:        { pal: [[16, 22, 34], [44, 58, 80], [84, 104, 134], [130, 156, 190], [200, 220, 240]] },
+        healer:        { pal: [[14, 40, 26], [40, 110, 70], [80, 180, 120], [150, 230, 180], [236, 255, 244]] },
+    };
+    static TINTS = { berserker: 0xff4444, ranged: 0xffee88, rooter: 0x226633, splitter: 0xff6600, mortar: 0x445566, voidsniper: 0x6a3aa8, lightningelem: 0xe8ff3a,
+                     singularity: 0x440088, drowner: 0x5a2d6b, ripplerunner: 0x66f0ff, tidecaller: 0x2a5cc8, waverider: 0xdff3ff, tidalguard: 0xb8912f,
+                     wishingwell: 0x6b8f7a, conduit: 0xe8ff3a, encased: 0x9a8a7a, sniper: 0xffee88 };
+    // What kind of trouble each enemy is (the enemy index sorts by these; one can be several)
+    static ENEMY_TAGS = {
+        DEFS: {
+            aggressor:  { name: 'AGGRESSORS',  col: 0xff5a4a, what: 'come at you: contact, charges, lunges' },
+            controller: { name: 'CONTROLLERS', col: 0xffc84a, what: 'own space from range: shots, lanes, lit tiles' },
+            buffer:     { name: 'BUFFERS',     col: 0x7ae07a, what: 'make the ones round them stronger' },
+            water:      { name: 'WATER',       col: 0x5ab8ff, what: 'make water, live in it, or use it' },
+            multiplier: { name: 'MULTIPLIERS', col: 0xb8f06a, what: 'turn one into many' },
+            tough:      { name: 'TOUGH',       col: 0xb8c4d4, what: 'take a lot, or come back' },
+            trickster:  { name: 'TRICKSTERS',  col: 0xc08aff, what: 'hide, steal or ambush' },
+        },
+        slime: ['aggressor'], berserker: ['aggressor'], ranged: ['controller'], encased: ['controller', 'tough'], rooter: ['controller'],
+        anchor: ['buffer', 'tough'], healer: ['buffer', 'tough'], splitter: ['aggressor', 'multiplier'], mortar: ['controller'],
+        voidsniper: ['aggressor', 'trickster'], lightningelem: ['controller'], singularity: ['aggressor', 'controller'],
+        drowner: ['aggressor', 'water', 'trickster'], ripplerunner: ['controller', 'water'], tidecaller: ['buffer', 'water'],
+        waverider: ['aggressor', 'water'], bud: ['aggressor', 'multiplier'], shade: ['buffer', 'tough'], wraith: ['buffer', 'trickster'],
+        diver: ['aggressor', 'controller', 'water'], leech: ['trickster'], gem: ['controller', 'tough'], ceo: ['buffer', 'controller', 'tough'],
+        armored: ['aggressor', 'tough'], hunter: ['aggressor', 'trickster'], frost: ['controller', 'water', 'tough'], tidalguard: ['controller', 'water'],
+        wishingwell: ['buffer', 'water'], conduit: ['controller', 'water'],
+    };
+    static bodyKey(scene, kind) { const L = LevelManager.LOOKS[kind]; return L ? LevelManager.slimeRecolor(scene, 'slime_' + kind, L.pal, L.glint) : null; }
+    // { tex, anim, tint } for a codex key, in any scene
+    static look(scene, key) {
+        let tex = (typeof SlimeModels !== 'undefined' && SlimeModels.key(scene, key)) || (key === 'wraith' ? LevelManager.wraithBodyKey(scene) : LevelManager.bodyKey(scene, key));
+        if (!tex && key === 'frost') tex = LevelManager.frostSlimeKey(scene, false);
+        if (!tex && key.startsWith('shade')) { const F = LevelManager.prototype._shadeCfg().FORMS[key.split('_')[1] || 'void']; tex = LevelManager.slimeRecolor(scene, 'slime_shade_' + (key.split('_')[1] || 'void'), F.pal, F.glint); }
+        if (!tex && key === 'leech') tex = LevelManager.slimeRecolor(scene, 'slime_leech_cosmic', LevelManager.prototype._leechCfg().PALS.cosmic);
+        if (!tex && key === 'encased') tex = LevelManager.encBodyKey(scene);
+        if (tex) return { tex, anim: tex + '_idle', tint: null };
+        const purple = key === 'voidsniper' || key === 'singularity';
+        return { tex: purple ? 'slime_purple' : 'slime_red', anim: purple ? 'purple_idle' : 'red_idle', tint: LevelManager.TINTS[key] ?? null };
+    }
+
+    // A slime drawn K times its usual size, standing on its tile: the body runs to the bottom of its frame, so
+    // the origin goes to 1 - 0.5/K and the feet stay where an ordinary slime's are (the old 0.5 + 0.12 per extra
+    // scale fell short, and big slimes sank into the tile below). Its health bar lifts over the taller body.
+    static seat(e, k) {
+        e.sprite.setOrigin(0.5, Math.max(0, 1 - 0.5 / k));
+        e._hpBarYOff = Math.min(e._hpBarYOff || 0, -Math.round(Math.max(0, k - 1) * 12));
+    }
+    static frostSlimeKey(scene, born) {
+        if (born && typeof SlimeModels !== 'undefined') { const k = SlimeModels.key(scene, 'frostborn'); if (k) return k; }   // its second life: spiked, not just recoloured
+        return LevelManager.slimeRecolor(scene, born ? 'slime_frostborn' : 'slime_frost',
+            born ? [[8, 26, 56], [20, 70, 150], [50, 120, 220], [110, 180, 255], [210, 240, 255]] : [[18, 50, 78], [47, 120, 176], [95, 184, 224], [159, 232, 255], [232, 251, 255]],
+            [255, 255, 255]);   // frost glints
+    }
+    // The red slime redrawn in five shades of PAL by brightness, GLINT dotted over its lit side
+    static slimeRecolor(scene, key, PAL, glint) {
+        const TX = scene.textures;
+        if (!TX.exists(key)) {
+            const src = TX.exists('slime_red') ? TX.get('slime_red') : null, img = src?.getSourceImage();
+            if (!img) return null;
+            // the pixel work on a canvas of its own marked willReadFrequently (kept on the CPU): reading back a GPU canvas
+            // waited on the graphics card, and with the Cistern's water textures uploading that stalled the first one for seconds
+            const work = document.createElement('canvas'); work.width = img.width; work.height = img.height;
+            const wctx = work.getContext('2d', { willReadFrequently: true });
+            wctx.drawImage(img, 0, 0);
+            const d = wctx.getImageData(0, 0, img.width, img.height), px = d.data;
+            for (let i = 0; i < px.length; i += 4) {
+                if (!px[i + 3]) continue;
+                const L = (0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2]) / 255, x = (i / 4) % img.width, y = Math.floor(i / 4 / img.width);
+                let c = PAL[L < 0.15 ? 0 : L < 0.33 ? 1 : L < 0.5 ? 2 : L < 0.7 ? 3 : 4];
+                if (glint && L > 0.33 && (x + y) % 9 === 0) c = glint;
+                px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2];
+            }
+            wctx.putImageData(d, 0, 0);
+            const t = TX.createCanvas(key, img.width, img.height);
+            t.getContext().drawImage(work, 0, 0);
+            for (const name of src.getFrameNames()) { const f = src.get(name); t.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight); }
+            t.refresh();
+        }
+        if (!scene.anims.exists(key + '_idle')) scene.anims.create({ key: key + '_idle', frames: [{ key, frame: 0 }, { key, frame: 18 }], frameRate: 2, repeat: -1 });
+        return key;
+    }
+    // The Wraith's body: its pale slime with a ghost's ragged hem (the bottom scalloped away) and the lower half fading
+    // to see-through, so it reads as a ghost rather than a slime of ice
+    static wraithBodyKey(scene) {
+        const base = LevelManager.bodyKey(scene, 'wraith'), key = 'slime_wraith_ghost', TX = scene.textures;
+        if (!base) return null;
+        if (!TX.exists(key)) {
+            const src = TX.get(base), img = src.getSourceImage();
+            const work = document.createElement('canvas'); work.width = img.width; work.height = img.height;
+            const wctx = work.getContext('2d', { willReadFrequently: true });
+            wctx.drawImage(img, 0, 0);
+            const d = wctx.getImageData(0, 0, img.width, img.height), px = d.data, W = img.width, at = (x, y) => (y * W + x) * 4;
+            for (const name of src.getFrameNames()) {
+                const f = src.get(name), x0 = f.cutX, y0 = f.cutY, fw = f.cutWidth, fh = f.cutHeight;
+                let top = Infinity, bot = -1;
+                for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) if (px[at(x0 + x, y0 + y) + 3]) { top = Math.min(top, y); bot = Math.max(bot, y); }
+                if (bot < 0) continue;
+                const h = Math.max(1, bot - top);
+                for (let y = top; y <= bot; y++) for (let x = 0; x < fw; x++) {
+                    const i = at(x0 + x, y0 + y);
+                    if (!px[i + 3]) continue;
+                    const fromBot = bot - y, w = x % 5;
+                    if (fromBot === 0 && w !== 2) { px[i + 3] = 0; continue; }          // the hem: scallops, a point every few pixels
+                    if (fromBot === 1 && (w === 0 || w === 4)) { px[i + 3] = 0; continue; }
+                    const k = (y - top) / h;
+                    if (k > 0.45) px[i + 3] = Math.round(px[i + 3] * (1 - 0.6 * (k - 0.45) / 0.55));   // fading out toward the hem
+                }
+            }
+            wctx.putImageData(d, 0, 0);
+            const t = TX.createCanvas(key, img.width, img.height);
+            t.getContext().drawImage(work, 0, 0);
+            for (const name of src.getFrameNames()) { const f = src.get(name); t.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight); }
+            t.refresh();
+        }
+        if (!scene.anims.exists(key + '_idle')) scene.anims.create({ key: key + '_idle', frames: [{ key, frame: 0 }, { key, frame: 18 }], frameRate: 2, repeat: -1 });
+        return key;
+    }
+    // The Encased Slime's body: the red slime with a broken shell of stone plates over its top half, painted into every
+    // frame so the armour squashes, breathes and hops with the body (plates laid over it as a separate drawing floated
+    // off it mid-hop). Chipped away in places to show the slime underneath, a dark rim where the shell ends, light on
+    // the plates' top edges, a few cracks glowing.
+    static encBodyKey(scene) {
+        const key = 'slime_encased_armor', TX = scene.textures;
+        if (!TX.exists(key)) {
+            const src = TX.exists('slime_red') ? TX.get('slime_red') : null, img = src?.getSourceImage();
+            if (!img) return null;
+            const work = document.createElement('canvas'); work.width = img.width; work.height = img.height;
+            const wctx = work.getContext('2d', { willReadFrequently: true });
+            wctx.drawImage(img, 0, 0);
+            const d = wctx.getImageData(0, 0, img.width, img.height), px = d.data, W = img.width;
+            const at = (x, y) => (y * W + x) * 4, solid = (x, y) => px[at(x, y) + 3] > 0;
+            const hash = (a, b) => (((a * 73856093) ^ (b * 19349663)) >>> 0) % 100;
+            const put = (x, y, c) => { const i = at(x, y); px[i] = c >> 16 & 255; px[i + 1] = c >> 8 & 255; px[i + 2] = c & 255; };
+            for (const name of src.getFrameNames()) {
+                const f = src.get(name), x0 = f.cutX, y0 = f.cutY, fw = f.cutWidth, fh = f.cutHeight;
+                let top = Infinity, bot = -1;
+                for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) if (solid(x0 + x, y0 + y)) { top = Math.min(top, y); bot = Math.max(bot, y); }
+                if (bot < 0) continue;
+                const depth = Math.max(4, Math.round((bot - top) * 0.72));
+                const rock = new Set();
+                for (let x = 0; x < fw; x++) {
+                    let ct = -1; for (let y = 0; y < fh; y++) if (solid(x0 + x, y0 + y)) { ct = y; break; }
+                    if (ct < 0) continue;
+                    if (ct > 0 && hash(Math.floor(x / 3), 41) < 55) { const i = at(x0 + x, y0 + ct - 1); px[i + 3] = 255; rock.add(x + ',' + (ct - 1)); }   // stones standing proud of its outline
+                    for (let y = ct; y < Math.min(fh, ct + 1 + depth + (hash(x, 7) % 3) - 1); y++) {   // the outline row stays; a ragged lower edge
+                        if (!solid(x0 + x, y0 + y)) continue;
+                        const cx = Math.floor((x + (Math.floor(y / 3) % 2) * 2) / 4), cy = Math.floor(y / 3);
+                        if (y > ct + 1 && hash(cx + 11, cy + 5) < 20) continue;   // a chip: a plate gone, the slime showing
+                        rock.add(x + ',' + y);
+                    }
+                }
+                for (const k of rock) {
+                    const [x, y] = k.split(',').map(Number), X = x0 + x, Y = y0 + y;
+                    const ox = (x + (Math.floor(y / 3) % 2) * 2), cx = Math.floor(ox / 4), cy = Math.floor(y / 3), lx = ox % 4, ly = y % 3;
+                    const below = !rock.has(x + ',' + (y + 1)), above = !rock.has(x + ',' + (y - 1));
+                    let c = hash(cx, cy) < 50 ? 0x8c8272 : 0x6e6456;   // two stones, plate by plate
+                    if (ly === 0) c = 0xc4baa6;                       // light on its top edge
+                    if (lx === 3 || ly === 2) c = 0x3a3128;           // the seam between plates
+                    if ((lx === 3 || ly === 2) && hash(cx + 3, cy + 9) < 14) c = 0xffb25a;   // a crack, glowing
+                    if (above) c = 0x1e1812;                         // its outline
+                    if (below) c = 0x2a221a;                          // the shell's broken rim
+                    put(X, Y, c);
+                }
+            }
+            wctx.putImageData(d, 0, 0);
+            const t = TX.createCanvas(key, img.width, img.height);
+            t.getContext().drawImage(work, 0, 0);
+            for (const name of src.getFrameNames()) { const f = src.get(name); t.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight); }
+            t.refresh();
+        }
+        if (!scene.anims.exists(key + '_idle')) scene.anims.create({ key: key + '_idle', frames: [{ key, frame: 0 }, { key, frame: 18 }], frameRate: 2, repeat: -1 });
+        return key;
     }
     // The statue: a 24px block of ice, darker at its base, a highlight down one face, cracks.
     static frostBlockKey(scene) {
@@ -3289,14 +4812,13 @@ class LevelManager {
         e.tutorialRoomIndex = ri;
         e._isEncased = true; e._encStage = 'live'; e._encAt = this.time.now + 1500 + Math.random() * 1500;
         e._encDmg = 1; e._encCd = C.CD;
-        if (e.sprite?.setTint) e.sprite.setTint(0x9a8a7a);
-        // its look, so it reads as itself in a crowd: a crust of stone plates on its back (cracks of light between them)
-        // and three pebbles circling it, held up by its mind
-        e._encLook = { crust: this.add.graphics(), pebbles: [0, 1, 2].map(k => this.add.image(0, 0, LevelManager.encRubbleKey(this)).setScale(0.55)), a: Math.random() * 6 };
-        const g = e._encLook.crust;
-        for (const [x, y, w, h] of [[-8, -4, 7, 5], [-1, -6, 8, 5], [5, -2, 6, 5]]) { g.fillStyle(0x1a140e, 1); g.fillRect(x - 1, y - 1, w + 2, h + 2); g.fillStyle(0x7a7068, 1); g.fillRect(x, y, w, h); g.fillStyle(0xa8a096, 1); g.fillRect(x, y, w, 1.5); }
-        g.lineStyle(1, 0xffb25a, 0.9); g.lineBetween(-1, -4, -1, 0); g.lineBetween(5, -1, 5, 2);
-        for (const o of [g, ...e._encLook.pebbles]) this._vfxSort?.(o);
+        // its look, so it reads as itself in a crowd: a broken shell of stone over its body (painted into its frames:
+        // encBodyKey) and three pebbles circling it, held up by its mind
+        const ek = LevelManager.encBodyKey(this);
+        if (ek && e.sprite) { e.sprite.clearTint?.(); e.sprite.setTexture(ek, 0); e.sprite.play(ek + '_idle'); }
+        else if (e.sprite?.setTint) e.sprite.setTint(0x9a8a7a);
+        e._encLook = { pebbles: [0, 1, 2].map(k => this.add.image(0, 0, LevelManager.encRubbleKey(this)).setScale(0.55)), a: Math.random() * 6 };
+        for (const o of e._encLook.pebbles) this._vfxSort?.(o);
         return e;
     }
     // killEnemy: its first death is the stone. True if it encased.
@@ -3321,7 +4843,8 @@ class LevelManager {
     // killEnemy, once it's really dead: its stone breaks apart (if it died in it), and anything it left up goes.
     _encCleanup(e) {
         this._encAtkEnd(e);
-        if (e._encLook) { e._encLook.crust.destroy(); e._encLook.pebbles.forEach(o => o.destroy()); e._encLook = null; }
+        if (e._encLook) { e._encLook.pebbles.forEach(o => o.destroy()); e._encLook = null; }
+        if (e._encGfx?.active) this._geodeStoneBreak?.(e._encGfx.x, e._encGfx.y);   // broken next to the Geode, it smashes a plate
         if (e._encGfx?.active) { const b = e._encGfx; this._bfxShatter?.(b.x, b.y, 0x9a8a7a, 14); this._bfxDust?.(b.x, b.y); this.tweens.add({ targets: b, alpha: 0, scale: 2.4, duration: 220, onComplete: () => b.destroy() }); Sfx.play(this, 'shatter'); }
         e._encRing?.destroy();
         e._encGfx = null; e._encRing = null;
@@ -3330,9 +4853,8 @@ class LevelManager {
     _encUpdate(e, time) {
         const C = this._encCfg(), s = e.sprite;
         const L = e._encLook;
-        if (L) {   // its crust rides on its back; the pebbles circle (stilled while it's stone, gone once reborn: it has a body of fire then)
+        if (L) {   // the pebbles circle (stilled while it's stone, gone once reborn: it has a body of fire then)
             const live = e._encStage === 'live' && s?.active && s.visible;
-            L.crust.setVisible(live).setPosition(s.x, s.y + 11).setDepth((s.depth ?? 1) + 0.003);
             L.a += 0.03;
             L.pebbles.forEach((pb, k) => { const a = L.a + k * 2.094; pb.setVisible(live).setPosition(s.x + Math.cos(a) * 15, s.y + 4 + Math.sin(a) * 6 + Math.sin(time * 0.005 + k) * 1.5).setDepth((s.depth ?? 1) + (Math.sin(a) > 0 ? 0.004 : -0.004)).setRotation(a); });
         }
@@ -3346,7 +4868,7 @@ class LevelManager {
                 g.lineStyle(3, k > 0.7 ? 0xff6a2a : 0xffb25a, 0.95);
                 g.beginPath(); g.arc(0, 0, 18, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.strokePath();
             }
-            if (time >= e._encUntil) this._encReborn(e);
+            if (time >= e._encUntil && !e._encCine) { e._encCine = true; this._rebirthCinematic(s.x, s.y, () => { if (e.sprite?.active && e._encStage === 'stone') this._encReborn(e); }); }
             return;
         }
         if (e._encAtk) { this._encAtkTick(e, time); return; }
@@ -3685,33 +5207,13 @@ class LevelManager {
     _applyDripping(time) {
         const C = this._dripCfg();
         this._drippingUntil = Math.max(this._drippingUntil || 0, (time ?? this.time.now) + C.MS);
-        if (!this._dripGfx || !this._dripGfx.active) {
-            const g = this.add.graphics().setDepth(6);
-            g.fillStyle(0x6fd0ee, 0.85);
-            g.fillCircle(0, 2, 3.2);                        // droplet body
-            g.fillTriangle(-3.2, 1.5, 3.2, 1.5, 0, -5);     // ...and its point
-            g.lineStyle(1.2, 0xffffff, 0.5); g.strokeCircle(0, 2, 3.2);
-            this.tweens.add({ targets: g, y: '+=3', duration: 520, yoyo: true,
-                              repeat: -1, ease: 'Sine.easeInOut' });
-            this._dripGfx = g;
-        }
+        this._dripMs = C.MS;   // (its icon is in the row over you: _playerStatusRow)
         this.showStatusText?.(this.player.x, this.player.y - 44, 'DRIPPING', '#6fd0ee');
     }
 
     _updateDripping(time) {
         if (!this._drippingUntil) return;
-        if (time >= this._drippingUntil) {
-            this._drippingUntil = 0;
-            if (this._dripGfx) {
-                if (this._dripGfx.active) { this.tweens.killTweensOf(this._dripGfx); this._dripGfx.destroy(); }
-                this._dripGfx = null;
-            }
-            return;
-        }
-        if (this._dripGfx?.active) {
-            this._dripGfx.x = this.player.x + 13;
-            this._dripGfx.y = this.player.y - 26;
-        }
+        if (time >= this._drippingUntil) { this._drippingUntil = 0; return; }
     }
 
     // The tile pattern, resolved once at aim time and then frozen. Each prong is traced
@@ -3853,7 +5355,7 @@ class LevelManager {
     // the room you are standing in, so a sealed room's Tidecaller does not flood the
     // level while you are three rooms away.
     _updateCisternEnemies(time, delta) {
-        if (!this.isLevel6 || !this.enemies) return;
+        if (!(this.isLevel6 || this.trainingRun) || !this.enemies) return;   // (the Training Ground spawns Cistern kinds too: they stood idle there)
         this._frostHazeMult = 1;   // set again below while you stand in a Frostborn's haze
         const room = this.getCurrentPlayerRoom();
         const PX = this.playerX, PY = this.playerY;
@@ -4051,18 +5553,6 @@ class LevelManager {
                 }
             }
 
-            // ── Tidecaller: put the water back, near YOU ──
-            if (e._isTidecaller && time - (e._lastFlood || 0) >= e._floodCd) {
-                e._lastFlood = time;
-                let laid = 0;
-                for (let i = 0; i < 14 && laid < 5; i++) {
-                    const tx = PX + Math.floor(Math.random() * 5) - 2;
-                    const ty = PY + Math.floor(Math.random() * 5) - 2;
-                    if (this.world?.[tx]?.[ty] !== this.FLOOR) continue;
-                    if (this.addWater(tx, ty, 12000)) laid++;
-                }
-                if (laid) this.showStatusText?.(e.sprite.x, e.sprite.y - 26, 'TIDE', '#8fd8ff');
-            }
 
             // ── Wave Rider: walk, telegraph, then charge ──
             if (e._isWaveRider) {
@@ -4143,7 +5633,7 @@ class LevelManager {
                     g.clear();
                     const T = this.TILE_SIZE;
                     g.fillStyle(0xffff44, 0.10);
-                    for (const t of this.waterTiles.values()) {
+                    for (const t of this.waterTiles?.values() || []) {   // (no water yet: the Training Ground starts dry)
                         if (Math.hypot(t.tx - e.x, t.ty - e.y) > e._liveR) continue;
                         g.fillRect(t.tx * T, t.ty * T, T, T);
                     }
@@ -4165,8 +5655,34 @@ class LevelManager {
     // type, ever -- the seen set is persisted, so it never interrupts you twice.
     // ═══════════════════════════════════════════════════════════════════════
 
+    // After a level's spawns: anything standing on a wall (the rooms' cover, WorldGen._dressRooms) steps to the nearest open tile
+    _unstick() {
+        const T = this.TILE_SIZE;
+        for (const e of this.enemies || []) {
+            if (!e.sprite?.active || this.world[e.x]?.[e.y] === this.FLOOR) continue;
+            let best = null;
+            for (let r = 1; r <= 4 && !best; r++) for (let dx = -r; dx <= r && !best; dx++) for (let dy = -r; dy <= r && !best; dy++) {
+                const x = e.x + dx, y = e.y + dy;
+                if (this.world[x]?.[y] === this.FLOOR && !this.enemies.some(o => o !== e && o.x === x && o.y === y)) best = [x, y];
+            }
+            if (!best) continue;
+            [e.x, e.y] = best;
+            e.sprite.setPosition(e.x * T + T / 2, e.y * T + T / 2 + this.SLIME_Y_OFFSET);
+            this.updateEnemyHealthBar?.(e);
+        }
+    }
     _enemyTypeKey(e) {
         if (!e) return null;
+        if (e._isFrost)            return 'frost';
+        if (e._isBud)              return e._budCopy ? 'budcopy' : 'bud';
+        if (e._isHunter)           return 'hunter';
+        if (e._isArmored)          return 'armored';
+        if (e._isShade)            return { void: 'shade', fire: 'shade_fire', ice: 'shade_ice', lightning: 'shade_lightning' }[e._form] || 'shade';
+        if (e._isWraith)           return 'wraith';
+        if (e._isDiver)            return 'diver';
+        if (e._isLeech)            return 'leech';
+        if (e._isCeo)              return 'ceo';
+        if (e._isGem)              return 'gem';
         if (e._isDrowner)          return 'drowner';
         if (e._isRipplerunner)     return 'ripplerunner';
         if (e._isTidecaller)       return 'tidecaller';
@@ -4193,41 +5709,61 @@ class LevelManager {
             slime:        { name: 'Slime',            role: 'Chaser',    tint: 0xcc3333,
                             desc: 'Walks at you and hits you on contact. Five times slower than you are.' },
             berserker:    { name: 'Berserker',        role: 'Charger',   tint: 0xff4444,
-                            desc: 'Winds up for a moment, then lunges. The wind-up is your window.' },
+                            desc: 'Winds up when you get close, then swings a wide arc in front of it and knocks you back. Get behind it or out of reach during the wind-up.' },
             ranged:       { name: 'Spitter',          role: 'Ranged',    tint: 0xffee88,
-                            desc: 'Holds a distance of four to ten tiles and fires. Crowd it and it retreats.' },
+                            desc: 'Keeps four to ten tiles away and aims a beam at you, then fires three shots down it. The aim locks a second before it fires: step off the line.' },
             encased:      { name: 'Encased Slime',    role: 'Controller', tint: 0x9a8a7a,
                             desc: 'Throws the rubble at you in lanes: step into a clear one. Killed, it turns to stone. Break the stone in five seconds or it comes back far worse.' },
             rooter:       { name: 'Rooter',           role: 'Control',   tint: 0x226633,
-                            desc: 'Tethers you from up to fourteen tiles and drains while attached.' },
+                            desc: 'From up to fourteen tiles it throws a tendril that pulls you toward it. Get within two and it thumps the ground, rooting you and leaving a ring of poison round itself.' },
             anchor:       { name: 'Anchor Slime',     role: 'Support',   tint: 0x7f93b5,
-                            desc: 'Pulses every three seconds: allies speed up, you slow down. Kill it first.' },
-            healer:       { name: 'Healer Totem',     role: 'Support',   tint: 0x66ddaa,
-                            desc: 'Heals everything within six tiles. Nothing near it stays dead.' },
+                            desc: 'Slow and heavy, and it follows the fight. Pulses every three seconds: allies speed up, you slow down. Kill it first.' },
+            healer:       { name: 'Healer Slime',     role: 'Support',   tint: 0x66ddaa,
+                            desc: 'Slow and tough, and it keeps up with its friends. Heals everything within six tiles, past full health. Kill it first.' },
             splitter:     { name: 'Splitter',         role: 'Swarm',     tint: 0xcc66cc,
-                            desc: 'Breaks into smaller, faster copies when it dies. Kill it where you have room.' },
+                            desc: 'Bursts when it dies, hurting you if you are close, and splits into two smaller, faster copies, twice over. Kill it where you have room.' },
             mortar:       { name: 'Mortar',           role: 'Artillery', tint: 0x445566,
-                            desc: 'Lobs shells over walls. Safe directly underneath it, dangerous at range.' },
+                            desc: 'Lobs shells over walls at where you stand, from up to thirteen tiles. Inside its glow, five tiles round it, you are safe.' },
             voidsniper:   { name: 'Void Sniper',      role: 'Ambusher',  tint: 0x220044,
-                            desc: 'Waits inside a pocket dimension, untouchable, and steps out to fire.' },
+                            desc: 'Hides in a pocket dimension where nothing can touch it. A portal opens right next to you, then it steps out, blasts a spread of shots, and stays hittable for a few seconds.' },
             lightningelem:{ name: 'Storm Elemental',  role: 'Zoner',     tint: 0xe8ff3a,
-                            desc: 'Arcs at anything inside its ring. Immune to lightning.' },
+                            desc: 'Arcs at you every few seconds while you are inside its ring and it can see you. Resists lightning.' },
             singularity:  { name: 'Singularity Slime',role: 'Bruiser',   tint: 0x440088,
-                            desc: 'Slow and heavy. Winds up, then pulls hard.' },
+                            desc: 'Slow and heavy, and leaves slowing goop behind it. Get within two tiles and it lights the square round itself, then slams it: get out before it lands or you are hit and slowed.' },
             drowner:      { name: 'Drowner',          role: 'Ambusher',  tint: 0x5a2d6b,
-                            desc: 'Sinks to attack and tracks you for two seconds before committing. If you are standing in water the moment it commits, it lands instantly — there is no dodge. Commit on dry ground and you get a brief window to step off the mark.' },
+                            desc: 'Sinks to attack and tracks you for two seconds before it strikes. In water it lands at once and holds you under for two seconds. On dry ground you get a moment to step off the mark, but it leaves a pool either way.' },
             ripplerunner: { name: 'Ripplerunner',     role: 'Skirmisher',tint: 0x66f0ff,
-                            desc: 'Fires two slow homing orbs that burst into standing water. Quick and relentless on water, sluggish on dry stone.' },
-            tidecaller:   { name: 'Tidecaller',       role: 'Zoner',     tint: 0x2a5cc8,
-                            desc: 'Floods the ground around YOU every few seconds. Drying a room only lasts while it lives.' },
+                            desc: 'Fires a homing orb at you, or three at once while it stands in water. Each one slows you and bursts into standing water. Quick on water, sluggish on dry stone.' },
+            tidecaller:   { name: 'Tidecaller',       role: 'Booster',   tint: 0x2a5cc8,
+                            desc: 'Doesn\'t fight. Everything standing in water near it hits half again as hard. Dry the floor round it, or kill it first.' },
             waverider:    { name: 'Wave Rider',       role: 'Charger',   tint: 0xdff3ff,
-                            desc: 'Walks quietly until it commits, then charges in one locked direction, laying a five-wide torrent that only stops at a wall. Leave the lane while it winds up.' },
+                            desc: 'Swings like a Berserker up close. From across the room it winds up, then charges in one locked direction, flooding a five-wide lane and sweeping you along it until it hits a wall. Leave the lane while it winds up.' },
+            bud:          { name: 'Budding Slime',    role: 'Grower',    tint: 0x9be05a,
+                            desc: 'Every ten seconds it swells and buds off a copy with its full health; both burst a ring of poison globs, and poison pools round it. Hitting it does not stop the clock: kill it, or freeze or stun it mid-swell. No Budding Slime charges your ult. The original wears the bud; a family stops at eight.' },
+            shade:        { name: 'Adaptive Shade',   role: 'Mini-boss', tint: 0xa060ff,
+                            desc: 'Hex slides off it. Two seconds after fire, ice or lightning hits it, it turns into that element and barely feels it, then can\'t change again for six seconds. It takes the hits of everything near it. Swap elements.' },
+            wraith:       { name: 'Wraith',           role: 'Shroud',    tint: 0xc8bce8,
+                            desc: 'Untouchable until you\'re within three tiles. Now and then it shrouds an enemy near it the same way, for as long as it lives.' },
+            diver:        { name: 'Torpedo Diver',    role: 'Striker',   tint: 0x4ad0ff,
+                            desc: 'Lights a lane at you and zips down it, leaving water. From far off the aim is a blink; up close you can step aside. A hit makes you drip and bleed.' },
+            leech:        { name: 'Leech',            role: 'Thief',     tint: 0xb070ff,
+                            desc: 'A thing of the void. It picks one of your elements, and its gem spins over your head while it does. Still holding that element when its ring closes and it tears the gem out of you and runs, slipping through portals to get ahead, and you cannot switch to it. Kill it and the gem flies back to you.' },
+            gem:          { name: 'The Gem',          role: 'Hazard',    tint: 0xd8e8ff,
+                            desc: 'Can\'t be hurt. It breaks when everything else on the floor is dead. Now and then a gem falls on you and three safe circles of its colour open: be in one, holding that element, when it lands.' },
+            ceo:          { name: 'Slime CEO',        role: 'Commander', tint: 0xffd84a,
+                            desc: 'Armoured: hits do 40% to its armour until it breaks. Knights the enemies round it with armour of their own, and sends slow waves to the room\'s edges. Step into a gap or dash through.' },
+            armored:      { name: 'Armored Slime',    role: 'Tank',      tint: 0x8a94a6,
+                            desc: 'Plated on three sides that never turn: hits from those barely scratch it. One side is open and glows when you stand on it. Go round.' },
+            hunter:       { name: 'Hunter Slime',     role: 'Stalker',   tint: 0x8c3c46,
+                            desc: 'Crawls at first, and gets faster and hits harder the longer it chases you; its ears fill with blood as it does. Get close and it leaps at the ground round you and slashes it apart, wider the angrier it is (up to five tiles across), the outer tiles cutting deepest. Every attack halves its rage. Its slashes make you bleed.' },
+            frost:        { name: 'Frost Slime',      role: 'Zoner',     tint: 0x9fe8ff,
+                            desc: 'Stops and lights the tiles round itself, then they all freeze at once. You can\'t dash out while it\'s lit, so step onto an unlit tile. Killed, it seals itself in ice: break the block before the ring closes, or it hatches a faster, harder Frostborn whose haze slows you.' },
             tidalguard:   { name: 'Tidal Guard',      role: 'Zoner',     tint: 0xb8912f,
-                            desc: 'Pre-aims a trident straight at you, across the whole room: a short shaft, then three beams with a single safe tile either side of the middle. It fires instantly, so do not run from the line — step one tile into a lane. One is a sidestep; two of them crossing is a trap. Caught while it stands in water, you are pinned and left dripping.' },
+                            desc: 'Lights a trident at you across the room: a short shaft, then three beams with one safe tile either side of the middle. Don\'t run from the line, step one tile into a lane. It aims faster when it stands in water, and then a hit pins you and leaves you dripping.' },
             wishingwell:  { name: 'Wishing Well',     role: 'Source',    tint: 0x6b8f7a,
-                            desc: 'Never moves, never attacks. Every few seconds it throws several ragged puddles anywhere in its reach and soaks every ally standing there, so for two seconds they act as though they were in water. The room refills until you break it.' },
+                            desc: 'Never moves, never attacks. Every few seconds it throws a few lasting puddles nearby and soaks every ally within seven tiles, so for two seconds they act as though they were in water. Break it first.' },
             conduit:      { name: 'Conduit',          role: 'Emplacement',tint: 0xe8ff3a,
-                            desc: 'Electrifies every wet tile within four. Standing in live water hurts on a timer. Burn a dry path or kill it.' },
+                            desc: 'Arcs lightning at you within five tiles, and electrifies every wet tile within four, so standing in live water hurts on a timer. Resists lightning. Burn a dry path or kill it.' },
         };
     }
 
@@ -4664,29 +6200,30 @@ class LevelManager {
         };
     }
 
+    // The Geode (see THE GEODE below): it rises in the middle of the room in its shell
     _spawnFractureCore() {
-        const room = this.rooms[6], C = this._fcCfg(), TS = this.TILE_SIZE;
-        const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2);
-        const container = this.add.container(cx * TS + TS / 2, cy * TS + TS / 2).setDepth(3).setVisible(false);
+        const room = this.rooms[6], C = this._geodeCfg(), TS = this.TILE_SIZE;
+        const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2), now = this.time.now;
+        const container = this.add.container(cx * TS + TS / 2, cy * TS + TS / 2).setDepth(3).setScale(0.2).setAlpha(0.3);
         const glow = this.textures.exists('vfx_glow') ? this.make.image({ x: 0, y: 0, key: 'vfx_glow' }, false).setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa63a).setAlpha(0.55).setScale(1.1) : null;
         const body = this.add.graphics();
         this._bfxCoreDraw(body);
         if (glow) container.add(glow);
         container.add(body);
         this.fractureCore = {
-            active: true, container, body, glow, ringG: this.add.graphics().setDepth(4.8),
-            health: C.HP, maxHealth: C.HP, tileX: cx, tileY: cy, phase: 0,
-            state: 'burrow', stateAt: this.time.now, _surfaced: false, _isInvulnerable: true,
+            active: true, geode: true, container, body, glow, ringG: this.add.graphics().setDepth(4.8),
+            plateG: this.add.graphics().setDepth(3.05), fxG: this.add.graphics().setDepth(0.97),
+            health: C.HP, maxHealth: C.HP, tileX: cx, tileY: cy, phase: 0, plates: [], faults: [], rifts: new Set(), riftLines: [],
+            state: 'rise', stateAt: now, _surfaced: true, _isInvulnerable: true,
+            nextFault: now + 3500, nextAdd: now + 6000, nextHop: now + C.HOP_MS,
         };
         this._debrisBossRoom = room;
-        this._debrisTiles = []; this._debrisWarnings = [];   // (kept empty: other code still asks after rubble)
-        this._fissures = [];
+        this._debrisTiles = []; this._debrisWarnings = []; this._fissures = [];   // (other code still asks after these)
         this._fractureWeakPoints = []; this._wpSequenceIdx = 0;
-        this._fcTint = this.add.rectangle(room.x * TS, room.y * TS, room.w * TS, room.h * TS, 0xff3010, 0).setOrigin(0).setDepth(0.96).setBlendMode(Phaser.BlendModes.ADD);
-        this._nextSurfaceTime = this.time.now + C.FIRST_SURFACE;
-        for (let i = 0; i < C.START_N; i++) this._fcOpenFissure(null, 0.5 + i * 0.4);
         this.spawnFinalLevelChest(cx, room.y + 3, null);
-        this._showRhythmSessionBanner('THE FRACTURE CORE', '#ffb25a', 'Shoot the cracks before they split. When it rises, keep the rhythm.');
+        this.tweens.add({ targets: container, scale: 1, alpha: 1, duration: C.RISE_MS * 1.5, ease: 'Back.easeOut', onComplete: () => this._geodeArm() });
+        BossFX.blast(this, container.x, container.y, 60, 'shell'); Sfx.play(this, 'roar');
+        this._showRhythmSessionBanner('THE GEODE', '#ffb25a', 'Break its shell: heat a plate with fire, then shatter it with ice.');
         this.cameras.main.shake(260, 0.006);
     }
 
@@ -4981,6 +6518,7 @@ class LevelManager {
     damageFractureCore(amount) {
         const core = this.fractureCore;
         if (!core?.active || core.state !== 'vuln') return;
+        if (core.geode) { this._geodeHurt(this._afterHit(null, null, amount * this._dmgOutMult(null) * this._hitRoll(null)) * this._geodeCfg().EXPOSE_MULT, false); return; }
         this._fcHurt(this._afterHit(null, null, amount * this._dmgOutMult(null) * this._hitRoll(null)), false);
     }
 
@@ -5141,6 +6679,7 @@ class LevelManager {
     _updateFractureCore(time, delta) {
         const core = this.fractureCore;
         if (!core?.active) return;
+        if (core.geode) { this._geodeUpdate(time, delta); return; }
         const C = this._fcCfg();
         this._updateDebris(time, delta || 16);
         if (core.state === 'burrow' && (time >= this._nextSurfaceTime || this._fissures.length >= C.CAP)) this._fractureCoreSurface();
@@ -5195,7 +6734,7 @@ class LevelManager {
         this.cameras.main.shake(400, 0.02);
         this._showRhythmSessionBanner('THE CORE SHATTERS', '#ffd27a', 'The floor holds.');
         this.tweens.killTweensOf(core.container);
-        core.container.destroy(); core.ringG?.destroy(); this._fcArrowG?.destroy(); this._fcArrowG = null;
+        core.container.destroy(); core.ringG?.destroy(); core.plateG?.destroy(); core.fxG?.destroy(); this._fcArrowG?.destroy(); this._fcArrowG = null;
         this._bossBarHide?.();
         Music.rate = 1;
         [...(this._fissures || [])].forEach((f, i) => this.time.delayedCall(i * 90, () => this._fcSeal(f)));   // the cracks seal one after another
@@ -5203,6 +6742,239 @@ class LevelManager {
         for (const e of [...(this.enemies || [])]) if (e._fcAdd && e.sprite?.active) { e._isEncased = false; this.damageEnemy(e, 1e6, null); }
         this._fractureWeakPoints = [];
         this.fractureCore = null;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // THE GEODE (2026-10-20; it replaced the rhythm Core, kept as this.fractureCore so the boss bar, Cosmic and the weapons'
+    // boss loops still find it)
+    // A crystal heart in a shell of stone plates. Plates take half damage; the elements break them faster: fire heats the
+    // plate it hits (up to 3), and ice on a plate at 2+ shatters it outright (THERMAL SHOCK, a chip off the heart too);
+    // lightning on a cracked plate arcs to every other cracked one; cosmic Hexes a plate (x2 for 4s). An Encased Slime's
+    // stone broken next to it smashes a plate. With every plate gone the heart is exposed for a while, then it re-armours.
+    // Its attacks are the level's: fault lines that run across the room through you and erupt; from its second third,
+    // rifts that split the floor for good (they burn: dash across); Encased Slimes from the walls; in its last third it
+    // sinks and surfaces somewhere else. Three phases, by thirds of its health.
+    // ══════════════════════════════════════════════════════════════════════
+    _geodeCfg() {
+        return {
+            HP: 2400,
+            PLATES: [4, 5, 6], PLATE_HP: [140, 190, 250],   // by phase
+            PLATE_ARMOR: 0.5, CRACKED_AT: 0.5,                 // an ordinary hit on a plate; under this share it's cracked (lightning arcs)
+            HEAT_MAX: 3, HEAT_SHOCK: 2, HEAT_DECAY_MS: 2500,   // fire heats a plate a step a hit; ice on HEAT_SHOCK+ shatters it; a step cools off every HEAT_DECAY_MS
+            SHOCK_CORE_PCT: 0.03,                              // a thermal shock also cracks this share of its HP off the heart
+            ARC_SHARE: 0.6, HEX_MS: 4000, HEX_MULT: 2,
+            EXPOSE_MS: 7000, EXPOSE_MULT: 1.25,
+            FAULT_MS: [5200, 4200, 3400], FAULT_TELE: 1100, FAULT_DMG: 14,
+            RIFT_DMG: 4, RIFT_TICK: 500,
+            ADD_MS: [11000, 9000, 7500], ADD_CAP: [2, 3, 4],
+            STONE_R: 3, STONE_PLATE: 0.6,                      // an Encased Slime's stone broken this near takes this share off its nearest plate
+            HOP_MS: 14000, RISE_MS: 650, DIVE_MS: 450,
+        };
+    }
+    _geodePhase(core) { return Math.min(2, Math.floor((1 - core.health / core.maxHealth) * 3)); }
+    // A fresh shell: PLATES[phase] of them, evenly round it
+    _geodeArm() {
+        const core = this.fractureCore, C = this._geodeCfg();
+        if (!core?.active) return;
+        const n = C.PLATES[core.phase], hp = C.PLATE_HP[core.phase];
+        core.plates = Array.from({ length: n }, (_, i) => ({ a: i / n * Math.PI * 2 - Math.PI / 2, hp, max: hp, heat: 0, heatAt: 0, hexUntil: 0, broken: false }));
+        core.state = 'armored'; core.stateAt = this.time.now; core._isInvulnerable = false;
+        core.ringG?.clear();
+        const c = core.container; this._vfxFlash?.(c.x, c.y, 120, 0xc8b8a0, 260, 0.6); Sfx.play(this, 'e_chain');
+    }
+    // The plate a hit lands on: the one facing you (the nearest whole one to that side)
+    _geodePlateFacing() {
+        const core = this.fractureCore, c = core.container, toYou = Math.atan2(this.player.y - c.y, this.player.x - c.x);
+        let best = null, bd = Infinity;
+        for (const p of core.plates) { if (p.broken) continue; const d = Math.abs(Phaser.Math.Angle.Wrap(p.a - toYou)); if (d < bd) { bd = d; best = p; } }
+        return best;
+    }
+    // A weapon hit on it (CombatSystem.damageBossAtTile, the flamethrower). Raw weapon damage: the multipliers are applied here.
+    _geodeHit(damage, el) {
+        const core = this.fractureCore, C = this._geodeCfg(), now = this.time.now;
+        if (!core?.active || !core.geode) return;
+        if (core.state === 'vuln') { this.damageFractureCore(damage); return; }
+        if (core.state !== 'armored') return;
+        const p = this._geodePlateFacing(); if (!p) return;
+        const c = core.container, px = c.x + Math.cos(p.a) * 30, py = c.y + Math.sin(p.a) * 22;
+        if (el === 'ice' && p.heat >= C.HEAT_SHOCK) { this._geodeShatter(p, 'THERMAL SHOCK'); this._geodeHurt(core.maxHealth * C.SHOCK_CORE_PCT, true); return; }
+        if (el === 'fire') { p.heat = Math.min(C.HEAT_MAX, p.heat + 1); p.heatAt = now; }
+        if (el === 'cosmic') p.hexUntil = now + C.HEX_MS;
+        const d = damage * this._dmgOutMult(null) * C.PLATE_ARMOR * (p.hexUntil > now ? C.HEX_MULT : 1);
+        const wasCracked = p.hp < p.max * C.CRACKED_AT;
+        p.hp -= d;
+        if (now - (core._numAt || 0) >= 110) { core._numAt = now; this.showDamageNumber(px, py - 10, Math.round(d), '#c8b8a0'); }
+        if (el === 'lightning' && wasCracked) for (const q of core.plates) {   // it arcs through the cracks
+            if (q === p || q.broken || q.hp >= q.max * C.CRACKED_AT) continue;
+            q.hp -= d * C.ARC_SHARE;
+            const g = this.add.graphics().setDepth(4.9); g.lineStyle(2, 0xffe14a, 0.95); g.lineBetween(px, py, c.x + Math.cos(q.a) * 30, c.y + Math.sin(q.a) * 22);
+            this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() });
+            if (q.hp <= 0) this._geodeShatter(q, null);
+        }
+        if (p.hp <= 0) this._geodeShatter(p, null);
+        else if (!wasCracked && p.hp < p.max * C.CRACKED_AT) Sfx.play(this, 'e_crack');
+    }
+    _geodeShatter(p, label) {
+        const core = this.fractureCore;
+        if (!core?.active || p.broken) return;
+        p.broken = true; p.hp = 0;
+        const c = core.container, x = c.x + Math.cos(p.a) * 30, y = c.y + Math.sin(p.a) * 22;
+        this._bfxShatter?.(x, y, label ? 0x9ae8ff : 0x9a8a7a, 12); this._bfxDust?.(x, y);
+        Sfx.play(this, 'shatter'); this.cameras.main.shake(label ? 160 : 90, label ? 0.008 : 0.004);
+        if (label) { this.showStatusText(x, y - 30, label, '#9ae8ff'); this._vfxFlash?.(x, y, 90, 0x9ae8ff, 240, 0.8); }
+        if (core.plates.every(q => q.broken)) this._geodeExpose();
+    }
+    _geodeExpose() {
+        const core = this.fractureCore, C = this._geodeCfg();
+        core.state = 'vuln'; core.stateAt = this.time.now; core.vulnUntil = this.time.now + C.EXPOSE_MS;
+        const c = core.container; BossFX.blast(this, c.x, c.y, 60, 'shell'); this._vfxFlash?.(c.x, c.y, 200, 0xffd27a, 400, 0.9);
+        this._showRhythmSessionBanner('THE HEART IS EXPOSED', '#ffd27a', 'Hit it before it grows its shell back.');
+        Sfx.play(this, 'roar');
+    }
+    _geodeHurt(amount, burst) {
+        const core = this.fractureCore;
+        if (!core?.active || !(amount > 0)) return;
+        core.health -= amount;
+        const c = core.container, now = this.time.now;
+        if (burst || now - (core._numAt || 0) >= 90) { core._numAt = now; this.showDamageNumber(c.x + (Math.random() - 0.5) * 20, c.y - 30, Math.round(amount), burst ? '#fff0b0' : '#ffb25a'); }
+        this._bfxCoreKick?.(core);
+        if (core.health <= 0) { this._fractureCoreKill(); return; }
+        const ph = this._geodePhase(core);
+        if (ph > core.phase) {
+            core.phase = ph;
+            this.cameras.main.shake(320, 0.012);
+            this._geodeRift(ph === 1 ? 'h' : 'v');
+            this._showRhythmSessionBanner(ph === 1 ? 'THE FLOOR SPLITS' : 'IT GOES DEEP', '#ffb25a', ph === 1 ? 'Rifts burn. Dash across them.' : 'It sinks and surfaces somewhere else.');
+        }
+    }
+    // A fault line: a crack runs across the room through your tile (a row, a column or a diagonal), glows, then erupts
+    _geodeFault() {
+        const core = this.fractureCore, R = this._debrisBossRoom; if (!R) return;
+        const kind = ['h', 'v', 'd1', 'd2'][Math.floor(Math.random() * 4)], tiles = [];
+        for (let i = -40; i <= 40; i++) {
+            const [x, y] = kind === 'h' ? [this.playerX + i, this.playerY] : kind === 'v' ? [this.playerX, this.playerY + i] : kind === 'd1' ? [this.playerX + i, this.playerY + i] : [this.playerX + i, this.playerY - i];
+            if (x >= R.x && x < R.x + R.w && y >= R.y && y < R.y + R.h && this.world[x]?.[y] === this.FLOOR) tiles.push([x, y]);
+        }
+        if (tiles.length) core.faults.push({ tiles, at: this.time.now, seed: Math.random() * 100 });
+        Sfx.play(this, 'fissure');
+    }
+    // A rift for good: a jagged band across the room through the middle (h: along it, v: down it)
+    _geodeRift(kind) {
+        const core = this.fractureCore, R = this._debrisBossRoom; if (!R) return;
+        const cx = Math.floor(R.x + R.w / 2), cy = Math.floor(R.y + R.h / 2), line = [];
+        const n = kind === 'h' ? R.w : R.h;
+        for (let i = 0; i < n; i++) {
+            const off = Math.round(Math.sin(i * 0.55 + (kind === 'h' ? 0 : 2)) * 1.6);
+            const [x, y] = kind === 'h' ? [R.x + i, cy + off] : [cx + off, R.y + i];
+            if (this.world[x]?.[y] === this.FLOOR) { core.rifts.add(x + ',' + y); line.push([x, y]); }
+        }
+        core.riftLines.push(line);
+        for (const [x, y] of line) if (Math.random() < 0.3) this._bfxDust?.(x * this.TILE_SIZE + this.TILE_SIZE / 2, y * this.TILE_SIZE + this.TILE_SIZE / 2);
+    }
+    // An Encased Slime's stone broke (LevelManager._encCleanup): near the Geode, it smashes the closest plate
+    _geodeStoneBreak(x, y) {
+        const core = this.fractureCore, C = this._geodeCfg();
+        if (!core?.active || !core.geode || core.state !== 'armored') return;
+        const c = core.container, T = this.TILE_SIZE;
+        if (Math.hypot(x - c.x, y - c.y) > C.STONE_R * T) return;
+        const a = Math.atan2(y - c.y, x - c.x);
+        const p = core.plates.filter(q => !q.broken).sort((q, r) => Math.abs(Phaser.Math.Angle.Wrap(q.a - a)) - Math.abs(Phaser.Math.Angle.Wrap(r.a - a)))[0];
+        if (!p) return;
+        p.hp -= p.max * C.STONE_PLATE;
+        this.showStatusText(c.x + Math.cos(p.a) * 30, c.y - 40, 'STONE STRIKE', '#d8c8a8');
+        if (p.hp <= 0) this._geodeShatter(p, null);
+    }
+    _geodeSpawnAdd() {
+        const core = this.fractureCore, C = this._geodeCfg(), R = this._debrisBossRoom;
+        if ((this.enemies || []).filter(e => e._fcAdd && e.sprite?.active).length >= C.ADD_CAP[core.phase]) return;
+        for (let k = 0; k < 30; k++) {
+            const side = Math.floor(Math.random() * 4), t = Math.random();
+            const x = side < 2 ? Math.floor(R.x + 1 + t * (R.w - 2)) : side === 2 ? R.x + 1 : R.x + R.w - 2;
+            const y = side >= 2 ? Math.floor(R.y + 1 + t * (R.h - 2)) : side === 0 ? R.y + 1 : R.y + R.h - 2;
+            if (this.world[x]?.[y] !== this.FLOOR || Math.hypot(x - this.playerX, y - this.playerY) < 5 || this.getEnemyAt?.(x, y)) continue;
+            const e = this.createEncasedSlime(x, y, 6);
+            if (e) { e._fcAdd = true; if (!this.enemies.includes(e)) this.enemies.push(e); }
+            return;
+        }
+    }
+    // It sinks and comes up somewhere else in the room (its last third), shell and all
+    _geodeHop() {
+        const core = this.fractureCore, C = this._geodeCfg(), R = this._debrisBossRoom, T = this.TILE_SIZE;
+        core.state = 'dive'; core.stateAt = this.time.now; core._isInvulnerable = true;
+        this.tweens.add({ targets: core.container, scale: 0.2, alpha: 0, duration: C.DIVE_MS, ease: 'Quad.easeIn', onComplete: () => {
+            if (!core.active) return;
+            let tx = core.tileX, ty = core.tileY;
+            for (let k = 0; k < 40; k++) {
+                const x = R.x + 3 + Math.floor(Math.random() * (R.w - 6)), y = R.y + 3 + Math.floor(Math.random() * (R.h - 6));
+                if (this.world[x]?.[y] === this.FLOOR && !core.rifts.has(x + ',' + y) && Math.hypot(x - this.playerX, y - this.playerY) >= 5) { tx = x; ty = y; break; }
+            }
+            core.tileX = tx; core.tileY = ty;
+            core.container.setPosition(tx * T + T / 2, ty * T + T / 2);
+            this.tweens.add({ targets: core.container, scale: 1, alpha: 1, duration: C.RISE_MS, ease: 'Back.easeOut', onComplete: () => { if (core.active) { core.state = 'armored'; core.stateAt = this.time.now; core._isInvulnerable = false; } } });
+            BossFX.blast(this, core.container.x, core.container.y, 46, 'shell'); this.cameras.main.shake(140, 0.006);
+        } });
+    }
+    // Every frame: plates cooling, the window, its attacks, rifts burning you, and the drawing
+    _geodeUpdate(time, delta) {
+        const core = this.fractureCore, C = this._geodeCfg(), T = this.TILE_SIZE;
+        if (!core?.active) return;
+        for (const p of core.plates) if (p.heat > 0 && time - p.heatAt >= C.HEAT_DECAY_MS) { p.heat--; p.heatAt = time; }
+        if (core.state === 'vuln') {
+            const c = core.container, g = core.ringG, left = (core.vulnUntil - time) / C.EXPOSE_MS;
+            g.clear(); g.lineStyle(3, 0xffe08a, 0.85); g.beginPath(); g.arc(c.x, c.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.max(0, left) * Math.PI * 2); g.strokePath();
+            if (time >= core.vulnUntil) this._geodeArm();
+        }
+        if (core.state === 'armored' || core.state === 'vuln') {
+            if (time >= core.nextFault) { core.nextFault = time + C.FAULT_MS[core.phase]; this._geodeFault(); }
+            if (time >= core.nextAdd) { core.nextAdd = time + C.ADD_MS[core.phase]; this._geodeSpawnAdd(); }
+            if (core.phase >= 2 && core.state === 'armored' && time >= core.nextHop) { core.nextHop = time + C.HOP_MS; this._geodeHop(); }
+        }
+        // faults: glowing, then erupting
+        for (let i = core.faults.length - 1; i >= 0; i--) {
+            const f = core.faults[i];
+            if (!f.hit && time - f.at >= C.FAULT_TELE) {
+                f.hit = true;
+                if (f.tiles.some(([x, y]) => x === this.playerX && y === this.playerY)) this.takeDamage(C.FAULT_DMG * (this.enemyDamageScale || 1));
+                for (const [x, y] of f.tiles) if (Math.random() < 0.35) this._vfxFlash?.(x * T + T / 2, y * T + T / 2, 30, 0xff8a2a, 200, 0.6);
+                this.cameras.main.shake(120, 0.005); Sfx.play(this, 'erupt');
+            }
+            if (time - f.at >= C.FAULT_TELE + 350) core.faults.splice(i, 1);
+        }
+        // rifts burn whoever stands in them (a dash's invulnerability carries you across)
+        if (core.rifts.has(this.playerX + ',' + this.playerY) && time - (core._riftAt || 0) >= C.RIFT_TICK) { core._riftAt = time; this.takeDamage(C.RIFT_DMG * (this.enemyDamageScale || 1)); }
+        this._geodeDraw(time);
+    }
+    _geodeDraw(time) {
+        const core = this.fractureCore, C = this._geodeCfg(), T = this.TILE_SIZE, g = core.fxG, pg = core.plateG, c = core.container;
+        g.clear();
+        for (const line of core.riftLines) {   // rifts: one jagged gash through the floor, magma glowing down its middle
+            const pts = line.map(([x, y], i) => ({ x: x * T + T / 2 + Math.sin(i * 2.3) * T * 0.12, y: y * T + T / 2 + Math.cos(i * 1.9) * T * 0.12 }));
+            if (pts.length < 2) continue;
+            const glowA = 0.55 + 0.2 * Math.sin(time * 0.005);
+            g.lineStyle(T * 0.75, 0x0c0604, 0.9); g.strokePoints(pts, false);
+            g.lineStyle(T * 0.35, 0x7a1e08, 0.9); g.strokePoints(pts, false);
+            g.lineStyle(3, 0xff8a2a, glowA); g.strokePoints(pts, false);
+            g.lineStyle(1, 0xffe0a0, glowA * 0.8); g.strokePoints(pts, false);
+        }
+        for (const f of core.faults) {   // a fault: a crack drawn along it, brightening to the eruption, then the eruption
+            const k = Math.min(1, (time - f.at) / C.FAULT_TELE), on = time - f.at >= C.FAULT_TELE;
+            g.lineStyle(on ? 6 : 1 + 2 * k, on ? 0xffd27a : 0xff6a1a, on ? 0.9 : 0.35 + 0.55 * k);
+            g.beginPath();
+            f.tiles.forEach(([x, y], i) => { const j = Math.sin(i * 1.7 + f.seed) * T * 0.18, X = x * T + T / 2 + j, Y = y * T + T / 2 - j; if (i) g.lineTo(X, Y); else g.moveTo(X, Y); });
+            g.strokePath();
+        }
+        pg.clear();
+        if (!c.visible || core.state === 'vuln' || core.state === 'dive') return;
+        const now = time;
+        for (const p of core.plates) {   // the shell: a slab of stone each, glowing as it heats, cracked under half, violet while hexed
+            if (p.broken) continue;
+            const a0 = p.a - Math.PI / core.plates.length * 0.82, a1 = p.a + Math.PI / core.plates.length * 0.82, pts = [];
+            for (const [r, a] of [[22, a0], [38, a0 + 0.08], [40, p.a], [38, a1 - 0.08], [22, a1]]) pts.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r * 0.78 });
+            const heat = p.heat / C.HEAT_MAX, base = MenuArt.mix(0x5a5048, 0xff7a2a, heat * 0.85);
+            pg.fillStyle(p.hexUntil > now ? MenuArt.mix(base, 0xb07aff, 0.5) : base, 1); pg.fillPoints(pts, true);
+            pg.lineStyle(2, p.heat >= C.HEAT_SHOCK ? 0xffd27a : 0x2a221c, 1); pg.strokePoints(pts, true);
+            if (p.hp < p.max * C.CRACKED_AT) { pg.lineStyle(1, 0xfff0c8, 0.9); const m = pts[2]; pg.lineBetween(m.x, m.y, (pts[0].x + pts[4].x) / 2, (pts[0].y + pts[4].y) / 2); pg.lineBetween(m.x, m.y, pts[1].x, pts[1].y); }
+        }
     }
 
     createLightningElemental(x, y, tutorialRoomIndex) {
@@ -5602,7 +7374,7 @@ class LevelManager {
                             // any number of them, which is what made "sheer numbers" an
                             // empty threat: a crowd that cannot reach you is scenery.
                             e._moveCdMult = 0.6;
-                            e._queenBrood = true;
+                            e._queenBrood = true; e._noUlt = true;   // endless: no ult charge off them
                             e.sprite.setTint(0xff8888);
                             queen.spawnedEnemies.push(e);
 
@@ -5750,7 +7522,7 @@ class LevelManager {
         portal.hp -= damage;
         portal.hpBar.width = 48 * Math.max(0, portal.hp / portal.maxHp);
 
-        if (!portal._brittleUntil && portal.sprite?.active) {
+        if (!portal._brittleUntil && portal.sprite?.active && !this._noFlash) {   // (steady ticks skip it)
             // A white FILL: this was setTint(0xffffff), which on a red slime is no change at all,
             // so her hits never showed.
             portal.sprite.setTintFill(0xffffff);
@@ -5793,20 +7565,6 @@ class LevelManager {
         portal.gfxObjs = [];
         const idx = this.portals.indexOf(portal);
         if (idx !== -1) this.portals.splice(idx, 1);
-    }
-
-    _showCosmicTutorial() {
-        const msgs = [
-            'COSMIC ELEMENT UNLOCKED! (Press 4)',
-            'Cosmic weapons are BUFFS: switch in, click to cast, switch back',
-            'SHIFT — dash. Void Fists: punches and dashes build Momentum',
-            'The cosmic gem fills with time. V — ASCEND',
-        ];
-        msgs.forEach((msg, i) => {
-            this.time.delayedCall(i * 2200, () => {
-                this.showStatusText(this.player.x, this.player.y - 40 - i * 14, msg, '#cc88ff');
-            });
-        });
     }
 
     // ─── VOID SOVEREIGN BOSS ─────────────────────────────────────────────
@@ -6764,7 +8522,7 @@ class LevelManager {
                         this.tweens.add({
                             targets: boss.container, x: homeX, y: homeY, duration: 700, ease: 'Quad.easeOut',
                             onComplete: () => {
-                                if (boss._idleBobTween) boss._idleBobTween.resume();
+                                if (boss._idleBobTween && !boss._idleBobTween.isDestroyed()) boss._idleBobTween.resume();
                             }
                         });
                         this.time.delayedCall(1200, () => this._voidSovereignNextAttack());
@@ -6931,7 +8689,7 @@ class LevelManager {
                                 const returnHomeY = boss._baseY;
                                 this.tweens.add({
                                     targets: boss.container, x: returnHomeX, y: returnHomeY, duration: 700, ease: 'Quad.easeOut',
-                                    onComplete: () => { if (boss._idleBobTween) boss._idleBobTween.resume(); }
+                                    onComplete: () => { if (boss._idleBobTween && !boss._idleBobTween.isDestroyed()) boss._idleBobTween.resume(); }
                                 });
                                 this.time.delayedCall(1200, () => this._voidSovereignNextAttack());
                             }

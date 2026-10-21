@@ -29,6 +29,7 @@
     <script src="Relics.js"></script>
     <script src="Enchants.js"></script>
     <script src="Garden.js"></script>
+    <script src="Achievements.js"></script>
     <script src="Stats.js"></script>
     <script src="Progress.js"></script>
 
@@ -70,6 +71,7 @@
     <script src="HUD.js"></script>
     <script src="Visuals.js"></script>
     <script src="Creatures.js"></script>
+    <script src="SlimeModels.js"></script>
     <script src="Bosses.js"></script>
     <script src="Tower.js"></script>
     <script src="Training.js"></script>
@@ -89,10 +91,12 @@
         // No dependency guard here any more: UIKit, ElementResist and Transitions are
         // inlined above, so there is no external file of mine that can go missing. The
         // remaining <script src> tags are the project's own long-standing modules.
+        const RS = Settings.renderScale();   // Settings > GRAPHICS: low draws a big window at fewer pixels, stretched to fill it
         const config = {
             type: Phaser.AUTO,
-            width: window.innerWidth,
-            height: window.innerHeight,
+            width: Math.round(window.innerWidth * RS),
+            height: Math.round(window.innerHeight * RS),
+            zoom: 1 / RS,
             scene: [BootScene, LevelSelectScene, ShopScene, EnchantScene, GardenScene, UnderwellScene, SkyScene, GameScene, TowerDefenseScene],
             pixelArt: true,
             backgroundColor: '#000000'

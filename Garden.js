@@ -51,6 +51,9 @@ const Garden = {
         { id: 'cloudcotton', name: 'Cloud Cotton',  t: 0, src: 'sky',   shape: 'bubble',   hrs: 4,  dust: 130, col: 0xf0f4ff, bless: 'Airy',      m: { speed: 0.97, taken: 0.98 }, text: 'move 3% faster, take 2% less damage' },
         { id: 'skybloom',   name: 'Sky Bloom',      t: 0, src: 'sky',   shape: 'flower', time: 'day', hrs: 4.5, dust: 150, col: 0x8ac8ff, bless: 'Windborne', m: { crit: 0.02, ult: 1.04 }, text: '+2% crit chance, ults charge 4% faster' },
         { id: 'bogbean',    name: 'Bogbean',        t: 0, src: 'mud',   shape: 'bean',     hrs: 2,  dust: 50, col: 0x8a9a4a, bless: 'Boggy',      m: { leech: 1 },     text: 'kills heal 1 HP' },
+        // earned, never dropped: each is a gold achievement's reward (Achievements.js)
+        { id: 'stubthistle', name: 'Stubborn Thistle', t: 0, src: 'feat', feat: 'stubborn3', shape: 'stalk', hrs: 5, dust: 140, col: 0xc86aff, bless: 'Stubborn', m: { taken: 0.96, hp: 10 }, text: 'take 4% less damage, +10 max HP' },
+        { id: 'summitbloom', name: 'Summit Edelweiss', t: 0, src: 'feat', feat: 'climb3', shape: 'flower', hrs: 6, dust: 170, col: 0xf4f8ff, bless: 'Lofty', m: { pay: 1.06, dmg: 1.02 }, text: 'Tower floors pay 6% more, +2% damage' },
         // the secret one: found, never dropped (somewhere in Starfall Grove). Dust only, no blessing: one for the collection
         { id: 'stardrop',   name: 'Stardrop',       t: 0, src: 'secret', shape: 'star',    hrs: 2,  dust: 60, col: 0xfff0a0, bless: null, m: {}, text: 'no blessing: a rare one, for the collection', secret: true },
     ],

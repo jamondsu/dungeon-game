@@ -48,8 +48,17 @@ const Progress = {
     clear(id) {
         if (!id) return false;
         const first = this._get('cleared_' + id) !== '1';
-        try { localStorage.setItem('cleared_' + id, '1'); } catch (e) {}
+        try { localStorage.setItem('cleared_' + id, '1'); localStorage.removeItem('losses_' + id); } catch (e) {}
         return first;
+    },
+    // Deaths in a row on a story level (a clear resets it). The second sets a nudge the lobby shows next time you're there.
+    lost(id) {
+        if (!id) return;
+        const n = (parseInt(this._get('losses_' + id) || '0', 10) || 0) + 1;
+        try {
+            if (n >= 2) { localStorage.setItem('loss_nudge', id); localStorage.removeItem('losses_' + id); }
+            else localStorage.setItem('losses_' + id, String(n));
+        } catch (e) {}
     },
     clearLevelIndex(levelIndex) { return this.clear(this.BY_LEVEL_INDEX[levelIndex]); },
 

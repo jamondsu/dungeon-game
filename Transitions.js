@@ -38,28 +38,28 @@ const Transitions = {
     TIPS: [
         'Tip: Slimes cannot read. Do not leave them notes.',
         'Tip: Dying is bad. Try not doing that.',
-        'Tip: Fire resistant slimes are just regular slimes with a superiority complex. Hit them with ice.',
-        'Tip: The Barrier Staff knocks enemies back every time it eats a shot. Personal space is a right.',
+        'Tip: Fire resistant slimes are just regular slimes with a superiority complex. Hit them with ice. Or lightning.',
+        'Tip: The Barrier Staff knocks enemies back every time it eats a shot.',
         'Tip: Glurp does not do refunds. Glurp has never done refunds. Glurp does not know what a refund is.',
         'Tip: Hold V with two cosmic layers to transform. Tap it and you just feel very confident for 6 seconds.',
-        'Tip: Frozen slimes take extra damage. They are also very cold. Be nice.',
-        'Tip: Space is a dash. Mashing it does not make you dash harder, but it feels like it does.',
-        'Tip: Q and F throw your gadgets. The Decoy Slime is not your friend. It is a distraction with feelings.',
-        'Tip: Ult gems fill from hitting things. Hitting walls does not count. We checked.',
+        'Tip: Frozen slimes temporarily lose health. Finish them fast, before they recover.',
+        'Tip: Shift is a dash. Mashing it does not make you dash harder, but it feels like it does.',
+        'Tip: Q and F throw your gadgets. The Decoy Slime is not your friend. It is a distraction with feelings :(.',
+        'Tip: Ult gems fill from hitting things. Hitting walls does not count. Trust me, I checked.',
         'Tip: Your stats train in tiers of 5. No skipping leg day.',
         'Tip: The Cistern is wet. This is not a tip, just a warning.',
         'Tip: Lightning is great at crowds and terrible at bosses. Like a golden retriever.',
         'Tip: Astral marks pop for ult charge. Pop them. It is very satisfying.',
-        'Tip: A hit that bounces off a resistant slime makes a little clink. That clink is judging you.',
+        'Tip: A hit that bounces off a resistant slime makes a little clink. That clink is judging you. Do better, switch elements.',
         'Tip: Cosmic weapons are buffs. Switch in, cast, switch back. Like a costume change but deadlier.',
         'Tip: First clears pay fragments. Second clears pay vibes.',
-        'Tip: Health pots heal you. Eating them off the floor is fine. The five second rule does not exist here.',
-        'Tip: The Void Sovereign has a crown. You do not. Fix that.',
+        'Tip: Health pots heal you. Eating them off the floor is fine. The five second rule doesnt exist here.',
+        'Tip: The Void Sovereign has a crown. You dont. Fix that king/queen.',
         'Tip: Mend Totem heals you if you stand near it. Standing near it is the hard part.',
         'Tip: Slimes respawn when you restart. They do not remember you. You remember them.',
-        'Tip: M mutes everything. ESC pauses. Neither makes the slimes go away.',
+        'Tip: M mutes everything. ESC pauses. Neither makes the slimes go away, theres another shortcut for that shhh.',
         'Tip: Talents unlock every 5 stat levels. Opening Strike makes the first hit spicy.',
-        'Tip: Twin Collapse hits harder the farther apart you throw it. Go big.',
+        'Tip: Twin Collapse from the Cosmic Ult hits harder the farther apart you throw it. Go big.',
         'Tip: If a room seals behind you, that is called commitment.'
     ],
 
@@ -119,6 +119,7 @@ const Transitions = {
             ring.clear().lineStyle(3, accent, 0.95).strokeCircle(cx, cy, st.r)
                 .lineStyle(1, 0xffffff, 0.5).strokeCircle(cx, cy, st.r + 6);
         };
+        draw();   // now, not on the tween's first update: an empty hole leaves the veil covering everything for a frame (a black blink)
         scene.tweens.add({ targets: st, r: HOLD_R, duration: 700, ease: 'Cubic.easeInOut', onUpdate: draw,
             onComplete: () => {
                 scene.tweens.add({ targets: st, r: HOLD_R - 4, duration: 260, yoyo: true, ease: 'Sine.easeInOut', onUpdate: draw });

@@ -272,6 +272,12 @@ class MenuArt {
                     m.disc(12, 12, 7.2, 'O'); m.disc(12, 12, 4.6, 'o');
                     m.line(9, 9, 12, 12, 'Y'); m.line(12, 12, 10, 15, 'Y'); m.line(12, 12, 16, 11, 'Y');
                 }, fx: [['bolt', 'front', 18, 8, 23, 3], ['bolt', 'front', 6, 16, 1, 21], ['bolt', 'front', 6, 7, 1, 3], ['bolt', 'front', 18, 16, 23, 21]] },
+            conductor: { el: 'lightning', draw: m => {   // a staff with a spool of wire for a head, the wire trailing to a clamp
+                    m.line(4, 22, 10, 14, 'W', 2); m.rect(9, 12, 3, 3, 'G');
+                    m.disc(13, 8, 5.4, 'G'); m.disc(13, 8, 4, 'Y'); m.disc(13, 8, 1.6, 'G');
+                    m.line(17, 11, 20, 17, 'Y'); m.rect(19, 17, 3, 3, 'S'); m.set(20, 20, 'S'); m.set(22, 20, 'S');
+                }, frames: 10, fps: 12,   // a pulse of current winds round the spool, runs down the wire, and the clamp sparks
+                fx: [['current', 'front', [[13, 4], [16, 5], [17, 8], [16, 11], [13, 12], [10, 11], [9, 8], [10, 5], [13, 5], [15, 7], [15, 9], [17, 11], [18, 13], [19, 15], [20, 17]], 6]] },
             cosmic_fists: { el: 'cosmic', draw: m => { side(m, 'V', 'P'); m.set(12, 11, 'P'); m.set(10, 13, 'p'); m.set(13, 14, 'P'); },
                 fx: [['streak', 'back', 0, 6, 2, 16], ['star', 'front', 20, 4, 1], ['star', 'front', 21, 18, 3]] },
             barrier_staff: { el: 'cosmic', draw: m => {
@@ -416,6 +422,28 @@ class MenuArt {
                 }
                 px = nx; py = ny;
             }
+        } else if (kind === 'current') {
+            // a bright head and its tail running the path over the first `run` frames, then pixel bolts crackling off its
+            // end for a few frames, then a beat of quiet
+            const [, , path, run] = e, n = path.length - 1;
+            if (f < run) {
+                const head = (f + 1) / run * n;
+                for (let k = 0; k < 4; k++) {
+                    const t = head - k * 0.8; if (t < 0) continue;
+                    const i = Math.min(n - 1, Math.floor(t)), u = t - i, [ax, ay] = path[i], [bx, by] = path[i + 1];
+                    put(Math.round(ax + (bx - ax) * u), Math.round(ay + (by - ay) * u), k === 0 ? 0xffffff : k === 1 ? 0xfff6b0 : 0xffe14a, 1 - k * 0.22);
+                }
+            } else if (f < run + 3) {
+                const [x0, y0] = path[n];
+                for (let b = 0; b < 3; b++) {   // jagged pixel bolts off the clamp
+                    let x = x0, y = y0; const dx = R() < 0.5 ? -1 : 1, dy = R() < 0.5 ? -1 : 1;
+                    for (let s = 0; s < 4; s++) {
+                        x += R() < 0.6 ? dx : 0; y += R() < 0.6 ? dy : 0;
+                        put(x, y, s === 0 || f === run ? 0xffffff : 0xfff6b0, 1 - s * 0.15);
+                    }
+                }
+                put(x0, y0, 0xffffff);
+            }
         } else if (kind === 'spark') {
             const [, , x0, y0, x1, y1, n, col] = e;
             for (let i = 0; i < n; i++) {
@@ -471,19 +499,20 @@ class MenuArt {
     }
 
     // ── SHOP: THE WEAPONS ON DISPLAY ─────────────────────────────────────────
-    // A weapon's icon as a strip of 4 frames (26x26: the 24px art and its outline) and the
-    // idle animation that cycles them.
+    // A weapon's icon as a strip of frames (26x26: the 24px art and its outline; 4 unless its entry asks for more) and
+    // the idle animation that cycles them.
     static iconSheet(scene, id) {
-        if (!MenuArt.ICONS()[id]) return null;
-        const key = 'mn_icon_' + id;
+        const def = MenuArt.ICONS()[id];
+        if (!def) return null;
+        const key = 'mn_icon_' + id, NF = def.frames || 4;
         if (!scene.textures.exists(key)) {
-            const F = 26, P = new MenuArt.Px(F * 4, F);
-            for (let f = 0; f < 4; f++) MenuArt.paintIcon(P, id, f, f * F + 1, 1);
+            const F = 26, P = new MenuArt.Px(F * NF, F);
+            for (let f = 0; f < NF; f++) MenuArt.paintIcon(P, id, f, f * F + 1, 1);
             const t = P.toTexture(scene, key, false);
-            for (let f = 0; f < 4; f++) t.add(String(f), 0, f * F, 0, F, F);
+            for (let f = 0; f < NF; f++) t.add(String(f), 0, f * F, 0, F, F);
         }
         if (!scene.anims.exists(key)) {
-            scene.anims.create({ key, frames: [0, 1, 2, 3].map(f => ({ key, frame: String(f) })), frameRate: 6, repeat: -1 });
+            scene.anims.create({ key, frames: Array.from({ length: NF }, (_, f) => ({ key, frame: String(f) })), frameRate: def.fps || 6, repeat: -1 });
         }
         return key;
     }

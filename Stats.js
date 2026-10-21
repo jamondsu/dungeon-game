@@ -213,7 +213,7 @@ const WeaponLevels = {
         ice_fists:         [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
         icicle_cannon:     [['pellets', 'Spread Shot', 3, 200, 3.5, p => p >= 3 ? 'DOUBLE BARREL: two volleys a shot' : `+${p} icicle${p === 1 ? '' : 's'} a shot`],
                             ['choke', 'Tight Choke', 3, 160, 1.7, p => `${20 * p}% tighter, +${1.5 * p} tiles`]],
-        fractal_shard:     [['shards', 'Splinter', 2, 220, 2, p => `${1 + p} shards in the first strike`],
+        fractal_shard:     [['shards', 'Splinter', 2, 220, 2, p => `the spikes hit ${20 * p}% harder`],
                             ['fan', 'Burst Fan', 3, 200, 1.8, p => `+${2 * p} shards in the burst`],
                             ['speed', 'Rapid Facets', 3, 200, 1.8, p => `${8 * p}% faster, both strikes`]],
         lightning_fists:   [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
@@ -221,6 +221,8 @@ const WeaponLevels = {
         ball_lightning:    [['life', 'Long Charge', 3, 200, 1.8, p => `orbs last ${20 * p}% longer`],
                             ['field', 'Wider Field', 3, 200, 1.8, p => `+${0.5 * p} tiles pulse range`],
                             ['swarm', 'Swarm', 3, 200, 1.8, p => `+${20 * p} seekers on burst`]],   // capped: each seeker is a live object
+        conductor:         [['reach', 'Long Lines', 3, 220, 1.8, p => `wires reach ${p} tile${p > 1 ? 's' : ''} further`],
+                            ['wires', 'Extra Line', 1, 400, 2, p => `${3 + p} wires at once`]],
         cosmic_fists:      [['momentum', 'Deep Momentum', 2, 300, 2, p => `${3 + p} Momentum at most`]],
         barrier_staff:     [['wards', 'More Wards', 6, 220, 1.6, p => `${4 + p} wards`],
                             ['cd', 'Quick Recast', 3, 200, 1.8, p => `${10 * p}% shorter cooldown`]],

@@ -147,7 +147,7 @@ class CombatSystem {
     // scores as 0, so they are redundant rather than wrong, and removing 86 of them
     // would be a far larger change than making the multiplier apply.
     resolveElementalHit(enemy, raw, element, escapeHatch = false) {
-        if (!enemy) return null;
+        if (!enemy || this._phasedOut(enemy)) return null;
         const el = element || this.currentElement || 'physical';
         // ESCAPE HATCHES. A marked enemy is immune to direct hits by design and has one way
         // to die (see ElementResist's TABLE): fire-marked to fire's environmental damage
@@ -157,7 +157,7 @@ class CombatSystem {
         // callers pass escapeHatch = true. Brittle still applies.
         if (escapeHatch && ((el === 'fire' && enemy.fireImmune) || (el === 'ice' && enemy.iceImmune))) {
             this._csOnHit?.(enemy, el);
-            return this._dmgNote(enemy, el, this._cubeNote(enemy, el, this._tallyDamage(el, this._afterHit(enemy, el, (raw || 0) * this._brittleMult(enemy, el) * (enemy._purpleMarked ? 1.5 : 1) * this._dmgOutMult(enemy, el) * this._hitRoll(enemy, el)))));   // purple; your damage (boons, stat, weapon level); the roll
+            return this._dmgNote(enemy, el, this._cubeNote(enemy, el, this._tallyDamage(el, this._specialHit(enemy, this._afterHit(enemy, el, (raw || 0) * this._brittleMult(enemy, el) * (enemy._purpleMarked ? 1.5 : 1) * this._dmgOutMult(enemy, el) * this._hitRoll(enemy, el)), el))));   // purple; your damage (boons, stat, weapon level); the roll
         }
         const res = ElementResist.resolve(enemy, el, raw);
         if (this._mods?.pierceRes && res.mult > 0 && res.mult < 1) { const m2 = 1 - (1 - res.mult) / 2; res.dmg = res.dmg / res.mult * m2; res.mult = m2; }   // Eye of the Storm: resisted hits ignore half the resistance
@@ -168,7 +168,7 @@ class CombatSystem {
             return null;
         }
         this._noteUltHit(enemy, el);     // which gem this hit charges, and whether it reacted
-        if (res.mult > 0 && res.mult < 1 && res.profile !== ElementResist.TABLE.none
+        if (res.mult > 0 && res.mult < 1 && res.profile !== ElementResist.TABLE.none && el !== 'cosmic'   // (cosmic is the same on everything: nothing resists it)
             && enemy.sprite?.active) {
             this._showResistShield(enemy, res);
         }
@@ -181,7 +181,7 @@ class CombatSystem {
         // PURPLE (Fractal's upgraded mark): x1.5 from every source, here for the same reason as
         // brittle. damageEnemy, which resolves on its own, applies it there. (It was x2, but only
         // damageEnemy ever applied it; on every source, x2 made the Fractal the best group weapon.)
-        return this._dmgNote(enemy, el, this._cubeNote(enemy, el, this._tallyDamage(el, this._afterHit(enemy, el, res.dmg * this._brittleMult(enemy, el) * (enemy._purpleMarked ? 1.5 : 1) * this._dmgOutMult(enemy, el) * this._hitRoll(enemy, el)))));   // your damage (boons, stat, weapon level); the roll
+        return this._dmgNote(enemy, el, this._cubeNote(enemy, el, this._tallyDamage(el, this._specialHit(enemy, this._afterHit(enemy, el, res.dmg * this._brittleMult(enemy, el) * (enemy._purpleMarked ? 1.5 : 1) * this._dmgOutMult(enemy, el) * this._hitRoll(enemy, el)), el))));   // your damage (boons, stat, weapon level); the roll
     }
 
     // Diminishing returns within one attack (shotguns, volleys): the first of a volley's
@@ -201,8 +201,44 @@ class CombatSystem {
     // Relic effects on a hit's final number (Relics.js): Colossus Core adds a slice of your max HP,
     // Bloodthirst heals off it (at most 6% of your max HP a second), Splinter Core spills some
     // onto the enemies beside it (not off its own spill).
+    // Queens (this.portals) aren't in this.enemies, so an area attack that loops the enemies missed them, and its centre-tile
+    // damageBossAtTile only caught one it landed dead on. This hits every queen whose box comes within rTiles of (tx, ty), tile
+    // units (fractions fine); `skipCentre`: not one covering the centre tile, which damageBossAtTile already hit. Returns how many.
+    // Lightning jumping on from `from` (anything with tile x, y and a sprite): every Queen and boss within `r` tiles takes `dmg`
+    // too, each once per chain or fork (`seen`, its hit list). Chains and forks only ever looked through this.enemies.
+    _zapBosses(from, dmg, r, seen) {
+        if (!(dmg > 0) || !from?.sprite) return;
+        const T = this.TILE_SIZE, out = [];
+        for (const p of this.portals || []) if (p.active) out.push([p, p.tileX, p.tileY, () => this.damagePortal(p, dmg), p.container]);
+        for (const b of [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore]) {
+            if (!b?.active || !b.container) continue;
+            const bx = b.tileX ?? Math.floor(b.container.x / T), by = b.tileY ?? Math.floor(b.container.y / T);
+            out.push([b, bx, by, () => this.damageBossAtTile(bx, by, dmg, undefined, 'lightning'), b.container]);
+        }
+        for (const [o, x, y, hit, at] of out) {
+            if (seen?.includes(o) || Math.hypot(x - from.x, y - from.y) > r) continue;
+            seen?.push(o);
+            hit();
+            if (at) this.drawLightningBolt(from, { sprite: { x: at.x, y: at.y - 20 } });
+        }
+    }
+
+    _hitPortalsAround(tx, ty, rTiles, dmg, skipCentre = false) {
+        const T = this.TILE_SIZE; let n = 0;
+        for (const p of [...(this.portals || [])]) {
+            if (!p.active || !(dmg > 0)) continue;
+            if (skipCentre && this._portalCoversTile?.(p, Math.floor(tx), Math.floor(ty))) continue;
+            const r = (p.hitR ?? T / 2) / T, qx = p.tileX + 0.5, qy = p.tileY + 0.5 + (p.hitOffY || 0) / T;
+            const dx = Math.max(0, Math.abs(tx + 0.5 - qx) - r), dy = Math.max(0, Math.abs(ty + 0.5 - qy) - r);   // to the nearest edge of her box
+            if (Math.hypot(dx, dy) > rTiles) continue;
+            this.damagePortal(p, dmg); n++;
+        }
+        return n;
+    }
+
     _afterHit(enemy, el, dmg) {
         const M = this._mods || {}, w = this.equippedWeapons?.[el || this.currentElement];
+        if (this._tick && M.burnLeech && el === 'fire' && dmg > 0 && this.health > 0) this.health = Math.min(this.maxHealth, this.health + M.burnLeech);   // Cinder Heart: every burn tick heals a little
         if (!(dmg > 0) || this._tick) return dmg;   // on-hit extras skip burn ticks (+% max HP on every tick of every burning enemy)
         const hpHit = (M.hpHit || 0) + (Enchants.n(w, 'juggernaut') + (this._ultHit ? Enchants.n(w, 'earthshaker') : 0)) / 100;   // Juggernaut; Earthshaker on ult hits
         if (hpHit) dmg += (this.maxHealth || 100) * hpHit;
@@ -213,12 +249,24 @@ class CombatSystem {
             const cap = (this.maxHealth || 100) * 0.06, h = Math.min(dmg * drain, cap - this._drained);
             if (h > 0) { this._drained += h; this.health = Math.min(this.maxHealth, this.health + h); }
         }
+        if (M.critArc && el === 'lightning' && this._lastCrit && !this._arcBusy && enemy?.sprite?.active) {   // Static Edge: a lightning crit arcs on
+            const amt = dmg * M.critArc, from = enemy, T = this.TILE_SIZE;
+            this.time.delayedCall(0, () => {
+                let to = null, best = 3.5;
+                for (const n of this.enemies || []) { if (n === from || !n.sprite?.active || n.health <= 0 || this._phasedOut(n)) continue; const d = Math.hypot(n.x - from.x, n.y - from.y); if (d < best) { best = d; to = n; } }
+                if (!to || !from.sprite?.active) return;
+                const g = this.add.graphics().setDepth(4.9); g.lineStyle(2, 0xffe14a, 0.95); g.lineBetween(from.sprite.x, from.sprite.y, to.sprite.x, to.sprite.y);
+                this.tweens.add({ targets: g, alpha: 0, duration: 180, onComplete: () => g.destroy() });
+                this._arcBusy = true;
+                try { this.damageEnemy(to, amt / ((this._dmgOutMult?.(to, 'lightning')) || 1), 'lightning'); } finally { this._arcBusy = false; }
+            });
+        }
         if (M.splash && !this._splashBusy && enemy?.sprite?.active) {
             const bx = enemy.x, by = enemy.y, amt = dmg * M.splash;
             this.time.delayedCall(0, () => {
                 if (!this.enemies) return;
                 this._splashBusy = true;
-                try { for (const n of [...this.enemies]) if (n !== enemy && n.sprite?.active && n.health > 0 && Math.abs(n.x - bx) + Math.abs(n.y - by) === 1) this.damageEnemy(n, amt / ((this._dmgOutMult?.(n, el)) || 1), el); }
+                try { for (const n of [...this.enemies]) if (n !== enemy && n.sprite?.active && n.health > 0 && !this._phasedOut(n) && Math.abs(n.x - bx) + Math.abs(n.y - by) === 1) this.damageEnemy(n, amt / ((this._dmgOutMult?.(n, el)) || 1), el); }
                 finally { this._splashBusy = false; }
             });
         }
@@ -254,7 +302,7 @@ class CombatSystem {
         this._lastCrit = false;
         // Rhythm (an enchant): every nth hit with the weapon is a crit
         const every = Enchants.rhythm(w), beat = every && !this._critBusy && ((this._rhythm ??= {})[w] = ((this._rhythm[w] || 0) + 1) % every) === 0;
-        if (!this._critBusy && (beat || (c > 0 && Math.random() < c))) {
+        if (!this._critBusy && (this._forceCrit || beat || (c > 0 && Math.random() < c))) {   // (_forceCrit: a hit that always crits, Deadly Accuracy's shards)
             m *= Math.min(CombatSystem.CRIT_DMG_CAP, CombatSystem.CRIT_MULT + Enchants.critMult(w) + (this._mods?.critMult || 0) + ie / 100);   // crit damage has a ceiling: crit stacking multiplied without one
             this._critPending = true;   // the next damage number is this hit's: gold
             this._lastCrit = true;   // Bloodletter heals off it (_afterHit)
@@ -376,7 +424,7 @@ class CombatSystem {
             else if (el === 'ice') this.applyChill?.(enemy, 0.5);
             else if (el === 'cosmic') this._csHex?.(enemy);
             else if (el === 'lightning') {   // one more jump, to the nearest other enemy within 3 tiles
-                const n = (this.enemies || []).filter(e => e !== enemy && e.sprite?.active && e.health > 0 && Math.abs(e.x - enemy.x) + Math.abs(e.y - enemy.y) <= 3)
+                const n = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e !== enemy && e.sprite?.active && e.health > 0 && Math.abs(e.x - enemy.x) + Math.abs(e.y - enemy.y) <= 3)
                     .sort((a, b) => (Math.abs(a.x - enemy.x) + Math.abs(a.y - enemy.y)) - (Math.abs(b.x - enemy.x) + Math.abs(b.y - enemy.y)))[0];
                 if (n) { this.drawLightningBolt(enemy, n); this.damageEnemy(n, 6 * (this.damageScaling || 1), 'lightning'); }
             }
@@ -427,6 +475,9 @@ class CombatSystem {
         if (!enemy) return false;
         if (enemy.isVoidSniper && (enemy._inDimension || enemy._sniperInvisible)) return true;
         if (enemy._drownSubmerged) return true;   // Drowner is under the floor mid-attack
+        if (enemy._huntPhase === 'gone') return true;   // a Hunter inside its flurry
+        if (enemy._isGem) return true;   // the Gem: nothing breaks it but clearing the floor
+        if (enemy._shroud && Math.hypot(this.playerX - enemy.x, this.playerY - enemy.y) > enemy._shroudR) return true;   // a Wraith's shroud: untouchable until you're close
         // Displacer capture. Added here rather than at each call site because this helper is
         // already the single gate 17+ damage paths consult -- that was the lesson from the
         // Void Sniper, which was killable while phased because the guard was copied by hand
@@ -451,7 +502,7 @@ class CombatSystem {
 
         // Void snipers invincible while phased out
         if (this._phasedOut(enemy)) {
-            if (enemy.sprite?.active) this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'INVISIBLE', '#9922cc');
+            if (enemy.sprite?.active && this.time.now - (enemy._phasedAt || 0) > 500) { enemy._phasedAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, enemy._isGem ? 'UNBREAKABLE' : 'INVISIBLE', enemy._isGem ? '#d8e8ff' : '#9922cc'); }
             return;
         }
 
@@ -503,7 +554,7 @@ class CombatSystem {
         // 0.70x baseline against normal enemies is its resting state rather than an
         // event worth a floating label — that reads as spam and teaches nothing.
         // The same shield flash and readout as resolveElementalHit, so both paths look alike.
-        if (_res.mult > 0 && _res.mult < 1 && _res.profile !== ElementResist.TABLE.none
+        if (_res.mult > 0 && _res.mult < 1 && _res.profile !== ElementResist.TABLE.none && _atkElement !== 'cosmic'   // (nothing resists cosmic)
             && enemy.sprite && enemy.sprite.active) {
             this._showResistShield(enemy, _res);
         }
@@ -530,15 +581,17 @@ class CombatSystem {
         }
         const toughnessMult = (enemy._absorberToughnessMult && enemy._absorberBuffUntil > this.time.now)
             ? 1 / enemy._absorberToughnessMult : 1;
-        const actualDamage = this._dmgNote(enemy, _atkElement, this._afterHit(enemy, _atkElement, damage * tsunamiBonus * frozenBonus * purpleBonus * toughnessMult * this._dmgOutMult(enemy, _atkElement) * this._hitRoll(enemy, _atkElement)));   // (_dmgNote: Hex's share for the number)
+        const actualDamage = this._dmgNote(enemy, _atkElement, this._specialHit(enemy, this._afterHit(enemy, _atkElement, damage * tsunamiBonus * frozenBonus * purpleBonus * toughnessMult * this._dmgOutMult(enemy, _atkElement) * this._hitRoll(enemy, _atkElement)), _atkElement));   // (_dmgNote: Hex's share for the number)
         enemy.health -= actualDamage;
+        enemy._hurtAt = this.time.now;   // a Budding Slime's clock
+        enemy._lastEl = _atkElement; enemy._lastResisted = _res.mult < 1 && _res.profile !== ElementResist.TABLE.none && _atkElement !== 'cosmic';   // what killed it, for the achievements (cosmic's 0.7 on anyone isn't resisting)
         this._tallyDamage(_atkElement, actualDamage);
-        this._dmgLanded = true;
+        this._dmgLanded = !enemy._noUlt;   // (spawners and what they spawn pay no ult charge: callers that pay their own read this)
         this._csOnHit?.(enemy, _atkElement);   // Cosmic.js: Ascend marks every hit
 
         // Gain ult charge on hit (skip for lightning to prevent chain spam). By the hit's
         // element, like everything below: the held one only for untyped hits.
-        if (_atkElement !== 'lightning') {
+        if (_atkElement !== 'lightning' && !enemy._noUlt) {   // no farming spawners (Budding Slimes, a Queen's brood)
             this.gainUltCharge(this.ultChargePerHit, _atkElement, false, _ultReact);
         }
 
@@ -583,9 +636,9 @@ class CombatSystem {
         }
 
         const flashColor = _atkElement === 'ice' ? 0x9ff0ff : 0xffffff;
-        enemy.sprite.setTintFill(flashColor);   // a real flash (setTint(0xffffff) changed nothing)
+        if (!this._noFlash) enemy.sprite.setTintFill(flashColor);   // a real flash (setTint(0xffffff) changed nothing); steady ticks skip it
         this._vfxHit?.(enemy, actualDamage, _atkElement);
-        this.time.delayedCall(70, () => {
+        if (!this._noFlash) this.time.delayedCall(70, () => {
             if (enemy.sprite && enemy.sprite.active) {
                 if (enemy.isFrozen) {
                     enemy.sprite.setTint(0x88ccff);
@@ -609,12 +662,16 @@ class CombatSystem {
         if (enemy?._isFrost && this._frostEncase?.(enemy)) return;   // LevelManager: a frost slime's first death is a statue
         if (enemy?._isEncased && this._encEncase?.(enemy)) return;   // LevelManager: an Encased Slime's first death is its stone
         if (enemy?._isEncased) this._encCleanup?.(enemy);   // its stone, its rubble: gone with it
+        if (enemy?._isGem && enemy.sprite?.active) return;   // the Gem only breaks when the floor's clear (LevelManager._gemShatter)
+        if (enemy?._isLeech) this._leechDie(enemy);   // what it stole comes back
+        if (enemy && !enemy._achCounted) { enemy._achCounted = true; Achievements.onKill(this, enemy); }
+        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_leechRing', '_leechMark', '_diverTell', '_leechIcon', '_leechGlow', '_tideAura', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
         const _leech = this._mods?.leech;   // relics and Tower boons: kills heal
         const _con = Enchants.n(this.equippedWeapons?.[this.currentElement], 'contagion') / 100;   // Contagion: its burn and chill move on
         if (_con && enemy && !enemy._spread && ((enemy.burnStacks || 0) > 0 || (enemy.chillStacks || 0) > 0) && this.enemies) {
             enemy._spread = true;
             const b = Math.ceil((enemy.burnStacks || 0) * _con), c = (enemy.chillStacks || 0) * _con;
-            const next = this.enemies.filter(n => n !== enemy && n.sprite?.active && n.health > 0 && Math.abs(n.x - enemy.x) + Math.abs(n.y - enemy.y) <= 3)
+            const next = this.enemies.filter(n => !this._phasedOut?.(n) && n !== enemy && n.sprite?.active && n.health > 0 && Math.abs(n.x - enemy.x) + Math.abs(n.y - enemy.y) <= 3)
                 .sort((a, z) => Math.abs(a.x - enemy.x) + Math.abs(a.y - enemy.y) - Math.abs(z.x - enemy.x) - Math.abs(z.y - enemy.y))[0];
             if (next) this.time.delayedCall(0, () => { if (!next.sprite?.active) return; if (b) this.applyBurnStack?.(next, b); if (c) this.addChillStacks?.(next, c); });
         }
@@ -646,7 +703,7 @@ class CombatSystem {
             this.time.delayedCall(60, () => {
                 if (!this.enemies) return;
                 this._vfxFlash?.(px, py, 40, 0xffb84a, 220, 0.8);
-                for (const n of [...this.enemies]) if (n !== enemy && n.sprite?.active && n.health > 0 && Math.abs(n.x - bx) <= 1 && Math.abs(n.y - by) <= 1) this.damageEnemy(n, _boom * (this.damageScaling || 1), el);
+                for (const n of [...this.enemies]) if (n !== enemy && n.sprite?.active && n.health > 0 && !this._phasedOut(n) && Math.abs(n.x - bx) <= 1 && Math.abs(n.y - by) <= 1) this.damageEnemy(n, _boom * (this.damageScaling || 1), el);
             });
         }
         // Cistern marks hang off the enemy, and the splice below makes it unreachable
@@ -974,6 +1031,7 @@ class CombatSystem {
         // A taunted enemy's hit lands on the ally it's attacking, not you (_tauntBegin).
         if (this._tauntAlly) { this._tauntAlly.hurt?.(amount); return; }
         this._lastCombatAt = this.time.now;   // being hit is fighting too (combat time, _tickRunStats)
+        if ((this._hitBy?._tideUntil || 0) > this.time.now) amount *= this._hitBy._tideMult;   // standing in water by a Tidecaller
         if (this.time.now < (this._frostShieldUntil || 0)) amount = this._frostShieldHit(amount);
         if (this._cs && this.time.now < this._cs.horizonUntil) { const src = this._hitBy?.sprite; this._cs.horizonHitAt = this.time.now; this._cs.horizonHitA = src && this.player ? Math.atan2(src.y - this.player.y, src.x - this.player.x) : -Math.PI / 2; }   // the Event Horizon ripples where it's hit
         // Mid-dash: the hit passes through you (ElementSystem.playerDash).
@@ -996,6 +1054,7 @@ class CombatSystem {
         if (this.time.now < (this._iceFrostUntil || 0)) amount *= this._iceFrostCfg?.().TAKEN ?? 2;   // the ice ult: this cold, you're fragile
         const actualDamage = PlayerStats.hurt(this, amount * this.damageReductionMultiplier * (this.statTakenMult ?? 1) * Enchants.taken(this.equippedWeapons?.[this.currentElement]));   // Bulwark: the weapon you hold
         if (actualDamage <= 0) return;
+        this._hurtTotal = (this._hurtTotal || 0) + actualDamage;   // a Tower floor without a scratch (Achievements.onFloor)
         if (this._luckCrit) { this._luckCrit = 0; if (!this._mods?.luckGain || !this._luck) this.showStatusText?.(this.player.x, this.player.y - 40, 'LUCK LOST', '#8a9a8a'); }
         if (this._mods?.luckGain && this._luck) { this._luck = 0; this.showStatusText?.(this.player.x, this.player.y - 40, 'LUCK LOST', '#8a9a8a'); }
         // Phantom Step (a relic): hit while above 90% HP, you blink a tile away (once a second at most)
@@ -1020,6 +1079,10 @@ class CombatSystem {
         try {
             if (_thorns && this._hitBy?.sprite?.active && this._hitBy.health > 0) this.damageEnemy(this._hitBy, _thorns * (this.damageScaling || 1));
             if (this._mods?.thornsPct && this._hitBy?.sprite?.active && this._hitBy.health > 0) this.damageEnemy(this._hitBy, amount * this._mods.thornsPct);   // Colossus Core: a share of the hit, back
+            if (this._mods?.frostThorns && this.currentElement === 'ice' && this._hitBy?.sprite?.active && this._hitBy.health > 0) {   // Rime Ward: holding ice, a melee hit on you is answered in frost
+                const by = this._hitBy; this.damageEnemy(by, this._mods.frostThorns * (this.damageScaling || 1), 'ice');
+                if (by.sprite?.active && by.health > 0) this.applyChill?.(by, 0.34);
+            }
         } finally { this._thornsHit = false; }   // Colossus Core: a share of the hit, back
 
         // Cancel cosmic channeling — getting hit interrupts it
@@ -1152,6 +1215,14 @@ class CombatSystem {
         // ── Fracture Core ─────────────────────────────────────────────────────
         if (this.fractureCore?.active && typeof this.damageFractureCore === 'function') {
             const fc = this.fractureCore;
+            if (fc.geode) {   // the Geode: a hit on it or the ring round it lands on its shell (or its heart, exposed)
+                if (Math.max(Math.abs(tileX - fc.tileX), Math.abs(tileY - fc.tileY)) > 1 || fc._isInvulnerable) return false;
+                if (!_cooldownOk(fc)) return false;
+                const _el = element || this.currentElement;
+                this._geodeHit?.(damage, _el);
+                this._tallyDamage(_el, damage); const _r = this._noteUltHit(fc, _el); this.gainUltCharge(this.ultChargePerHit, _el, false, _r);
+                return true;
+            }
             this._fcHitFissureTile?.(tileX, tileY);   // a blow on a crack cools it
             if (fc.state !== 'vuln') return false; // only damageable in the window the rhythm earns
             // its body is a little over a tile across: a hit on its tile or the ring round it lands
@@ -1192,6 +1263,7 @@ class CombatSystem {
             amt *= (C.WEAPON_MULT[this.equippedWeapons?.[el]] ?? 1) * C.CHARGE_SCALE;
             const reacted = reaction !== null ? (reaction === 'residue' ? 'residue' : reaction ? 'full' : null) : hit && hit.el === el ? hit.reaction : null;
             amt *= (this._mods?.ult ?? 1) * Enchants.ult(this.equippedWeapons?.[el]);   // relics and Tower boons; the weapon's enchants
+            if (el === 'ice' && this._fracMode?.kind === 'fan' && this._fracMode.until > now) amt *= this._fractalCfg?.().STORM_ULT ?? 1;   // the Fractal Shard's Shard Storm
             if (reacted) {
                 amt *= (reacted === 'residue' ? C.RESIDUE_MULT : C.REACTION_MULT) * (this._mods?.react ?? 1) * Enchants.react(this.equippedWeapons?.[el]);
                 (this._ultReactKind ||= {})[el] = reacted;
@@ -1246,7 +1318,7 @@ class CombatSystem {
                 this._reactBoomBusy = true;
                 try {
                     if (sx != null) this._vfxFlash?.(sx, sy, 46, 0xd8f0ff, 200, 0.8);
-                    for (const n of [...this.enemies]) if (n.sprite?.active && n.health > 0 && Math.abs(n.x - bx) <= 1 && Math.abs(n.y - by) <= 1) this.damageEnemy(n, dmg, el);
+                    for (const n of [...this.enemies]) if (n.sprite?.active && n.health > 0 && !this._phasedOut(n) && Math.abs(n.x - bx) <= 1 && Math.abs(n.y - by) <= 1) this.damageEnemy(n, dmg, el);
                 } finally { this._reactBoomBusy = false; }
             });
         }
@@ -1258,6 +1330,7 @@ class CombatSystem {
 
     switchToElement(targetElement) {
         if (this._iceShellUntil > this.time.now) return;   // encased in ice
+        if (this._elStolen?.[targetElement]?.sprite?.active) { if (this.player?.active && this.time.now - (this._stolenMsgAt || 0) > 800) { this._stolenMsgAt = this.time.now; this.showStatusText(this.player.x, this.player.y - 28, `${targetElement.toUpperCase()} STOLEN: KILL THE LEECH`, '#e8d0ff'); } return; }   // a Leech has it
         if (this._csFormLock?.()) return;   // Cosmic.js: no switching while transformed
         if (this.ignitionActive && targetElement !== 'fire') { if (this.player?.active && this.time.now - (this._scorchLockMsg || 0) > 800) { this._scorchLockMsg = this.time.now; this.showStatusText(this.player.x, this.player.y - 28, 'LOCKED IN FIRE', '#ff8a3a'); } return; }   // Scorch holds you in fire
         // In tutorial rooms 0 & 1: fire fists only, no switching allowed
@@ -1345,28 +1418,8 @@ class CombatSystem {
         this.cosmicCharging = false;
         this.cosmicContinuousLaserActive = false;
 
-        // Clear projectiles -- except the fire ult's shotgun pellets, which keep flying: the ult
-        // keeps firing while you play another element now.
-        const _keepPellet = f => this.ignitionActive && f._isShotgun;
-        for (let fireball of this.fireballs) {
-            if (_keepPellet(fireball)) continue;
-            if (fireball.sprite) fireball.sprite.destroy();
-        }
-        this.fireballs = this.fireballs.filter(_keepPellet);
-
-        // Clear ice shards
-        for (let s of this.iceShards) this.destroyIceShard(s);
-        this.iceShards = [];
-
-        // Clear lightning arc projectiles
-        for (let p of (this.lightningProjectiles || [])) { if (p.g?.active) p.g.destroy(); }
-        this.lightningProjectiles = [];
-        // Ignition's pellets, for the same reason. They were the one projectile type that
-        // survived a switch, so swapping off fire left a stream of rounds still flying --
-        // and still able to land kindle -- for an element you were no longer holding.
-        // NOTE: the kindle MARKS are deliberately left alone. Those persist across a
-        // switch on purpose, so you can brand a target and swap away while it burns down.
-        if (typeof this._clearKindleBullets === 'function') this._clearKindleBullets();
+        // (Shots already flying keep going when you switch: each carries its own element, and a shard or fireball landing
+        // after you've switched is how reactions are set up. They used to be cleared here.)
 
         // Switch to new element. There used to be a 25-point ult charge penalty here; with one
         // gem per element, switching is what the system rewards (reactions), not what it taxes.
@@ -1464,11 +1517,10 @@ class CombatSystem {
 
     updateUltAbsorbers(time) {
         if (!this.enemies) return;
-        const ABSORB_RADIUS  = 4;    // tiles
-        const DRAIN_PER_SEC  = 18;   // ult charge drained per second while in range
-        const HEAL_RADIUS    = 3;    // tiles — enemies healed around absorber
-        const BUFF_DURATION  = 3000; // ms neighbours stay tankier after being healed
-        const TOUGHNESS_MULT = 1.6;  // damage reduction factor while buffed
+        const ABSORB_RADIUS  = TutorialManager.ULT_BLOCK_R;   // tiles, round: the zone it draws (it was 4, measured as a diamond)
+        const DRAIN_PER_SEC  = 6;    // ult charge drained per second while in range (18 till 2026-10-20: a gem in ~5s)
+        const HEAL_RADIUS    = 4;    // tiles, round — enemies healed around absorber
+        const HEAL_PER_SEC   = 0.08; // of their max health a second, while it's drinking
 
         for (const enemy of this.enemies) {
             if (!enemy.isUltAbsorber || !enemy.sprite?.active) continue;
@@ -1485,7 +1537,7 @@ class CombatSystem {
 
             const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
             const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
+            const dist = Math.hypot(enemy.x - this.playerX, enemy.y - this.playerY);
             const _gems = this.ultGems ? Object.values(this.ultGems).reduce((a, b) => a + b, 0) : this.ultCharge;
             const inRange = dist <= ABSORB_RADIUS && _gems > 0;
 
@@ -1600,14 +1652,13 @@ class CombatSystem {
 
             // ── Heal + buff nearby enemies proportional to amount drained ─
             // heal% of max health = drain * HEAL_PER_DRAIN_SCALE
-            const HEAL_PCT = drain * 0.30; // drain 18/s → ~5.4% maxHp/s to neighbours
+            // the heal is its own rate, for as long as it's drinking (it used to scale with the drain)
             for (const ally of this.enemies) {
                 if (!ally.sprite?.active || ally.health <= 0) continue;
-                const adx = Math.abs(ally.x - enemy.x), ady = Math.abs(ally.y - enemy.y);
-                if (adx + ady > HEAL_RADIUS) continue;
+                if (Math.hypot(ally.x - enemy.x, ally.y - enemy.y) > HEAL_RADIUS) continue;
 
                 // Heal
-                const healAmt = ally.maxHealth * (HEAL_PCT / 100);
+                const healAmt = ally.maxHealth * HEAL_PER_SEC * elapsed;
                 if (healAmt > 0 && ally.health < ally.maxHealth) {
                     ally.health = Math.min(ally.maxHealth, ally.health + healAmt);
                     this.updateEnemyHealthBar(ally);
@@ -1631,43 +1682,7 @@ class CombatSystem {
                     }
                 }
 
-                // Toughness buff — reduce incoming damage while active
-                if (!ally._absorberBuffUntil || ally._absorberBuffUntil < time) {
-                    ally._absorberBuffUntil = time + BUFF_DURATION;
-                    ally._absorberToughnessMult = TOUGHNESS_MULT;
-                    // Purple tint to show buffed state
-                    if (ally.sprite?.active && !ally.isFrozen) ally.sprite.setTint(0xcc88ff);
-                    // Toughness shield mark — small shield icon above enemy head
-                    if (!ally._toughnessShieldMark) {
-                        const sm = this.add.graphics().setDepth(3.2);
-                        sm.x = ally.sprite.x; sm.y = ally.sprite.y - 28;
-                        // Shield silhouette
-                        sm.fillStyle(0xcc44ff, 0.95);
-                        sm.fillTriangle(-5, -6, 5, -6, 5, 2);
-                        sm.fillTriangle(-5, -6, -5, 2, 5, 2);
-                        sm.fillTriangle(-5, 2, 0, 7, 5, 2);
-                        // Bright inner highlight
-                        sm.fillStyle(0xffffff, 0.40);
-                        sm.fillTriangle(-2, -4, 2, -4, 0, 1);
-                        sm.lineStyle(1.2, 0xff99ff, 0.90);
-                        sm.strokeTriangle(-5, -6, 5, -6, 5, 2);
-                        sm.strokeTriangle(-5, -6, -5, 2, 5, 2);
-                        sm.strokeTriangle(-5, 2, 0, 7, 5, 2);
-                        ally._toughnessShieldMark = sm;
-                        this.tweens.add({ targets: sm, alpha: 0.55, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-                    }
-                    // Visual: small crown aura
-                    if (!ally._absorberBuffAura) {
-                        const ba = this.add.graphics().setDepth(1.2);
-                        ba.lineStyle(1.5, 0xcc44ff, 0.55); ba.strokeCircle(0, 0, 14);
-                        ba.x = ally.sprite.x; ba.y = ally.sprite.y;
-                        ally._absorberBuffAura = ba;
-                        this.tweens.add({ targets: ba, scaleX: 1.15, scaleY: 1.15, alpha: 0.3, duration: 500, yoyo: true, repeat: -1 });
-                    }
-                } else {
-                    // Refresh timer
-                    ally._absorberBuffUntil = time + BUFF_DURATION;
-                }
+                // (no toughness any more: 2026-10-20 it only heals, harder)
             }
         }
 
@@ -1889,7 +1904,7 @@ class CombatSystem {
     applyChill(enemy, weight = 1, opts = {}) {
         if (!enemy || enemy.health <= 0 || !enemy.sprite?.active) return false;
         if (enemy.fireImmune || enemy.elementImmune) return false;
-        if (enemy._sniperInvisible) return false;
+        if (enemy._sniperInvisible || this._phasedOut(enemy)) return false;
         // A hard freeze (ults only) is an already-spent state, not a bar to keep filling. So is a
         // cube: chill kept filling while one was up, and re-cubing reset its timer, so steady ice
         // fire held an enemy brittle forever and its shatter never came.
@@ -1919,7 +1934,7 @@ class CombatSystem {
     // Called by every ice weapon on iceImmune hits — 3 stacks = freeze
     _applyIceElementalChill(enemy) {
         if (!enemy.iceImmune || enemy.fireImmune || enemy.elementImmune) return;
-        if (enemy.isFrozen) return;
+        if (enemy.isFrozen || this._phasedOut(enemy)) return;
         if (enemy.sprite?.active) {
             enemy.sprite.setTint(0x88ccff);
             this.time.delayedCall(100, () => { if (enemy.sprite?.active && !enemy.isFrozen) enemy.sprite.clearTint(); });
@@ -1985,7 +2000,8 @@ class CombatSystem {
     // Rounding at the point of ADDITION rather than loosening the 14 separate `>= 3` comparisons:
     // one place to be right, and it keeps the threshold an exact integer everywhere it is read.
     addChillStacks(enemy, amount) {
-        if (!enemy) return 0;
+        if (!enemy || this._phasedOut(enemy)) return enemy?.chillStacks || 0;
+        if (enemy._immuneFx === 'ice') { if (enemy.sprite?.active && this.time.now - (enemy._fxNoAt || 0) > 900) { enemy._fxNoAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 30, "CAN'T BE CHILLED", '#bff4ff'); } return 0; }   // an Adaptive Shade in its ice form
         const next = (enemy.chillStacks || 0) + (amount || 0);
         // 4dp is far finer than any weight in use and kills the drift outright.
         enemy.chillStacks = Math.round(next * 10000) / 10000;
@@ -2166,7 +2182,7 @@ class CombatSystem {
     }
 
     freezeEnemy(enemy, duration) {
-        if (enemy.isVoidSniper && enemy._sniperInvisible) return; // invisible — immune to freeze
+        if (enemy.health > 0 && this._phasedOut(enemy)) return;   // phased out: immune to freeze
         if (enemy.health <= 0) {
             // Clear any existing freeze visuals on dead enemies
             if (enemy.freezeVisuals) {
@@ -2297,7 +2313,7 @@ class CombatSystem {
         }
         // Missing entirely until now: ice was a clean way to kill a phased sniper.
         if (this._phasedOut(enemy)) {
-            if (enemy.sprite?.active) this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'INVISIBLE', '#9922cc');
+            if (enemy.sprite?.active && this.time.now - (enemy._phasedAt || 0) > 500) { enemy._phasedAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, enemy._isGem ? 'UNBREAKABLE' : 'INVISIBLE', enemy._isGem ? '#d8e8ff' : '#9922cc'); }
             return;
         }
         // Fire elementals are immune to all ice damage
@@ -2510,6 +2526,7 @@ class CombatSystem {
         const splashTileY = Math.floor(pixelY / this.TILE_SIZE);
 
         for (let enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (enemy === directEnemy) continue;
             const dist = Math.abs(enemy.x - splashTileX) + Math.abs(enemy.y - splashTileY);
             if (dist <= radius) {

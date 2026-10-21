@@ -187,7 +187,7 @@ class VisualFX {
     // of it. Quarter resolution, so it costs about one extra full-screen copy. WebGL only.
     _vfxBuildBloom() {
         const B = this._vfxCfg().BLOOM, cam = this.cameras.main;
-        if (!B || !(B.STRENGTH > 0) || !cam.setPostPipeline || (typeof Settings !== 'undefined' && !Settings.glow())) return;
+        if (!B || !(B.STRENGTH > 0) || !cam.setPostPipeline || (typeof Settings !== 'undefined' && (!Settings.glow() || Settings.low()))) return;
         const cls = VisualFX.bloomPipeline(this.game);
         if (!cls) return;
         cam.setPostPipeline('VfxBloom');
@@ -570,6 +570,32 @@ void main() {
             o.texture?.setFilter?.(Phaser.Textures.FilterMode.LINEAR);
         }
     }
+    // Phaser batches every object on the list each frame, on screen or not. World objects well outside the view are
+    // hidden from the world camera alone (its bit in cameraFilter, which nothing else of ours uses), so nothing that
+    // reads .visible notices. Graphics, emitters and the like are left alone: their x, y says nothing about where they draw.
+    _vfxCull() {
+        const cam = this.cameras.main, v = cam.worldView, bit = cam.id, M = 96;
+        if (!bit || !v.width) return;
+        const l = v.x - M, r = v.right + M, t = v.y - M, b = v.bottom + M;
+        for (const o of this.children.list) {
+            if (o._vfxCam !== 'world' || o.scrollFactorX !== 1) continue;
+            const ty = o.type;
+            if (ty !== 'Sprite' && ty !== 'Image' && ty !== 'Container' && ty !== 'Text' && ty !== 'Rectangle' && ty !== 'Ellipse' && ty !== 'Arc') continue;
+            let x0, x1, y0, y1;
+            if (ty === 'Container') {   // only small ones gathered round their own spot (a wide one at 0,0 is never culled)
+                if (o.list.length > 8) continue;
+                let m = 0; for (const c of o.list) m = Math.max(m, Math.abs(c.x) + Math.abs(c.displayWidth || 0), Math.abs(c.y) + Math.abs(c.displayHeight || 0));
+                if (m > 200) continue;
+                const e = (m + 32) * Math.max(Math.abs(o.scaleX), Math.abs(o.scaleY));
+                x0 = o.x - e; x1 = o.x + e; y0 = o.y - e; y1 = o.y + e;
+            } else {
+                const w = Math.abs(o.displayWidth || 0), h = Math.abs(o.displayHeight || 0);
+                x0 = o.x - (o.originX ?? 0.5) * w; x1 = x0 + w; y0 = o.y - (o.originY ?? 0.5) * h; y1 = y0 + h;
+            }
+            const out = x1 < l || x0 > r || y1 < t || y0 > b;
+            if (out !== !!o._vfxCulled) { o._vfxCulled = out; if (out) o.cameraFilter |= bit; else o.cameraFilter &= ~bit; }
+        }
+    }
     _vfxUnsort(o) {
         if (o && o.parentContainer && o._vfxCam) { o.cameraFilter = 0; o._vfxCam = null; }
     }
@@ -598,6 +624,8 @@ void main() {
             this._void.tilePositionY = cam.scrollY * 0.22;
         }
         this._vfxUpdateLight(time);
+        this._vfxPerfWatch(time, delta);
+        this._vfxCull();
         this._vfxUpdateShadows();
         this._vfxUpdateTorches(time);
         this._vfxUpdateRune(delta);
@@ -793,6 +821,7 @@ void main() {
             this._vfxFrame(`waterhl${v}`, (ctx, X, Y, S) => this._vfxPaintWater(ctx, X, Y, S, v, true));
             this._vfxFrame(`ice${v}`, (ctx, X, Y, S) => this._vfxPaintIce(ctx, X, Y, S, v));
             this._vfxFrame(`sludge${v}`, (ctx, X, Y, S) => this._vfxPaintSludge(ctx, X, Y, S, v));
+            this._vfxFrame(`fog${v}`, (ctx, X, Y, S) => this._vfxPaintFog(ctx, X, Y, S, v));
         }
         this._vfxFrame('ward_v', (ctx, X, Y, S) => this._vfxPaintWard(ctx, X, Y, S, true));
         this._vfxFrame('ward_h', (ctx, X, Y, S) => this._vfxPaintWard(ctx, X, Y, S, false));
@@ -1195,6 +1224,29 @@ void main() {
         }
     }
 
+    // Fog (dried water): a tile of drifting smoke in the same hand as the lava and the sludge, banded wisps in three greys,
+    // thinning to nothing at its rim so a field of it reads as one bank, not a grid
+    _vfxFogTile(cx, cy) {
+        return this.add.image(cx, cy, 'vfx_atlas', `fog${Math.floor(Math.random() * 4)}`).setDepth(0.6).setAlpha(0)
+            .setAngle(90 * Math.floor(Math.random() * 4));
+    }
+    _vfxPaintFog(ctx, X, Y, T, v) {
+        const R = this._vfxRng(v * 7919 + 41), a1 = R() * 6.28, a2 = R() * 6.28, f1 = 0.22 + R() * 0.12, f2 = 0.31 + R() * 0.1;
+        ctx.clearRect(X, Y, T, T);
+        for (let y = 0; y < T; y++) {
+            for (let x = 0; x < T; x++) {
+                const dx = (x + 0.5) / T - 0.5, dy = (y + 0.5) / T - 0.5, rim = Math.max(0, 1 - Math.max(Math.abs(dx), Math.abs(dy)) * 1.25);
+                const w = Math.sin(x * f1 + Math.sin(y * 0.18 + a1) * 2.2) * 0.5 + Math.sin(y * f2 + x * 0.09 + a2) * 0.5;   // swirling bands
+                const d = (w * 0.5 + 0.5) * (0.7 + 0.3 * rim) + (R() - 0.5) * 0.08;
+                if (d < 0.3) continue;
+                ctx.fillStyle = d > 0.78 ? `rgba(230,238,242,${(0.62 * (0.4 + 0.6 * rim)).toFixed(2)})`
+                    : d > 0.6 ? `rgba(176,190,200,${(0.5 * (0.4 + 0.6 * rim)).toFixed(2)})`
+                    : `rgba(120,132,142,${(0.34 * (0.4 + 0.6 * rim)).toFixed(2)})`;
+                ctx.fillRect(X + x, Y + y, 1, 1);
+            }
+        }
+    }
+
     // The ice ult's flash-freeze, one tile of it: frosted glass with a few bright facets.
     // Starts invisible; the caller fades it in and out and destroys it.
     _vfxIceTile(cx, cy) {
@@ -1235,7 +1287,7 @@ void main() {
         // Not in the Cistern, where it's open water and the deep-sea backdrop fills it.
         if (!this.isLevel6) cam.setBackgroundColor(C.WALL.rock);
         // Dust in the light around you.
-        if (this.player && this.add.particles) {
+        if (this.player && this.add.particles && !(typeof Settings !== 'undefined' && Settings.low())) {   // (not on low graphics)
             this._dust = this.add.particles(0, 0, 'vfx_dot', {
                 lifespan: { min: 2600, max: 4200 },
                 speedX: { min: -7, max: 7 }, speedY: { min: -12, max: -3 },
@@ -1282,10 +1334,11 @@ void main() {
     // ── LIGHT ────────────────────────────────────────────────────────────────
     _vfxBuildLight() {
         const C = this._vfxCfg(), cam = this.cameras.main;
-        // Half resolution, drawn at 2x: light is soft anyway, and it's a quarter of the fill.
-        const w = Math.ceil((cam.width / cam.zoom + C.LIGHT_PAD * 2) / 2);
-        const h = Math.ceil((cam.height / cam.zoom + C.LIGHT_PAD * 2) / 2);
-        this._shade = this.add.renderTexture(0, 0, w, h).setOrigin(0, 0).setScale(2).setDepth(C.SHADE_DEPTH);
+        // Half resolution, drawn at 2x: light is soft anyway, and it's a quarter of the fill. A quarter on low graphics.
+        const LR = this._lightRes = typeof Settings !== 'undefined' && Settings.low() ? 4 : 2;
+        const w = Math.ceil((cam.width / cam.zoom + C.LIGHT_PAD * 2) / LR);
+        const h = Math.ceil((cam.height / cam.zoom + C.LIGHT_PAD * 2) / LR);
+        this._shade = this.add.renderTexture(0, 0, w, h).setOrigin(0, 0).setScale(LR).setDepth(C.SHADE_DEPTH);
         this._shade.texture?.setFilter?.(Phaser.Textures.FilterMode.LINEAR);
         this._glows = [];
         for (let i = 0; i < C.MAX_LIGHTS; i++) {
@@ -1366,6 +1419,7 @@ void main() {
         if (this.cosmicBlackHole) add(this.cosmicBlackHole.x, this.cosmicBlackHole.y, this.cosmicBlackHoleRadius * T, C.EL.cosmic, 0.9, 0.34);
         if (this.cosmicBlackHoleProjectile?.active) add(this.cosmicBlackHoleProjectile.x, this.cosmicBlackHoleProjectile.y, 60, C.EL.cosmic, 0.9, 0.4);
         for (const L of this._cfxLights?.(time) || []) add(L.x, L.y, L.r, L.color, L.a, L.g);   // Creatures.js
+        for (const L of this._condLights || []) add(L.x, L.y, L.r, L.color, L.a, L.g);   // the Conductor's wires
         for (const L of this._bfxLights?.(time) || []) add(L.x, L.y, L.r, L.color, L.a, L.g);   // Bosses.js
         const fl = this._vfxFlashes || [];
         for (let i = fl.length - 1; i >= 0; i--) {
@@ -1376,6 +1430,23 @@ void main() {
         return out;
     }
 
+    // Graphics on AUTO: the first level watched from 3s in to 8s; under 40 fps on average and it switches to low graphics,
+    // taking off what it can at once (the bloom, the dust) and the rest from the next level and launch.
+    _vfxPerfWatch(time, delta) {
+        if (typeof Settings === 'undefined' || Settings.quality() !== 'auto' || Settings.low() || this._perfDone) return;
+        const W = this._perfW ||= { t0: time, n: 0, ms: 0 };
+        const age = time - W.t0;
+        if (age < 3000) return;
+        W.n++; W.ms += delta || 16;
+        if (age < 8000) return;
+        this._perfDone = true;
+        if (W.ms / W.n <= 25) return;   // 40 fps or better
+        Settings._set('perf_low', '1');
+        this.cameras.main.resetPostPipeline?.();
+        this._dust?.destroy(); this._dust = null;
+        this.showStatusText?.(this.player.x, this.player.y - 40, 'RUNNING SLOW: GRAPHICS SET TO LOW', '#c8d8ff');
+    }
+
     _vfxUpdateLight(time) {
         const sh = this._shade;
         if (!sh?.active || !this.player) return;
@@ -1383,8 +1454,9 @@ void main() {
         const ox = cam.width / 2, oy = cam.height / 2;
         const left = cam.scrollX + ox - ox / cam.zoom - C.LIGHT_PAD;
         const top = cam.scrollY + oy - oy / cam.zoom - C.LIGHT_PAD;
+        const LR = this._lightRes || 2, W = sh.width * LR, H = sh.height * LR;
+        if (LR > 2 && (this._lightSkip = !this._lightSkip)) return;   // low graphics: the light redrawn every other frame (moved with it, so it stays on the world)
         sh.setPosition(left, top);
-        const W = sh.width * 2, H = sh.height * 2;
         // Only what reaches the view, nearest you first, capped.
         const px = this.player.x, py = this.player.y;
         const lights = this._vfxLights(time)
@@ -1399,9 +1471,9 @@ void main() {
         const veiled = !!(veil?.key && this.textures.exists(veil.key));
         if (lights.length || veiled) {
             sh.beginDraw();
-            if (veiled) sh.stamp(veil.key, null, -left / 2, -top / 2,
-                { originX: 0, originY: 0, scale: this.TILE_SIZE / 2, alpha: veil.alpha, skipBatch: true });
-            for (const L of lights) sh.stamp('vfx_light', null, (L.x - left) / 2, (L.y - top) / 2, { scale: L.r / 128, alpha: Math.min(1, L.a), skipBatch: true });
+            if (veiled) sh.stamp(veil.key, null, -left / LR, -top / LR,
+                { originX: 0, originY: 0, scale: this.TILE_SIZE / LR, alpha: veil.alpha, skipBatch: true });
+            for (const L of lights) sh.stamp('vfx_light', null, (L.x - left) / LR, (L.y - top) / LR, { scale: L.r / 64 / LR, alpha: Math.min(1, L.a), skipBatch: true });
             sh.endDraw(true);
         }
         const gl = this._glows;
@@ -1732,12 +1804,7 @@ void main() {
         }
         // fog (dried water, steamTiles): damp dark stone with a film of condensation, baked with the water (_bakeWater) since it sits still;
         // _vfxTileFx adds the wisps boiling off it
-        for (const k of steam?.keys() || []) {
-            const c = k.indexOf(','), x = +k.slice(0, c) * T, y = +k.slice(c + 1) * T;
-            g.fillStyle(0x06080b, 0.34); g.fillRect(x, y, T, T);
-            g.fillStyle(0xd7e6ec, 0.09); g.fillRect(x + 2, y + 2, T - 4, T - 4);
-            g.fillStyle(0xe9f3f6, 0.22); g.fillRect(x + 3 + ((x * 7 + y) % (T - 9)), y + 4 + ((y * 3 + x) % (T - 10)), 3, 1);
-        }
+        // (fog has its own tiles now: LevelManager._fogOn)
     }
 
     // ── LIVING TILES ─────────────────────────────────────────────────────────
@@ -1780,16 +1847,14 @@ void main() {
         g.clear(); g2.clear();
         // STEAM
         const life = this._waterCfg?.().STEAM_MS || 12000;
-        if (this.steamTiles?.size) {   // the wisps (the damp stone itself is baked with the water: _vfxDrawWater)
-            const thin = this.steamTiles.size > 40 ? 40 / this.steamTiles.size : 1;   // a big patch of fog isn't a blizzard of wisps
-            for (const [k, exp] of this.steamTiles) {
-                const left = (exp - time) / life;               // 1 when it forms, 0 when it's gone
-                if (left <= 0) continue;
-                const c = k.indexOf(','), x = +k.slice(0, c) * T, y = +k.slice(c + 1) * T;
-                if (!inView(x, y)) continue;
-                if (Math.random() < dt / (80 + 560 * (1 - left)) * thin) {
-                    this._vfxSteamFx.emitParticleAt(x + 3 + Math.random() * (T - 6), y + T * 0.5 + Math.random() * T * 0.4, 1);
-                }
+        if (this._fogImgs?.size) {   // the fog tiles (LevelManager._fogOn): rolling slowly, thinning as they run out
+            for (const [k, img] of this._fogImgs) {
+                const exp = this.steamTiles?.get(k);
+                if (exp == null || !img.active) continue;
+                if (!inView(img._fx, img._fy)) continue;
+                const left = (exp - time) / life, born = 1 - left;
+                img.setAlpha(0.9 * Math.min(1, born * 8, left * 2.5));
+                img.setPosition(img._fx + Math.sin(time / 1700 + img._fy * 0.05) * 2.5, img._fy + Math.sin(time / 2300 + img._fx * 0.07) * 1.5);
             }
         }
         // LAVA

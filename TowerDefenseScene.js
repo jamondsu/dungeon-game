@@ -59,6 +59,7 @@ class TowerDefenseScene extends Phaser.Scene {
     _vfxPaintIce(...a){return VisualFX.prototype._vfxPaintIce.call(this,...a);}
     _vfxPaintWard(...a){return VisualFX.prototype._vfxPaintWard.call(this,...a);}
     _vfxPaintSludge(...a){return VisualFX.prototype._vfxPaintSludge.call(this,...a);}
+    _vfxPaintFog(...a){return VisualFX.prototype._vfxPaintFog.call(this,...a);}
     getWallFrame(...a){return WorldGen.prototype.getWallFrame.call(this,...a);}
     hasFloorNeighbor(...a){return WorldGen.prototype.hasFloorNeighbor.call(this,...a);}
     isFloor(...a){return WorldGen.prototype.isFloor.call(this,...a);}
@@ -1104,6 +1105,8 @@ class TowerDefenseScene extends Phaser.Scene {
     updateRangedEnemies(...a){return EnemyManager.prototype.updateRangedEnemies.call(this,...a);}
     updateEnemyProjectiles(...a){return EnemyManager.prototype.updateEnemyProjectiles.call(this,...a);}
     updateFloorTraps(...a){return EnemyManager.prototype.updateFloorTraps.call(this,...a);}
+    _poisonPlayer(...a){return EnemyManager.prototype._poisonPlayer.call(this,...a);}
+    _poisonRing(...a){return EnemyManager.prototype._poisonRing.call(this,...a);}
     updateGroundDrops(...a){return EnemyManager.prototype.updateGroundDrops.call(this,...a);}
     moveEnemies(...a){
         this.enemies=this.enemies.filter(e=>e!=null);
@@ -1542,6 +1545,12 @@ class TowerDefenseScene extends Phaser.Scene {
     showCannotSwitchText()       {}
     spawnIceSplinter()           {}
     spawnIgnitionTrail()         {}
+    _specialHit(e, d)            { return d; }   // no Armored, Shade or plated enemies here
+    _leechDie()                  {}              // no Leeches either
+    _shotX(...a) { return WeaponSystem.prototype._shotX.call(this,...a); }
+    conductorAttack()            {}   // (not in tower defense)
+    _shotY(...a) { return WeaponSystem.prototype._shotY.call(this,...a); }
+    _clearShot(...a)             { return LevelManager.prototype._clearShot.call(this, ...a); }
     triggerCombustion()          {}
     ignitionExplodeEnemy()       {}
     fireballSplash()             {}
@@ -7575,7 +7584,7 @@ class TowerDefenseScene extends Phaser.Scene {
         pet._travelingToSleep=true;
         pet._sleepTargetX=bed?.x??pet.gfx?.x;
         pet._sleepTargetY=bed?.y??pet.gfx?.y;
-        this._showFloatingText(this.player.x,this.player.y-30,`${pet.type} wisp crashed... 😴`,'#ff8888');
+        this._showFloatingText(this.player.x,this.player.y-30,`${pet.type} wisp crashed... zz`,'#ff8888');
     }
 
     // ─── EXCLUSIVE PANELS ──────────────────────────────────────────────────────
@@ -8014,7 +8023,7 @@ class TowerDefenseScene extends Phaser.Scene {
             const barCol=isLockedOut?0xff2244:isAsleep?0x553333:staminaPct>0.5?0x44ff88:staminaPct>0.25?0xffdd44:0xff4444;
             r.barFill.width=Math.max(1,88*staminaPct);
             r.barFill.fillColor=barCol;
-            const statusStr=isLockedOut?`🔒 ${Math.ceil((lockoutUntil-this.time.now)/1000)}s`:isAsleep?'😴 Sleeping':isEquipped?'✓ Active':`${Math.round(staminaPct*100)}%`;
+            const statusStr=isLockedOut?`LOCKED ${Math.ceil((lockoutUntil-this.time.now)/1000)}s`:isAsleep?'Sleeping':isEquipped?'✓ Active':`${Math.round(staminaPct*100)}%`;
             r.statusTxt.setText(statusStr);
             r.statusTxt.setColor(isLockedOut?'#ff6688':isAsleep?'#996666':isEquipped?'#44ffaa':'#7788aa');
         }
@@ -8481,7 +8490,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     const shardNeed=node.shardCost||0;
                     const haveShards=this._masteryStore(type).shards;
                     const shardOk=!shardNeed||haveShards>=shardNeed;
-                    const costStr=maxed?'MAX':!prereq?'🔒':(shardNeed?`${cost}✦ ${shardNeed}❖`:`${cost}✦`);
+                    const costStr=maxed?'MAX':!prereq?'LOCKED':(shardNeed?`${cost}✦ ${shardNeed}❖`:`${cost}✦`);
                     const costCol=maxed?'#55ffa0':!prereq?'#6a7788':(canAfford&&shardOk)?'#ffdd44':'#9a7a45';
                     nt(this.add.text(nx,ny+nr+15,costStr,{fontSize:costF,fontFamily:'monospace',color:costCol,fontStyle:'bold',stroke:'#04070c',strokeThickness:3})
                         .setOrigin(0.5,0).setScrollFactor(0).setDepth(53));
@@ -8499,7 +8508,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     hit.on('pointerdown',p=>{
                         p.event.stopPropagation();
                         if(maxed){ setInfo(node.name,'✓ Fully upgraded. '+descFor(purchased),'#44ff88'); return; }
-                        if(!prereq){ setInfo(node.name,'🔒 Locked — buy the previous node on this branch first.','#cc9955'); return; }
+                        if(!prereq){ setInfo(node.name,'Locked: buy the previous node on this branch first.','#cc9955'); return; }
                         const c=node.costFn(this._wispUpgrades[type][nodeId]||0);
                         // Capstones additionally cost MASTERY SHARDS, earned by actually
                         // playing this wisp. Checked before Glorps so the player sees the
@@ -8578,11 +8587,11 @@ class TowerDefenseScene extends Phaser.Scene {
         const lockoutUntil=this._wispLockoutUntil?.[type]||0;
         if(this.time.now<lockoutUntil){
             const secsLeft=Math.ceil((lockoutUntil-this.time.now)/1000);
-            this._showFloatingText(this.player.x,this.player.y-30,`Crashed — ${secsLeft}s left 😴`,'#ff8888');
+            this._showFloatingText(this.player.x,this.player.y-30,`Crashed — ${secsLeft}s left`,'#ff8888');
             return;
         }
         if((this._wispStamina?.[type]??100)<=0){
-            this._showFloatingText(this.player.x,this.player.y-30,'Still recharging... 😴','#888899');
+            this._showFloatingText(this.player.x,this.player.y-30,'Still recharging...','#888899');
             return;
         }
         if((this._equippedWisps?.size||0)>=5){
@@ -9581,7 +9590,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 drainThisCast=(base+perHit*willHit)*discount;
             }
             pet.stamina=Math.max(0,(pet.stamina||100)-(this._devNoStamina?0:drainThisCast));
-            if(pet.stamina<=0&&!this._devNoStamina){ pet.fatigued=true; this._showFloatingText(wx,wy-20,'😴','#888899'); }
+            if(pet.stamina<=0&&!this._devNoStamina){ pet.fatigued=true; this._showFloatingText(wx,wy-20,'zz','#888899'); }
 
             // ── SKYWARD APPRENTICE: crosshair lock → cannon strike ────────
             if(pet.type==='skyward'){
@@ -10963,7 +10972,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     const nameTxt=nt(this.add.text(cx,ny+pad,node.name,
                         {fontSize:'14px',fontFamily:'monospace',color:maxed?'#66ffaa':isExcluded?'#664444':unlocked?'#e6eef8':'#46586c',
                          fontStyle:'bold',wordWrap:{width:colW-18},align:'center'}).setOrigin(0.5,0).setScrollFactor(0).setDepth(29));
-                    const cs=maxed?'✓ MAX':isExcluded?'✕ EXCL':unlocked?`${node.costFn(purchased)} ⚙`:'🔒 LOCKED';
+                    const cs=maxed?'✓ MAX':isExcluded?'✕ EXCL':unlocked?`${node.costFn(purchased)} ⚙`:'LOCKED';
                     const cc=maxed?'#66ffaa':isExcluded?'#ff5555':canAfford&&unlocked?'#ffdd44':'#6a5033';
                     nt(this.add.text(cx,ny+nodeH-pad-2,cs,{fontSize:'13px',fontFamily:'monospace',color:cc,fontStyle:'bold'})
                         .setOrigin(0.5,1).setScrollFactor(0).setDepth(29));

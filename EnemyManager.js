@@ -241,9 +241,10 @@ class EnemyManager {
                 }
                 if (currentTime - (enemy._lastArcTime || 0) >= (enemy._arcCooldown || 2500)) {
                     enemy._lastArcTime = currentTime;
-                    const dx = this.playerX - enemy.x, dy = this.playerY - enemy.y;
-                    const dist = Math.abs(dx) + Math.abs(dy);
-                    if (dist <= 5 && this.player?.active) {
+                    const dist = Math.hypot(this.playerX - enemy.x, this.playerY - enemy.y);   // round, as its ring shows
+                    // not through a wall, and not out of a room you haven't come into (it zapped you in the doorway of the Void Rift's boss room)
+                    const sameRoom = !this._roomGated() || enemy.tutorialRoomIndex === undefined || enemy.tutorialRoomIndex === this.getCurrentPlayerRoom();
+                    if (dist <= 5 && this.player?.active && sameRoom && this._clearShot(enemy.x, enemy.y, this.playerX, this.playerY)) {
                         // Arc toward player
                         this.drawLightningBolt({ sprite: enemy.sprite }, { sprite: this.player });
                         this.takeDamage(8 * (this.enemyDamageScale || 1));
@@ -454,8 +455,7 @@ class EnemyManager {
                     // Teleport sprite to target tile (still hidden)
                     enemy.x = pick.x; enemy.y = pick.y;
                     enemy.sprite.x = wx; enemy.sprite.y = wy;
-                    if (enemy.healthBarBg?.active)   { enemy.healthBarBg.x   = wx; enemy.healthBarBg.y   = wy - 14; }
-                    if (enemy.healthBarFill?.active) { enemy.healthBarFill.x = wx - 12; enemy.healthBarFill.y = wy - 14; }
+                    this.updateEnemyHealthBar(enemy);   // its bar where every bar sits (it was placed by hand, off by a few pixels and left there)
                     if (enemy._voidMark?.active)     { enemy._voidMark.x = wx; enemy._voidMark.y = wy - 22; }
 
                     // Open portal at new position
@@ -476,6 +476,7 @@ class EnemyManager {
                         if (enemy._voidMark?.active) this.tweens.add({ targets: enemy._voidMark, alpha: 0.85, duration: 220 });
                         if (enemy.healthBarBg?.active)   this.tweens.add({ targets: enemy.healthBarBg,   alpha: 0.8,  duration: 220 });
                         if (enemy.healthBarFill?.active) this.tweens.add({ targets: enemy.healthBarFill, alpha: 1.0,  duration: 220 });
+                        this.updateEnemyHealthBar(enemy);
                         if (enemy._burnStackBar) { for (const p of enemy._burnStackBar) p.setAlpha(1); }
                         if (typeof this._updateBurnStackIndicator === 'function') this._updateBurnStackIndicator(enemy);
                         if (typeof this._updateChillIndicator === 'function') this._updateChillIndicator(enemy);
@@ -685,7 +686,7 @@ class EnemyManager {
                         }
                     }
                 }
-                continue;
+                if (!enemy._mobile) continue;   // a fixed totem stays put; the healer slime walks on
             }
 
             // ── Level 4: Anchor Slime — stationary, buffs enemies + slows player
@@ -727,7 +728,7 @@ class EnemyManager {
                         }
                     }
                 }
-                continue;
+                if (!enemy._mobile) continue;   // a fixed anchor stays put; the anchor slime walks on
             }
 
             // ── Level 4: Rooter — pull tendril (far) / ground thump (close) ──
@@ -838,6 +839,7 @@ class EnemyManager {
                         this.enemyAttackAnimation(enemy, _etx, _ety);
                         this._hitBy = enemy;   // who it was (the Frost Shield chills them back)
                         this.takeDamage(enemy._meleeDmg || 1);   // most slimes hit for 1; a Frostborn far harder
+                        if (enemy._isHunter) this._hunterReset(enemy);
                         this._hitBy = null;
                         this.lastPlayerDamageTime = currentTime;
                     }
@@ -1322,7 +1324,7 @@ class EnemyManager {
                 } else {
                     const timeLeft = enemy.prefireEnd - time;
                     if (timeLeft <= Math.min(1000, prefireDur * 0.25) && !enemy.lockedDir) {
-                        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+                        const ex = enemy.sprite.x, ey = enemy.sprite.y + 12 * Math.abs(enemy.sprite.scaleY || 1);   // from its mouth: the body fills the bottom of its frame
                         const ppx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
                         const ppy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
                         const dx = ppx - ex, dy = ppy - ey;
@@ -1379,7 +1381,7 @@ class EnemyManager {
 
     _drawLockedBeam(enemy) {
         if (!enemy._prefireBeam || !enemy._prefireBeam.active) return;
-        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+        const ex = enemy.sprite.x, ey = enemy.sprite.y + 12 * Math.abs(enemy.sprite.scaleY || 1);   // from its mouth: the body fills the bottom of its frame
         const { x: ndx, y: ndy } = enemy.lockedDir;
         const beamLen = 14 * this.TILE_SIZE;
         if (this._bfxOn) {   // Bosses.js: the line its shots fly, stopping where a wall stops them
@@ -1416,7 +1418,7 @@ class EnemyManager {
             enemy._prefireWarning.y = enemy.sprite.y - 36;
         }
 
-        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+        const ex = enemy.sprite.x, ey = enemy.sprite.y + 12 * Math.abs(enemy.sprite.scaleY || 1);   // from its mouth: the body fills the bottom of its frame
         const px = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
         const dx = px - ex, dy = py - ey;
@@ -1466,7 +1468,7 @@ class EnemyManager {
             }
             return;
         }
-        const ex = enemy.sprite.x, ey = enemy.sprite.y;
+        const ex = enemy.sprite.x, ey = enemy.sprite.y + 12 * Math.abs(enemy.sprite.scaleY || 1);   // from its mouth: the body fills the bottom of its frame
 
         // Use locked direction if available, otherwise fall back to current player pos
         let ndx, ndy;
@@ -1502,7 +1504,7 @@ class EnemyManager {
         g.x = ex; g.y = ey;
 
         const SPEED = 420;
-        this.enemyProjectiles.push({
+        this.enemyProjectiles.push({ src: enemy,
             gfx: this._bfxSwap ? this._bfxSwap(g, 'bolt', angle) : g,   // Bosses.js
             vx: fdx * SPEED,
             vy: fdy * SPEED,
@@ -1555,7 +1557,7 @@ class EnemyManager {
             g.fillStyle(0xffffff, 0.9); g.fillCircle(0, 0, 2);
             g.x = ex; g.y = ey;
 
-            this.enemyProjectiles.push({ gfx: this._bfxSwap ? this._bfxSwap(g, 'shard', angle) : g, vx, vy, damage: DAMAGE, startX: ex, startY: ey, _isShotgunPellet: true, maxDist: MAX_DIST });
+            this.enemyProjectiles.push({ src: enemy, gfx: this._bfxSwap ? this._bfxSwap(g, 'shard', angle) : g, vx, vy, damage: DAMAGE, startX: ex, startY: ey, _isShotgunPellet: true, maxDist: MAX_DIST });
         }
     }
 
@@ -1587,7 +1589,7 @@ class EnemyManager {
         g.lineStyle(1, 0xffaa00, 0.80); g.strokePath();
         g.x = ex; g.y = ey;
 
-        this.enemyProjectiles.push({
+        this.enemyProjectiles.push({ src: enemy,
             gfx: this._bfxSwap ? this._bfxSwap(g, 'dart', angle) : g, vx: fdx * 380, vy: fdy * 380,   // Bosses.js
             damage: 10 * this.damageScaling,
             isRicochetArrow: true, ricochetLeft: 3,
@@ -1816,8 +1818,11 @@ class EnemyManager {
                         if (this._playerRooted && !was) this.showStatusText(this.player.x, this.player.y - 28, 'ROOTED!', '#44ff88');
                     }
                 } else if (time - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
+                    this._hitBy = p.src || p.sourceEnemy || null;   // who fired it (a Tidecaller's boost, the Frost Shield's chill back)
                     this.takeDamage(p.damage);
+                    this._hitBy = null;
                     this.lastPlayerDamageTime = time;
+                    p.onHit?.();   // what else it does to you (a Budding Slime's glob poisons)
                 }
                 if (p.trailGfx?.active) p.trailGfx.destroy();
                 this._destroyEnemyProjectile(p);
@@ -1921,10 +1926,7 @@ class EnemyManager {
         // the tile position is fixed. Nudge the origin Y down proportionally to the EXTRA scale
         // so the enlarged body seats back on its tile. (Origin persists through the per-frame
         // sprite.y = tileY + offset updates; a one-time position nudge would be overwritten.)
-        if (typeof e.sprite.setOrigin === 'function') {
-            const extra = scaleByTier[tier] - 1;            // 0 at 1× → no shift
-            e.sprite.setOrigin(0.5, 0.5 + Math.max(0, extra) * 0.12);
-        }
+        if (typeof e.sprite.setOrigin === 'function') LevelManager.seat(e, scaleByTier[tier]);   // feet on its tile, at any size
         // Mark — orange S above
         const sm = this.add.graphics().setDepth(3);
         sm.fillStyle(tintByTier[tier], 0.95);
@@ -1932,7 +1934,6 @@ class EnemyManager {
         sm.fillStyle(0xffffff, 0.35); sm.fillRect(-2, -7, 4, 3);
         sm.x = e.sprite.x; sm.y = e.sprite.y - 26;
         e._splitterMark = sm;
-        e._hpBarYOff = -2;   // origin shift seats the sprite lower; lift the HP bar to match
         return e;
     }
 
@@ -1970,186 +1971,48 @@ class EnemyManager {
         return e;
     }
 
+    // A slow, heavy slime (it was a fixed anchor): every pulse speeds up the enemies in its range
+    // and slows you. Its own body and an anchor over it (Creatures.js).
     createAnchorSlime(x, y, roomIndex) {
-        const e = this.createEnemy(x, y, 150);
+        const e = this.createEnemy(x, y, 260);
         e.tutorialRoomIndex = roomIndex;
-        // Heavy slate — it is the anchor, so it should read as the dense one.
-        if (typeof e.sprite.setTint === 'function') e.sprite.setTint(0x7f93b5);
-        e.isAnchor = true;
+        e.isAnchor = true; e._mobile = true;
+        e._moveCdMult = 2.0;   // slower than a slime
         e._anchorPulseInterval = 3000;
         e._anchorLastPulse = 0;
         e._anchorRange = 5; // tiles
         e._anchorSpeedBuff = 1.5;
         e._anchorSlowMult  = 0.5;
-
-        const px = e.sprite.x, py = e.sprite.y;
-        const TS = this.TILE_SIZE;
-
-        // Hide default slime sprite — replaced by custom graphic
-        e.sprite.setAlpha(0);
-
-        // ── ANCHOR BODY ───────────────────────────────────────────────────────
-        const body = this.add.graphics().setDepth(2.5);
-        body.x = px; body.y = py;
-
-        // Heavy iron chain ring at top
-        body.lineStyle(3, 0x445566, 1.0);
-        body.strokeCircle(0, -16, 5);
-        body.lineStyle(2, 0x778899, 0.70);
-        body.strokeCircle(0, -16, 5);
-
-        // Anchor shaft
-        body.fillStyle(0x334455, 1.0);
-        body.fillRect(-3, -11, 6, 20);
-        body.lineStyle(1.5, 0x556677, 0.80);
-        body.strokeRect(-3, -11, 6, 20);
-
-        // Crossbar
-        body.fillStyle(0x3a4f63, 1.0);
-        body.fillRect(-10, -6, 20, 4);
-        body.lineStyle(1.5, 0x6688aa, 0.70);
-        body.strokeRect(-10, -6, 20, 4);
-        // Crossbar end caps
-        body.fillStyle(0x55aacc, 0.80);
-        body.fillCircle(-10, -4, 3);
-        body.fillCircle(10, -4, 3);
-
-        // Flukes (curved arms at bottom)
-        body.lineStyle(4, 0x334455, 1.0);
-        body.beginPath(); body.moveTo(-3, 9); body.lineTo(-12, 14); body.strokePath();
-        body.beginPath(); body.moveTo(3, 9); body.lineTo(12, 14); body.strokePath();
-        body.lineStyle(2, 0x6688aa, 0.65);
-        body.beginPath(); body.moveTo(-3, 9); body.lineTo(-12, 14); body.strokePath();
-        body.beginPath(); body.moveTo(3, 9); body.lineTo(12, 14); body.strokePath();
-        // Fluke tips
-        body.fillStyle(0x55aacc, 0.90);
-        body.fillCircle(-12, 14, 3.5);
-        body.fillCircle(12, 14, 3.5);
-
-        // Steel sheen highlight on shaft
-        body.lineStyle(1, 0xaaccdd, 0.35);
-        body.beginPath(); body.moveTo(-1, -10); body.lineTo(-1, 8); body.strokePath();
-
-        e._anchorBodyGfx = body;
-
-        // ── RANGE RING — two concentric dashed-look rings ────────────────────
-        // a cold blue glow over its reach; each pulse sends a ripple through it
-        e._anchorRing = VisualFX.aura(this, px, py, e._anchorRange * TS, 0x3f86c0, { alpha: 0.8 });
-
-        // Slow pulse — concentric ring that expands outward on each pulse tick
-        e._anchorPulseGfx = null; // created dynamically each pulse in AI loop
-
+        const k = LevelManager.bodyKey(this, 'anchor');   // slate
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        e._anchorRing = VisualFX.aura(this, e.sprite.x, e.sprite.y, e._anchorRange * this.TILE_SIZE, 0x3f86c0, { alpha: 0.8 });
         return e;
     }
 
+    // A slow, tough slime (it was a fixed totem) that heals everything within its range.
     createHealerTotem(x, y, roomIndex) {
-        const e = this.createEnemy(x, y, 120);
+        const e = this.createEnemy(x, y, 220);
         e.tutorialRoomIndex = roomIndex;
-        e.isHealerTotem = true;
+        e.isHealerTotem = true; e._mobile = true;
+        e._moveCdMult = 1.8;
         e._healerRange = 6;
         e._healerTickInterval = 500;
         e._healerLastTick = 0;
         e._healerHealPerTick = 8;
-
-        // Hide the slime sprite entirely — totem is all custom graphics
-        e.sprite.setAlpha(0);
-
-        const px = e.sprite.x, py = e.sprite.y;
-        const TS = this.TILE_SIZE;
-
-        // ── TOTEM BODY ────────────────────────────────────────────────────────
-        const totem = this.add.graphics().setDepth(2.5);
-
-        // Base plinth — dark stone slab
-        totem.fillStyle(0x2a2a3a, 1.0);
-        totem.fillRect(-10, 6, 20, 10);
-        totem.lineStyle(1.2, 0x5566aa, 0.70);
-        totem.strokeRect(-10, 6, 20, 10);
-        // Stone texture lines
-        totem.lineStyle(0.8, 0x44446a, 0.50);
-        totem.beginPath(); totem.moveTo(-10, 10); totem.lineTo(10, 10); totem.strokePath();
-        totem.beginPath(); totem.moveTo(-5, 6); totem.lineTo(-5, 16); totem.strokePath();
-        totem.beginPath(); totem.moveTo(5, 6); totem.lineTo(5, 16); totem.strokePath();
-
-        // Pillar shaft
-        totem.fillStyle(0x1e2030, 1.0);
-        totem.fillRect(-5, -10, 10, 16);
-        totem.lineStyle(1.2, 0x4455aa, 0.65);
-        totem.strokeRect(-5, -10, 10, 16);
-        // Rune lines on shaft
-        totem.lineStyle(1, 0x44ff88, 0.55);
-        totem.beginPath(); totem.moveTo(-3, -7); totem.lineTo(3, -7); totem.strokePath();
-        totem.beginPath(); totem.moveTo(-3, -3); totem.lineTo(3, -3); totem.strokePath();
-        totem.beginPath(); totem.moveTo(-3, 1); totem.lineTo(3, 1); totem.strokePath();
-
-        // Orb housing ring
-        totem.fillStyle(0x223344, 1.0);
-        totem.fillCircle(0, -17, 11);
-        totem.lineStyle(2, 0x44aaff, 0.80);
-        totem.strokeCircle(0, -17, 11);
-        totem.lineStyle(1, 0x88ddff, 0.45);
-        totem.strokeCircle(0, -17, 8);
-
-        // Outer decorative spokes (8 points)
-        totem.lineStyle(1.5, 0x44ff88, 0.60);
-        for (let i = 0; i < 8; i++) {
-            const a = (i / 8) * Math.PI * 2;
-            const r1 = 11, r2 = 15;
-            totem.beginPath();
-            totem.moveTo(Math.cos(a)*r1, -17 + Math.sin(a)*r1);
-            totem.lineTo(Math.cos(a)*r2, -17 + Math.sin(a)*r2);
-            totem.strokePath();
-        }
-
-        // Inner orb — bright green healing crystal
-        totem.fillStyle(0x00ff66, 0.90);
-        totem.fillCircle(0, -17, 6);
-        // Orb specular highlight
-        totem.fillStyle(0xffffff, 0.70);
-        totem.fillCircle(-2, -20, 2);
-        // Orb inner glow ring
-        totem.lineStyle(1, 0x88ffcc, 0.80);
-        totem.strokeCircle(0, -17, 4);
-
-        totem.x = px; totem.y = py;
-        e._totemGfx = totem;
-
-        // ── PULSING INNER ORB GLOW (separate so it can scale independently) ──
-        const orbGlow = this.add.graphics().setDepth(2.6);
-        orbGlow.fillStyle(0x44ff88, 0.45);
-        orbGlow.fillCircle(0, 0, 8);
-        orbGlow.x = px; orbGlow.y = py - 17;
-        this.tweens.add({
-            targets: orbGlow, scaleX: 1.4, scaleY: 1.4, alpha: 0.15,
-            duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-        });
-        e._orbGlow = orbGlow;
-
-        // ── RISING HEAL PARTICLE STREAM ──────────────────────────────────────
-        const particleTimer = this.time.addEvent({
-            delay: 380, loop: true,
+        const k = LevelManager.bodyKey(this, 'healer');   // mint
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        e._healerAura = VisualFX.aura(this, e.sprite.x, e.sprite.y, e._healerRange * this.TILE_SIZE, 0x44ff88, { alpha: 0.9 });
+        const particleTimer = this.time.addEvent({   // little green crosses rising off it
+            delay: 420, loop: true,
             callback: () => {
                 if (!e.sprite?.active) { particleTimer.remove(); return; }
-                const pg = this.add.graphics().setDepth(2.8);
-                const s = 2 + Math.random() * 1.5; // half-size of plus arm
-                pg.fillStyle(0x44ff88, 0.90);
-                pg.fillRect(-s*0.4, -s, s*0.8, s*2);   // vertical arm
-                pg.fillRect(-s, -s*0.4, s*2, s*0.8);   // horizontal arm
-                pg.x = px + (Math.random()-0.5) * 10;
-                pg.y = py - 17;
-                this.tweens.add({ targets: pg, y: pg.y - 18 - Math.random()*10, alpha: 0, duration: 550 + Math.random()*250, ease: 'Quad.easeOut', onComplete: () => pg.destroy() });
+                const pg = this.add.graphics().setDepth(2.8), sz = 2 + Math.random() * 1.5;
+                pg.fillStyle(0x44ff88, 0.9).fillRect(-sz * 0.4, -sz, sz * 0.8, sz * 2).fillRect(-sz, -sz * 0.4, sz * 2, sz * 0.8);
+                pg.x = e.sprite.x + (Math.random() - 0.5) * 14; pg.y = e.sprite.y - 6;
+                this.tweens.add({ targets: pg, y: pg.y - 16 - Math.random() * 8, alpha: 0, duration: 550, ease: 'Quad.easeOut', onComplete: () => pg.destroy() });
             }
         });
         e._particleTimer = particleTimer;
-
-        // ── AURA RING ─────────────────────────────────────────────────────────
-        e._healerAura = VisualFX.aura(this, px, py, e._healerRange * TS, 0x44ff88, { alpha: 0.9 });
-
-        // ── HP BAR ────────────────────────────────────────────────────────────
-        // Re-position health bar above totem (not above hidden slime sprite)
-        if (e.healthBarBg?.active)   { e.healthBarBg.y   = py - 34; }
-        if (e.healthBarFill?.active) { e.healthBarFill.y = py - 34; }
-
         return e;
     }
 
@@ -2334,57 +2197,7 @@ class EnemyManager {
             }
         }
 
-        // Spawn poison ring tiles on the radius perimeter
-        const poisonRadius = Math.round(THUMP_R);
-        const poisonTiles = [];
-        for (let dx = -poisonRadius; dx <= poisonRadius; dx++) {
-            for (let dy = -poisonRadius; dy <= poisonRadius; dy++) {
-                const d = Math.sqrt(dx*dx + dy*dy);
-                if (d < poisonRadius - 0.7 || d > poisonRadius + 0.7) continue;
-                const tx = enemy.x + dx, ty = enemy.y + dy;
-                if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT) continue;
-                if (this.world[tx]?.[ty] !== this.FLOOR) continue;
-                poisonTiles.push({ x: tx, y: ty });
-            }
-        }
-
-        if (poisonTiles.length === 0) return;
-
-        // Draw poison tile overlays — green-black murky pools
-        const gfxObjs = [];
-        for (const t of poisonTiles) {
-            const px2 = t.x * TS, py2 = t.y * TS;
-            // A pool of murky sludge from Visuals.js where it's loaded (TD keeps the drawn tile)
-            const base = this._vfxSludgeTile ? this._vfxSludgeTile(px2 + TS/2, py2 + TS/2)
-                : this.add.rectangle(px2 + TS/2, py2 + TS/2, TS, TS, 0x113322, 0.75).setDepth(0.65);
-            const glow = this.add.graphics().setDepth(0.70);
-            if (!this._vfxSludgeTile) {
-                glow.fillStyle(0x44ff88, 0.22); glow.fillRect(px2 + 2, py2 + 2, TS - 4, TS - 4);
-                glow.lineStyle(1, 0x44ff88, 0.50); glow.strokeRect(px2 + 1, py2 + 1, TS - 2, TS - 2);
-            }
-            // Pulsing bubble
-            const bubble = this.add.circle(px2 + TS/2 + (Math.random()-0.5)*6, py2 + TS/2 + (Math.random()-0.5)*6,
-                this._vfxSludgeTile ? 1.5 + Math.random() : 3 + Math.random()*2, 0x88ff66, this._vfxSludgeTile ? 0.45 : 0.60).setDepth(0.72);
-            this.tweens.add({ targets: bubble, y: bubble.y - 4, alpha: 0.20, duration: 500 + Math.random()*300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            gfxObjs.push(base, glow, bubble);
-        }
-
-        // Register as a floor trap — refreshing DoT (staying on tile resets duration)
-        if (!this.floorTraps) this.floorTraps = [];
-        const trap = {
-            type: 'poison', tiles: poisonTiles, gfxObjs,
-            damage: 4, interval: 600, lastTick: 0,
-            poisonDuration: 4000,
-            _createdAt: this.time.now,
-        };
-        this.floorTraps.push(trap);
-
-        // Auto-remove trap after 12s
-        this.time.delayedCall(12000, () => {
-            const idx = this.floorTraps.indexOf(trap);
-            if (idx !== -1) this.floorTraps.splice(idx, 1);
-            for (const g2 of gfxObjs) { if (g2?.active) { this.tweens.killTweensOf(g2); g2.destroy(); } }
-        });
+        this._poisonRing(enemy.x, enemy.y, Math.round(THUMP_R));
     }
 
 
@@ -2395,7 +2208,7 @@ class EnemyManager {
         const ex = enemy.x, ey = enemy.y;
         const TS = this.TILE_SIZE;
         const spawnCount = 2;
-        const DMG = 12 * this.damageScaling;
+        const DMG = 12 * (this.enemyDamageScale || 1);   // (was the player's damageScaling: it hit harder as your weapons grew)
         const SPLASH_R = 2 * TS;
 
         // Split explosion visual — position object, draw at local (0,0)
@@ -2563,6 +2376,78 @@ class EnemyManager {
             gfxObjs: [base, spikes], damage: 12, lastTick: 0, interval: 600 });
     }
 
+    // A ring of poison tiles R round (cx, cy), the Rooter's thump's and a Budding Slime's bud's: a trap
+    // that doses you (_poisonPlayer) while you stand in it, gone after 12s.
+    _poisonRing(cx, cy, r) {
+        const poisonRadius = r, TS = this.TILE_SIZE;
+        const poisonTiles = [];
+        for (let dx = -poisonRadius; dx <= poisonRadius; dx++) {
+            for (let dy = -poisonRadius; dy <= poisonRadius; dy++) {
+                const d = Math.sqrt(dx*dx + dy*dy);
+                if (d < poisonRadius - 0.7 || d > poisonRadius + 0.7) continue;
+                const tx = cx + dx, ty = cy + dy;
+                if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT) continue;
+                if (this.world[tx]?.[ty] !== this.FLOOR) continue;
+                poisonTiles.push({ x: tx, y: ty });
+            }
+        }
+
+        if (poisonTiles.length === 0) return;
+
+        // Draw poison tile overlays — green-black murky pools
+        const gfxObjs = [];
+        for (const t of poisonTiles) {
+            const px2 = t.x * TS, py2 = t.y * TS;
+            // A pool of murky sludge from Visuals.js where it's loaded (TD keeps the drawn tile)
+            const base = this._vfxSludgeTile ? this._vfxSludgeTile(px2 + TS/2, py2 + TS/2)
+                : this.add.rectangle(px2 + TS/2, py2 + TS/2, TS, TS, 0x113322, 0.75).setDepth(0.65);
+            const glow = this.add.graphics().setDepth(0.70);
+            if (!this._vfxSludgeTile) {
+                glow.fillStyle(0x44ff88, 0.22); glow.fillRect(px2 + 2, py2 + 2, TS - 4, TS - 4);
+                glow.lineStyle(1, 0x44ff88, 0.50); glow.strokeRect(px2 + 1, py2 + 1, TS - 2, TS - 2);
+            }
+            // Pulsing bubble
+            const bubble = this.add.circle(px2 + TS/2 + (Math.random()-0.5)*6, py2 + TS/2 + (Math.random()-0.5)*6,
+                this._vfxSludgeTile ? 1.5 + Math.random() : 3 + Math.random()*2, 0x88ff66, this._vfxSludgeTile ? 0.45 : 0.60).setDepth(0.72);
+            this.tweens.add({ targets: bubble, y: bubble.y - 4, alpha: 0.20, duration: 500 + Math.random()*300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            gfxObjs.push(base, glow, bubble);
+        }
+
+        // Register as a floor trap — refreshing DoT (staying on tile resets duration)
+        if (!this.floorTraps) this.floorTraps = [];
+        const trap = {
+            type: 'poison', tiles: poisonTiles, gfxObjs,
+            damage: 4, interval: 600, lastTick: 0,
+            poisonDuration: 4000,
+            _createdAt: this.time.now,
+        };
+        this.floorTraps.push(trap);
+
+        // Auto-remove trap after 12s
+        this.time.delayedCall(12000, () => {
+            const idx = this.floorTraps.indexOf(trap);
+            if (idx !== -1) this.floorTraps.splice(idx, 1);
+            for (const g2 of gfxObjs) { if (g2?.active) { this.tweens.killTweensOf(g2); g2.destroy(); } }
+        });
+    }
+
+    // POISONED, from anything (a Rooter's ring, a trap, a Budding Slime's glob): DMG every EVERY ms
+    // for MS. One poison at a time: a fresh dose replaces the one running, it never stacks.
+    _poisonPlayer(dmg, every, ms) {
+        if (!(this._poisonUntil > this.time.now)) {
+            this.showStatusText(this.player.x, this.player.y - 30, 'POISONED', '#9ae04a');
+            this._poisonTickAt = this.time.now;
+        }
+        this._poisonUntil = this.time.now + ms; this._poisonDmg = dmg; this._poisonEvery = every;
+    }
+    _updatePoison(time) {
+        if (!this._poisonUntil) return;
+        const p = this.player;
+        if (time >= this._poisonUntil || !p?.active || this._deathScreenActive) { this._poisonUntil = 0; this.playerPoisoned = false; return; }
+        this.playerPoisoned = true;   // its bubbles (Creatures.js)
+        if (time - this._poisonTickAt >= this._poisonEvery) { this._poisonTickAt = time; this.takeDamage(this._poisonDmg); }
+    }
+
     updateFloorTraps(time) {
         if (!this.floorTraps) return;
         for (const trap of this.floorTraps) {
@@ -2572,35 +2457,7 @@ class EnemyManager {
                 trap.lastTick = time;
 
                 if (trap.type === 'poison') {
-                    // Stepping on trap applies poison — DoT ticks independently after leaving
-                    if (!this.playerPoisoned) {
-                        this.playerPoisoned = true;
-                        this.player.setTint(0x88ff44);
-                        this.showStatusText(this.player.x, this.player.y - 20, 'POISONED!', '#88ff44');
-                        this._poisonTickCount = 0;
-                        this._poisonMaxTicks = Math.floor(trap.poisonDuration / trap.interval);
-                        const tickPoison = () => {
-                            if (!this.playerPoisoned) return;
-                            this.takeDamage(trap.damage);
-                            // Re-apply green after red damage flash (200ms)
-                            this.time.delayedCall(220, () => {
-                                if (this.playerPoisoned && this.player?.active)
-                                    this.player.setTint(0x88ff44);
-                            });
-                            this._poisonTickCount++;
-                            if (this._poisonTickCount < this._poisonMaxTicks) {
-                                this.time.delayedCall(trap.interval, tickPoison);
-                            } else {
-                                this.playerPoisoned = false;
-                                if (this.player?.active) this.player.clearTint();
-                            }
-                        };
-                        this.time.delayedCall(trap.interval, tickPoison);
-                    } else {
-                        // Walked back on while still poisoned — reset tick count for full duration
-                        this._poisonTickCount = 0;
-                    }
-
+                    this._poisonPlayer(trap.damage, trap.interval, trap.poisonDuration);   // stepping on it (again) doses you afresh
                 } else if (trap.type === 'spike') {
                     this.takeDamage(trap.damage);
                     this.cameras.main.shake(60, 0.005);

@@ -506,6 +506,7 @@ class WorldGen {
         });
         this.tutorialRoomCleared[0] = true;
 
+        this._dressRooms(world, 'gauntlet', [], [[16, 67]]);   // the Voltslime's room left clear
         return world;
     }
 
@@ -656,6 +657,7 @@ class WorldGen {
         });
         this.tutorialRoomCleared[0] = true;
 
+        this._dressRooms(world, 'voidrift', [], [[50, 88], [20, 34], [42, 66], [56, 66]]);   // the Sovereign's and the Queens' rooms left clear
         return world;
     }
 
@@ -666,6 +668,115 @@ class WorldGen {
             }
         }
         return true;
+    }
+
+    // ── ROOM DRESSING ────────────────────────────────────────────────────────
+    // A story level's rooms, each given cover in the level's own style (mirrored left to right, from the
+    // level's fixed seed, so a level is the same every time). Left alone: the first room, small ones, ones
+    // with inside walls already, any in `skip` (bosses, tutorials) or holding a `keep` point, a 2-tile margin
+    // inside the walls, the middle, and anything near a door. A block that would cut part of a room off isn't
+    // placed. Whatever spawns on new cover is stepped off it afterwards (LevelManager._unstick).
+    static DRESS = {
+        gauntlet: { styles: ['pillars', 'colonnade', 'brokenwall'] },
+        voidrift: { styles: ['crystals', 'pillars', 'crystals'], round: true },
+        fracture: { styles: ['cracks', 'rubble', 'brokenwall'] },
+        cistern:  { styles: ['columns', 'colonnade', 'pillars'] },
+    };
+    _dressRooms(world, theme, skip = [], keep = []) {
+        const D = WorldGen.DRESS[theme], R = this.rng;
+        if (!D || !this.rooms) return;
+        this.rooms.forEach((room, ri) => {
+            if (ri === 0 || skip.includes(ri) || room.w < 10 || room.h < 8) return;
+            if (keep.some(([x, y]) => x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h)) return;
+            for (let x = room.x + 1; x < room.x + room.w - 1; x++) for (let y = room.y + 1; y < room.y + room.h - 1; y++) if (world[x][y] !== this.FLOOR) return;   // already built inside
+            const doors = this._roomDoors(world, room);
+            const ok = (x, y) => world[x]?.[y] === this.FLOOR && !doors.some(([dx, dy]) => Math.abs(dx - x) + Math.abs(dy - y) <= 2);
+            const place = (cells) => {
+                const put = cells.filter(([x, y]) => ok(x, y));
+                for (const [x, y] of put) world[x][y] = this.WALL;
+                if (!this._roomConnected(world, room, doors)) for (const [x, y] of put) world[x][y] = this.FLOOR;
+            };
+            if (D.round) {   // the corners rounded off
+                const r = Math.min(3, Math.floor(Math.min(room.w, room.h) / 4));
+                for (const [cx, cy, sx, sy] of [[room.x, room.y, 1, 1], [room.x + room.w - 1, room.y, -1, 1], [room.x, room.y + room.h - 1, 1, -1], [room.x + room.w - 1, room.y + room.h - 1, -1, -1]]) {
+                    const cells = [];
+                    for (let i = 0; i < r; i++) for (let j = 0; j < r - i; j++) cells.push([cx + sx * i, cy + sy * j]);
+                    place(cells);
+                }
+            }
+            const style = D.styles[Math.floor(R() * D.styles.length)];
+            const x0 = room.x + 2, y0 = room.y + 2, x1 = room.x + room.w - 3, y1 = room.y + room.h - 3;
+            const mx = room.x + (room.w >> 1), my = room.y + (room.h >> 1), w = room.w, h = room.h;
+            const inside = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && !(Math.abs(x - mx) <= 1 && Math.abs(y - my) <= 1);
+            const blocks = [];   // each [cells]; mirrored left to right
+            const twin = (cells) => { blocks.push(cells); const m = cells.map(([x, y]) => [2 * room.x + w - 1 - x, y]); if (m.some(([x], i) => x !== cells[i][0])) blocks.push(m); };
+            const rect = (bx, by, bw, bh) => { const c = []; for (let x = bx; x < bx + bw; x++) for (let y = by; y < by + bh; y++) c.push([x, y]); return c; };
+            if (style === 'pillars') {
+                for (const fy of [0.3, 0.7]) twin(rect(room.x + Math.floor(w * 0.28), room.y + Math.floor(h * fy) - 1, 2, 2));
+            } else if (style === 'colonnade') {   // two rows of columns down the long side
+                const along = w >= h;
+                for (const f of [0.3, 0.7]) for (let k = 3; k < (along ? w : h) - 3; k += 3) {
+                    const c = along ? [room.x + k, room.y + Math.round(h * f)] : [room.x + Math.round(w * f), room.y + k];
+                    if (along ? c[0] < mx : true) (along ? twin : (cs) => blocks.push(cs))([c]);
+                }
+            } else if (style === 'brokenwall') {  // a wall across the middle with gaps in it
+                const horiz = w >= h, line = [];
+                if (horiz) { for (let x = x0; x < mx - 1; x++) if ((x - x0) % 5 < 3) line.push([x, my]); }
+                else { for (let y = y0; y <= y1; y++) if ((y - y0) % 5 < 3) line.push([mx - Math.floor(w / 4), y]); }
+                twin(line);
+            } else if (style === 'crystals') {    // an arc of void crystals round the middle
+                const rx = Math.max(2, Math.floor(w / 3)), ry = Math.max(2, Math.floor(h / 3));
+                for (let i = 0; i < 20; i++) {
+                    const t = i / 20 * Math.PI * 2, x = Math.round(mx + Math.cos(t) * rx), y = Math.round(my + Math.sin(t) * ry);
+                    if (i % 4 === 0 || x >= mx) continue;
+                    twin([[x, y]]);
+                }
+            } else if (style === 'cracks') {      // jagged rifts running in from the corners
+                for (const sy of [1, -1]) {
+                    const c = [];
+                    let x = x0 + 1, y = sy > 0 ? y0 + 1 : y1 - 1;
+                    for (let k = 0; k < 5; k++) { c.push([x, y]); if (k % 2) x++; else y += sy; }
+                    twin(c);
+                }
+            } else if (style === 'rubble') {      // heaps of fallen stone
+                for (let k = 0; k < 3; k++) {
+                    const bx = x0 + Math.floor(R() * Math.max(1, mx - x0 - 2)), by = y0 + Math.floor(R() * Math.max(1, y1 - y0));
+                    twin([[bx, by], [bx + 1, by], [bx, by + (R() < 0.5 ? 1 : -1)]]);
+                }
+            } else if (style === 'columns') {     // a cistern's hall of columns
+                for (let x = x0 + 1; x < mx - 1; x += 3) for (let y = y0 + 1; y <= y1 - 1; y += 3) twin([[x, y]]);
+            }
+            for (const cells of blocks) place(cells.filter(([x, y]) => inside(x, y)));
+        });
+    }
+    // Floor tiles on a room's edge with floor just outside it: where corridors come in
+    _roomDoors(world, room) {
+        const out = [];
+        for (let x = room.x; x < room.x + room.w; x++) for (let y = room.y; y < room.y + room.h; y++) {
+            if (x !== room.x && y !== room.y && x !== room.x + room.w - 1 && y !== room.y + room.h - 1) continue;
+            if (world[x][y] !== this.FLOOR) continue;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = x + dx, ny = y + dy;
+                if ((nx < room.x || ny < room.y || nx >= room.x + room.w || ny >= room.y + room.h) && world[nx]?.[ny] === this.FLOOR) { out.push([x, y]); break; }
+            }
+        }
+        return out;
+    }
+    // Every floor tile in the room reachable from its first door (or any floor tile)?
+    _roomConnected(world, room, doors) {
+        const inR = (x, y) => x >= room.x && y >= room.y && x < room.x + room.w && y < room.y + room.h;
+        let total = 0, start = doors[0];
+        for (let x = room.x; x < room.x + room.w; x++) for (let y = room.y; y < room.y + room.h; y++) if (world[x][y] === this.FLOOR) { total++; start ||= [x, y]; }
+        if (!start) return true;
+        const seen = new Set([start[0] + ',' + start[1]]), q = [start];
+        while (q.length) {
+            const [x, y] = q.pop();
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = x + dx, ny = y + dy, k = nx + ',' + ny;
+                if (inR(nx, ny) && !seen.has(k) && world[nx][ny] === this.FLOOR) { seen.add(k); q.push([nx, ny]); }
+            }
+        }
+        return seen.size >= total;
     }
 
     carveRoom(world, room) {
@@ -1087,6 +1198,7 @@ class WorldGen {
         this.playerY = Math.floor(spawnRoom.y + spawnRoom.h / 2);
 
         this.addWalls(world);
+        this._dressRooms(world, 'cistern', [], [[32, 86], [104, 62]]);   // the Queens' rooms left clear
         return world;
     }
 
@@ -1233,6 +1345,7 @@ class WorldGen {
         const spawnCY = Math.floor(spawnRoom.y + spawnRoom.h / 2);
         this.playerX = spawnCX; this.playerY = spawnCY;
 
+        this._dressRooms(world, 'fracture', [6]);   // the Fracture Core's room left clear
         return world;
     }
 

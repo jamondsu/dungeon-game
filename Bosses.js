@@ -665,19 +665,16 @@ class BossFX {
         const T = this.TILE_SIZE, ri = this.getCurrentPlayerRoom?.() ?? -1, R = this._roomGated?.() && ri >= 0 ? this.rooms?.[ri] : null;
         const far = (x, y) => { const tx = Math.floor(x / T), ty = Math.floor(y / T); return R ? !(tx >= R.x && tx < R.x + R.w && ty >= R.y && ty < R.y + R.h) : Math.hypot(x / T - this.playerX, y / T - this.playerY) > 16; };
         const vb = this.voltslimeBoss, vs = this.voidSovereignBoss, fc = this.fractureCore;
-        let bar = null;
-        if (fc?.active) bar = [fc.health / fc.maxHealth, 'THE FRACTURE CORE', 0xffa63a, fc.state === 'vuln' ? 'exposed: hit it' : fc.state === 'rhythm' ? 'keep the rhythm' : `the floor is breaking  ·  ${this._fissures?.length || 0} cracks`];
-        else if (vb?.active && vb.container && !far(vb.container.x, vb.container.y)) bar = [vb.hp / vb.maxHp, 'THE VOLTSLIME', 0x5ff0ff, ''];
-        else if (vs?.active && vs.container && !far(vs.container.x, vs.container.y)) bar = [vs.hp / vs.maxHp, 'THE VOID SOVEREIGN', 0xb45cff, ''];
-        else {
-            const qs = (this.portals || []).filter(q => q.active && q.container && !far(q.container.x, q.container.y));
-            if (qs.length) {
-                const q = qs.reduce((a, b) => (Math.hypot(a.tileX - this.playerX, a.tileY - this.playerY) <= Math.hypot(b.tileX - this.playerX, b.tileY - this.playerY) ? a : b));
-                bar = [q.hp / q.maxHp, qs.length > 1 ? `THE QUEEN SLIME  ·  ${qs.length} QUEENS` : 'THE QUEEN SLIME', 0xff3a4a, `brood ${q.ammo ?? 0} / ${q.ammoMax ?? 0}`];
-            }
-        }
-        if (bar) this._bossBar(...bar);
-        else if (this._bossBarUI) this._bossBarHide();
+        const bars = [];   // every boss in reach gets its own bar, stacked: [key, frac, name, colour, line]
+        if (fc?.active && fc.geode) bars.push(['core', fc.health / fc.maxHealth, 'THE GEODE', 0xffa63a, fc.state === 'vuln' ? 'its heart is exposed: hit it' : fc.state === 'armored' ? `${fc.plates.filter(p => !p.broken).length} plates  ·  fire, then ice, shatters one` : '']);
+        else if (fc?.active) bars.push(['core', fc.health / fc.maxHealth, 'THE FRACTURE CORE', 0xffa63a, fc.state === 'vuln' ? 'exposed: hit it' : fc.state === 'rhythm' ? 'keep the rhythm' : `the floor is breaking  ·  ${this._fissures?.length || 0} cracks`]);
+        if (vb?.active && vb.container && !far(vb.container.x, vb.container.y)) bars.push(['volt', vb.hp / vb.maxHp, 'THE VOLTSLIME', 0x5ff0ff, '']);
+        if (vs?.active && vs.container && !far(vs.container.x, vs.container.y)) bars.push(['sovereign', vs.hp / vs.maxHp, 'THE VOID SOVEREIGN', 0xb45cff, '']);
+        const qs = (this.portals || []).filter(q => q.active && q.container && !far(q.container.x, q.container.y))
+            .sort((a, b) => Math.hypot(a.tileX - this.playerX, a.tileY - this.playerY) - Math.hypot(b.tileX - this.playerX, b.tileY - this.playerY));
+        for (const q of qs) bars.push(['queen' + this.portals.indexOf(q), q.hp / q.maxHp, 'THE QUEEN SLIME', 0xff3a4a, `brood ${q.ammo ?? 0} / ${q.ammoMax ?? 0}`]);
+        bars.slice(0, 4).forEach(([key, frac, name, col, line], i) => this._bossBar(frac, name, col, line, key, i));
+        this._bossBarsKeep(bars.slice(0, 4).map(b => b[0]));
     }
 
     // Its old health bar, name and pips over its head stop drawing (the boss bar has them now).
@@ -1119,6 +1116,7 @@ class BossFX {
         const g = this._bfxRiftG, list = this._bfxRifts;
         if (!g?.active || !list) return;
         g.clear();
+        const v = this.cameras.main.worldView;   // only the ones in view get drawn (a level can hold dozens)
         for (let i = list.length - 1; i >= 0; i--) {
             const R = list[i];
             // an owner that died takes its rift with it
@@ -1134,6 +1132,8 @@ class BossFX {
             R.spin += dt * 0.001 * (R.idle ? 1.2 : 3.2 + 2 * R.open) * (R.closing ? 2.2 : 1);
             // something about to climb out: its eyes show in the dark for the last 700ms
             if (R.exitAt && !R.closing) R.eyes = Math.max(0, Math.min(1, (now - (R.exitAt - 700)) / 300));
+            const m = R.r * 3 + 40;
+            if (R.x + m < v.x || R.x - m > v.right || R.y + m < v.y || R.y - m > v.bottom) continue;
             this._bfxDrawRift(g, R, now);
         }
     }

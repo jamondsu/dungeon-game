@@ -53,7 +53,7 @@ const Enchants = {
     SLOTS: {
         flame_fists: 1, flame_sword: 2, magma_staff: 2, ignition: 3,
         ice_fists: 1, icicle_cannon: 2, fractal_shard: 3,
-        lightning_fists: 2, orb_emitter: 2, ball_lightning: 3,
+        lightning_fists: 2, orb_emitter: 2, ball_lightning: 3, conductor: 3,
         cosmic_fists: 1, barrier_staff: 1, astrolabe: 2, singularity_staff: 2, void_blade: 2,
     },
     BUILDS: { CRIT: 0xffd34a, HUNTER: 0xe05a7a, BURN: 0xff8a3a, FROST: 0x7ad8ff, STORM: 0xffe85a, AIM: 0xc8d0e0, ULT: 0xd8a8ff, SUSTAIN: 0x8ae07a, CROWD: 0xff6a4a,

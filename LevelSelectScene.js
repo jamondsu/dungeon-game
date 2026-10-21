@@ -25,6 +25,8 @@ class LevelSelectScene extends Phaser.Scene {
         this._tutLaunching = false;   // the scene object outlives a restart
         this._entering = false;       // a level is being entered: every other press is ignored
         this._settingsOpen = false;
+        Achievements.check(this);
+        this.time.delayedCall(600, () => this._lossNudge());
 
         if (data?.showTutorialSelect) {
             this._buildTutorialSelectScreen(W, H);
@@ -55,7 +57,7 @@ class LevelSelectScene extends Phaser.Scene {
             { page: 5, blurb: 'Flooded waterworks. The floor slows you, unless you hold ICE.', go: () => this.launchLevel(5) },
             { page: 9, name: 'The Tower', tag: 'THE ENDLESS CLIMB', accent: UIKit.PALETTE.accentGold, tower: true, verb: 'CLIMB',
               blurb: 'Endless floors, new layouts every climb, a boss every tenth floor. How high can you get?',
-              go: () => TowerFloors.maxStart() > 1 ? this._openTowerStart() : this._climb(1) },
+              go: () => this._towerGuide(() => TowerFloors.maxStart() > 1 ? this._openTowerStart() : this._climb(1)) },
         ].map((n, i) => ({
             ...n, i,
             id: Progress.ORDER[i],
@@ -649,13 +651,15 @@ class LevelSelectScene extends Phaser.Scene {
 
         // Labels: the level's name in ink, on the open side of its chamber, on a scrap of
         // clean paper so the path runs underneath rather than through the letters.
+        const plates = [];   // labels already down, so the next one can step clear of them (the Cistern's sat on the Tower's)
         nodes.forEach(n => {
             const right = n.x < m.x + m.w * 0.5;
             const lx = n.x + (right ? 1 : -1) * ((n.tower ? 48 : 39) + 12);
-            const name = this.add.text(lx, n.y - 8, n.name, {
+            let ly = n.y;
+            const name = this.add.text(lx, ly - 8, n.name, {
                 fontSize: n.tower ? '20px' : '17px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: n.locked ? '#9a8262' : '#3b2716',
             }).setOrigin(right ? 0 : 1, 0.5).setDepth(4);
-            const tag = this.add.text(lx, n.y + 11, n.locked ? 'sealed' : n.tag.toLowerCase(), {
+            const tag = this.add.text(lx, ly + 11, n.locked ? 'sealed' : n.tag.toLowerCase(), {
                 fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#7a5a34',
             }).setOrigin(right ? 0 : 1, 0.5).setDepth(4);
             if (!n.locked && Progress.cleared?.(n.id)) {   // cleared: a red-ink tick by its chamber
@@ -663,10 +667,45 @@ class LevelSelectScene extends Phaser.Scene {
                 tk.lineStyle(3.5, 0xa02a1a, 0.85); tk.beginPath(); tk.moveTo(tx - 7, ty); tk.lineTo(tx - 2, ty + 6); tk.lineTo(tx + 9, ty - 8); tk.strokePath();
             }
             const bw = Math.max(name.width, tag.width) + 12, bx = right ? lx - 6 : lx - bw + 6;
+            const hit = () => plates.find(([px2, top, pw2]) => bx < px2 + pw2 && bx + bw > px2 && ly - 21 < top + 40 && ly + 19 > top);
+            for (let k = 0, o; k < 4 && (o = hit()); k++) ly = ly - 21 >= o[1] ? o[1] + 44 + 21 : o[1] - 44 + 21;   // step past it: below it if it was lower, above if higher
+            if (ly !== n.y) { name.setY(ly - 8); tag.setY(ly + 11); }
+            plates.push([bx, ly - 21, bw]);
             const plate = this.add.graphics().setDepth(3);
-            plate.fillStyle(0xe2d0a8, 1); plate.fillRect(bx, n.y - 21, bw, 40);
-            plate.lineStyle(1, 0x9c7f52, 0.6); plate.strokeRect(bx, n.y - 21, bw, 40);
+            plate.fillStyle(0xe2d0a8, 1); plate.fillRect(bx, ly - 21, bw, 40);
+            plate.lineStyle(1, 0x9c7f52, 0.6); plate.strokeRect(bx, ly - 21, bw, 40);
         });
+
+        // A little inked ? by the Tower (its guide again), and a scrawled one in the corner for the whole game's
+        const scrawl = (x, y, size, label, onClick) => {
+            const g = this.add.graphics().setDepth(6).setPosition(x, y);
+            const hook = [[-0.55, -0.55], [-0.4, -0.85], [0, -1], [0.45, -0.85], [0.6, -0.5], [0.4, -0.2], [0.05, 0], [0, 0.25], [0.02, 0.45]];
+            for (const [w, a, j] of [[3.2, 0.85, 0], [1.6, 0.6, 1.2]]) {   // twice over, a little off, like a pen gone back over it
+                g.lineStyle(w, INK, a); g.beginPath();
+                hook.forEach(([hx, hy], k) => { const px2 = hx * size + Math.sin(k * 2.3) * j, py2 = hy * size + Math.cos(k * 1.7) * j; k ? g.lineTo(px2, py2) : g.moveTo(px2, py2); });
+                g.strokePath();
+            }
+            g.fillStyle(INK, 0.85); g.fillCircle(0.04 * size, 0.78 * size, size * 0.11);
+            const t = label ? this.add.text(x, y + size * 1.15, label, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(-6) : null;
+            const z = this.add.zone(x, y, size * 2.2, size * 2.6).setInteractive({ useHandCursor: true }).setDepth(7);
+            z.on('pointerover', () => { g.setScale(1.12); t?.setScale(1.08); });
+            z.on('pointerout', () => { g.setScale(1); t?.setScale(1); });
+            z.on('pointerdown', () => { if (!this._settingsOpen) onClick(); });
+            return g;
+        };
+        const tw = nodes.find(n => n.tower);
+        if (tw && !tw.locked) scrawl(tw.x + 52, tw.y - 50, 11, null, () => this._towerGuide(() => {}, true));
+        scrawl(m.x + 44, m.y + m.h - 62, 18, 'guide', () => this._gameGuide()).setAngle(-8);
+        {   // and beside it a scrawled little book: every enemy
+            const bx = m.x + 104, by = m.y + m.h - 64, g = this.add.graphics().setDepth(6).setPosition(bx, by).setAngle(5);
+            g.lineStyle(2.4, INK, 0.85); g.strokeRect(-13, -11, 12, 20); g.strokeRect(1, -11, 12, 20); g.lineBetween(0, -11, 0, 9);
+            g.lineStyle(1.2, INK, 0.6); for (const ly of [-6, -2, 2]) { g.lineBetween(-10, ly, -4, ly + 0.5); g.lineBetween(4, ly + 0.5, 10, ly); }
+            g.fillStyle(INK, 0.85); g.fillCircle(7, -6, 2.2);   // a slime face doodled on the page
+            const t = this.add.text(bx, by + 14, 'enemies', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(4);
+            const z = this.add.zone(bx, by + 4, 50, 46).setInteractive({ useHandCursor: true }).setDepth(7);
+            z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
+            z.on('pointerdown', () => this._openIndex());
+        }
 
         // Title cartouche and compass rose.
         this.add.text(m.x + 34, m.y + 30, 'THE DUNGEON', {
@@ -822,6 +861,278 @@ class LevelSelectScene extends Phaser.Scene {
     _climb(floor) {
         Transitions.enterLevel(this, this._introIndexFor(6), () => this.scene.start('Game', { levelIndex: 6, tower: TowerFloors.newRun(floor) }), this._enterFrom);
     }
+    // the shop's hover words, for the guide (ShopScene: *keyword* text and its tooltip)
+    _richText(...a) { return ShopScene.prototype._richText.call(this, ...a); }
+    _tipZone(...a) { return ShopScene.prototype._tipZone.call(this, ...a); }
+    _showTip(...a) {
+        this._tipDepth = 260;   // over the guide
+        ShopScene.prototype._showTip.call(this, ...a);
+        const T = this._tip;
+        if (T) { [T.g, T.head, T.text].forEach(o => o.setScrollFactor(0)); T.text.setColor('#e8dcc0'); }   // light text: the frame is dark here
+    }
+    _moveTip(...a) { return ShopScene.prototype._moveTip.call(this, ...a); }
+    _hideTip(...a) { return ShopScene.prototype._hideTip.call(this, ...a); }
+
+    // ── THE ENEMY INDEX ─────────────────────────────────────────────────────
+    // Every enemy in the game: a grid of them as they look in a fight (body, hat, eyes, breathing), a page at a time,
+    // and the chosen one big with its card (LevelManager._enemyCodex). From the scrawled book on the map.
+    _openIndex() {
+        if (this._settingsOpen) return;
+        this._settingsOpen = true;
+        Sfx.play(this, 'click');
+        CreatureFX.sheets(this);
+        const codex = LevelManager.prototype._enemyCodex.call(this), ALL = Object.keys(codex);
+        let keys = ALL, tag = null;   // the filter chips narrow `keys` to one category (LevelManager.ENEMY_TAGS)
+        const TYPES = CreatureFX.prototype._cfxCfg.call({}).TYPES;
+        const W = this.scale.width, H = this.scale.height, D = 200, P = UIKit.PALETTE, objs = [];
+        let page = 0, pick = 0, view = [];
+        const keep = o => { objs.push(o); o.setScrollFactor?.(0); return o; };
+        const kit = k => { objs.push(...k.objs); return k; };
+        const COLS = 5, ROWS = 4, PER = COLS * ROWS;
+        let pages = Math.ceil(keys.length / PER);
+        kit(UIKit.overlay(this, { alpha: 0.85, depth: D }));
+        const pw = Math.min(1000, W - 40), ph = Math.min(640, H - 30), px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+        kit(UIKit.panel(this, { x: px, y: py, w: pw, h: ph, accent: P.accentRed, depth: D + 1, title: 'THE ENEMIES', titleSize: '20px' }));
+        const countTxt = keep(this.add.text(px + pw - 24, py + 26, `${keys.length} kinds`, { fontSize: '12px', fontFamily: 'monospace', color: UIKit.CSS.textLo }).setOrigin(1, 0.5).setDepth(D + 3));
+        // the categories: ALL, then one chip each; a chip shows its colour, and what it means on hover
+        const TG = LevelManager.ENEMY_TAGS, tagsOf = k => TG[k] || TG[k.split('_')[0]] || [];
+        const chips = [], hint = keep(this.add.text(px + pw / 2, py + 76, '', { fontSize: '11px', fontFamily: 'monospace', color: UIKit.CSS.textLo }).setOrigin(0.5).setDepth(D + 3));
+        const paintChips = () => chips.forEach(([b, t, col]) => b.setColor(t === tag ? '#1a120c' : UIKit._hex(col)).setBackgroundColor(t === tag ? UIKit._hex(col) : '#1c1714'));
+        const setTag = t => {
+            tag = tag === t ? null : t;
+            keys = tag ? ALL.filter(k => tagsOf(k).includes(tag)) : ALL;
+            pages = Math.max(1, Math.ceil(keys.length / PER)); page = 0; pick = 0;
+            countTxt.setText(tag ? `${keys.length} of ${ALL.length}` : `${ALL.length} kinds`);
+            Sfx.play(this, 'click'); paintChips(); draw();
+        };
+        {
+            const list = [[null, 'ALL', 0xf3e3b8], ...Object.entries(TG.DEFS).map(([t, d]) => [t, d.name, d.col])];
+            let cx = px + 22;
+            for (const [t, name, col] of list) {
+                const b = keep(this.add.text(cx, py + 56, name, { fontSize: '11px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', padding: { x: 7, y: 3 } }).setOrigin(0, 0.5).setDepth(D + 3).setInteractive({ useHandCursor: true }));
+                b.on('pointerdown', () => t === null ? (tag && setTag(tag)) : setTag(t));
+                b.on('pointerover', () => hint.setText(t ? `${name.toLowerCase()}: ${TG.DEFS[t].what}` : 'every enemy'));
+                b.on('pointerout', () => hint.setText(''));
+                chips.push([b, t, col]);
+                cx += b.width + 6;
+            }
+            paintChips();
+        }
+        // a slime as it looks in a fight, standing at (x, feetY): body, face and hat (Creatures.js keeps them on the body),
+        // breathing, now and then a little hop; with what else it carries (the Encased Slime's pebbles)
+        const model = (key, x, feetY, sc) => {
+            const out = [];
+            const L = LevelManager.look(this, key);
+            if (!this.textures.exists(L.tex)) return out;
+            const spr = this.add.sprite(x, feetY, L.tex, 0).setOrigin(0.5, 1).setScale(sc).setDepth(D + 4).setScrollFactor(0);
+            if (L.tint) spr.setTint(L.tint);
+            if (this.anims.exists(L.anim)) spr.play(L.anim);
+            const T = TYPES[key] || {};
+            const face = CreatureFX.face(this, spr, { mood: CreatureFX.moodOf(key), hat: T.hat || null, eye: T.eye, look: () => null });
+            out.push(spr);
+            // the ones that change as they live, shown changing: the Gem's colours turning, the bud growing seed to flower,
+            // the Hunter's ears filling with blood
+            const cycle = { bud: ['bud0', 'bud1', 'bud2', 'bud3', 'bud'], hunter: ['hunter0', 'hunter1', 'hunter2', 'hunter3', 'hunter4'] }[key];
+            const hue = key === 'gem' ? spr.preFX?.addColorMatrix?.() : null;
+            if (cycle || hue) {
+                let i = 0;
+                const ev = this.time.addEvent({ delay: hue ? 40 : 700, loop: true, callback: () => {
+                    if (!spr.active) return ev.remove();
+                    if (hue) hue.hue((this.time.now * 0.09) % 360);
+                    else if (face) CreatureFX.dress(face, cycle[i = (i + 1) % cycle.length]);
+                } });
+                spr.once('destroy', () => ev.remove());
+            }
+            this.tweens.add({ targets: spr, scaleX: sc * 1.05, scaleY: sc * 0.94, duration: 650 + Math.random() * 200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });   // breathing
+            const hop = () => { if (!spr.active) return; this.tweens.add({ targets: spr, y: feetY - 5 * sc, duration: 160, yoyo: true, ease: 'Quad.easeOut', onComplete: () => this.time.delayedCall(1400 + Math.random() * 1600, hop) }); };
+            this.time.delayedCall(400 + Math.random() * 1200, hop);
+            const u = sc / 1.2;   // the game draws at 1.2
+            if (key === 'armored') {   // its shields on three sides, one left open (LevelManager.drawArmorShields)
+                const g = this.add.graphics().setDepth(D + 4.02).setScrollFactor(0).setPosition(x, feetY - 7 * u).setScale(u);
+                const tick = () => { if (!g.active) return; g.clear(); LevelManager.drawArmorShields(g, 'E', false, this.time.now); };
+                tick(); const ev = this.time.addEvent({ delay: 60, loop: true, callback: tick }); g.once('destroy', () => ev.remove());
+                out.push(g);
+            }
+            if (key === 'encased') {   // three pebbles held up round it (its shell is in its body: LevelManager.encBodyKey)
+                const peb = [0, 1, 2].map(() => this.add.image(x, feetY, LevelManager.encRubbleKey(this)).setScale(0.55 * u).setDepth(D + 4.03).setScrollFactor(0));
+                const t = { a: 0 };
+                this.tweens.add({ targets: t, a: Math.PI * 2, duration: 3200, repeat: -1, onUpdate: () => peb.forEach((pb, k) => pb.active && pb.setPosition(x + Math.cos(t.a + k * 2.1) * 20 * u, feetY - 14 * u + Math.sin(t.a + k * 2.1) * 7 * u)) });
+                out.push(...peb);
+            }
+            return out;
+        };
+        const close = () => { this.input.keyboard.off('keydown', onKey); objs.concat(view).forEach(o => { if (o?.active) { this.tweens.killTweensOf(o); o.destroy(); } }); this.time.delayedCall(0, () => { this._settingsOpen = false; }); };
+        const gx = px + 22, gy = py + 90, cw = 100, ch = 100, GAP = 8, rx = gx + COLS * (cw + GAP) + 6, rw = px + pw - 22 - rx, rh = ROWS * (ch + GAP) - GAP;
+        const draw = () => {
+            view.forEach(o => { if (o?.active) { this.tweens.killTweensOf(o); o.destroy(); } }); view = [];
+            const v = o => { view.push(o); o.setScrollFactor?.(0); return o; };
+            keys.slice(page * PER, page * PER + PER).forEach((k, i) => {
+                const idx = page * PER + i, on = idx === pick, x = gx + (i % COLS) * (cw + GAP), y = gy + Math.floor(i / COLS) * (ch + GAP), e = codex[k];
+                const card = v(this.add.graphics().setDepth(D + 2));
+                card.fillStyle(on ? 0x2e231a : 0x1c1714, 1).fillRoundedRect(x, y, cw, ch, 6);
+                card.fillStyle(e.tint, on ? 0.18 : 0.07).fillRoundedRect(x + 3, y + 3, cw - 6, ch - 34, 4);   // a wash of its colour behind it
+                card.fillStyle(0x000000, 0.35).fillEllipse(x + cw / 2, y + 62, 46, 9);                       // its shadow
+                card.lineStyle(on ? 2 : 1, on ? 0xf3e3b8 : e.tint, on ? 1 : 0.4).strokeRoundedRect(x, y, cw, ch, 6);
+                model(k, x + cw / 2, y + 63, 2.1).forEach(v);
+                v(this.add.text(x + cw / 2, y + ch - 30, e.name, { fontSize: '11px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: on ? '#f3e3b8' : '#cdbf9f', align: 'center', wordWrap: { width: cw - 8 }, lineSpacing: -2 }).setOrigin(0.5, 0).setDepth(D + 3));
+                const z = v(this.add.zone(x + cw / 2, y + ch / 2, cw, ch).setInteractive({ useHandCursor: true }).setDepth(D + 5));
+                z.on('pointerdown', () => { if (pick === idx) return; pick = idx; Sfx.play(this, 'hover'); draw(); });
+            });
+            // the chosen one on a little stage, big, with its card
+            const k = keys[pick], e = codex[k];
+            const st = v(this.add.graphics().setDepth(D + 2));
+            st.fillStyle(0x100c0a, 1).fillRoundedRect(rx, gy, rw, rh, 8);
+            st.fillStyle(e.tint, 0.1).fillRoundedRect(rx + 4, gy + 4, rw - 8, 196, 6);
+            for (let fx = rx + 10; fx + 22 <= rx + rw - 10; fx += 24) { st.fillStyle(0x2a2420, 1).fillRect(fx, gy + 168, 22, 10); st.fillStyle(0x3a322c, 1).fillRect(fx, gy + 168, 22, 2); }   // flagstones
+            st.fillStyle(0x000000, 0.45).fillEllipse(rx + rw / 2, gy + 170, 120, 18);
+            st.lineStyle(2, e.tint, 0.75).strokeRoundedRect(rx, gy, rw, rh, 8);
+            model(k, rx + rw / 2, gy + 170, 5).forEach(v);
+            v(this.add.text(rx + rw / 2, gy + 212, e.name, { fontSize: '24px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f3e3b8' }).setOrigin(0.5, 0).setDepth(D + 3));
+            v(this.add.text(rx + rw / 2, gy + 246, ` ${e.role.toUpperCase()} `, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#0e0b09', backgroundColor: UIKit._hex(e.tint), padding: { x: 6, y: 2 } }).setOrigin(0.5, 0).setDepth(D + 3));
+            const dt = v(this.add.text(rx + 20, gy + 280, e.desc, { fontSize: '13px', fontFamily: 'monospace', color: UIKit.CSS.textMid, lineSpacing: 6, wordWrap: { width: rw - 40 } }).setDepth(D + 3));
+            for (let fs = 12; dt.height > rh - 292 && fs >= 9; fs--) dt.setFontSize(fs).setLineSpacing(fs > 10 ? 4 : 2);   // a long one shrinks to stay inside its card
+            v(this.add.text(px + pw / 2, py + ph - 74, `page ${page + 1} of ${pages}   ·   ${pick + 1} / ${keys.length}   ·   arrows to browse`, { fontSize: '11px', fontFamily: 'monospace', color: UIKit.CSS.textLo }).setOrigin(0.5).setDepth(D + 3));
+        };
+        const go = d => { page = (page + d + pages) % pages; pick = Math.min(keys.length - 1, page * PER); Sfx.play(this, 'hover'); draw(); };
+        kit(UIKit.button(this, { x: px + pw / 2 - 220, y: py + ph - 36, w: 170, h: 40, label: '◂  PAGE', accent: P.line, depth: D + 4, fontSize: '14px', fireOn: 'down', onClick: () => go(-1) }));
+        kit(UIKit.button(this, { x: px + pw / 2, y: py + ph - 36, w: 170, h: 40, label: 'DONE', accent: P.accentGreen, depth: D + 4, fontSize: '14px', fireOn: 'down', onClick: close }));
+        kit(UIKit.button(this, { x: px + pw / 2 + 220, y: py + ph - 36, w: 170, h: 40, label: 'PAGE  ▸', accent: P.line, depth: D + 4, fontSize: '14px', fireOn: 'down', onClick: () => go(1) }));
+        const onKey = (ev) => {
+            if (ev.key === 'Escape') return close();
+            const d = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: COLS, ArrowUp: -COLS }[ev.key];
+            if (d) { pick = Math.max(0, Math.min(keys.length - 1, pick + d)); page = Math.floor(pick / PER); Sfx.play(this, 'hover'); draw(); }
+        };
+        this.input.keyboard.on('keydown', onKey);
+        draw();
+    }
+
+    // ── STUCK? ───────────────────────────────────────────────────────────────
+    // Two deaths in a row on a story level (Progress.lost): back in the lobby, a word about the Tower,
+    // where glorps, dust and books come quicker, and the way there.
+    _lossNudge() {
+        let id = null;
+        try { id = localStorage.getItem('loss_nudge'); } catch (e) {}
+        if (!id || this._settingsOpen || !Progress.unlocked('tower')) return;
+        try { localStorage.removeItem('loss_nudge'); } catch (e) {}
+        this._settingsOpen = true;
+        Sfx.play(this, 'click');
+        const W = this.scale.width, H = this.scale.height, D = 200, P = UIKit.PALETTE, objs = [];
+        const kit = k => { objs.push(...k.objs); return k; };
+        const close = (then) => { objs.forEach(o => o?.destroy?.()); this.time.delayedCall(0, () => { this._settingsOpen = false; then?.(); }); };
+        kit(UIKit.overlay(this, { alpha: 0.7, depth: D }));
+        const pw = 520, ph = 250, px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+        kit(UIKit.panel(this, { x: px, y: py, w: pw, h: ph, accent: P.accentGold, depth: D + 1, title: 'STRUGGLING?', titleSize: '20px' }));
+        objs.push(this.add.text(W / 2, py + 64, `${Progress.NAMES[id] || 'This level'} keeps beating you. Head to the Tower: every floor pays glorps, dust and books, and they all stay with you when you fall. Upgrade your weapons in the shop, then come back stronger.`,
+            { fontSize: '14px', fontFamily: 'monospace', color: UIKit.CSS.textMid, align: 'center', lineSpacing: 5, wordWrap: { width: pw - 60 } }).setOrigin(0.5, 0).setDepth(D + 3).setScrollFactor(0));
+        kit(UIKit.button(this, { x: W / 2 - 115, y: py + ph - 44, w: 200, h: 42, label: 'TO THE TOWER  ▸', accent: P.accentGold, depth: D + 4, fontSize: '15px', fireOn: 'down',
+            onClick: () => close(() => this._towerGuide(() => TowerFloors.maxStart() > 1 ? this._openTowerStart() : this._climb(1))) }));
+        kit(UIKit.button(this, { x: W / 2 + 115, y: py + ph - 44, w: 200, h: 42, label: 'NOT NOW', accent: P.line, depth: D + 4, fontSize: '15px', fireOn: 'down', onClick: () => close() }));
+    }
+
+    // ── THE TOWER'S GUIDE ────────────────────────────────────────────────────
+    // Five pages, each a picture from the Tower (assets/tower_guide) and a few lines. Shown the
+    // first time you go in (tower_guide_seen), and from 'how it works' on the start panel.
+    static TOWER_GUIDE = [
+        ['CLIMB', 'Every floor is an arena. Enemies come in three waves, and a ring on the floor shows where each one lands. Clear every wave to finish the floor.'],
+        ['GO UP', 'A cleared floor pays glorps and heals you a little. Step into the rift to climb. Every floor up is tougher than the last. Scraps from kills buy a boon at the shrine.'],
+        ['PICK A BOON', 'Every third floor, and after every boss, pick one of three boons. They stack, and they last for this climb only.'],
+        ['BOSSES', 'Every tenth floor is a boss. Beat it for a big payout, sealed books and a garden seed.'],
+        ['FALLING', 'When you fall, the climb ends. You keep every glorp, book, seed and bit of dust you found; the boons are gone. Once you have climbed high enough, you can start further up for a fee.'],
+    ];
+    _towerGuide(then, force = false) {
+        this._guide({ id: 'tguide', dir: 'tower_guide', title: 'HOW THE TOWER WORKS', pages: LevelSelectScene.TOWER_GUIDE, seenKey: 'tower_guide_seen', then, force, end: 'TO THE TOWER  ▸' });
+    }
+    // THE GUIDE: the whole game on ten pages, each a picture from it (assets/guide) and a few lines.
+    // From the scrawled ? at the map's corner.
+    static GAME_GUIDE = [
+        ['THE FOUR ELEMENTS', 'Each element has a gem that fills as you land hits with it. Fire is single-target damage and leaves *Burn*. Ice builds *Chill* until the enemy becomes an *ice cube*. Lightning chains and forks between enemies and leaves them *Superconducted*. Cosmic weapons are mostly buffs you cast and then switch away from; its mark is *Hex*.'],
+        ['DASHES', 'Every dash makes you untouchable for its first moment. Fire (top left): 4 tiles, hitting what you pass through, and the tiles behind you crack and erupt into *lava tiles* a moment later. Ice (top right): 6 tiles, three wide, adding *Chill* to everything in the strip, with a longer recovery. Lightning (bottom left): an instant 3-tile blink that sends a *daze* out in rings from where you land. Cosmic (bottom right): two hops toward your cursor, through enemies, leaving *cosmic fluid* behind.', 4],
+        ['REACTIONS AND RESIDUE', 'A *reaction* is a hit on an enemy that carries another element\'s status: burning, chilled or cubed, superconducted, or hexed. It charges that element\'s gem three times as much as a normal hit. *Residue* is a hit on an enemy another element struck in the last 1.5 seconds but left no status on; it charges 1.75 times as much.'],
+        ['RESISTANCE', 'A ring under an enemy in an element\'s colour means it *resists* that element, and those hits do 40%. A ring split into two colours resists two elements, and one split into three resists all three. Cosmic is never resisted. Grounding Spike turns the ring grey for 6 seconds, and while it\'s grey the enemy resists nothing.'],
+        ['WHAT YOU DO TO THEM', '*Burn* stacks up to 5 and ticks every half second for flat damage plus a share of max HP; it holds for 4 seconds, then loses a stack each second. *Chill* fills a bar over about five ice hits. A full bar makes an *ice cube* for 3.5 seconds: it moves at about half speed, it\'s *Brittle* (20% of its max HP cut off, 6% on bosses), and then it shatters by itself. The cut health grows back afterwards, except what other elements dealt while it was a cube. *Superconducted* lasts 5 seconds and lets lightning chain and fork further from it. *Hex* stacks up to 3: +7%, +15% and +25% damage taken. *Dazed* and Stunned enemies can\'t move or attack.'],
+        ['WHAT THEY DO TO YOU', 'The icons over your head, left to right, with their time running down under each: *Dripping* turns every tile you walk on into water for 8 seconds. *Bleed* deals a little damage over time and cuts any healing by 60%. *Poison* deals damage over time, and a new dose replaces the old one instead of stacking. *Rooted* holds you in place for a moment. *Chevrons* over you or an enemy show it moving faster (pointing up) or slower (pointing down) than usual.'],
+        ['THE GROUND', 'Left to right. *Water* slows you slightly unless you hold ice, which makes you faster in it. *Fog* is water your fire dried; it holds for 15 seconds and nothing can turn it back to water until then. *Lava tiles* come from fire and give a *Burn* stack to an enemy standing on one every 0.8 seconds. *Poison pools* come from Rooters and Budding Slimes and inflict *Poison* while you stand in them. *Cosmic fluid* gives *Hex* to enemies standing in it every 2 seconds, and how long it lasts depends on what left it.'],
+        ['WATER', '*Water* powers up the enemies that live in it. A Wave Rider in water winds up its charge faster, Ripplerunners speed up, a Tidal Guard\'s hit pins you if it\'s standing in water, and a *Drowner* that strikes while you\'re in water lands instantly. A *Tidecaller* makes every enemy standing in water near it hit 1.5 times as hard. Other enemies are slowed by it. Lightning does 1.5 times damage to wet enemies and runs through connected pools, and fire dries it into *fog*.'],
+        ['THE CAST', 'Each enemy wears something that shows what it does, like horns on the Berserker or the spout on the Spitter. The first time you meet one, a card explains it. The book of enemies on the map lists all of them with their models and descriptions.'],
+        ['ENEMY TYPES', 'The book of enemies sorts them into types, and one enemy can be several. Aggressors come at you directly. Controllers take space from range with shots, lanes and lit tiles. Buffers make nearby enemies stronger. Water enemies make water, live in it or use it. Multipliers turn into more enemies. Tough enemies have armour, a second life or a lot of health. Tricksters hide, steal or ambush.'],
+        ['READING ATTACKS', 'A ring on the floor marks where something will land. Lit squares mark an area about to go off, with gaps that stay safe. A lit lane marks a line something is about to shoot down. A glass dome is a safe zone from the Gem. A red zone around an enemy blocks ults inside it, and a violet one drains your gems.'],
+        ['BOSSES', 'A boss has a health bar across the top of the screen, and each boss in reach gets its own bar. Each attack has a tell first: bolt volleys, stomps that ring outward, ripples, waves of minions. In the Tower every tenth floor is a boss, and the arena changes shape when it falls to half health.'],
+        ['ULTS AND SIGNATURES', 'Each element\'s ult goes off when its gem is full, on its own key. There\'s a short shared cooldown after any ult. Several weapons also have a signature ability on R that charges from hits: the Icicle Cannon\'s *Frost Shield*, the Magma Staff\'s *Magma Surge*, Ignition\'s *Blue Flame*, and the Fractal Shard\'s gamble. The next four pages cover the ults.'],
+        ['SCORCH  ·  FIRE', '8 seconds. Meteors rain across the room, each one dazing what it hits and adding a *Super Burn* stack. After the first volley your attack becomes Meteor Strike, which drops 4 or 5 heavy meteors on the spot you click. A fire aura around you burns one enemy a second, your dash goes further, your burn ticks heal you, you move about twice as fast, and you can\'t switch away from fire until it ends.'],
+        ['BLIZZARD  ·  ICE', '20 seconds, and you can switch elements during it. It opens with a wave of Deep Freeze, then a freezing ring follows you: inside it a single *Chill* stack makes an *ice cube*, and cubes shatter after 1.2 seconds. Every 5 seconds an ice tornado forms and hunts enemies down. You take 1.5 times damage while it lasts, and you\'re frozen solid for 3 seconds at the end.'],
+        ['FORK  ·  LIGHTNING', 'Time stops while you become a bolt that passes through every enemy in the room and back to you. Then the whole path ignites, doing more the more enemies it touched. For 12 seconds afterwards, part of any damage to an enemy forks to the enemies around it, you move twice as fast, and every step dazes and zaps nearby enemies.'],
+        ['ASCEND  ·  COSMIC', '10 seconds, and you can switch elements during it: 25% more max HP, faster movement and your cosmic boon at full strength. Waves of *cosmic fluid* spread from you at the start and the end, you leave a trail of it, and every 3 seconds a wave rolls toward your crosshair. It ends with a *supernova* that grows with every *Hex* stack in range. At stage 2, holding the key past halfway gives you *Constellation* instead.'],
+        ['GADGETS', 'You carry two gadgets, thrown with Q and F, each on its own cooldown. Smite Charge: lightning stuns everything near where it lands for 2 seconds. EMP Pulse: a heavy slow around you that wears off over 6 seconds. Displacer: picks up to 6 enemies and puts them where you click. Grounding Spike: removes resistance for 6 seconds. Mend Totem: heals you while you stand near it. Bulwark: a 3-tile wall for 4 seconds. Decoy Slime: nearby enemies chase it instead of you for 3 seconds. They\'re bought and slotted in the GADGETS tab of the shop.', 2],
+        ['ULT UPGRADES', 'Each ult has stages that add to it, bought in the shop\'s ULTS tab with fragments and glorps. Fragments come from the first clear of each story level and from beating its boss, with one more fragment for each later boss kill. The tab opens once the tutorial is done and you\'ve cleared the first floor of the Tower.'],
+        ['RELICS', 'Relics are kept for good and work in every level. Each trades a strength for a weakness, and they\'re sorted onto shelves by build in three tiers: Novice, Adept and Legend. Glurp sells a few each day, and every Tower boss drops one you don\'t have. You can wear one relic once you\'ve entered the Tower, and more slots open at Tower floors 5, 15, 30 and 50.'],
+        ['ENCHANTING', 'Sealed books drop in the Tower. At the Enchanter\'s Isle, unsealing a book costs 40 dust and gives a random enchant, rarity, level and quality. An Epic or better is guaranteed within 25 unseals and a Legendary or better within 80. BIND puts a book into one of a weapon\'s slots for glorps; better weapons have more slots, and a book comes back out for free.', 2],
+        ['REFORGE, COMBINE, RESEAL', 'REFORGE rerolls a book\'s quality for dust. Quality runs from 0 to 100 and scales its effect from 70% to 130%. COMBINE takes two or more copies of the same book at the same level and tries to raise its level; more quality going in gives better odds, and a miss loses the worst copy. RESEAL turns a book back into a sealed one for another unseal, or salvages it for dust.', 3],
+        ['THE DUST GARDEN', 'Seeds drop in the Tower and are never used up: planting one puts a copy to work and harvesting gives it back. Some crops only grow by day or by night. A ripe crop gives dust and banks its blessing for your next Tower climb; different blessings stack, the same one doesn\'t, and the garden\'s tier caps how many you can bank. The garden shop sells the rake (more plots), the watering can (faster growth) and fertilizer (double the next harvest). The river and lake can be fished for dust and rare seeds.'],
+    ];
+    _gameGuide() {
+        this._guide({ id: 'gguide', dir: 'guide', title: 'THE GUIDE', pages: LevelSelectScene.GAME_GUIDE, then: () => {}, force: true, end: 'GOT IT' });
+    }
+    // A guide: pages of [title, text], each with its picture (assets/<dir>/<n>.jpg, loaded the first time it's wanted).
+    // Shown once (seenKey) unless forced; `then` runs when it closes.
+    _guide({ id, dir, title, pages, seenKey = null, then, force = false, end = 'DONE' }) {
+        let seen = false;
+        try { seen = !!seenKey && localStorage.getItem(seenKey) === '1'; } catch (e) {}
+        if (seen && !force) return then();
+        if (this._settingsOpen) return;
+        // a page has one picture (<n>.jpg), or `pages[i][2]` of them side by side (<n>a.jpg, <n>b.jpg, ...)
+        const files = i => pages[i][2] ? [...'abcd'.slice(0, pages[i][2])].map(c => [`${id}_${i + 1}${c}`, `assets/${dir}/${i + 1}${c}.jpg`]) : [[`${id}_${i + 1}`, `assets/${dir}/${i + 1}.jpg`]];
+        const all = pages.flatMap((_, i) => files(i));
+        const need = all.filter(([k]) => !this.textures.exists(k));
+        if (need.length) {
+            need.forEach(([k, f]) => this.load.image(k, f));
+            this.load.once('complete', () => this._guide({ id, dir, title, pages, seenKey, then, force: true, end }));
+            this.load.start();
+            return;
+        }
+        this._settingsOpen = true;
+        Sfx.play(this, 'click');
+        const W = this.scale.width, H = this.scale.height, D = 200, P = UIKit.PALETTE, objs = [];
+        const keep = o => { objs.push(o); o.setScrollFactor?.(0); return o; };
+        const kit = k => { objs.push(...k.objs); return k; };
+        kit(UIKit.overlay(this, { alpha: 0.82, depth: D }));
+        const pw = Math.min(780, W - 40), ph = Math.min(680, H - 30), px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+        kit(UIKit.panel(this, { x: px, y: py, w: pw, h: ph, accent: P.accentGold, depth: D + 1, title, titleSize: '20px' }));
+        const iw = pw - 80, ih = Math.min(Math.round(iw * 9 / 16), ph - 300), iy = py + 56;
+        keep(this.add.rectangle(W / 2, iy + ih / 2, iw + 6, ih + 6, 0x05060a).setStrokeStyle(2, P.accentGold, 0.6).setDepth(D + 2));
+        const head = keep(this.add.text(W / 2, iy + ih + 14, '', { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f3e3b8' }).setOrigin(0.5, 0).setDepth(D + 3));
+        let pageObjs = [];   // the page's pictures and its text (hover words in it)
+        const dots = pages.map((_, i) => keep(this.add.circle(W / 2 + (i - (pages.length - 1) / 2) * 16, py + ph - 72, 4, P.accentGold).setDepth(D + 3)));
+        let at = 0, nav = [];
+        const close = () => { this.input.keyboard.off('keydown', onKey); this._hideTip(); objs.concat(nav, pageObjs).forEach(o => o?.destroy?.()); try { if (seenKey) localStorage.setItem(seenKey, '1'); } catch (e) {} this.time.delayedCall(0, () => { this._settingsOpen = false; then(); }); };
+        const show = (i) => {
+            at = Math.max(0, Math.min(pages.length - 1, i));
+            pageObjs.forEach(o => o?.destroy?.()); pageObjs = []; this._hideTip();
+            const pk = o => { pageObjs.push(o); o.setScrollFactor?.(0); return o; };
+            const fs = files(at), n = fs.length, cols = n > 2 ? 2 : n, rows = Math.ceil(n / cols), cw = (iw - (cols - 1) * 6) / cols, chh = (ih - (rows - 1) * 6) / rows;
+            fs.forEach(([k], j) => {
+                const cx = W / 2 - iw / 2 + (j % cols) * (cw + 6) + cw / 2, cy = iy + Math.floor(j / cols) * (chh + 6) + chh / 2;
+                const im = pk(this.add.image(cx, cy, k).setDepth(D + 3));
+                im.setScale(Math.min(cw / im.width, chh / im.height));
+            });
+            head.setText(pages[at][0]);
+            const room = py + ph - 86 - (iy + ih + 46);   // down to the page dots
+            for (const [fs, ls] of [[13, 4], [12, 3], [11, 2]]) {   // smaller type for a long page, so it never runs into the dots
+                const mark = pageObjs.length;
+                const h = this._richText(pk, W / 2 - iw / 2 + 6, iy + ih + 46, pages[at][1], { fontSize: fs + 'px', fontFamily: 'monospace', color: UIKit.CSS.textMid, lineSpacing: ls, wordWrap: { width: iw - 12 }, kwColor: '#e8b4ff' }, D + 3);
+                if (h <= room || fs === 11) break;
+                pageObjs.splice(mark).forEach(o => o?.destroy?.());
+            }
+            dots.forEach((d, j) => d.setAlpha(j === at ? 1 : 0.25));
+            nav.forEach(o => o?.destroy?.());
+            const last = at === pages.length - 1;
+            nav = [...(at > 0 ? UIKit.button(this, { x: W / 2 - 120, y: py + ph - 36, w: 200, h: 40, label: '◂  BACK', accent: P.line, depth: D + 4, fontSize: '14px', fireOn: 'down', onClick: () => show(at - 1) }).objs : []),
+                   ...UIKit.button(this, { x: at > 0 ? W / 2 + 120 : W / 2, y: py + ph - 36, w: 200, h: 40, label: last ? end : 'NEXT  ▸', accent: last ? P.accentGold : P.accentGreen, depth: D + 4, fontSize: '14px', fireOn: 'down', onClick: () => last ? close() : show(at + 1) }).objs];
+            Sfx.play(this, 'hover');
+        };
+        const onKey = (ev) => { if (ev.key === 'ArrowRight' || ev.key === 'Enter') at === pages.length - 1 ? close() : show(at + 1); else if (ev.key === 'ArrowLeft') show(at - 1); else if (ev.key === 'Escape') close(); };
+        this.input.keyboard.on('keydown', onKey);
+        show(0);
+    }
     _openTowerStart() {
         if (this._settingsOpen) return;
         this._settingsOpen = true;
@@ -836,6 +1147,7 @@ class LevelSelectScene extends Phaser.Scene {
         kit(UIKit.panel(this, { x: px, y: py, w: pw, h: ph, accent: P.accentGold, depth: D + 1, title: 'THE TOWER', titleSize: '20px' }));
         const txt = (x, y, s, o = {}) => keep(this.add.text(x, y, s, Object.assign({ fontSize: '13px', fontFamily: 'monospace', color: UIKit.CSS.textMid }, o)).setDepth(D + 3));
         txt(px + pw - 20, py + 22, '✕', { fontSize: '18px', color: UIKit.CSS.textHi }).setOrigin(0.5).setInteractive({ useHandCursor: true }).on('pointerdown', close);
+        txt(px + 20, py + ph - 22, 'how it works', { fontSize: '11px', color: UIKit.CSS.textLo }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true }).on('pointerdown', () => { close(); this.time.delayedCall(0, () => this._towerGuide(() => this._openTowerStart(), true)); });
         const best = TowerFloors.best(), max = TowerFloors.maxStart(), purse = parseInt(localStorage.getItem('glorps') || '0', 10) || 0;
         txt(W / 2, py + 62, `Your best: floor ${best}`, { fontSize: '14px', color: UIKit.CSS.textHi }).setOrigin(0.5);
         txt(W / 2, py + 96, 'START ON FLOOR', { fontSize: '12px', fontStyle: 'bold' }).setOrigin(0.5);
@@ -927,6 +1239,7 @@ class LevelSelectScene extends Phaser.Scene {
         y += 16;
         head(lx, y, 'GAME'); y += 34;
         choice('SHAKE', Settings.SHAKE, () => Settings.shake(), v => { Settings.setShake(v); if (v) this.cameras.main.shake(160, 0.006 * v); });
+        choice('GRAPHICS', Settings.QUALITY, () => Settings.quality(), v => Settings.setQuality(v));
         choice('GLOW', Settings.GLOW, () => Settings.glow(), v => Settings.setGlow(v));
         choice('FPS', Settings.FPS, () => Settings.fps(), v => Settings.setFps(v));
         txt(lx, y + 4, 'Keybinds take effect when a level loads.', { fontSize: '11px', color: UIKit.CSS.textLo });
@@ -1045,11 +1358,47 @@ class LevelSelectScene extends Phaser.Scene {
             onClick: () => { objs.forEach(o => o?.destroy?.()); this.scene.restart(); } }));
     }
 
+    // ── ACHIEVEMENTS ─────────────────────────────────────────────────────────
+    // Every feat in two columns: its tier's star (lit once earned), what to do, how far along,
+    // and what it pays. An earned one shows the line it greeted you with instead.
+    _openAchievements() {
+        if (this._settingsOpen) return;
+        this._settingsOpen = true;
+        Sfx.play(this, 'click');
+        const W = this.scale.width, H = this.scale.height, D = 200, P = UIKit.PALETTE, objs = [];
+        const keep = o => { objs.push(o); o.setScrollFactor?.(0); return o; };
+        const kit = k => { objs.push(...k.objs); return k; };
+        const close = () => { objs.forEach(o => o?.destroy?.()); this._settingsOpen = false; this.input.keyboard.off('keydown-ESC', close); };
+        kit(UIKit.overlay(this, { alpha: 0.78, depth: D }));
+        const L = Achievements.LIST, st = Achievements.stats(), done = Achievements.done();
+        const pw = Math.min(1040, W - 40), ph = Math.min(660, H - 40), px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+        kit(UIKit.panel(this, { x: px, y: py, w: pw, h: ph, accent: P.accentPurple, depth: D + 1, title: `ACHIEVEMENTS  ·  ${done.size} / ${L.length}`, titleSize: '20px' }));
+        const txt = (x, y, s, o = {}) => keep(this.add.text(x, y, s, Object.assign({ fontSize: '12px', fontFamily: 'monospace', color: UIKit.CSS.textMid }, o)).setDepth(D + 3));
+        const rows = Math.ceil(L.length / 2), top = py + 58, rh = Math.min(58, Math.floor((ph - 120) / rows)), cw = (pw - 60) / 2;
+        L.forEach((a, i) => {
+            const x = px + 20 + Math.floor(i / rows) * (cw + 20), y = top + (i % rows) * rh, got = done.has(a.id), col = Achievements.TIER_COL[a.tier];
+            const n = Math.min(a.goal, st[a.stat] || 0);
+            keep(this.add.rectangle(x, y, cw, rh - 6, got ? 0x1a1426 : P.bgRaised, 1).setOrigin(0).setDepth(D + 2).setStrokeStyle(1, col, got ? 0.8 : 0.2));
+            txt(x + 20, y + (rh - 6) / 2, '★', { fontSize: '20px', color: UIKit._hex(col) }).setOrigin(0.5).setAlpha(got ? 1 : 0.25);
+            txt(x + 40, y + 5, a.name, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: got ? UIKit._hex(col) : UIKit.CSS.textHi });
+            txt(x + 40, y + 24, got ? `"${a.desc}"` : a.how, { fontStyle: got ? 'italic' : 'normal', color: got ? '#e8dcc0' : UIKit.CSS.textMid });
+            txt(x + cw - 10, y + 7, Achievements.rewardText(a).split('   ').join('  '), { fontSize: '10px', color: got ? UIKit.CSS.textLo : '#9be08a' }).setOrigin(1, 0);
+            if (!got && a.goal > 1) {   // how far along
+                const bw = 120, bx = x + cw - 10 - bw, by = y + rh - 18;
+                keep(this.add.rectangle(bx, by, bw, 5, 0x000000, 0.6).setOrigin(0).setDepth(D + 3));
+                keep(this.add.rectangle(bx, by, bw * n / a.goal, 5, col, 0.9).setOrigin(0).setDepth(D + 3));
+                txt(bx - 6, by - 4, `${n.toLocaleString('en-US')} / ${a.goal.toLocaleString('en-US')}`, { fontSize: '10px', color: UIKit.CSS.textLo }).setOrigin(1, 0);
+            }
+        });
+        kit(UIKit.button(this, { x: px + pw / 2, y: py + ph - 34, w: 200, h: 40, label: 'DONE', accent: P.accentGreen, depth: D + 4, fontSize: '14px', fireOn: 'down', onClick: close }));
+        this.input.keyboard.on('keydown-ESC', close);
+    }
+
     _drawPack(p) {
         const WEAPON_LABELS = {
             flame_fists: 'Flame Fists', flame_sword: 'Flame Sword', magma_staff: 'Magma Staff', ignition: 'Ignition',
             ice_fists: 'Ice Fists', icicle_cannon: 'Icicle Cannon', fractal_shard: 'Fractal Shard',
-            lightning_fists: 'Storm Fists', orb_emitter: 'Orb Emitter', ball_lightning: 'Ball Lightning',
+            lightning_fists: 'Storm Fists', orb_emitter: 'Orb Emitter', ball_lightning: 'Ball Lightning', conductor: 'Circuit Breaker',
             cosmic_fists: 'Void Fists', barrier_staff: 'Barrier Staff', astrolabe: 'Astrolabe',
             singularity_staff: 'Singularity', void_blade: 'Void Blade',
         };
@@ -1075,11 +1424,15 @@ class LevelSelectScene extends Phaser.Scene {
             this.add.rectangle(x, y, 3, ch, el.color, el.locked ? 0.3 : 1).setOrigin(0).setDepth(D + 2);
             const ik = !el.locked && MenuArt.iconSheet(this, id);
             if (ik) ShopScene.enchAura(this, this.add.sprite(x + 26, y + ch / 2, ik, '0').setScale(1.5).setDepth(D + 2).play(ik), id);   // enchanted: it glows here too
-            else this.add.text(x + 26, y + ch / 2, '🔒', { fontSize: '16px' }).setOrigin(0.5).setDepth(D + 2).setAlpha(0.5);
+            else UIKit.chains(this, x + cw / 2, y + ch / 2, cw - 10, ch - 8, { depth: D + 3, link: 6, lock: 14 });   // sealed: chained shut
+            if (el.locked) {   // just its name, on a little plate over the chains
+                this.add.text(x + 10, y + 7, el.label, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(el.color), backgroundColor: '#14100c', padding: { x: 4, y: 2 } }).setDepth(D + 4).setAlpha(0.85);
+                return;
+            }
             this.add.text(x + 50, y + ch / 2 - 8, el.label, {
-                fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: el.locked ? UIKit.CSS.textLo : UIKit._hex(el.color),
+                fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(el.color),
             }).setOrigin(0, 0.5).setDepth(D + 2);
-            this.add.text(x + 50, y + ch / 2 + 8, el.locked ? 'locked' : (WEAPON_LABELS[id] || id), {
+            this.add.text(x + 50, y + ch / 2 + 8, WEAPON_LABELS[id] || id, {
                 fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: el.locked ? UIKit.CSS.textLo : UIKit.CSS.textHi,
             }).setOrigin(0, 0.5).setDepth(D + 2);
             if (el.locked) return;
@@ -1092,6 +1445,19 @@ class LevelSelectScene extends Phaser.Scene {
         const rx = p.x + p.w - 14 - rw, rcx = rx + rw / 2;
         UIKit.pill(this, { x: rcx, y: p.y + 24, align: 0.5, icon: 'glorp', label: (parseInt(localStorage.getItem('glorps') || '0', 10) || 0).toLocaleString('en-US'),
                            accent: UIKit.PALETTE.accentGold, depth: D + 2, fontSize: '15px', fixed: false });
+        const nDone = Achievements.done().size;
+        UIKit.button(this, { x: rx - 12 - 50, y: p.y + 24, w: 100, h: 30, label: `★ ${nDone}/${Achievements.LIST.length}`, accent: UIKit.PALETTE.accentPurple,
+                             fontSize: '13px', depth: D + 3, fixed: false, fireOn: 'down', onClick: () => this._openAchievements() });
+        // the two gadgets you carry (Q, F), animated in their sockets; a click goes to the shop's gadget tab
+        const fk = Object.create(FieldKit.prototype), lo = fk.gadgetLoadout(), keys = [Settings.label(Settings.key('gadget1')), Settings.label(Settings.key('gadget2'))];
+        lo.forEach((id, i) => {
+            const gx = rx - 12 - 100 - 26 - (1 - i) * 40, gy = p.y + 24, g = this.add.graphics().setDepth(D + 2);
+            g.fillStyle(0x000000, 0.5).fillCircle(gx + 1, gy + 2, 17); g.fillStyle(0x2e2a26, 1).fillCircle(gx, gy, 16); g.fillStyle(0x1b1612, 1).fillCircle(gx, gy, 14);
+            const def = id && fk._gadgetDefs()[id];
+            if (def) { g.lineStyle(1.5, def.color, 0.9).strokeCircle(gx, gy, 15); const k = ShopScene.gadgetIcon(this, id); if (k) { const sp = this.add.sprite(gx, gy, k, '0').setScale(1.1).setDepth(D + 3); if (this.anims.exists(k)) sp.play(k); } }
+            this.add.text(gx + 12, gy + 9, keys[i], { fontSize: '9px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d2bf98', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5).setDepth(D + 4);
+            this.add.zone(gx, gy, 32, 32).setInteractive({ useHandCursor: true }).setDepth(D + 5).on('pointerdown', () => this.scene.start('Shop', { tab: 3 }));
+        });
         UIKit.button(this, { x: rcx, y: top + ch / 2, w: rw, h: ch, label: 'SETTINGS', accent: UIKit.PALETTE.accentBlue,
                              fontSize: '14px', depth: D + 3, fixed: false, fireOn: 'down', onClick: () => this._openSettings() });
         UIKit.button(this, { x: rcx, y: top + ch + gap + ch / 2, w: rw, h: ch, label: 'SHOP', accent: UIKit.PALETTE.accentGreen,

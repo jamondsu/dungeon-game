@@ -140,10 +140,18 @@ class GardenScene extends Phaser.Scene {
         this.keys.E.on('down', () => this._interact()); this.keys.SPACE.on('down', () => this._interact());
         this.keys.L.on('down', () => { if (!this._fish && !this._rest) this._panelObjs ? this._closePanel() : this._logPanel(); });
         this.keys.ESC.on('down', () => { if (this._sprk) this._sprinkleEnd(false); else if (this._build) this._toggleBuild(); else if (this._rest) this._getUp(); else if (this._fish) this._endFish('reeled in'); else if (this._panelObjs) this._closePanel(); else this._leave(); });
-        this.time.addEvent({ delay: 1000, loop: true, callback: () => { if (!this._panelObjs) this._drawCrops(); this._hud(); } });
+        this.time.addEvent({ delay: 1000, loop: true, callback: () => { if (!this._panelObjs) this._drawCrops(); this._hud(); this._batchGlows(); } });
         this._place();
+        this._batchGlows();
         cam.fadeIn(400, 10, 6, 24);
         if (data.build) this._toggleBuild();
+    }
+
+    // Every additive glow in the world onto one depth just under the vignette. Sorted in among the trees and props by their foot,
+    // each one switched the blend mode and flushed the batch: 83 draw calls a frame for a still garden (2026-10-20). Light adds,
+    // so where it sits in the order doesn't change the picture; it runs again each second for the glows crops make later.
+    _batchGlows() {
+        for (const o of this.children.list) if (o.blendMode === Phaser.BlendModes.ADD && o.scrollFactorX !== 0 && o.depth < 4890) o.setDepth(4890);
     }
 
     // design-grid tiles to world, and back
@@ -2991,7 +2999,7 @@ class GardenScene extends Phaser.Scene {
             big.setInteractive({ useHandCursor: true }).on('pointerdown', () => hold());
             strip.forEach((sp, j) => sp.setInteractive({ useHandCursor: true }).on('pointerdown', () => hold(j)));
             txt(rx + 24, py + 290, have ? S.name : '???', { fontSize: '22px', fontFamily: UIKit.FONT.title, fontStyle: 'bold' });
-            const src = S.src === 'tower' ? `from the Tower (tier ${['', 'I', 'II', 'III'][S.t]}${S.t > 1 ? `, floor ${S.t === 2 ? 10 : 25}+` : ''})` : S.src === 'river' ? 'fished from the river' : S.src === 'lake' ? 'fished from the lake' : S.src === 'cosmic' ? 'fished from the Underwell' : S.src === 'sky' ? 'fished from the Cloud Sea' : S.src === 'mud' ? 'pulled up out of the mud' : 'a secret: somewhere in the garden';
+            const src = S.src === 'tower' ? `from the Tower (tier ${['', 'I', 'II', 'III'][S.t]}${S.t > 1 ? `, floor ${S.t === 2 ? 10 : 25}+` : ''})` : S.src === 'river' ? 'fished from the river' : S.src === 'lake' ? 'fished from the lake' : S.src === 'cosmic' ? 'fished from the Underwell' : S.src === 'sky' ? 'fished from the Cloud Sea' : S.src === 'mud' ? 'pulled up out of the mud' : S.src === 'feat' ? `the reward for the achievement ${Achievements.def(S.feat)?.name}` : 'a secret: somewhere in the garden';
             txt(rx + 24, py + 322, have ? `${src}${S.time ? (S.time === 'night' ? '  ·  grows only at night' : '  ·  grows only by day') : ''}\nripe in ${this._time(S.hrs * 3600000)}  ·  ✧${S.dust} a harvest  ·  you have ${s.seeds[S.id] || 0}\n\n${S.bless ? `blessing: ${S.bless}\n${S.text}` : 'no blessing: a rare one, for the collection'}` : `${S.secret ? 'somewhere in the garden, something glimmers...' : src}`, { fontSize: '12px', lineSpacing: 5, wordWrap: { width: pw - 48 } });
         } else if (ch === 'orchard') {   // the tree growing up through its stages, over and over
             const Tr = pick, big = keep(this.add.sprite(cxr, py + 236, this._treeTex(Tr, 0), '0').setOrigin(0.5, 1).setScale(3.4).setDepth(D + 2));
@@ -4250,9 +4258,18 @@ class SkyScene extends UnderwellScene {
             this.tweens.add({ targets: c, x: x + W * 0.25, duration: 60000 + i * 7000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             this.tweens.add({ targets: c, y: y - T * 0.15, duration: 2400 + i * 200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         }
-        for (let i = 0; i < 3; i++) {   // birds: little Vs crossing the sky
-            const b = this.add.text(-40, this._py(1 + i * 0.6), 'v', { fontSize: `${Math.round(T * 0.35)}px`, fontFamily: 'monospace', color: '#4a5a7a' }).setDepth(4900);
+        // birds: little pixel gulls flapping across the sky (they were the letter v in monospace)
+        // ('g' is the unoutlined colour: a distant bird is a soft dark silhouette, a gull's M, wings up then down)
+        const gull = ShopScene.icon(this, 'gd_gull_2', 12, { g: '#4a5a7a' }, (m, f) => {
+            const L = f ? [[0, 7], [1, 7], [2, 6], [3, 6], [4, 5]] : [[0, 4], [1, 3], [2, 3], [3, 4], [4, 5]];
+            for (const [x, y] of L) { m.set(x, y, 'g'); m.set(11 - x, y, 'g'); }
+            m.rect(5, 5, 2, 2, 'g');
+        }, 2);
+        for (let i = 0; i < 3; i++) {
+            const b = this.add.sprite(-40, this._py(1 + i * 0.6), gull).setScale(T / 16 * (1 - i * 0.15)).setDepth(4900);
+            b.play({ key: gull, frameRate: 4 + i });
             this.tweens.add({ targets: b, x: W + 40, duration: 40000 + i * 9000, delay: i * 6000, repeat: -1 });
+            this.tweens.add({ targets: b, y: b.y - T * 0.3, duration: 1800 + i * 300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         }
         this.add.particles(0, 0, 'mn_px2', { x: { min: 0, max: W }, y: { min: this._py(2), max: this._py(14) }, lifespan: 3000, speedX: { min: 4, max: 14 }, speedY: { min: -4, max: 4 },
             scale: { start: 1.4, end: 0 }, alpha: { start: 0.9, end: 0 }, tint: [0xffffff, 0xfff0a0, 0xd8f0ff], blendMode: 'ADD', frequency: 120 }).setDepth(5000);

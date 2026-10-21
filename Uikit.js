@@ -45,6 +45,96 @@ const UIKit = {
     // hairline inside the band, and a brass rivet in each corner. Drawn into an existing
     // graphics `g` at (x, y), so panels (screen space) and cards (container-local) use
     // the same strokes. `focus` brightens the hairline and the rivets.
+    // BAKE: a Graphics that never changes, drawn once into a texture (on the CPU, through the canvas renderer) and
+    // shown as an Image. A Graphics is re-tessellated and re-uploaded every frame it's on screen; an Image is one quad.
+    // (x0, y0, w, h): the part of the Graphics' own space to keep. Returns the Image (the Graphics is destroyed), or
+    // the Graphics untouched where it can't be baked.
+    bake(scene, g, x0, y0, w, h, key) {
+        w = Math.ceil(w); h = Math.ceil(h);
+        if (!g?.generateTexture || w < 1 || h < 1 || w > 4096 || h > 4096) return g;
+        key ||= 'baked_' + (UIKit._bakeN = (UIKit._bakeN || 0) + 1);
+        if (!scene.textures.exists(key)) {
+            const sf = [g.scrollFactorX, g.scrollFactorY], pos = [g.x, g.y];
+            g.setScrollFactor(0).setPosition(-x0, -y0);   // the texture's camera scrolls with the Graphics' position, unless it ignores scroll
+            g.generateTexture(key, w, h);
+            g.setScrollFactor(...sf).setPosition(...pos);
+        }
+        const img = scene.add.image(g.x + x0, g.y + y0, key).setOrigin(0).setDepth(g.depth).setAlpha(g.alpha).setScrollFactor(g.scrollFactorX, g.scrollFactorY);
+        g.destroy();
+        return img;
+    },
+
+    // R METER: the bar over the player for a weapon's R, drawn into graphics `g` (the caller clears it) with its
+    // top-left at (x, y). A frame with pointed ends, the fill lit along its top with a sheen running through it,
+    // notches with o.segs, and a gem at its left for the key. Ready (full, or o.ready): the frame pulses, a halo
+    // wakes round it and two sparks run its edge. o: col, hot, dark, h, time, segs, ready, gem (false: none).
+    rBar(g, x, y, w, frac, o = {}) {
+        const h = o.h || 6, t = o.time || 0, col = o.col ?? 0xffffff, hot = o.hot ?? 0xffffff, dark = o.dark ?? 0x0a0a0a;
+        const k = Math.max(0, Math.min(1, frac)), ready = o.ready ?? k >= 1, pulse = ready ? 0.6 + 0.4 * Math.sin(t / 130) : 0;
+        const hex = (x0, y0, ww, hh) => { const c = Math.min(hh / 2, ww / 2); return [{ x: x0, y: y0 + hh / 2 }, { x: x0 + c, y: y0 }, { x: x0 + ww - c, y: y0 }, { x: x0 + ww, y: y0 + hh / 2 }, { x: x0 + ww - c, y: y0 + hh }, { x: x0 + c, y: y0 + hh }]; };
+        if (ready) { g.fillStyle(col, 0.1 + 0.18 * pulse); g.fillPoints(hex(x - 5, y - 4, w + 10, h + 8), true); }
+        g.fillStyle(dark, 0.85); g.fillPoints(hex(x - 2, y - 2, w + 4, h + 4), true);
+        const fw = w * k;
+        if (fw > 0.5) {
+            g.fillStyle(col, 1); g.fillPoints(hex(x, y, fw, h), true);
+            const c = Math.min(h / 2, fw / 2);
+            g.fillStyle(hot, 0.85); g.fillRect(x + c, y, fw - 2 * c, Math.max(1, h / 4));
+            g.fillStyle(0x000000, 0.25); g.fillRect(x + c, y + h - Math.max(1, h / 4), fw - 2 * c, Math.max(1, h / 4));
+            const sx = x - 8 + ((t / 5) % (w + 24));   // the sheen running through the fill
+            if (sx > x && sx + 5 < x + fw) { g.fillStyle(0xffffff, ready ? 0.7 : 0.4); g.fillPoints([{ x: sx + 3, y }, { x: sx + 6, y }, { x: sx + 3, y: y + h }, { x: sx, y: y + h }], true); }
+        }
+        for (let i = 1; i < (o.segs || 0); i++) { g.fillStyle(dark, 0.9); g.fillRect(x + w * i / o.segs - 0.5, y, 1, h); }
+        g.lineStyle(1, ready ? hot : col, ready ? 0.6 + 0.4 * pulse : 0.5); g.strokePoints(hex(x - 2, y - 2, w + 4, h + 4), true);
+        if (ready) for (let j = 0; j < 2; j++) {   // sparks running round the edge
+            const u = (t / 900 + j / 2) % 1, px = u < 0.5 ? x - 1 + (w + 2) * u * 2 : x + w + 1 - (w + 2) * (u - 0.5) * 2, py = u < 0.5 ? y - 2 : y + h + 2;
+            g.fillStyle(col, 0.5); g.fillCircle(px, py, 2.6); g.fillStyle(0xffffff, 1); g.fillCircle(px, py, 1.2);
+        }
+        if (o.gem !== false) this.rGem(g, x - 9, y + h / 2, ready ? 1 : k, { col, hot, dark, time: t, ready });
+    },
+    // the key gem: a diamond filling from the bottom, lit and pulsing when ready
+    rGem(g, x, y, frac, o = {}) {
+        const s = o.s || 5, t = o.time || 0, col = o.col ?? 0xffffff, ready = o.ready ?? frac >= 1, pulse = ready ? 0.6 + 0.4 * Math.sin(t / 130) : 0;
+        const d = (r) => [{ x, y: y - r }, { x: x + r, y }, { x, y: y + r }, { x: x - r, y }];
+        if (ready) { g.fillStyle(col, 0.2 + 0.25 * pulse); g.fillPoints(d(s + 4), true); }
+        g.fillStyle(o.dark ?? 0x0a0a0a, 0.9); g.fillPoints(d(s + 1), true);
+        const f = Math.max(0, Math.min(1, frac));
+        if (f > 0) {   // filled from the bottom: the diamond cut at the fill's height
+            const top = y + s - 2 * s * f, wAt = yy => s - Math.abs(yy - y);
+            const pts = top <= y ? [{ x: x - wAt(top), y: top }, { x: x + wAt(top), y: top }, { x: x + s, y }, { x, y: y + s }, { x: x - s, y }] : [{ x: x - wAt(top), y: top }, { x: x + wAt(top), y: top }, { x, y: y + s }];
+            g.fillStyle(ready ? (o.hot ?? 0xffffff) : col, ready ? 0.8 + 0.2 * pulse : 0.85); g.fillPoints(pts, true);
+        }
+        g.lineStyle(1, ready ? 0xffffff : col, ready ? 0.9 : 0.6); g.strokePoints(d(s + 1), true);
+    },
+
+    // CHAINED: something sealed. Two iron chains crossed over a box (x, y, w, h: its middle and size), links drawn
+    // in pixels, and a padlock where they cross. Returns the graphics (pinned with o.fixed, at o.depth).
+    chains(scene, x, y, w, h, o = {}) {
+        const g = scene.add.graphics().setDepth(o.depth ?? 10).setPosition(x, y);
+        if (o.fixed) g.setScrollFactor(0);
+        const L = o.link ?? 7, hw = w / 2, hh = h / 2;
+        const run = (x0, y0, x1, y1) => {   // a chain of oval links, alternating flat and edge-on
+            const len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(2, Math.floor(len / (L * 0.8))), a = Math.atan2(y1 - y0, x1 - x0);
+            for (let i = 0; i <= n; i++) {
+                const px = x0 + (x1 - x0) * i / n, py = y0 + (y1 - y0) * i / n, flat = i % 2 === 0;
+                const lw = flat ? L : L * 0.9, lh = flat ? L * 0.62 : L * 0.28;
+                const c = Math.cos(a), s = Math.sin(a), pts = [];
+                for (let k = 0; k < 10; k++) { const t = k / 10 * Math.PI * 2, ex = Math.cos(t) * lw / 2, ey = Math.sin(t) * lh / 2; pts.push({ x: px + ex * c - ey * s, y: py + ex * s + ey * c }); }
+                g.lineStyle(3.2, 0x0e0c0a, 0.95).strokePoints(pts, true);
+                g.lineStyle(2, flat ? 0x8a8e96 : 0x6a6e76, 1).strokePoints(pts, true);
+                if (flat) { g.lineStyle(1, 0xc8ccd4, 0.8); g.beginPath(); g.moveTo(pts[6].x, pts[6].y); g.lineTo(pts[7].x, pts[7].y); g.lineTo(pts[8].x, pts[8].y); g.strokePath(); }   // a glint
+            }
+        };
+        run(-hw, -hh, hw, hh); run(-hw, hh, hw, -hh);
+        const s = o.lock ?? Math.min(18, Math.max(10, Math.min(w, h) * 0.35));   // the padlock: a shackle and a body with a keyhole
+        g.lineStyle(3.5, 0x0e0c0a, 1).strokeEllipse(0, -s * 0.35, s * 0.62, s * 0.8);
+        g.lineStyle(2.2, 0x9a7a3a, 1).strokeEllipse(0, -s * 0.35, s * 0.62, s * 0.8);
+        g.fillStyle(0x0e0c0a, 1).fillRoundedRect(-s / 2 - 1.5, -s * 0.15 - 1.5, s + 3, s * 0.75 + 3, 2.5);
+        g.fillStyle(0xc89a3a, 1).fillRoundedRect(-s / 2, -s * 0.15, s, s * 0.75, 2);
+        g.fillStyle(0xf0d070, 1).fillRect(-s / 2 + 1.5, -s * 0.15 + 1.5, s - 3, 1.5);
+        g.fillStyle(0x2a1a08, 1).fillCircle(0, s * 0.12, s * 0.1).fillRect(-s * 0.04, s * 0.12, s * 0.08, s * 0.22);
+        return g;
+    },
+
     ironFrame(g, x, y, w, h, o = {}) {
         const P = this.PALETTE;
         const r = o.radius ?? 4, accent = o.accent ?? P.accentGold, focus = !!o.focus;

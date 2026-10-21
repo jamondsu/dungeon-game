@@ -269,20 +269,22 @@ class TutorialManager {
                  `Resisted isn't immune. It just hurts less, so swap to the element that works and keep swinging.`],
                 'Clear the room'],
             2: [[`Something tougher in here. Hit it with fire and see what happens...`], 'Find what works on them'],
-            3: [[`Snipers! They hit from range, and you're ICE-ONLY in here.`,
-                 `Your ice ult is the BLIZZARD: ${this._k('ult')} holding ice, or ${this._k('ultIce')} from anything. It freezes everything it reaches. Cast it again while they're frozen to SHATTER them all at once!`,
-                 `Beat the snipers, then cast the Blizzard. You must use it to leave.`],
-                `Ice only: beat the snipers, then cast the Blizzard ${this._k('ultIce')}`],
-            4: [[`Watch your step! Purple clouds are POISON (your damage drops while you're in them), and grey spike tiles hurt.`,
-                 `Dash ${this._k('dash')} straight across hazards: you can't be hurt mid-dash. And grab any health pots the slimes drop.`],
-                'Cross the hazards and clear the room'],
-            5: [[`Final mix, ${name}! The best combo: FREEZE them with ice, then switch to fire and smash the frozen ones.`,
-                 `Hitting a chilled slime with fire, or a burning one with ice, is a REACTION, and reactions fill your ult gems fast.`],
-                'Freeze them, then smash them with fire'],
+            3: [[`Snipers! They hit from range, and you're ICE-ONLY in here. I've filled your ice gem for you.`,
+                 `Your ice ult is the BLIZZARD: ${this._k('ult')} holding ice, or ${this._k('ultIce')} from anything. A wave freezes everything it reaches solid, and a moment later the ice shatters by itself, hard.`,
+                 `Beat the spitters, then cast the Blizzard. You must use it to leave.`],
+                `Ice only: beat the spitters, then cast the Blizzard ${this._k('ultIce')}`],
+            4: [[`New faces! Every slime has its own trick, so learn to read them.`,
+                 `The BERSERKER winds up, then lunges: step aside when it shakes. The SPLITTER breaks into smaller slimes when it dies, so finish the pieces. The MORTAR lobs shells: the circle on the floor is where it lands, so move off it.`,
+                 `Dash ${this._k('dash')} out of trouble: you can't be hurt mid-dash. And grab any health pots the slimes drop.`],
+                'Beat the berserker, the splitter and the mortar'],
+            5: [[`Final mix, ${name}! The best combo: ice cubes them, and while they're cubed, a chunk of their health is cracked off (BRITTLE).`,
+                 `Hit a cubed slime with fire before it thaws and that chunk is gone for good. Fire on a chilled slime, or ice on a burning one, is a REACTION, and reactions fill your ult gems fast.`],
+                'Cube them with ice, then hit them with fire'],
             6: [[`PORTALS! They keep spawning slimes until they're destroyed. Break every portal to clear the room.`,
                  `Snipers too. Keep moving, use both elements: you've got the full toolkit now!`],
                 'Destroy every portal'],
         };
+        if (roomIndex === 3 && this.ultGems) { this.ultGems.ice = this.ultChargeMax; this._ultNoChargeUntil && (this._ultNoChargeUntil.ice = 0); this.updateHUD?.(); }   // the sniper room: the Blizzard is the lesson, so it's ready
         const L = LESSONS[roomIndex];
         if (L) this._tutSay(L[0], () => this._tutObjective(L[1]));
     }
@@ -297,7 +299,7 @@ class TutorialManager {
         this.time.delayedCall(250, () => {
             this._tutSay([
                 `Whoa, that barely scratched it! See the orange ring? These slimes RESIST fire.`,
-                `Press ${this._k('ice')} for ICE and hit them. Stack chill until they FREEZE, then one more hit SHATTERS them!`,
+                `Press ${this._k('ice')} for ICE and hit them. Every hit stacks chill, and a full bar freezes them into a cube that cracks a chunk off their health!`,
             ], () => this._tutObjective(`Switch to Ice ${this._k('ice')}: freeze and shatter them`));
         });
     }
@@ -306,8 +308,8 @@ class TutorialManager {
         // Small delay to ensure world is rendered
         this.time.delayedCall(500, () => {
             // Spawn Yellow Slime NPC
-            const npcX = 17;
-            const npcY = 51;
+            const npcX = 13;   // (17, 51 was the room's middle: where you spawn, so you stood on him)
+            const npcY = 53;
 
             this.tutorialNPC = this.add.sprite(
                 npcX * this.TILE_SIZE + this.TILE_SIZE / 2,
@@ -658,25 +660,52 @@ class TutorialManager {
         const pitPx = pitX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const pitPy = pitY * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // Outer glow ring
-        const glow = this.add.circle(pitPx, pitPy, 32, 0x110022, 0.8).setDepth(0.8);
-        const ring1 = this.add.circle(pitPx, pitPy, 28, 0x220033, 0).setDepth(0.9);
-        ring1.setStrokeStyle(3, 0x9900ff, 0.9);
-        const ring2 = this.add.circle(pitPx, pitPy, 20, 0x000000, 1).setDepth(1.0);
-        const ring3 = this.add.circle(pitPx, pitPy, 20, 0x6600cc, 0).setDepth(1.1);
-        ring3.setStrokeStyle(2, 0xcc44ff, 0.6);
-
-        // Pulsing animation
-        this.tweens.add({ targets: ring1, scaleX: 1.1, scaleY: 1.1, duration: 800, yoyo: true, repeat: -1 });
-        this.tweens.add({ targets: ring3, scaleX: 0.9, scaleY: 0.9, duration: 600, yoyo: true, repeat: -1 });
-        this.tweens.add({ targets: glow, alpha: 0.4, duration: 1000, yoyo: true, repeat: -1 });
+        // A void rift torn in the floor (it was three plain circles): a rim of broken stone with violet cracks running out of it,
+        // a dark vortex inside turning slowly (a spiral in a container squashed flat, so it lies on the floor), motes drawn in.
+        const T = this.TILE_SIZE;
+        const rimKey = MenuArt.tex(this, 'tut_rift_rim', 72, 44, P => {
+            const R = MenuArt.rng(77), cx = 36, cy = 22;
+            for (let y = 0; y < 44; y++) for (let x = 0; x < 72; x++) {
+                const d = Math.hypot((x + 0.5 - cx) / 30, (y + 0.5 - cy) / 17);
+                if (d < 0.82 || d > 1.06) continue;
+                if (R() < 0.18) continue;   // broken, not a clean ring
+                P.put(x, y, d < 0.9 ? 0x1a1024 : R() < 0.5 ? 0x4a4058 : 0x6a5e78);
+            }
+            for (let k = 0; k < 9; k++) {   // cracks, glowing violet, running out across the floor
+                let a = k / 9 * Math.PI * 2 + R() * 0.4, r = 0.95, x = cx + Math.cos(a) * 30 * r, y = cy + Math.sin(a) * 17 * r;
+                for (let j = 0; j < 6 + R() * 6; j++) { a += (R() - 0.5) * 0.7; x += Math.cos(a) * 1.4; y += Math.sin(a) * 0.8; P.put(x, y, j < 3 ? 0xc07cff : 0x6a3aa8); }
+            }
+        });
+        const coreKey = MenuArt.tex(this, 'tut_rift_core', 56, 56, P => {
+            for (let y = 0; y < 56; y++) for (let x = 0; x < 56; x++) {
+                const dx = x + 0.5 - 28, dy = y + 0.5 - 28, d = Math.hypot(dx, dy) / 27;
+                if (d > 1) continue;
+                const arm = Math.sin(Math.atan2(dy, dx) * 3 + d * 9);   // three spiral arms
+                const c = d < 0.22 ? 0x000000 : arm > 0.55 ? (d < 0.6 ? 0xd8a8ff : 0x9a5cf0) : arm > 0.1 ? 0x4a1a8a : d > 0.92 ? 0x2a0a4a : 0x12041e;
+                P.put(x, y, c);
+            }
+            for (const [x, y] of [[12, 20], [40, 14], [44, 38], [18, 42], [28, 8]]) P.put(x, y, 0xffffff);   // stars caught in it
+        });
+        const floorY = 0.6;
+        const holder = this.add.container(pitPx, pitPy).setDepth(0.85).setScale(1.25, 1.25 * floorY);
+        const core = this.add.image(0, 0, coreKey).setScale(T / 20);
+        holder.add(core);
+        this.tweens.add({ targets: core, angle: -360, duration: 7000, repeat: -1 });
+        const glow = this.textures.exists('vfx_glow') ? this.add.image(pitPx, pitPy, 'vfx_glow').setTint(0x9a5cf0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9, 0.55).setAlpha(0.55).setDepth(0.86) : null;
+        if (glow) this.tweens.add({ targets: glow, alpha: 0.25, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const rim = this.add.image(pitPx, pitPy, rimKey).setScale(T / 20).setDepth(0.87);
+        const motes = this.add.particles(0, 0, this.textures.exists('vfx_dot') ? 'vfx_dot' : 'mn_px2', {   // (mn_px2 is a menu texture: a level has vfx_dot)
+            emitZone: { type: 'edge', source: new Phaser.Geom.Ellipse(pitPx, pitPy, T * 4.4, T * 2.6), quantity: 24 },
+            moveToX: pitPx, moveToY: pitPy, lifespan: 900, scale: { start: 0.6, end: 0.1 }, alpha: { start: 0.9, end: 0 },
+            tint: [0xd8a8ff, 0x9a5cf0, 0xffffff], blendMode: 'ADD', frequency: 70 }).setDepth(0.88);
 
         // Floating "JUMP IN" text above pit
-        const pitLabel = this.add.text(pitPx, pitPy - 40, '▼ JUMP IN ▼', {
-            fontSize: '11px', fontFamily: 'monospace', color: '#cc88ff',
-            stroke: '#000000', strokeThickness: 3
+        const pitLabel = this.add.text(pitPx, pitPy - T * 1.6, '▼ JUMP IN ▼', {
+            fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#e0c0ff',
+            stroke: '#12041e', strokeThickness: 4
         }).setOrigin(0.5).setDepth(5);
-        this.tweens.add({ targets: pitLabel, y: pitPy - 46, duration: 600, yoyo: true, repeat: -1 });
+        this.tweens.add({ targets: pitLabel, y: pitPy - T * 1.6 - 6, duration: 600, yoyo: true, repeat: -1 });
+        const ring1 = holder, ring2 = rim, ring3 = motes;   // (kept in _tutorialPit under the old names)
 
         this._tutorialPit = { pitX, pitY, glow, ring1, ring2, ring3, pitLabel };
 
@@ -987,22 +1016,7 @@ class TutorialManager {
         for (let pos of room4Inhibitors) {
             const enemy = this.createEnemy(pos.x, pos.y, 40);
             enemy.tutorialRoomIndex = pos.roomIndex;
-            enemy.ultInhibitor = true;
-            enemy.ultInhibitRadius = 3;
-            const ring = this.add.graphics().setDepth(0.8);
-            ring.x = enemy.sprite.x; ring.y = enemy.sprite.y;
-            ring.lineStyle(2, 0xff2200, 0.7);
-            ring.strokeCircle(0, 0, 3 * this.TILE_SIZE);
-            this.tweens.add({ targets: ring, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-            const redMark = this.add.graphics().setDepth(2);
-            redMark.fillStyle(0xff2200, 0.9);
-            redMark.fillCircle(0, 0, 5);
-            redMark.lineStyle(2, 0xff6600, 1);
-            redMark.strokeCircle(0, 0, 7);
-            redMark.x = enemy.sprite.x; redMark.y = enemy.sprite.y - 22;
-            // Scale-bob instead of y-bob
-            this.tweens.add({ targets: redMark, scaleX: 1.2, scaleY: 1.2, duration: 600, yoyo: true, repeat: -1 });
-            enemy._inhibitRing = ring; enemy._inhibitMark = redMark;
+            this._ultBlockerFx(enemy, false);   // its zone and mark (radius ULT_BLOCK_R)
         }
 
         // Room 3 normal enemies
@@ -1045,19 +1059,7 @@ class TutorialManager {
         for (let pos of room1Inhibitors) {
             const e = this.createEnemy(pos.x, pos.y, 35);
             e.tutorialRoomIndex = pos.roomIndex;
-            e.ultInhibitor = true;
-            e.ultInhibitRadius = 3;
-            const ring = this.add.graphics().setDepth(0.8);
-            ring.x = e.sprite.x; ring.y = e.sprite.y;
-            ring.lineStyle(2, 0xff2200, 0.7);
-            ring.strokeCircle(0, 0, 3 * this.TILE_SIZE);
-            this.tweens.add({ targets: ring, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
-            const redMark = this.add.graphics().setDepth(2);
-            redMark.fillStyle(0xff2200, 0.9); redMark.fillCircle(0, 0, 5);
-            redMark.lineStyle(2, 0xff6600, 1); redMark.strokeCircle(0, 0, 7);
-            redMark.x = e.sprite.x; redMark.y = e.sprite.y - 22;
-            this.tweens.add({ targets: redMark, scaleX: 1.2, scaleY: 1.2, duration: 600, yoyo: true, repeat: -1 });
-            e._inhibitRing = ring; e._inhibitMark = redMark;
+            this._ultBlockerFx(e, false);   // its zone and mark (radius ULT_BLOCK_R)
         }
         for (let pos of room1Ranged) {
             this.createRangedEnemy(pos.x, pos.y, 1);
@@ -1110,7 +1112,9 @@ class TutorialManager {
         }
 
         // Spawn traps in room 4
-        this.spawnIceTraps();
+        // room 4: the basic slime types (it was a spike and poison trap room)
+        this.createBerserker(86, 46, 4); this.createSplitter(94, 47, 4); this.createMortar(95, 57, 4);
+        for (const [x, y] of [[85, 55], [91, 52]]) { const e = this.createEnemy(x, y, 25); e.tutorialRoomIndex = 4; }
 
         // Room 6: spawner room — mixed immune + snipers + 3 portal spawners
         const room6FireImmune = [
@@ -1162,6 +1166,37 @@ class TutorialManager {
 
     // ─── LIGHTNING TUTORIAL (LEVEL 2) ────────────────────────────────────────
 
+    // The ult blockers' look (inhibitors red, absorbers violet): their zone on the floor, ULT_BLOCK_R tiles, the radius the cast
+    // check uses (ElementSystem.activateUlt, Cosmic's transform), a filled disc with a dashed ring turning slowly and rune ticks; a
+    // pixel mark over the head (an ult gem struck through, or being drained). Follows the enemy each frame, gone when it is.
+    // (It was a thin 3-tile circle and a red dot, and the check was a diamond that didn't match the circle.)
+    static ULT_BLOCK_R = 5;
+    _ultBlockerFx(enemy, absorb) {
+        const R = TutorialManager.ULT_BLOCK_R, T = this.TILE_SIZE, col = absorb ? 0xb05cff : 0xff3a2a, hi = absorb ? 0xe0b0ff : 0xffa080;
+        if (absorb) enemy.isUltAbsorber = true; else enemy.ultInhibitor = true;
+        enemy.ultInhibitRadius = R;
+        // soft, like the other enemies' fields (the Mortar's, the Anchor's): a glow over the zone, a soft rim, a ripple now and then
+        const r = R * T, x0 = enemy.sprite.x, y0 = enemy.sprite.y;
+        const field = VisualFX.aura(this, x0, y0, r, col, { style: 'field', depth: 0.8, alpha: 0.45 });
+        const rim = VisualFX.aura(this, x0, y0, r, hi, { style: 'ring', depth: 0.81, alpha: 0.6 });
+        const pulse = this.time.addEvent({ delay: 2600, loop: true, callback: () => { if (enemy.sprite?.active) VisualFX.ripple(this, enemy.sprite.x, enemy.sprite.y, r * 0.3, r, col, { depth: 0.82, duration: 1400, alpha: 0.5 }); } });
+        const ring = field;   // (what the rest of the game moves and destroys as _inhibitRing; the rim and the ripples go with it)
+        field.once('destroy', () => { if (rim.active) rim.destroy(); pulse.remove(); });
+        const key = ShopScene.icon(this, absorb ? 'fx_ultblock_drain' : 'fx_ultblock_ban', 12, { G: absorb ? '#c48aff' : '#9fe8ff', g: absorb ? '#7a3ad8' : '#4aa8d8', r: '#ff3a2a' }, m => {
+            m.poly([[6, 1], [10, 6], [6, 11], [2, 6]], 'G'); m.poly([[6, 1], [10, 6], [6, 11]], 'g'); m.set(5, 4, 'W');
+            if (absorb) { m.set(6, 0, 'g'); m.set(3, 2, 'g'); m.set(9, 2, 'g'); } else m.line(1, 10, 10, 1, 'r');
+        });
+        const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 24, key).setDepth(4.4);
+        this.tweens.add({ targets: mark, scale: 1.15, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        enemy._inhibitRing = ring; enemy._inhibitMark = mark;
+        const follow = () => {
+            if (!enemy.sprite?.active || enemy.health <= 0 || !ring.active) { this.events.off('update', follow); for (const o of [ring, mark]) if (o.active) { this.tweens.killTweensOf(o); o.destroy(); } return; }
+            for (const o of [field, rim]) { if (o.x !== enemy.sprite.x || o.y !== enemy.sprite.y) { o.setPosition(enemy.sprite.x, enemy.sprite.y); VisualFX.clipAura(this, o); } }
+            mark.setPosition(enemy.sprite.x, enemy.sprite.y - 24);
+        };
+        this.events.on('update', follow); this.events.once('shutdown', () => this.events.off('update', follow));
+    }
+
     _applyUltAbsorberVisual(enemy) {
         // Absorbers are tankier — boost health
         enemy.health    = Math.round(enemy.health * 1.8);
@@ -1170,54 +1205,7 @@ class TutorialManager {
 
         // Deep magenta tint on sprite to stand out from red goons
         if (enemy.sprite?.active) enemy.sprite.setTint(0xdd88ff);
-
-        const sx = enemy.sprite.x, sy = enemy.sprite.y;
-
-        // ── Rotating hex rune ring ────────────────────────────────────
-        const aura = this.add.graphics().setDepth(1.2);
-        aura.x = sx; aura.y = sy;
-        aura._rotAngle = 0;
-
-        const drawAura = (g) => {
-            g.clear();
-            const R = 26, rot = g._rotAngle;
-            g.lineStyle(1.5, 0xcc44ff, 0.55); g.strokeCircle(0, 0, R);
-            g.fillStyle(0xff88ff, 0.90);
-            for (let i = 0; i < 6; i++) {
-                const a = (i / 6) * Math.PI * 2 + rot;
-                const nx = Math.cos(a) * R, ny = Math.sin(a) * R;
-                g.beginPath(); g.moveTo(nx, ny-4); g.lineTo(nx+3, ny); g.lineTo(nx, ny+4); g.lineTo(nx-3, ny); g.closePath(); g.fillPath();
-            }
-            g.lineStyle(0.8, 0xdd66ff, 0.35);
-            for (let i = 0; i < 3; i++) {
-                const a = (i / 3) * Math.PI * 2 + rot;
-                g.beginPath(); g.moveTo(Math.cos(a)*R*0.85, Math.sin(a)*R*0.85); g.lineTo(Math.cos(a+Math.PI)*R*0.85, Math.sin(a+Math.PI)*R*0.85); g.strokePath();
-            }
-        };
-        drawAura(aura);
-        enemy._ultAbsorberAura = aura;
-
-        const rotTimer = this.time.addEvent({
-            delay: 50, loop: true,
-            callback: () => {
-                if (!aura.active) { rotTimer.remove(); return; }
-                aura._rotAngle += 0.04;
-                drawAura(aura);
-            }
-        });
-        enemy._ultAbsorberRotTimer = rotTimer;
-
-        // ── Crown drain mark above head ───────────────────────────────
-        const mark = this.add.graphics().setDepth(3.0);
-        mark.x = sx; mark.y = sy - 22;
-        mark.fillStyle(0xdd44ff, 0.95);
-        mark.fillRect(-7, -2, 14, 4);
-        mark.fillTriangle(-6, -2, -3, -2, -4.5, -8);
-        mark.fillTriangle(-1, -2,  1, -2,  0,   -9);
-        mark.fillTriangle( 3, -2,  6, -2,  4.5, -8);
-        mark.lineStyle(1.0, 0xff99ff, 0.85); mark.strokeRect(-7, -2, 14, 4);
-        enemy._ultAbsorberMark = mark;
-        this.tweens.add({ targets: mark, alpha: 0.55, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        this._ultBlockerFx(enemy, true);
     }
 
 }

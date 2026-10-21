@@ -45,6 +45,7 @@ const Relics = {
         { id: 'loaded_dice',   name: 'Loaded Dice',       sh: 'precision', t: 3, col: 0xf4f0e0, price: 1600, shape: 'dice',    m: { crit: 0.3, dmg: 0.85 } },
         // EMBER
         { id: 'coal_pouch',    name: 'Coal Pouch',        sh: 'ember', t: 1, col: 0x6a4a3a, price: 160,  shape: 'chest',   m: { el: { fire: 1.08 } } },
+        { id: 'cinder_heart',  name: 'Cinder Heart',      sh: 'ember', t: 2, col: 0xe8503a, price: 650,  shape: 'gem',     m: { burnLeech: 0.3, ult: 0.92 } },   // Ember x Blood
         { id: 'tinderbox',     name: 'Tinderbox',         sh: 'ember', t: 1, col: 0xc87a3a, price: 200,  shape: 'bottle',  m: { vsBurn: 1.15 } },
         { id: 'ember_heart',   name: 'Ember Heart',       sh: 'ember', t: 2, col: 0xff8844, price: 550,  m: { swapBy: { fire: { hits: 3, bonus: 0.4 } }, ult: 0.92 } },
         { id: 'phoenix_feather', name: 'Phoenix Feather', sh: 'ember', t: 2, col: 0xff6a2a, price: 650,  shape: 'feather', m: { vsBurn: 1.2, heal: 0.1, hp: -10 } },
@@ -52,6 +53,7 @@ const Relics = {
         { id: 'sun_core',      name: 'Heart of the Sun',  sh: 'ember', t: 3, col: 0xffb02a, price: 2000, shape: 'star',    m: { switchNova: 14, ult: 0.85 } },
         { id: 'pyre_crown',    name: 'Pyre Crown',        sh: 'ember', t: 3, col: 0xff5a1a, price: 1900, shape: 'crown',   m: { vsBurn: 1.6, boom: 10, taken: 1.1 } },
         // RIME
+        { id: 'rime_ward',     name: 'Rime Ward',         sh: 'rime', t: 2, col: 0x9fd8ff, price: 650,  shape: 'shield',  m: { frostThorns: 15, speed: 1.06 } },   // Rime x Bastion
         { id: 'frost_bead',    name: 'Frost Bead',        sh: 'rime', t: 1, col: 0xb8e8ff, price: 160,  shape: 'gem',     m: { el: { ice: 1.08 } } },
         { id: 'snowglobe',     name: 'Snowglobe',         sh: 'rime', t: 1, col: 0xd8f4ff, price: 200,  shape: 'orb',     m: { vsChill: 1.15 } },
         { id: 'frost_core',    name: 'Frost Core',        sh: 'rime', t: 2, col: 0x88eeff, price: 550,  m: { chillOther: 1.2, hp: -10 } },
@@ -63,6 +65,7 @@ const Relics = {
         { id: 'spark_plug',    name: 'Spark Plug',        sh: 'tempest', t: 1, col: 0xd8c860, price: 160,  shape: 'bottle',  m: { el: { lightning: 1.08 } } },
         { id: 'copper_coil',   name: 'Copper Coil',       sh: 'tempest', t: 1, col: 0xd8864a, price: 200,  shape: 'ring',    m: { vsWet: 1.2 } },
         { id: 'storm_lens',    name: 'Storm Lens',        sh: 'tempest', t: 2, col: 0xffe14a, price: 550,  m: { stormLens: 1, ult: 0.92 } },
+        { id: 'static_edge',   name: 'Static Edge',       sh: 'tempest', t: 2, col: 0xfff27a, price: 650,  shape: 'rune',    m: { critArc: 0.5, hp: -10 } },   // Tempest x Precision
         { id: 'tesla_ring',    name: 'Tesla Ring',        sh: 'tempest', t: 2, col: 0x8ae8ff, price: 600,  shape: 'ring',    m: { el: { lightning: 1.25 }, hp: -15 } },
         { id: 'rain_totem',    name: 'Rain Totem',        sh: 'tempest', t: 2, col: 0x6a9ad8, price: 650,  shape: 'totem',   m: { vsWet: 1.4, speed: 1.06 } },
         { id: 'storm_eye',     name: 'Eye of the Storm',  sh: 'tempest', t: 3, col: 0xfff07a, price: 2000, shape: 'eye',     m: { pierceRes: 1, hp: -20 } },
@@ -78,6 +81,7 @@ const Relics = {
         // RESONANCE
         { id: 'tuning_fork',   name: 'Tuning Fork',       sh: 'resonance', t: 1, col: 0xc8c8e0, price: 200,  shape: 'fork',    m: { ult: 1.1 } },
         { id: 'spark_jar',     name: 'Spark Jar',         sh: 'resonance', t: 1, col: 0xffe8a0, price: 220,  shape: 'bottle',  m: { react: 1.2 } },
+        { id: 'mending_chord', name: 'Mending Chord',     sh: 'resonance', t: 2, col: 0x9affc8, price: 600,  shape: 'gem',     m: { ultHeal: 0.15, ult: 0.9 } },
         { id: 'catalyst_coil', name: 'Catalyst Coil',     sh: 'resonance', t: 2, col: 0x9af0e0, price: 650,  shape: 'ring',    m: { reactDmg: 1.3, ult: 0.9 } },
         { id: 'hourglass',     name: 'Cracked Hourglass', sh: 'resonance', t: 2, col: 0xd8a8ff, price: 500,  m: { ult: 1.25, ultDmg: 1.1, hp: -15 } },
         { id: 'catalyst_stone', name: 'Catalyst Stone',   sh: 'resonance', t: 2, col: 0x7ae0c0, price: 500,  m: { react: 1.5 / 0.85, ult: 0.85 } },
@@ -206,6 +210,7 @@ const Relics = {
     SLOT_AT: [0, 5, 15, 30, 50],
     slots() {
         const b = (typeof TowerFloors !== 'undefined') ? TowerFloors.best() : 0, entered = b > 0 || localStorage.getItem('tower_entered') === '1';
+        if (typeof ShopScene !== 'undefined' && !ShopScene.upgradesOpen()) return 0;   // (sealed till the tutorial and Tower floor 1)
         return entered ? this.SLOT_AT.filter(f => b >= f).length : 0;
     },
     // what opens slot i, for the shop
@@ -249,7 +254,7 @@ const Relics = {
 
     // ── EFFECTS ───────────────────────────────────────────────────────────────
     MUL: ['dmg', 'taken', 'ult', 'ultDmg', 'react', 'speed', 'pay', 'boss', 'exec', 'opener', 'vsBurn', 'vsChill', 'vsWet', 'vsHex', 'chillOther', 'reactDmg', 'gadgetCd'],
-    ADD: ['hp', 'leech', 'thorns', 'heal', 'crit', 'critMult', 'proc', 'boom', 'switchNova', 'reactBoom', 'hpHit', 'thornsPct', 'armorDmg', 'momentum', 'drain', 'splash', 'luckBase', 'streak', 'jackpot'],
+    ADD: ['hp', 'leech', 'thorns', 'heal', 'crit', 'critMult', 'proc', 'boom', 'switchNova', 'reactBoom', 'hpHit', 'thornsPct', 'armorDmg', 'momentum', 'drain', 'splash', 'luckBase', 'streak', 'jackpot', 'ultHeal', 'critArc', 'burnLeech', 'frostThorns'],   // (a key not listed here is DROPPED by combine: new relic effects go on a list)
     // on or off (worn or not), and the ones that carry their own settings
     FLAG: ['stormLens', 'hexReact', 'pierceRes', 'blink', 'dashTrail', 'luckGain', 'cursedDie', 'wheel', 'doubleCrit', 'coinFlip'],
     // Nothing: the identity every mods object starts from.
@@ -319,6 +324,10 @@ const Relics = {
             chillOther: v => `enemies with Chill or Brittle take +${pct(v)}% from non-ice hits`,
             swapBy: v => Object.entries(v).map(([e, o]) => `your first ${o.hits} hits after switching to ${e} deal +${Math.round(o.bonus * 100)}%`).join(', '),
             stormLens: () => 'lightning hits on enemies with Superconducted also apply a Burn stack and Chill',
+            ultHeal: v => `casting an ult heals ${Math.round(v * 100)}% of your max HP`,
+            critArc: v => `a lightning crit arcs to the nearest other enemy for ${Math.round(v * 100)}% of its damage`,
+            burnLeech: v => `every burn tick heals you ${v} HP`,
+            frostThorns: v => `while you hold ice, melee hits on you deal ${v} back and Chill the attacker`,
             hexReact: () => 'hits on enemies with Hex count as reactions for any ult',
             switchNova: v => `switching element releases a nova of the new one (${v} damage)`,
             reactBoom: v => `reactions burst for ${v} on what's close`,
@@ -345,7 +354,7 @@ const Relics = {
             doubleCrit: () => 'a crit can crit again, and again (x1.5 each), but non-crits sometimes stagger you',
             coinFlip: () => 'a killing blow flips a coin (Luck weights it): heads, you live on 1 HP (once a minute)',
         };
-        const GOOD = ['chillOther', 'swapBy', 'stormLens', 'hexReact', 'switchNova', 'reactBoom', 'pierceRes', 'killGem', 'blink', 'dashTrail', 'ultLong', 'hpHit', 'thornsPct', 'armorDmg', 'momentum', 'drain', 'splash', 'burst', 'reactDmg', 'luckBase', 'luckGain', 'cursedDie', 'streak', 'jackpot', 'wheel', 'doubleCrit', 'coinFlip'];
+        const GOOD = ['chillOther', 'swapBy', 'stormLens', 'ultHeal', 'critArc', 'burnLeech', 'frostThorns', 'hexReact', 'switchNova', 'reactBoom', 'pierceRes', 'killGem', 'blink', 'dashTrail', 'ultLong', 'hpHit', 'thornsPct', 'armorDmg', 'momentum', 'drain', 'splash', 'burst', 'reactDmg', 'luckBase', 'luckGain', 'cursedDie', 'streak', 'jackpot', 'wheel', 'doubleCrit', 'coinFlip'];
         for (const e in (m.el || {})) out.push({ good: m.el[e] > 1, s: `${EL[e]} does ${pct(m.el[e])}% ${m.el[e] > 1 ? 'more' : 'less'}` });
         for (const k in m) if (say[k]) {
             const v = m[k], good = (GOOD.includes(k) && !(k === 'reactDmg' && v < 1)) || ((k === 'taken' || k === 'speed' || k === 'gadgetCd') ? v < 1 : (this.MUL.includes(k) ? v > 1 : v > 0));

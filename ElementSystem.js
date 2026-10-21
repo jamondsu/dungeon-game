@@ -24,9 +24,9 @@ class ElementSystem {
                 const isInhibitor = enemy.ultInhibitor;
                 const isAbsorber  = enemy.isUltAbsorber;
                 if (!isInhibitor && !isAbsorber) continue;
-                const dist = Math.abs(enemy.x - this.playerX) + Math.abs(enemy.y - this.playerY);
+                const dist = Math.hypot(enemy.x - this.playerX, enemy.y - this.playerY);   // round, as its zone is drawn (it was a diamond)
                 const radius = enemy.ultInhibitRadius || (isAbsorber ? 4 : 3);
-                if (dist <= radius) {
+                if (dist <= radius + 0.25) {
                     this.showStatusText(
                         this.player.x, this.player.y - 20,
                         isAbsorber ? 'ULT ABSORBED!' : 'ULT BLOCKED!',
@@ -62,6 +62,10 @@ class ElementSystem {
         (this._overflowBonus ||= {})[el] = _ob; if (this._overflow) this._overflow[el] = 0;
         if (_ob >= 0.05 && this.player) this.showStatusText?.(this.player.x, this.player.y - 44, `OVERFLOW +${Math.round(_ob * 100)}%`, '#ffd060');
         Telemetry.ult(this, el);
+        if (this._mods?.ultHeal && this.health > 0 && this.player) {   // Mending Chord (a relic): every ult cast heals, never past max
+            const before = this.health; this.health = Math.min(this.maxHealth, this.health + this.maxHealth * this._mods.ultHeal);
+            const h = Math.round(this.health - before); if (h > 0) { this.showStatusText?.(this.player.x, this.player.y - 56, `+${h} HP`, '#7dff9a'); this._vfxFlash?.(this.player.x, this.player.y, 70, 0x7dff9a, 260, 0.6); }
+        }
         this.ultCharge = this.ultGems[this.currentElement] || 0;
         if (!_ascend) this._ultLockUntil = this.time.now + C.LOCKOUT_MS;
         this._ultNoChargeUntil[el] = this.time.now + C.NO_CHARGE_MS[el];
@@ -161,13 +165,14 @@ class ElementSystem {
                 flame_fists:       0.3011,   // raw 7.38/s (was 23.08)
                 flame_sword:       0.2308,   // raw 9.63/s (was 33.11)
                 magma_staff:       0.1016,   // raw 21.87/s (was 51.4)
-                ignition:          0.038,    // raw ~58/s (54.4 and 62.3 in two runs; 66.45 before its pellet nerf and burn chance, 2026-10-19)
+                ignition:          0.0827,   // raw 26.9/s as the flamethrower (2026-10-20; it filled in 98s at 0.038)
                 ice_fists:         0.2788,   // raw 7.97/s
                 icicle_cannon:     0.1475,   // raw 15.07/s
                 fractal_shard:     0.0278,   // raw 79.9/s
                 lightning_fists:   0.1599,   // raw 13.9/s
                 orb_emitter:       0.131,    // raw 16.96/s (was 5.9: its forks superconduct now)
                 ball_lightning:    0.074,    // raw 30.03/s
+                conductor:         0.09,     // (first guess, unmeasured)
                 // The cosmic gem fills with time (Cosmic.js), never from hits, so these are moot.
                 cosmic_fists:      0,
                 barrier_staff:     0,
@@ -279,7 +284,7 @@ class ElementSystem {
             embers.setPosition(px, py);
             if (now < next) return;
             next = now + C.AURA_EVERY;
-            const L = (this.enemies || []).filter(e => e.sprite?.active && e.health > 0 && Math.hypot(e.x - this.playerX, e.y - this.playerY) <= C.AURA_R);
+            const L = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - this.playerX, e.y - this.playerY) <= C.AURA_R);
             const sum = L.reduce((n, e) => n + e.health, 0);
             if (!L.length || !(sum > 0)) return;
             let r = Math.random() * sum, pick = L[L.length - 1];
@@ -439,19 +444,21 @@ class ElementSystem {
         // the hit: damage, Dazed for 2s, a Super Burn stack (stage 2: the supernova fuse too)
         const stage2 = parseInt(localStorage.getItem('ultStage_fire') || '1') >= 2;
         if (B) {   // a Meteor Strike meteor: everything in reach hit and dazed a moment; the enemy with the most HP it hit Super Burned
-            const hit = [...this.enemies].filter(e => e.sprite?.active && e.health > 0 && Math.hypot(e.x - tx, e.y - ty) <= R);
+            const hit = [...this.enemies].filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - tx, e.y - ty) <= R);
             const direct = hit.reduce((a, e) => !a || e.health > a.health ? e : a, null);
             for (const e of [...this.enemies]) {
-                const dd = Math.hypot(e.x - tx, e.y - ty); if (!e.sprite?.active || e.health <= 0 || dd > R) continue;
+                const dd = Math.hypot(e.x - tx, e.y - ty); if (!e.sprite?.active || e.health <= 0 || dd > R || this._phasedOut?.(e)) continue;
                 this.damageEnemy(e, B.DMG * size * (1 - B.FALL * dd / R) * (this.damageScaling || 1), 'fire');   // full at the middle, a quarter at the rim
                 if (!e.sprite?.active || e.health <= 0) continue;
                 e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, now + B.DAZE_MS);
             }
             if (direct?.sprite?.active && direct.health > 0) { this.applySuperBurn(direct, 1); this.showStatusText?.(direct.sprite.x, direct.sprite.y - 20, 'SUPER BURN', '#ff8a3a'); }
             this.damageBossAtTile?.(tx, ty, B.DMG * size * (this.damageScaling || 1), undefined, 'fire');
+            this._hitPortalsAround?.(tx, ty, R, B.DMG * size * (this.damageScaling || 1), true);   // queens in reach (not just one it lands on)
             return;
         }
         for (const e of [...this.enemies]) {
+            if (this._phasedOut?.(e)) continue;
             if (!e.sprite?.active || e.health <= 0 || Math.hypot(e.x - tx, e.y - ty) > R) continue;
             this.damageEnemy(e, C.DMG * size * (this.damageScaling || 1), 'fire');
             if (!e.sprite?.active || e.health <= 0) continue;
@@ -460,6 +467,7 @@ class ElementSystem {
             if (stage2) this._applyIgnitionMark?.(e);
         }
         if (this.damageBossAtTile?.(tx, ty, C.DMG * size * (this.damageScaling || 1), undefined, 'fire')) this.applyBurnStackBoss?.();
+        this._hitPortalsAround?.(tx, ty, R, C.DMG * size * (this.damageScaling || 1), true);   // queens in reach (not just one it lands on)
     }
 
     _fireShotgunBurst() {
@@ -713,10 +721,10 @@ class ElementSystem {
                     t.vx = dx / L * G.SPEED * T; t.vy = dy / L * G.SPEED * T; Sfx.play(this, 'whoosh');
                 }
             } else {
-                const inside = (this.enemies || []).some(e => e.sprite?.active && e.health > 0 && Math.hypot(e.sprite.x - t.x, e.sprite.y - t.y) <= t.r * T);
+                const inside = (this.enemies || []).some(e => e.sprite?.active && e.health > 0 && !this._phasedOut?.(e) && Math.hypot(e.sprite.x - t.x, e.sprite.y - t.y) <= t.r * T);
                 // it hunts: steers toward the nearest enemy in range; the bigger it is, the further it sees and the harder it turns
                 let prey = null, best = (G.SEEK + G.SEEK_PER_R * t.r) * T;
-                for (const e of this.enemies || []) { if (!e.sprite?.active || e.health <= 0) continue; const d = Math.hypot(e.sprite.x - t.x, e.sprite.y - t.y); if (d < best) { best = d; prey = e; } }
+                for (const e of this.enemies || []) { if (!e.sprite?.active || e.health <= 0 || this._phasedOut?.(e)) continue; const d = Math.hypot(e.sprite.x - t.x, e.sprite.y - t.y); if (d < best) { best = d; prey = e; } }
                 if (prey && best > 4) {
                     const cur = Math.atan2(t.vy, t.vx), want = Math.atan2(prey.sprite.y - t.y, prey.sprite.x - t.x), turn = G.TURN * (t.r / G.R0) * dt;
                     const a = cur + Phaser.Math.Clamp(Phaser.Math.Angle.Wrap(want - cur), -turn, turn), sp = G.SPEED * T;
@@ -732,6 +740,7 @@ class ElementSystem {
                         this.damageEnemy(e, G.DMG * (this.damageScaling || 1), 'ice');
                         if (e.health > 0) this.applyChill?.(e, 1);
                     }
+                    if (this._hitPortalsAround?.(t.x / T - 0.5, t.y / T - 0.5, t.r, G.DMG * (this.damageScaling || 1))) held = true;   // queens in the funnel
                     if (held && t.r < G.RMAX) { t.r = Math.min(G.RMAX, t.r + G.GROW); this._galeBest = Math.max(this._galeBest, t.r); }
                 }
             }
@@ -826,6 +835,7 @@ class ElementSystem {
                 // everywhere else every enemy failed the check and the Blizzard froze nothing)
                 const currentRoom = this._roomGated() ? this.getCurrentPlayerRoom() : -1;
                 for (let enemy of this.enemies) {
+                    if (this._phasedOut?.(enemy)) continue;
                     if (wetEnemies.has(enemy)) continue;
                     if (this._roomGated() && enemy.tutorialRoomIndex !== currentRoom) continue;
                     const edx = enemy.x - originX;
@@ -1196,6 +1206,7 @@ class ElementSystem {
             }
 
             for (let enemy of this.enemies) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite || !enemy.sprite.active || enemy.isFrozen) continue;
                 if (enemy.x === puddle.tileX && enemy.y === puddle.tileY) {
                     if (!enemy.isSlowed) {
@@ -1375,7 +1386,7 @@ class ElementSystem {
         }
         this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
         this.cameras.main.shake(50, 0.0015); Sfx.play(this, 'zap');
-        const live = (this.enemies || []).filter(e => e.sprite?.active && e.health > 0);
+        const live = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0);
         for (const e of live) if (inPlus(e.x - px, e.y - py)) { e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, now + C.THUMP_DAZE); }
         const me = { x: this.player.x, y: this.player.y - 6 };
         const zap = (e, mult, from) => {
@@ -1392,6 +1403,7 @@ class ElementSystem {
                     .sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y)).slice(0, C.ZAP_FORKS);
                 for (const o of near) zap(o, C.ZAP_FORK_SHARE, at);
             }
+            this._hitPortalsAround?.(px, py, C.ZAP_R, C.ZAP * this.damageScaling);   // queens in reach of the thump's zap
         });
     }
     _forkIgnite(order, segs, combos) {
@@ -1416,6 +1428,10 @@ class ElementSystem {
                 if (n) hurt(e, (C.HIT * this.damageScaling + pct) * crowd * (1 + C.COMBO_STEP * (n - 1)), '#fff27a');
                 if (onPath && e.sprite?.active && e.health > 0) hurt(e, C.PATH * this.damageScaling * crowd, '#ffe14a');
             }
+            // queens aren't in the bolt's hops: every one in the room takes a hop's worth (they took nothing)
+            const room = this.getCurrentPlayerRoom?.() ?? -1, rr = room >= 0 ? this.rooms?.[room] : null;
+            for (const p of [...(this.portals || [])]) if (p.active && (rr ? p.tileX >= rr.x && p.tileX < rr.x + rr.w && p.tileY >= rr.y && p.tileY < rr.y + rr.h : Math.hypot(p.tileX - this.playerX, p.tileY - this.playerY) <= 12))
+                this.damagePortal(p, C.HIT * this.damageScaling * crowd);
         });
         // the aftermath, AFTER_MS: damage to ANY enemy forks to the ones near it (SHARE, at most CAP), and every step you take thumps the floor
         const A = this._forkAfter = { until: this.time.now + C.AFTER_MS, hp: new Map(), forks: [], px: this.playerX, py: this.playerY, thumpAt: 0 };
@@ -1482,7 +1498,7 @@ class ElementSystem {
 
         this.player.setTint(0xffff44);
 
-        const label = stage >= 2 ? '⚡ FORK II ⚡' : '⚡ FORK ⚡';
+        const label = stage >= 2 ? 'FORK II' : 'FORK';
         const notice = this.add.text(this.scale.width/2, 80, label, {
             fontSize: '22px', fontFamily: 'monospace', color: '#ffff00',
             stroke: '#000000', strokeThickness: 4, fontStyle: 'bold'
@@ -1493,6 +1509,7 @@ class ElementSystem {
         const _zapFromPos = (px, py, tileX, tileY, dmgMult = 1.0) => {
             const globalHit = [];
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite?.active) continue;
                 const dist = Math.abs(enemy.x - tileX) + Math.abs(enemy.y - tileY);
                 if (dist > ZAP_RADIUS) continue;
@@ -1706,6 +1723,7 @@ class ElementSystem {
             : this.playerY;
 
         for (let enemy of this.enemies) {
+            if (this._phasedOut?.(enemy)) continue;
             const dist = Math.abs(enemy.x - cloudTileX) + Math.abs(enemy.y - cloudTileY);
             if (dist <= maxRange) {
                 nearbyEnemies.push({ enemy, dist });
@@ -1737,6 +1755,7 @@ class ElementSystem {
 
         this.damageEnemy(sourceEnemy, damage, 'lightning');
         this.damageBossAtTile(sourceEnemy.x, sourceEnemy.y, damage, undefined, 'lightning');
+        this._zapBosses(sourceEnemy, damage * falloff, this.lightningChainRange, globalHitEnemies);
 
         if (typeof sourceEnemy.sprite?.setTint === 'function') sourceEnemy.sprite.setTint(0xffff00);
         this.time.delayedCall(100, () => {
@@ -1749,6 +1768,7 @@ class ElementSystem {
         let nearestDist = Infinity;
 
         for (let enemy of this.enemies) {
+            if (this._phasedOut?.(enemy)) continue;
             if (globalHitEnemies.includes(enemy)) continue;
 
             const dist = Math.abs(enemy.x - sourceEnemy.x) + Math.abs(enemy.y - sourceEnemy.y);
@@ -1883,7 +1903,7 @@ class ElementSystem {
                 stroke: '#000000', strokeThickness: 3
             }).setOrigin(0.5).setScrollFactor(0);
         }
-        this._thunderheadTimerText.setText(`⚡ THUNDERHEAD ${remaining}s`);
+        this._thunderheadTimerText.setText(`THUNDERHEAD ${remaining}s`);
     }
 
     spawnThunderheadTrail(x, y, time) {
@@ -1962,6 +1982,7 @@ class ElementSystem {
 
     applySuperConduct(enemy) {
         if (!enemy.sprite || !enemy.sprite.active) return;
+        if (enemy._immuneFx === 'lightning' || this._phasedOut(enemy)) return;   // an Adaptive Shade in its lightning form
         enemy.isSuperConducted = true;
         enemy.superConductUntil = this.time.now + this.superConductDuration;
 
@@ -2644,6 +2665,7 @@ class ElementSystem {
                 ? this.getCurrentPlayerRoom() : -1;
             const extRange = def.range * 1.6;
             const inRange = this.enemies.filter(e => {
+                if (this._phasedOut?.(e)) return false;
                 if (!e.sprite?.active) return false;
                 if (e._cloaked) return false; // cloaked = untargetable by towers
                 if (towerRoom !== -1 && (e.tutorialRoomIndex ?? -1) !== towerRoom) return false;
@@ -2801,6 +2823,7 @@ class ElementSystem {
                         ? this.getCurrentPlayerRoom() : -1;
                     const maxChainDist = b.def.chainRadius ?? b.def.range;
                     for (const e of this.enemies) {
+                        if (this._phasedOut?.(e)) continue;
                         if (!e.sprite?.active || b.visited.has(e)) continue;
                         if (chainRoom !== -1 && (e.tutorialRoomIndex ?? -1) !== chainRoom) continue;
                         const d = Math.abs(e.x - b.targetEnemy.x) + Math.abs(e.y - b.targetEnemy.y);
@@ -2876,6 +2899,7 @@ class ElementSystem {
             if (this.time.now - b._createdAt > 3000) { b._done = true; continue; }
 
             for (const enemy of [...this.enemies]) {
+                if (this._phasedOut?.(enemy)) continue;
                 if (!enemy.sprite?.active || b.hitSet.has(enemy)) continue;
                 const edx = b.gfx.x - enemy.sprite.x, edy = b.gfx.y - enemy.sprite.y;
                 if (Math.sqrt(edx * edx + edy * edy) < TS * 0.55) {
@@ -2913,6 +2937,7 @@ class ElementSystem {
                 ? this.getCurrentPlayerRoom() : -1;
             let furthest = null, furthestD = -1;
             for (const e of this.enemies) {
+                if (this._phasedOut?.(e)) continue;
                 if (!e.sprite?.active) continue;
                 if (towerRoom !== -1 && (e.tutorialRoomIndex ?? -1) !== towerRoom) continue;
                 const d = Math.abs(e.x - tower.tileX) + Math.abs(e.y - tower.tileY);
@@ -3114,6 +3139,7 @@ class ElementSystem {
         let minDist = Infinity;
 
         for (let enemy of this.enemies) {
+            if (this._phasedOut?.(enemy)) continue;
             const dist = Math.abs(enemy.x - targetTileX) + Math.abs(enemy.y - targetTileY);
             if (dist < minDist) {
                 minDist = dist;
@@ -3135,6 +3161,7 @@ class ElementSystem {
         hitEnemies.push(sourceEnemy);
         this.damageEnemy(sourceEnemy, damage, 'lightning');
         this.damageBossAtTile(sourceEnemy.x, sourceEnemy.y, damage, undefined, 'lightning');
+        this._zapBosses(sourceEnemy, damage * falloff, this.lightningChainRange, hitEnemies);   // Queens and bosses in reach are on the chain too
         if (Math.random() < this.orbDropChance && sourceEnemy.sprite && sourceEnemy.sprite.active) {
             this.spawnOrbScrap(sourceEnemy.sprite.x, sourceEnemy.sprite.y);
         }
@@ -3150,6 +3177,7 @@ class ElementSystem {
         let nearestDist = Infinity;
 
         for (let enemy of this.enemies) {
+            if (this._phasedOut?.(enemy)) continue;
             if (hitEnemies.includes(enemy)) continue;
 
             const dist = Math.abs(enemy.x - sourceEnemy.x) + Math.abs(enemy.y - sourceEnemy.y);
@@ -3454,6 +3482,7 @@ class ElementSystem {
             const enemiesInField = [];
 
             for (let enemy of this.enemies) {
+                if (this._phasedOut?.(enemy)) continue;
                 const enemyPixelX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
                 const enemyPixelY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2;
                 const fieldPixelX = this.stormField.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -3707,7 +3736,7 @@ class ElementSystem {
             if (this.cosmicBatteryCharges >= this.cosmicMaxCharges) {
                 this.stopCosmicChanneling(false);
                 const fullTxt = this.add.text(
-                    this.scale.width / 2, 70, '⚡ FULLY CHARGED ⚡',
+                    this.scale.width / 2, 70, 'FULLY CHARGED',
                     { fontSize: '16px', fontFamily: 'monospace', color: '#ddaaff', stroke: '#000', strokeThickness: 3, fontStyle: 'bold' }
                 ).setOrigin(0.5).setScrollFactor(0).setDepth(30);
                 this.tweens.add({ targets: fullTxt, y: 50, alpha: 0, duration: 1500, onComplete: () => fullTxt.destroy() });
@@ -4011,6 +4040,7 @@ class ElementSystem {
         const isFullyCharged = visualMultiplier >= 8;
 
         for (let enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             const enemyPixelX = enemy.x * this.TILE_SIZE + this.TILE_SIZE / 2;
             const enemyPixelY = enemy.y * this.TILE_SIZE + this.TILE_SIZE / 2;
 
@@ -4033,7 +4063,7 @@ class ElementSystem {
                     const markBonus = enemy.cosmicMarks * this.cosmicMarkDamagePerStack * frozenMult;
                     finalDamage += markBonus;
                     if (enemy.isFrozen && enemy.sprite && enemy.sprite.active) {
-                        this.showStatusText(enemy.sprite.x, enemy.sprite.y, `❄⚡ ×2`, '#aaeeff');
+                        this.showStatusText(enemy.sprite.x, enemy.sprite.y, `×2`, '#aaeeff');
                     }
 
                     // LIFESTEAL: Heal based on marks consumed
@@ -4320,6 +4350,7 @@ class ElementSystem {
 
         // Detonate on enemy contact
         for (const enemy of this.enemies) {
+            if (this._phasedOut?.(enemy)) continue;
             if (!enemy.sprite || !enemy.sprite.active) continue;
             const ex = enemy.sprite.x, ey = enemy.sprite.y;
             if (Math.abs(ex - proj.x) < this.TILE_SIZE * 1.1 && Math.abs(ey - proj.y) < this.TILE_SIZE * 1.1) {
@@ -4536,6 +4567,7 @@ class ElementSystem {
 
         // Find enemies in radius — spiral orbit that tightens toward center
         for (let enemy of this.enemies) {
+            if (this._phasedOut?.(enemy)) continue;
             const dist = Math.abs(enemy.x - bh.tileX) + Math.abs(enemy.y - bh.tileY);
 
             if (dist <= currentRadius) {
@@ -4780,6 +4812,7 @@ class ElementSystem {
             [{ x: oldTileX, y: oldTileY }, ...dashPath].forEach((t, k) =>
                 F.push({ x: t.x, y: t.y, t0: currentTime + k * CASCADE, t1: currentTime + k * CASCADE + FLUID_MS, img: null, hexMs: 3000, dash: true }));
         } else for (const enemy of [...this.enemies]) {
+            if (this._phasedOut?.(enemy)) continue;
             if (enemy.sprite?.active && dashPath.some(t => t.x === enemy.x && t.y === enemy.y)) this._csHex?.(enemy, 3000);
         }
 
@@ -4813,7 +4846,7 @@ class ElementSystem {
         const T = this.TILE_SIZE, el = this.currentElement, n = Math.max(Math.abs(tx - fx), Math.abs(ty - fy));
         const tiles = [];
         for (let k = 0; k <= n; k++) tiles.push([Math.round(fx + (tx - fx) * k / Math.max(1, n)), Math.round(fy + (ty - fy) * k / Math.max(1, n))]);
-        const near = (x, y) => (this.enemies || []).filter(e => e.sprite?.active && e.health > 0 && Math.abs(e.x - x) <= 1 && Math.abs(e.y - y) <= 1);
+        const near = (x, y) => (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.abs(e.x - x) <= 1 && Math.abs(e.y - y) <= 1);
         for (const [x, y] of tiles) {
             if (this.world?.[x]?.[y] !== this.FLOOR) continue;
             const px = x * T + T / 2, py = y * T + T / 2;
@@ -4918,6 +4951,7 @@ class ElementSystem {
         for (let r = 0; r <= R; r++) this.time.delayedCall(r * WAVE_MS, () => {
             const now = this.time.now;
             for (const e of this.enemies || []) {
+                if (this._phasedOut?.(e)) continue;
                 if (!e.sprite?.active || e.health <= 0 || Math.max(Math.abs(e.x - tx), Math.abs(e.y - ty)) !== r) continue;
                 e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, now + ms);
                 if (!quiet) this.showStatusText(e.sprite.x, e.sprite.y - 10, 'DAZED', '#fff6a0');
@@ -4971,7 +5005,7 @@ class ElementSystem {
         if (landX === fromX && landY === fromY) return false;
         // ice freezes a strip three tiles wide along its path; lightning's landing sends a daze out in a wave instead (_dashDazeFx)
         const wide = el === 'ice' ? [0, 1, -1] : [0];
-        const passed = el === 'lightning' ? [] : (this.enemies || []).filter(e => e.sprite?.active && e.health > 0
+        const passed = el === 'lightning' ? [] : (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0
             && path.some(([x, y]) => wide.some(w => e.x === x - dirY * w && e.y === y + dirX * w)));
         if (el === 'lightning') this._dashDazeFx(landX, landY, this.cosmicDashStunDuration);
         for (const e of passed) {
@@ -5015,6 +5049,10 @@ class ElementSystem {
                     for (const e of [...(this.enemies || [])]) {
                         if (!e.sprite?.active || e.health <= 0 || burnt.has(e) || Math.max(Math.abs(e.x - x), Math.abs(e.y - y)) > 1) continue;
                         burnt.add(e); this.damageEnemy(e, this.FIRE_DASH.ERUPT * (this.damageScaling || 1), 'fire');
+                    }
+                    for (const q of [...(this.portals || [])]) {   // queens beside it: once a dash, like the enemies
+                        if (!q.active || burnt.has(q) || Math.max(Math.abs(q.tileX - x), Math.abs(q.tileY - y)) > 1.5) continue;
+                        burnt.add(q); this.damagePortal(q, this.FIRE_DASH.ERUPT * (this.damageScaling || 1));
                     }
                     this._vfxFlash?.(px, py, 60, 0xff7a2a, 260, 0.9);
                     this.cameras.main.shake(45, 0.0025);
