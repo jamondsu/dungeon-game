@@ -16,7 +16,8 @@
 
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
-           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110 },
+           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
+           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30 },
     _last: {},
     _noiseBuf: null,
     _master: null,
@@ -57,12 +58,48 @@ const Sfx = {
             this._space.connect(d1); this._space.connect(d2);
             d1.connect(lp); d2.connect(lp); lp.connect(fb); fb.connect(d1); lp.connect(wet); wet.connect(this._master);
         }
+        if (!this._samplesAsked) { this._samplesAsked = true; this._loadSamples(ctx); }
         if (!this._noiseBuf) {
             const b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = b.getChannelData(0);
             for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
             this._noiseBuf = b;
         }
         return ctx;
+    },
+
+    // Recorded sounds (assets/sfx), fetched and decoded once there's an audio context. A sound that uses one plays its
+    // synth version until it's in (or if it never loads).
+    SAMPLES: { evil_laugh: 'assets/sfx/evil_laugh.wav' },
+    _buf: {},
+    _loadSamples(ctx) {
+        if (typeof fetch !== 'function') return;
+        for (const [k, url] of Object.entries(this.SAMPLES))
+            fetch(url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this._buf[k] = buf; }).catch(() => {});
+    },
+    // A recorded sound. rate pitches it (under 1: deeper and slower), grit mixes in a distorted copy filtered to a
+    // crackle, double a second voice a shade lower drifting against the first, growl the voice ring-modulated at 45Hz
+    // (a demon's buzz), space sends that share into the echoes. False if it isn't loaded.
+    _sample(ctx, t, { name, rate = 1, vol = 1, grit = 0, double = 0, growl = 0, space = 0 }) {
+        const buf = this._buf[name];
+        if (!buf) return false;
+        const g = ctx.createGain(), end = t + buf.duration / rate + 0.2;
+        g.gain.value = vol; g.connect(this._master);
+        if (space && this._space) { const sg = ctx.createGain(); sg.gain.value = space; g.connect(sg); sg.connect(this._space); }
+        const voice = (r, level) => { const s = ctx.createBufferSource(), lg = ctx.createGain(); s.buffer = buf; s.playbackRate.value = r; lg.gain.value = level; s.connect(lg); lg.connect(g); s.start(t); return s; };
+        const s = voice(rate, 1);
+        if (double) voice(rate * 0.97, double);
+        if (grit) {
+            const ws = ctx.createWaveShaper(), bp = ctx.createBiquadFilter(), gg = ctx.createGain(), c = new Float32Array(1024);
+            for (let i = 0; i < c.length; i++) c[i] = Math.tanh((i / (c.length - 1) * 2 - 1) * 6);
+            ws.curve = c; bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.7; gg.gain.value = grit;
+            s.connect(ws); ws.connect(bp); bp.connect(gg); gg.connect(g);
+        }
+        if (growl) {
+            const rm = ctx.createGain(), osc = ctx.createOscillator(), mg = ctx.createGain();
+            rm.gain.value = 0; osc.frequency.value = 45; osc.connect(rm.gain); mg.gain.value = growl;
+            s.connect(rm); rm.connect(mg); mg.connect(g); osc.start(t); osc.stop(end);
+        }
+        return true;
     },
 
     // An oscillator gliding f0 → f1 over dur seconds, with a fast attack and an exponential tail.
@@ -103,6 +140,77 @@ const Sfx = {
         s.connect(f); f.connect(g); g.connect(out || this._master);
         if (space && this._space) g.connect(this._space);
         s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+    },
+
+    // Bubbles: n little sines each sweeping up fast (a bubble's pop), scattered over spread seconds.
+    _bubbles(ctx, t, { n = 4, spread = 0.2, f = 400, vol = 0.05 } = {}) {
+        for (let k = 0; k < n; k++) {
+            const f0 = f * (0.6 + Math.random() * 0.9);
+            this._tone(ctx, t + Math.random() * spread, { type: 'sine', f0, f1: f0 * (1.6 + Math.random() * 0.8), dur: 0.03 + Math.random() * 0.04, vol: vol * (0.6 + Math.random() * 0.4), attack: 0.003 });
+        }
+    },
+    // Crackle: n tiny clicks of noise scattered over spread seconds (fire, frost spreading, gravel).
+    _crackle(ctx, t, { n = 8, spread = 0.3, f = 1200, vol = 0.05, q = 0.9 } = {}) {
+        for (let k = 0; k < n; k++) this._noise(ctx, t + Math.random() * spread, { filter: 'bandpass', f0: f * (0.6 + Math.random() * 0.8), q, dur: 0.008 + Math.random() * 0.014, vol: vol * (0.4 + Math.random() * 0.6), attack: 0.001 });
+    },
+    // Glass: n bright pings at random pitches ringing briefly (ice shards).
+    _glass(ctx, t, { n = 6, spread = 0.08, f = 2400, vol = 0.04, dur = 0.25 } = {}) {
+        for (let k = 0; k < n; k++) { const f0 = f * (0.7 + Math.random() * 1.1); this._tone(ctx, t + Math.random() * spread, { type: 'sine', f0, f1: f0 * 0.98, dur: dur * (0.5 + Math.random()), vol: vol * (0.5 + Math.random() * 0.5) }); }
+    },
+
+    // A sound that lasts as long as something keeps asking for it (the flamethrower): each call holds it ms longer, and
+    // left alone it fades out and stops. LOOPS[name](ctx, t) builds it, started: { out (a gain at 0), vol, nodes }.
+    _held: {},
+    sustain(scene, name, ms = 300, level = 1) {
+        if (this.muted()) return;
+        const ctx = this._ctx(scene);
+        if (!ctx || ctx.state !== 'running') return;
+        const t = ctx.currentTime;
+        let h = this._held[name];
+        if (!h || h.ctx !== ctx || h.dead) h = this._held[name] = { ctx, ...this.LOOPS[name].call(this, ctx, t) };
+        const g = h.out.gain;
+        g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+        g.linearRampToValueAtTime(h.vol * level, t + 0.06);
+        g.setTargetAtTime(0.0001, t + ms / 1000, 0.08);
+        clearTimeout(h.timer);
+        h.timer = setTimeout(() => {
+            h.dead = true;
+            for (const n of h.nodes) { try { n.stop(); } catch (e) {} }
+            h.out.disconnect();
+            if (this._held[name] === h) delete this._held[name];
+        }, ms + 800);
+    },
+    // For the LOOPS: looping noise through a filter into out, and a slow wobble on a param (both pushed on nodes to stop)
+    _band(ctx, t, out, nodes, type, f, q, v) {
+        const s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+        s.buffer = this._noiseBuf; s.loop = true; fl.type = type; fl.frequency.value = f; fl.Q.value = q; g.gain.value = v;
+        s.connect(fl); fl.connect(g); g.connect(out); s.start(t, Math.random()); nodes.push(s);
+        return { fl, g };
+    },
+    _lfo(ctx, t, nodes, f, depth, param) {
+        const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = f * (0.9 + Math.random() * 0.2); lg.gain.value = depth;
+        l.connect(lg); lg.connect(param); l.start(t); nodes.push(l);
+    },
+    LOOPS: {
+        // the flamethrower: a breathy roar flickering, a low rumble under it, a hiss on top (blue: hotter and hissier)
+        flame(ctx, t, blue = false) {
+            const out = ctx.createGain(), nodes = []; out.gain.value = 0.0001; out.connect(this._master);
+            const roar = this._band(ctx, t, out, nodes, 'bandpass', blue ? 900 : 620, 0.7, 1);
+            this._band(ctx, t, out, nodes, 'lowpass', 170, 0.7, 0.9);
+            this._band(ctx, t, out, nodes, 'bandpass', blue ? 1800 : 1300, 0.9, blue ? 0.3 : 0.18);
+            for (const [f, depth, param] of [[5.3, 180, roar.fl.frequency], [11.7, 0.25, roar.g.gain], [2.1, 90, roar.fl.frequency]]) this._lfo(ctx, t, nodes, f, depth, param);   // the flicker
+            return { out, vol: 0.16, nodes };
+        },
+        blueflame(ctx, t) { return this.LOOPS.flame.call(this, ctx, t, true); },
+        // lava near you: a boil: a gurgle wandering in the middle, a low simmer under it, a soft sear fluttering over them
+        lava(ctx, t) {
+            const out = ctx.createGain(), nodes = []; out.gain.value = 0.0001; out.connect(this._master);
+            const sear = this._band(ctx, t, out, nodes, 'bandpass', 1100, 1.2, 0.25);
+            const mid = this._band(ctx, t, out, nodes, 'bandpass', 380, 2.5, 0.7);
+            const low = this._band(ctx, t, out, nodes, 'lowpass', 120, 0.8, 1);
+            for (const [f, depth, param] of [[6, 0.2, sear.g.gain], [2.3, 220, mid.fl.frequency], [4.1, 0.45, mid.g.gain], [0.7, 0.3, low.g.gain]]) this._lfo(ctx, t, nodes, f, depth, param);
+            return { out, vol: 0.2, nodes };
+        },
     },
 
     // A held charge (the Void Blade, the cosmic charge bar): a power-up riser. A bright pad
@@ -270,14 +378,56 @@ const Sfx = {
             this._noise(ctx, t + 0.06, { filter: 'highpass', f0: 3000, f1: 5000, dur: 0.18, vol: 0.06 });
             this._tone(ctx, t, { type: 'sawtooth', f0: 300 * j, f1: 150, dur: 0.1, vol: 0.04 });
         },
-        w_magma_staff(ctx, t, o, j) {      // a thick blorp of lava
-            this._tone(ctx, t, { type: 'sine', f0: 140 * j, f1: 60, dur: 0.22, vol: 0.28 });
-            this._tone(ctx, t + 0.03, { type: 'sine', f0: 320 * j, f1: 180, dur: 0.08, vol: 0.1 });
-            this._noise(ctx, t, { filter: 'lowpass', f0: 600, f1: 200, dur: 0.2, vol: 0.12 });
+        w_magma_staff(ctx, t, o, j) {      // a glob of lava flung: it pulls free with a gloopy blorp, heat breathing off it, a bubble popping
+            this._tone(ctx, t, { type: 'sine', f0: 70 * j, f1: 150 * j, dur: 0.07, vol: 0.28, attack: 0.008 });
+            this._tone(ctx, t + 0.06, { type: 'sine', f0: 150 * j, f1: 60, dur: 0.16, vol: 0.24 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 500, f1: 1400, dur: 0.14, vol: 0.12, attack: 0.03 });
+            this._bubbles(ctx, t + 0.05, { n: 2, spread: 0.12, f: 280, vol: 0.05 });
         },
-        w_ignition(ctx, t, o, j) {         // a match struck, then the whoomp
-            this._noise(ctx, t, { filter: 'highpass', f0: 2500, f1: 6000, dur: 0.05, vol: 0.12 });
-            this._noise(ctx, t + 0.04, { filter: 'lowpass', f0: 1400, f1: 300, dur: 0.25, vol: 0.2, attack: 0.03 });
+        lava_splat(ctx, t, o, j) {         // a glob of lava landing: a wet slap, a hot rush, bubbles
+            this._noise(ctx, t, { filter: 'lowpass', f0: 1600 * j, f1: 250, dur: 0.12, vol: 0.18 });
+            this._tone(ctx, t, { type: 'sine', f0: 110 * j, f1: 45, dur: 0.18, vol: 0.18 });
+            this._noise(ctx, t + 0.04, { filter: 'bandpass', f0: 1200, f1: 700, q: 1, dur: 0.3, vol: 0.06, attack: 0.04 });
+            this._bubbles(ctx, t + 0.05, { n: 3, spread: 0.3, f: 220, vol: 0.05 });
+        },
+        magma_surge(ctx, t, o, j) {        // the Surge: a deep whump, lava rolling out and bubbling, a long breath of heat (o.f: the heat spent, 0-1)
+            const f = o.f ?? 1, v = 0.6 + 0.4 * f;
+            this._tone(ctx, t, { type: 'sine', f0: 90 * j, f1: 30, dur: 0.5, vol: 0.3 * v });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 2200, f1: 150, dur: 0.35, vol: 0.22 * v });
+            this._noise(ctx, t + 0.05, { filter: 'lowpass', f0: 300, f1: 700, dur: 0.6 + 0.6 * f, vol: 0.16 * v, attack: 0.15 });   // rolling outward
+            this._bubbles(ctx, t + 0.1, { n: 5 + Math.round(6 * f), spread: 0.5 + 0.6 * f, f: 200, vol: 0.05 });
+            this._noise(ctx, t + 0.15, { filter: 'bandpass', f0: 1000, f1: 500, q: 0.8, dur: 0.8 + 0.5 * f, vol: 0.08, attack: 0.2 });
+        },
+        blip(ctx, t, o, j) {               // a few letters of NPC speech (o.v the speaker): a short soft beep, its pitch wandering
+            const [f0, type, vol] = { glurp: [210, 'triangle', 0.07], glerp: [420, 'square', 0.03] }[o.v] || [330, 'square', 0.03];
+            const f = f0 * j * (0.94 + Math.random() * 0.12);
+            this._tone(ctx, t, { type, f0: f, f1: f * 0.97, dur: 0.045, vol, attack: 0.003 });
+        },
+        lava_pop(ctx, t, o, j) {           // a bubble bursting on the lava
+            this._bubbles(ctx, t, { n: 2, spread: 0.08, f: 170, vol: 0.06 });
+        },
+        sear(ctx, t, o, j) {               // something standing in lava catching: a hot rush and a crackle
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1400 * j, f1: 800, q: 1, dur: 0.25, vol: 0.24, attack: 0.01 });
+            this._crackle(ctx, t, { n: 5, spread: 0.15, f: 900, vol: 0.14 });
+        },
+        // (Ignition has no w_ sound: its flame is LOOPS.flame, held while it burns)
+        kindle_boom(ctx, t, o, j) {        // a kindled mark going up (G): a gassy whoomph and a crackle
+            this._noise(ctx, t, { filter: 'lowpass', f0: 300, f1: 2600, dur: 0.12, vol: 0.2, attack: 0.04 });
+            this._noise(ctx, t + 0.1, { filter: 'lowpass', f0: 2600, f1: 200, dur: 0.4, vol: 0.2 });
+            this._tone(ctx, t + 0.05, { type: 'sine', f0: 130 * j, f1: 40, dur: 0.35, vol: 0.24 });
+            this._crackle(ctx, t + 0.12, { n: 8, spread: 0.4, f: 1000, vol: 0.07 });
+        },
+        meteor_fall(ctx, t, o, j) {        // a meteor coming down (o.ms its fall): a whistle dropping, a fire roar swelling (o.small: a Meteor Strike one)
+            const d = (o.ms || 520) / 1000, v = o.small ? 0.45 : 1;
+            this._tone(ctx, t, { type: 'sine', f0: 1700 * j, f1: 500 * j, dur: d, vol: 0.1 * v, attack: d * 0.7 });
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1400, f1: 350, q: 1.2, dur: d, vol: 0.4 * v, attack: d * 0.8 });
+        },
+        meteor_hit(ctx, t, o, j) {         // it lands: a deep boom, the rock breaking up, flames crackling as it settles
+            const v = o.small ? 0.55 : 1;
+            this._tone(ctx, t, { type: 'sine', f0: 95 * j, f1: 28, dur: 0.55, vol: 0.32 * v });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 3000, f1: 140, dur: 0.5, vol: 0.26 * v });
+            this._crackle(ctx, t + 0.02, { n: 7, spread: 0.12, f: 700, vol: 0.14 * v, q: 1.2 });
+            this._crackle(ctx, t + 0.15, { n: o.small ? 4 : 10, spread: 0.6, f: 1000, vol: 0.06 * v });
         },
         w_ice_fists(ctx, t, o, j) {        // a crisp crack of ice
             this._noise(ctx, t, { filter: 'highpass', f0: 3000, f1: 1500, dur: 0.05, vol: 0.14 });
@@ -362,13 +512,31 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sine', f0: 120 * j, f1: 35, dur: 0.35 * big, vol: 0.3 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 2500, f1: 120, dur: 0.4 * big, vol: 0.26 });
         },
-        freeze(ctx, t, o, j) {             // ice closing over something
-            this._noise(ctx, t, { filter: 'highpass', f0: 6000, f1: 2500, dur: 0.25, vol: 0.08, attack: 0.03 });
-            this._tone(ctx, t, { type: 'sine', f0: 1600 * j, f1: 2400, dur: 0.2, vol: 0.04 });
+        freeze(ctx, t, o, j) {             // ice closing over something: frost crackling across it, then a glassy set
+            this._crackle(ctx, t, { n: 10, spread: 0.18, f: 2200, vol: 0.12, q: 1.5 });
+            this._tone(ctx, t + 0.12, { type: 'sine', f0: 2600 * j, f1: 2500 * j, dur: 0.3, vol: 0.05 });
+            this._tone(ctx, t + 0.12, { type: 'sine', f0: 3900 * j, dur: 0.2, vol: 0.02 });
         },
-        shatter(ctx, t, o, j) {            // ice breaking apart
-            for (let i = 0; i < 5; i++) this._tone(ctx, t + i * 0.02, { type: 'triangle', f0: (1800 + Math.random() * 2400) * j, dur: 0.1, vol: 0.04 });
-            this._noise(ctx, t, { filter: 'highpass', f0: 2500, f1: 1200, dur: 0.22, vol: 0.18 });
+        shatter(ctx, t, o, j) {            // ice breaking apart: a hard crack, shards ringing out, a scatter of pieces
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1800, f1: 900, q: 1, dur: 0.06, vol: 0.22 });
+            this._tone(ctx, t, { type: 'triangle', f0: 260 * j, f1: 120, dur: 0.08, vol: 0.16 });
+            this._glass(ctx, t + 0.01, { n: 7, spread: 0.06, f: 2600 * j, vol: 0.035, dur: 0.3 });
+            this._crackle(ctx, t + 0.06, { n: 6, spread: 0.25, f: 1800, vol: 0.06 });
+        },
+        blizzard(ctx, t, o, j) {           // the Blizzard: a gust howling in, frost cracking over the screen, a shimmer of snow
+            for (const [f0, f1, q, v] of [[300, 900, 6, 1.0], [500, 1400, 8, 0.55]]) this._noise(ctx, t, { filter: 'bandpass', f0, f1, q, dur: 1.6, vol: v, attack: 0.5 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 400, f1: 200, dur: 1.4, vol: 0.5, attack: 0.3 });
+            this._crackle(ctx, t + 0.1, { n: 14, spread: 0.5, f: 2000, vol: 0.1, q: 1.5 });
+            this._glass(ctx, t + 0.4, { n: 8, spread: 0.8, f: 3200, vol: 0.04, dur: 0.5 });
+        },
+        gale(ctx, t, o, j) {               // a gale spinning up: wind whirling up and away
+            this._noise(ctx, t, { filter: 'bandpass', f0: 250 * j, f1: 1100 * j, q: 4, dur: 0.6, vol: 0.5, attack: 0.25 });
+            this._noise(ctx, t + 0.2, { filter: 'bandpass', f0: 1100 * j, f1: 350 * j, q: 4, dur: 0.7, vol: 0.4, attack: 0.15 });
+        },
+        e_crack(ctx, t, o, j) {            // a Geode plate cracking: a sharp rock crack, gravel trickling
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1200, f1: 500, q: 1, dur: 0.05, vol: 0.24 });
+            this._tone(ctx, t, { type: 'triangle', f0: 160 * j, f1: 70, dur: 0.1, vol: 0.16 });
+            this._crackle(ctx, t + 0.03, { n: 8, spread: 0.3, f: 700, vol: 0.07 });
         },
         heal(ctx, t) {                     // a warm rising sparkle
             [523, 659, 784].forEach((f, i) => this._tone(ctx, t + i * 0.06, { type: 'sine', f0: f, dur: 0.22, vol: 0.06 }));
@@ -549,8 +717,10 @@ const Sfx = {
             this._noise(ctx, t, { filter: 'lowpass', f0: 1600 * j, f1: 300, dur: 0.28, vol: 0.11, attack: 0.03 });
             this._noise(ctx, t + 0.05, { filter: 'highpass', f0: 3000, f1: 5500, dur: 0.2, vol: 0.03 });
         },
-        laugh(ctx, t) {                    // the fire ult: a low evil laugh, "ha... ha... HA", over a rumble
-            [[0, 230, 190, 0.11], [0.2, 215, 175, 0.11], [0.42, 250, 150, 0.22]].forEach(([dt, f0, f1, dur], i) => {
+        laugh(ctx, t, o, j) {              // the fire ult: a recorded laugh (assets/sfx), pitched down and gritty, ringing out, over a rumble
+            const L = { rate: 0.7, vol: 0.27, grit: 0.35, double: 0.6, growl: 0.5, space: 0.45 };   // the knobs: rate under 1 is deeper and slower
+            if (!this._sample(ctx, t, { name: 'evil_laugh', ...L, rate: L.rate * (1 + (j - 1) * 0.5) }))   // (half the usual pitch jitter)
+            [[0, 230, 190, 0.11], [0.2, 215, 175, 0.11], [0.42, 250, 150, 0.22]].forEach(([dt, f0, f1, dur], i) => {   // not loaded: the synth laugh, "ha... ha... HA"
                 this._tone(ctx, t + dt, { type: 'sawtooth', f0, f1, dur, vol: 0.09 + i * 0.02, attack: 0.01 });
                 this._tone(ctx, t + dt, { type: 'square', f0: f0 * 2.02, f1: f1 * 2.02, dur: dur * 0.8, vol: 0.025 });
                 this._noise(ctx, t + dt, { filter: 'bandpass', f0: 900, f1: 600, q: 1.5, dur: 0.05, vol: 0.06 });

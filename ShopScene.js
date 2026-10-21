@@ -1199,7 +1199,21 @@ class ShopScene extends Phaser.Scene {
         if (this._fragmentPill) this._fragmentPill.setLabel(this.fragments.toLocaleString('en-US') + ' Fragments');
     }
 
-    setGlurpDialogue(text) { if (this.glurpDialogue) this.glurpDialogue.setText(text); }
+    // Glurp says it: typed out in his voice. Laid out whole first and the letters still to come blanked to spaces (the face is
+    // monospace), so the centred lines don't shift as they fill.
+    setGlurpDialogue(text) {
+        const T = this.glurpDialogue;
+        if (!T) return;
+        this._glurpTyper?.remove();
+        const full = T.getWrappedText(text).join('\n');
+        let n = 0;
+        this._glurpTyper = this.time.addEvent({ delay: 16, loop: true, callback: () => {
+            n = Math.min(full.length, n + 2);
+            T.setText(full.slice(0, n) + full.slice(n).replace(/[^\n]/g, ' '));
+            if ((n >> 1) % 3 === 0 && /[a-z0-9]/i.test(full[n - 1] || '')) Sfx.play(this, 'blip', { v: 'glurp' });
+            if (n >= full.length) this._glurpTyper.remove();
+        } });
+    }
 
     // ── SHARED STALL PIECES ──────────────────────────────────────────────────
     // The display on the counter: a spotlight from the beam, dust in it, a brass turntable,
@@ -2055,7 +2069,7 @@ ShopScene.ULTS = [
         { desc: 'Not designed yet.', fragCost: 15, glorpCost: 80, soon: true },
     ] },
     { key: 'lightning', label: 'LIGHTNING ULT', name: 'Fork', stages: [
-        { desc: 'You become lightning and time stops. The bolt streaks to the nearest enemy, then at random through every other one in the room, counting a combo over each, and back to you. A snap, and the whole web ignites: 18 + 1.2% of max HP to each enemy it passed through and 8 to anything on its path, all multiplied by the size of the crowd (+16% an enemy, up to x4.5). For 12s after, 40% of any damage to any enemy forks to everything within 2.5 tiles of it (at most 30 a hit), and you move twice as fast: every step thumps the floor in a wide plus, dazing what is on it, and zaps everything within 5 tiles for 5 + 0.5% of max HP, each zap forking to 2 more.' },
+        { desc: 'You become lightning and time stops. The bolt streaks to the nearest enemy, then at random through every other one in the room, counting a combo over each, and back to you. A snap, and the whole web ignites: 18 + 1.2% of max HP to each enemy it passed through and 8 to anything on its path, all multiplied by the size of the crowd (+16% an enemy, up to x4.5). For 12s after, 40% of any damage to any enemy forks to everything within 2.5 tiles of it (at most 30 a hit), and you move twice as fast: every step thumps the floor in a 5x5 square round you, dazing what is on it, and zaps everything within 5 tiles for 5 + 0.5% of max HP, each zap forking to 2 more.' },
         { desc: 'The aftermath lasts 16s and forks 3 tiles.', fragCost: 5, glorpCost: 20 },
         { desc: 'Not designed yet.', fragCost: 15, glorpCost: 80, soon: true },
     ] },

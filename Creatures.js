@@ -387,7 +387,7 @@ class CreatureFX {
         let arcs = [], arcAt = 0, boltAt = t0 + 400;
         const tick = () => {
             const now = scene.time.now, life = (now - t0) / ms, tt = now - t0;
-            if (!shell.active || !rim.active) { scene.events.off('update', tick); if (holder._ultArmor === A) holder._ultArmor = null; return; }   // destroyed under it (ended mid-frame, or a floor change / death: scene events outlive the objects). It used to throw here, and a throw in a Phaser step ends the game loop for good
+            if (!shell.active || !rim.active) { scene.events.off('postupdate', tick); if (holder._ultArmor === A) holder._ultArmor = null; return; }   // destroyed under it (ended mid-frame, or a floor change / death: scene events outlive the objects). It used to throw here, and a throw in a Phaser step ends the game loop for good
             if (!p.active || life >= 1) return A.end();
             const fade = Math.min(1, (now - t0) / 200, (ms - (now - t0)) / 300), d = p.depth ?? 1, sx = p.scaleX, sy = p.scaleY, vis = p.visible, al = (p.alpha ?? 1) * fade;
             for (const [o, ds, a, k] of [[shell, 0.0004, K.a * (part ? 0.6 : 1), 1], [rim, -0.01, K.ra * (0.7 + 0.3 * Math.sin(now * (el === 'lightning' ? 0.05 : 0.01))), 1.12]])
@@ -474,8 +474,8 @@ class CreatureFX {
                 }
             }
         };
-        const A = holder._ultArmor = { el, end: () => { scene.events.off('update', tick); for (const o of [shell, rim, back, g, glow, floor, runes]) o?.destroy(); if (edge.active) scene.tweens.add({ targets: edge, alpha: 0, duration: 300, onComplete: () => edge.destroy() }); if (holder._ultArmor === A) holder._ultArmor = null; } };
-        scene.events.on('update', tick); scene.events.once('shutdown', A.end);
+        const A = holder._ultArmor = { el, end: () => { scene.events.off('postupdate', tick); for (const o of [shell, rim, back, g, glow, floor, runes]) o?.destroy(); if (edge.active) scene.tweens.add({ targets: edge, alpha: 0, duration: 300, onComplete: () => edge.destroy() }); if (holder._ultArmor === A) holder._ultArmor = null; } };
+        scene.events.on('postupdate', tick); scene.events.once('shutdown', A.end);   // after the scene's own update, where the step glide moves the slime: on 'update' it trailed a frame behind, the slime's blue showing at its edge
         tick();
         // putting it on: a flash of the element over the slime, and a ring out across the floor
         const flash = scene.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setOrigin(p.originX, p.originY).setScale(p.scaleX * 1.3, p.scaleY * 1.3).setFlipX(p.flipX).setTintFill(K.rim).setBlendMode(ADD).setDepth((p.depth ?? 1) + 0.03).setAlpha(0.9);

@@ -255,6 +255,7 @@ class ElementSystem {
             SIZE: [0.75, 1.6], R: [1.3, 1.2], DMG: 16, DAZE_MS: 1000,   // impact radius R0 + R1 * size tiles; DMG * size; each one it hits is dazed and takes a Super Burn stack
             HEAL_TICK: 0.0025, HEAL_CAP: 0.03, HEAL_TOTAL: 0.2, OVERHEAL: 0.2,   // of your max HP: a burn tick, at most a second, at most over the whole ult; and how far past full it can take you
             DASH_TILES: 6, ZOOM: 1.45,   // the fire dash while it runs: farther (its quicker recovery is gone: too strong)
+            POOL_MS: 2500, POOL_STRIKE_MS: 1500,   // each meteor leaves a pool of white-hot lava that Super Burns what stands in it: a plus of 5 tiles, a Meteor Strike's one tile
             AURA_R: 6, AURA_EVERY: 1000,   // the fiery aura round you: every AURA_EVERY one enemy in AURA_R tiles takes a Super Burn stack, picked by its HP (more HP, likelier)
             STRIKE_N: [2, 3],   // the periodic strikes after the opening volley, this many at a time
             // Meteor Strike (the attack once the opening volley's down): click an area and N meteors fall into it at random, AREA
@@ -343,6 +344,7 @@ class ElementSystem {
         this.tweens.add({ targets: shadow, scale: 1, duration: C.FALL_MS, ease: 'Quad.easeIn' });
         const key = ElementSystem.meteorKey(this, Math.floor(Math.random() * 3));
         const rock = this.add.image(x + 140, y - 300, key).setScale(1.8 * size).setDepth(6);
+        Sfx.play(this, 'meteor_fall', { ms: C.FALL_MS, small: !!B });
         const glow = this.add.image(rock.x, rock.y, 'vfx_glow').setTint(0xff6a1a).setBlendMode(ADD).setDepth(5.9).setScale(0.6 * size);
         const f = { t: 0 };
         this.tweens.add({ targets: f, t: 1, duration: C.FALL_MS, ease: 'Quad.easeIn', onUpdate: () => {
@@ -419,7 +421,7 @@ class ElementSystem {
     }
     _scorchImpact(x, y, tx, ty, size, rock, glow, B = null) {   // B: a barrage meteor (its own reach, damage and daze; Super Burn on what it lands on)
         const C = this._scorchCfg(), T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD, R = B ? B.R : C.R[0] + C.R[1] * size, now = this.time.now;
-        Sfx.play(this, 'erupt'); this.cameras.main.shake(B ? 60 : 110 + 90 * size, B ? 0.002 : 0.004 + 0.004 * size);
+        Sfx.play(this, 'meteor_hit', { small: !!B }); this.cameras.main.shake(B ? 60 : 110 + 90 * size, B ? 0.002 : 0.004 + 0.004 * size);
         for (let ox = -Math.ceil(R); ox <= Math.ceil(R); ox++) for (let oy = -Math.ceil(R); oy <= Math.ceil(R); oy++) if (Math.hypot(ox, oy) <= R) this._evaporate?.(tx + ox, ty + oy, 6);   // it boils the water off to fog
         this._vfxFlash?.(x, y, R * T * (B ? 0.9 : 1.3), 0xff7a2a, B ? 220 : 340, B ? 0.35 : 0.55);   // a barrage's flash kept low: five of them blinded the fight
         VisualFX.impact(this, x, y, 'fire', B ? 10 + 6 * size : 16 + 14 * size);
@@ -443,6 +445,10 @@ class ElementSystem {
         }, onComplete: () => this.tweens.add({ targets: [rock, glow, cr, crk], alpha: 0, duration: 400, onComplete: () => [rock, glow, cr, crk].forEach(o => o.destroy()) }) });
         // the hit: damage, Dazed for 2s, a Super Burn stack (stage 2: the supernova fuse too)
         if (B?.hostile) { B.hostile(tx, ty, R); return; }   // an Ult Absorber's stolen meteor: it lands on you, not them
+        for (const [ox, oy] of B ? [[0, 0]] : [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {   // its pool
+            if (this.world?.[tx + ox]?.[ty + oy] !== this.FLOOR) continue;
+            this.spawnIgnitionTrail((tx + ox) * T + T / 2, (ty + oy) * T + T / 2, B ? C.POOL_STRIKE_MS : C.POOL_MS, { superBurn: true });
+        }
         const stage2 = parseInt(localStorage.getItem('ultStage_fire') || '1') >= 2;
         if (B) {   // a Meteor Strike meteor: everything in reach hit and dazed a moment; the enemy with the most HP it hit Super Burned
             const hit = [...this.enemies].filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - tx, e.y - ty) <= R);
@@ -657,6 +663,8 @@ class ElementSystem {
         this.tweens.add({ targets: glint, alpha: 0.12, duration: 700, yoyo: true, repeat: -1 });
         this._iceShell = { rim: img, body: glint, cracks: this.add.graphics(), follow: () => { img.setPosition(p.x, p.y); glint.setPosition(p.x - 6, p.y - p.displayHeight * 0.25); } };
         this._iceShell.follow();
+        const follow = this._iceShell.follow;   // every frame, after the step glide: a step still under way carried the slime out of its shell
+        this.events.on('postupdate', follow); this.events.once('shutdown', () => this.events.off('postupdate', follow));
         this.showStatusText(p.x, p.y - 40, 'ENCASED', '#d8f4ff'); Sfx.play(this, 'shatter'); this.cameras.main.shake(120, 0.004);
     }
     // The shell's texture for the player's current frame: its silhouette grown 5px all round, filled with cube ice
@@ -693,6 +701,7 @@ class ElementSystem {
         const S = this._iceShell; this._iceShellUntil = 0; this._iceShell = null;
         this._coldEdge?.destroy(); this._coldEdge = null;   // warmed up
         if (!S) return;
+        this.events.off('postupdate', S.follow);
         const p = this.player;
         for (let k = 0; k < 10; k++) { const d = this.add.circle(p.x + (Math.random() - 0.5) * 24, p.y - Math.random() * 16, 2, 0x9ad8ff).setDepth(p.depth + 0.05); this.tweens.add({ targets: d, y: d.y + 18 + Math.random() * 10, alpha: 0, duration: 500, onComplete: () => d.destroy() }); }   // meltwater
         this.tweens.add({ targets: [S.rim, S.body, S.cracks], alpha: 0, scaleX: '*=1.15', duration: 380, onComplete: () => { S.rim.destroy(); S.body.destroy(); S.cracks.destroy(); } });
@@ -708,7 +717,7 @@ class ElementSystem {
         const tk = ElementSystem.tornadoKey(this); t.spr = this.add.sprite(t.x, t.y, tk, 0).setOrigin(0.5, 0.94).setTint(0xc8daea).play(tk);   // (a touch under white: the glow pass bloomed full white into glare)
         t.snow = this.add.particles(0, 0, 'vfx_dot', { lifespan: 700, speedX: { min: -25, max: 25 }, speedY: { min: -70, max: -30 }, gravityY: -60, scale: { start: 0.4, end: 0 }, alpha: { start: 0.9, end: 0 }, tint: [0xffffff, 0xbff0ff, 0x8ad8ff], frequency: 18,
             emitZone: { type: 'random', source: new Phaser.Geom.Ellipse(0, 0, t.r * T * 2, t.r * T * 0.6) } }).setDepth(4.5);   // lifted off the floor round its foot
-        Sfx.play(this, 'whoosh');
+        Sfx.play(this, 'gale');
         const tick = () => {
             const now = this.time.now, alive = now - t.born < t.form + G.LIFE && this.player?.active;
             if (!alive) { this.events.off('update', tick); this.tweens.add({ targets: [t.g, t.snow, t.spr, t.sh], alpha: 0, duration: 300, onComplete: () => { t.g.destroy(); t.snow.destroy(); t.spr.destroy(); t.sh.destroy(); } }); return; }
@@ -719,7 +728,7 @@ class ElementSystem {
                     t.flung = true;
                     const cam = this.cameras.main, ap = this._aim ? this._aim(this.input.activePointer) : this.input.activePointer;
                     const dx = ap.x + cam.scrollX - t.x, dy = ap.y + cam.scrollY - t.y, L = Math.hypot(dx, dy) || 1;
-                    t.vx = dx / L * G.SPEED * T; t.vy = dy / L * G.SPEED * T; Sfx.play(this, 'whoosh');
+                    t.vx = dx / L * G.SPEED * T; t.vy = dy / L * G.SPEED * T; Sfx.play(this, 'gale');
                 }
             } else {
                 const inside = (this.enemies || []).some(e => e.sprite?.active && e.health > 0 && !this._phasedOut?.(e) && Math.hypot(e.sprite.x - t.x, e.sprite.y - t.y) <= t.r * T);
@@ -767,7 +776,7 @@ class ElementSystem {
             this.tweens.add({ targets: cam, zoom: z0 * F.ZOOM, duration: 300, ease: 'Cubic.easeOut', onComplete: () => this.tweens.add({ targets: cam, zoom: z0, duration: 420, delay: 200, ease: 'Sine.easeInOut' }) });
             const fl = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0xbff0ff, 0.3).setScrollFactor(0).setDepth(20);
             this.tweens.add({ targets: fl, alpha: 0, duration: 500, onComplete: () => fl.destroy() });
-            Sfx.play(this, 'shatter'); this.cameras.main.shake(160, 0.004);
+            Sfx.play(this, 'blizzard'); this.cameras.main.shake(160, 0.004);
             this.tsunamiActive = true;   // (held through the zoom: no second cast)
             this._iceFrostBegin();
             this.time.delayedCall(F.ZOOM_MS, () => { this.activateIceBlizzard(); });
@@ -1287,7 +1296,7 @@ class ElementSystem {
         return { HIT: 18, HIT_PCT: 0.012, COMBO_STEP: 0.04, CROWD: 0.16, CROWD_MAX: 4.5, PATH: 8, PATH_R: 0.7, BOSS_PCT: 0.25, MAX_HOPS: 30, REACH: 12,
                  SPEED: 650, HOP_MIN: 120, HOP_MAX: 340, ESC: 0.12, ESC_MAX: 3.5, HOP_FLOOR: 45, TRANSFORM_MS: 420, SNAP_MS: 320, BOOM_MS: 160, ZOOM: 1.55,
                  AFTER_MS: (s2 ? 16000 : 12000) * (this._mods?.ultLong || 1), SPLASH_R: s2 ? 3 : 2.5, SHARE: 0.4, CAP: 30,
-                 THUMP_MS: 350, THUMP_ARM: 3, THUMP_DAZE: 350, SPEED_MULT: 0.5,   // each step's thump: a 3x3 and 3-wide arms THUMP_ARM tiles further each way; you move at SPEED_MULT of the move delay
+                 THUMP_MS: 350, THUMP_R: 2, THUMP_DAZE: 350, SPEED_MULT: 0.5,   // each step's thump: a squircle THUMP_R tiles round you (5x5, its corners off); you move at SPEED_MULT of the move delay
                  ZAP_R: 5, ZAP: 5, ZAP_PCT: 0.005, ZAP_FORKS: 2, ZAP_FORK_R: 3, ZAP_FORK_SHARE: 0.5 };   // ...and zaps everything within ZAP_R, each zap forking to ZAP_FORKS more
     }
     _forkTargets() {
@@ -1374,21 +1383,22 @@ class ElementSystem {
         };
         this.events.on('update', step); this.events.once('shutdown', () => this.events.off('update', step));   // (a restart keeps scene listeners: this one would run on into the next level)
     }
-    // A step in the aftermath: the floor thumps in a fat plus round you (dazing what's on it), and every enemy within ZAP_R
+    // A step in the aftermath: the floor thumps in a 5x5 squircle round you (dazing what's on it), and every enemy within ZAP_R
     // takes a zap that forks on to ZAP_FORKS more near it
     _forkThump(A) {
-        const C = this._forkCfg(), T = this.TILE_SIZE, now = this.time.now, px = this.playerX, py = this.playerY, R = 1 + C.THUMP_ARM;
-        const inPlus = (dx, dy) => (Math.abs(dx) <= 1 && Math.abs(dy) <= R) || (Math.abs(dy) <= 1 && Math.abs(dx) <= R);
+        const C = this._forkCfg(), T = this.TILE_SIZE, now = this.time.now, px = this.playerX, py = this.playerY, R = C.THUMP_R;
+        const inSquircle = (dx, dy) => Math.abs(dx) <= R && Math.abs(dy) <= R && !(Math.abs(dx) === R && Math.abs(dy) === R);   // the squircle: a square, corners off
         const g = this.add.graphics().setDepth(0.27).setBlendMode(Phaser.BlendModes.ADD);
         for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {
-            if (!inPlus(dx, dy) || this.world?.[px + dx]?.[py + dy] !== this.FLOOR) continue;
+            if (!inSquircle(dx, dy) || this.world?.[px + dx]?.[py + dy] !== this.FLOOR) continue;
             const k = 1 - (Math.abs(dx) + Math.abs(dy)) / (R + 2);
             g.fillStyle(0xffe14a, 0.15 + 0.3 * k).fillRect((px + dx) * T + 1, (py + dy) * T + 1, T - 2, T - 2);
         }
         this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
         this.cameras.main.shake(50, 0.0015); Sfx.play(this, 'zap');
-        const live = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0);
-        for (const e of live) if (inPlus(e.x - px, e.y - py)) { e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, now + C.THUMP_DAZE); }
+        const ri = this.getCurrentPlayerRoom?.() ?? -1, gated = this._roomGated?.() && ri >= 0;   // only your room: its zaps went through walls into rooms still under fog
+        const live = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && (!gated || e.tutorialRoomIndex === undefined || e.tutorialRoomIndex === ri));
+        for (const e of live) if (inSquircle(e.x - px, e.y - py)) { e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, now + C.THUMP_DAZE); }
         const me = { x: this.player.x, y: this.player.y - 6 };
         const zap = (e, mult, from) => {
             const raw = (C.ZAP * this.damageScaling + C.ZAP_PCT * (e.isBoss ? C.BOSS_PCT : 1) * (e.maxHealth || 0)) * mult;
@@ -1446,6 +1456,8 @@ class ElementSystem {
                 A.thumpAt = now + C.THUMP_MS; this._forkThump(A);
             }
             A.px = this.playerX; A.py = this.playerY;
+            const ri = this.getCurrentPlayerRoom?.() ?? -1, gated = this._roomGated?.() && ri >= 0;
+            const here = o => !gated || o.tutorialRoomIndex === undefined || o.tutorialRoomIndex === ri;   // forks stay in your room
             for (const e of this.enemies || []) {
                 if (!e.sprite?.active || e.health <= 0) { A.hp.delete(e); continue; }
                 const last = A.hp.has(e) ? A.hp.get(e) : e.health; A.hp.set(e, e.health);
@@ -1453,7 +1465,7 @@ class ElementSystem {
                 if (!(lost > 0)) continue;
                 const amt = Math.min(lost * C.SHARE, C.CAP * this.damageScaling), from = this._forkAim(e);
                 for (const o of [...(this.enemies || [])]) {
-                    if (o === e || !o.sprite?.active || o.health <= 0 || Math.hypot(o.x - e.x, o.y - e.y) > C.SPLASH_R) continue;
+                    if (o === e || !o.sprite?.active || o.health <= 0 || !here(o) || Math.hypot(o.x - e.x, o.y - e.y) > C.SPLASH_R) continue;
                     const d = this.resolveElementalHit(o, amt, 'lightning', true); if (d === null || !(d > 0)) continue;
                     o.health -= d; A.hp.set(o, o.health);   // (a splash doesn't splash again)
                     A.forks.push({ a: from, b: this._forkAim(o), until: now + 160 });

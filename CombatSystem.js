@@ -2665,7 +2665,8 @@ class CombatSystem {
         else { enemy.combustionTriggered = false; }
     }
 
-    spawnIgnitionTrail(x, y, duration = null) {
+    // opts.superBurn: white-hot for its duration, Super Burning what stands in it instead of a burn stack (the fire ult's meteor pools)
+    spawnIgnitionTrail(x, y, duration = null, opts = {}) {
         const tileX = Math.floor(x / this.TILE_SIZE);
         const tileY = Math.floor(y / this.TILE_SIZE);
         const tilePixelX = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -2675,6 +2676,7 @@ class CombatSystem {
         const existing = this.ignitionPierceTrails.find(t => t.tileX === tileX && t.tileY === tileY);
         if (existing) {
             const newDur = duration ?? this.ignitionTrailDuration;
+            if (opts.superBurn) { existing.superUntil = this.time.now + newDur; existing.visuals[2]?.setTint?.(0xfff0c0); }
             const existingDur = existing.customDuration ?? this.ignitionTrailDuration;
             const timeLeft = existingDur - (this.time.now - existing.createdAt);
             if (newDur > timeLeft) {
@@ -2697,16 +2699,24 @@ class CombatSystem {
             this.tweens.add({ targets: core, alpha: 0.7, scaleX: 0.85, scaleY: 0.85, duration: 130, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 60 });
         }
 
+        if (opts.superBurn) { glow.setTint?.(0xff8a2a); core.setTint?.(0xfff0c0); }   // white-hot
         this.ignitionPierceTrails.push({
             visuals: [base, glow, core],
             createdAt: this.time.now,
             lastDamageTick: 0,
             tileX, tileY, x: tilePixelX, y: tilePixelY,
-            customDuration: duration
+            customDuration: duration,
+            superUntil: opts.superBurn ? this.time.now + (duration ?? this.ignitionTrailDuration) : 0
         });
     }
 
     updateIgnitionTrails(time) {
+        // the lava's sound: a sizzle held while any is near you, fuller the more there is, a bubble bursting now and then
+        if (this.ignitionPierceTrails.length && time - (this._lavaSfxAt || 0) > 150) {
+            this._lavaSfxAt = time;
+            const n = this.ignitionPierceTrails.filter(t => Math.abs(t.tileX - this.playerX) <= 12 && Math.abs(t.tileY - this.playerY) <= 8).length;
+            if (n) { Sfx.sustain(this, 'lava', 320, Math.min(1, 0.35 + n / 12)); if (Math.random() < 0.25) Sfx.play(this, 'lava_pop'); }
+        }
         for (let i = this.ignitionPierceTrails.length - 1; i >= 0; i--) {
             const t = this.ignitionPierceTrails[i];
             const age = time - t.createdAt;
@@ -2739,7 +2749,9 @@ class CombatSystem {
                     if (this._phasedOut(enemy)) continue;
                     if (time - (enemy._lastLavaBurnStack ?? -1e9) < LAVA_MS) continue;
                     enemy._lastLavaBurnStack = time;
-                    if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
+                    if (t.superUntil > time) this.applySuperBurn?.(enemy, 1);
+                    else if (typeof this.applyBurnStack === 'function') this.applyBurnStack(enemy);
+                    Sfx.play(this, 'sear');
                 }
                 // A boss in the lava: one stack per LAVA_MS however many lava tiles it covers.
                 const vb = this.voltslimeBoss;

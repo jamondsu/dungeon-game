@@ -514,6 +514,16 @@ vec2 h2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(
 float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(h(i), h(i + vec2(1.0, 0.0)), f.x), mix(h(i + vec2(0.0, 1.0)), h(i + vec2(1.0, 1.0)), f.x), f.y); }
 float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * n(p); p *= 2.03; a *= 0.5; } return s; }
+// Voronoi: x = distance to the nearest cell edge, y = this cell's id, z = the id of the cell across that edge (the exact edge
+// distance: a nearest pass, then its neighbours)
+vec3 vor(vec2 x) {
+    vec2 ip = floor(x), fp = fract(x), mg = vec2(0.0), mr = vec2(0.0); float md = 8.0, nb = 0.0;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec2 g = vec2(float(i), float(j)), r = g + h2(ip + g) - fp; float d = dot(r, r); if (d < md) { md = d; mr = r; mg = g; } }
+    md = 8.0;
+    for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) { vec2 g = mg + vec2(float(i), float(j)), r = g + h2(ip + g) - fp; vec2 e = r - mr;
+        if (dot(e, e) > 0.00001) { float d = dot(0.5 * (mr + r), normalize(e)); if (d < md) { md = d; nb = h(ip + g); } } }
+    return vec3(md, h(ip + mg), nb);
+}
 void main() {
     vec2 uv = outTexCoord, A = vec2(uRes.x / uRes.y, 1.0), p = uv * A;
     vec3 base = texture2D(uMainSampler, uv).rgb;
@@ -521,19 +531,18 @@ void main() {
     // the frost: in from the edges, furthest at the corners, its edge ragged
     float dx = min(uv.x, 1.0 - uv.x) * A.x, dy = min(uv.y, 1.0 - uv.y);
     vec2 c0 = vec2(uv.x < 0.5 ? 0.0 : A.x, uv.y < 0.5 ? 0.0 : 1.0);
-    if (mix(min(dx, dy), length(vec2(dx, dy)), 0.7) - 0.14 > uGrow * 0.13 + 0.03 && length(p - c0) - 0.09 > uCrack * 0.27) { gl_FragColor = vec4(base, 1.0); return; }   // the clear middle: no frost, no cracks, nothing to work out
-    float field = mix(min(dx, dy), length(vec2(dx, dy)), 0.7) - fbm(p * 5.0) * 0.1 - fbm(p * 21.0) * 0.035;
+    float zd = length(p - c0), edge = mix(min(dx, dy), length(vec2(dx, dy)), 0.3);   // to the nearest corner (the cracks); into the frame (the frost: all four edges, a little further at the corners)
+    if (edge - 0.14 > uGrow * 0.13 + 0.03 && zd - 0.09 > uCrack * 0.27) { gl_FragColor = vec4(base, 1.0); return; }   // the clear middle: no frost, no cracks, nothing to work out
+    float field = edge - fbm(p * 5.0) * 0.1 - fbm(p * 21.0) * 0.035;
     float reach = uGrow * 0.13, frost = smoothstep(reach, reach - 0.035, field), deep = smoothstep(reach, reach - 0.22, field);
-    // the cracks: lines out from the nearest corner and broken rings round it, as glass breaks
-    vec2 cc = vec2(uv.x < 0.5 ? 0.0 : A.x, uv.y < 0.5 ? 0.0 : 1.0), q = p - cc;
-    float r = length(q), ang = atan(q.y, q.x), cid = cc.x * 3.0 + cc.y;
-    float s = ang / 6.2831 * 30.0 + (n(vec2(r * 4.0, cid * 7.0)) - 0.5) * 0.9, si = floor(s), fs = fract(s);
-    float radial = min(fs, 1.0 - fs) * r * 6.2831 / 30.0;
-    float rr = r * 7.0 + h(vec2(si, cid)) * 0.9 + (n(vec2(ang * 9.0, cid)) - 0.5) * 0.25, ri = floor(rr), fr = fract(rr);
-    float ring = min(fr, 1.0 - fr) / 7.0 + step(h(vec2(si, ri + cid)), 0.45);   // only some of each ring
-    float zone = smoothstep(uCrack * 0.27, uCrack * 0.27 - 0.05, r - fbm(vec2(ang * 3.0, cid)) * 0.08);
-    float d = min(radial, ring), line = smoothstep(0.0028, 0.0008, d) * zone, shade = smoothstep(0.007, 0.002, d) * zone;
-    vec2 shard = (h2(vec2(si, ri) + cid) - 0.5) * 0.007 * zone;   // each piece of glass sits a little off
+    // the cracks: the ice round the nearest corner broken into shards, small by the corner and longer further out (sampling
+    // at a scale that shrinks with distance stretches them outward), bent a little, each shard sitting a little off
+    vec2 q = p - c0; float cid = c0.x * 3.0 + c0.y, k = 15.0 / (1.0 + zd * 7.0);
+    vec3 v = vor(q * k + cid * 13.7 + (vec2(n(q * 7.0 + cid), n(q * 7.0 + cid + 5.2)) - 0.5) * 0.45 + (vec2(n(q * 30.0), n(q * 30.0 + 3.1)) - 0.5) * 0.03);
+    float zone = smoothstep(uCrack * 0.27, uCrack * 0.27 - 0.05, zd - fbm(vec2(atan(q.y, q.x) * 3.0, cid)) * 0.08);
+    float d = v.x / k, wide = mix(1.0, 0.6, smoothstep(0.0, 0.27, zd));   // thinner as they run out
+    float line = smoothstep(0.0034 * wide, 0.0012 * wide, d) * zone, shade = smoothstep(0.008 * wide, 0.0025, d) * zone;
+    vec2 shard = (h2(vec2(v.y * 91.0, cid)) - 0.5) * 0.006 * zone;
     // bent and blurred under the frost
     vec2 g = vec2(fbm(p * 8.0 + vec2(0.07, 0.0)) - fbm(p * 8.0 - vec2(0.07, 0.0)), fbm(p * 8.0 + vec2(0.0, 0.07)) - fbm(p * 8.0 - vec2(0.0, 0.07)));
     vec2 o = uv + g * 0.05 * frost + shard; float b = 0.0045 * frost;
@@ -634,6 +643,17 @@ void main() {
                     p._s = p.scaleX; p._sy = p.scaleY; p._ph = Math.random() * 6.28; p._ox = -ox / ol; p._oy = -oy / ol;
                     puffs.push(p);
                 }
+                }
+                // a puff that would billow into another room shrinks to stop at its edge, or goes if it sits in it: fog is its own room's
+                const others = this.rooms.filter(o => o !== r);
+                for (let k = puffs.length - 1; k >= 0; k--) {
+                    const p = puffs[k];
+                    let room = Infinity;
+                    for (const o of others) room = Math.min(room, Math.hypot(Math.max(o.x * T - p.x, 0, p.x - (o.x + o.w) * T), Math.max(o.y * T - p.y, 0, p.y - (o.y + o.h) * T)));
+                    const reach = p.displayWidth * 0.48;   // how far its smoke shows from its middle (and it breathes 8% bigger)
+                    if (room >= reach) continue;
+                    if (room < reach * 0.3) { p.destroy(); puffs.splice(k, 1); continue; }
+                    p.setScale(p.scaleX * room / reach, p.scaleY * room / reach); p._s = p.scaleX; p._sy = p.scaleY;
                 }
                 c.add(puffs);
                 const wisps = [];
@@ -741,18 +761,31 @@ void main() {
     _vfxAtlas() {
         const tm = this.textures;
         if (tm.exists('vfx_atlas')) return tm.get('vfx_atlas');
-        const a = tm.createCanvas('vfx_atlas', 1024, 1024);
+        const a = tm.createCanvas('vfx_atlas', 2048, 1024);   // (it keeps every frame for the session: about 1000 once every level's been seen)
         a._vfxNext = 0;
         return a;
     }
+    // Each frame sits in a gutter of G pixels copied out from its own edge: a GPU sampling a hair past a tile's edge (the 1.5x
+    // zoom, a fractional scroll) picks up that tile's own edge, not the next frame's, which drew a seam along every row.
     _vfxFrame(name, paint) {
         const a = this._vfxAtlas();
         if (a.has(name)) return name;
-        const T = this.TILE_SIZE, per = Math.floor(a.width / T);
+        const T = this.TILE_SIZE, G = 2, C = T + G * 2, cols = Math.floor(a.width / C), rows = Math.floor(a.height / C);
         const i = a._vfxNext++;
-        if (i >= per * per) return a.has('f0') ? 'f0' : '__BASE';
-        const x = (i % per) * T, y = Math.floor(i / per) * T;
-        paint(a.getContext(), x, y, T);
+        if (i >= cols * rows) return a.has('f0') ? 'f0' : '__BASE';
+        const x = (i % cols) * C + G, y = Math.floor(i / cols) * C + G;
+        // painted on a scratch canvas and the gutter filled pixel by pixel there (a canvas drawn onto itself stalls Chrome:
+        // a GPU sync each time, a minute and more over a level's frames), then put into the atlas in one go
+        const S = VisualFX._frameCanvas ||= document.createElement('canvas'); S.width = C; S.height = C;   // (resizing clears it)
+        const sc = S.getContext('2d', { willReadFrequently: true });
+        paint(sc, G, G, T);
+        const img = sc.getImageData(0, 0, C, C), d = img.data;
+        const copy = (fx, fy, tx, ty) => { const f = (fy * C + fx) * 4, t = (ty * C + tx) * 4; d[t] = d[f]; d[t + 1] = d[f + 1]; d[t + 2] = d[f + 2]; d[t + 3] = d[f + 3]; };
+        for (let k = 0; k < C; k++) {
+            const e = Math.min(G + T - 1, Math.max(G, k));   // the nearest frame pixel along the edge (the corners take the corner)
+            for (let g = 0; g < G; g++) { copy(e, G, k, g); copy(e, G + T - 1, k, G + T + g); copy(G, e, g, k); copy(G + T - 1, e, G + T + g, k); }
+        }
+        a.getContext().putImageData(img, x - G, y - G);
         a.add(name, 0, x, y, T, T);
         a._vfxDirty = true;
         return name;

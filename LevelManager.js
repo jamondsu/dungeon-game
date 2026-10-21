@@ -2448,7 +2448,8 @@ class LevelManager {
             const flash = this.add.circle(key.gfx.x || key.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
                 key.gfx.y || key.tileY * this.TILE_SIZE + this.TILE_SIZE / 2, 6, 0xcc44ff, 0.90).setDepth(5);
             this.tweens.add({ targets: flash, radius: 28, alpha: 0, duration: 300, onComplete: () => flash.destroy() });
-            this.tweens.add({ targets: key.gfx, scaleX: 2, scaleY: 2, alpha: 0, duration: 250,
+            // up and gone (not scaled: it's drawn at its map spot inside a graphics at 0,0, so scaling flung it toward the bottom right)
+            this.tweens.add({ targets: [key.gfx, key.gfx._label].filter(Boolean), y: '-=18', alpha: 0, duration: 250,
                 onComplete: () => { key.gfx.destroy(); if (key.gfx._label?.active) key.gfx._label.destroy(); }
             });
         }

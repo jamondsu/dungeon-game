@@ -78,15 +78,15 @@ const LevelLayouts = {
             rooms.push(room);
             return room;
         };
-        // a room off `from` on side d, a corridor of g tiles between, overlapping it by 3+ across the corridor
+        // a room off `from` on side d, a corridor of g tiles between (5+: a room's fog billows ~4 tiles past it, and must not reach into the next), overlapping it by 3+ across the corridor
         const attach = (from, t, dirs, extra) => {
             const T = LevelLayouts.T[t];
             for (let k = 0; k < 30; k++) {
-                const d = dirs[Math.floor(R() * dirs.length)], [dx, dy] = LevelLayouts.DIRS[d], g = 3 + Math.floor(R() * 4);
+                const d = dirs[Math.floor(R() * dirs.length)], [dx, dy] = LevelLayouts.DIRS[d], g = 5 + Math.floor(R() * 3);
                 let x, y;
                 if (dx) { x = dx > 0 ? from.x + from.w + g : from.x - g - T.w; y = from.y + 3 - T.h + Math.floor(R() * (from.h + T.h - 6)); }
                 else { y = dy > 0 ? from.y + from.h + g : from.y - g - T.h; x = from.x + 3 - T.w + Math.floor(R() * (from.w + T.w - 6)); }
-                if (!free(x, y, T.w, T.h, 2)) continue;
+                if (!free(x, y, T.w, T.h, 3)) continue;
                 // the corridor: 3 wide, down the middle of where the two overlap
                 const lo = dx ? Math.max(from.y, y) : Math.max(from.x, x), hi = dx ? Math.min(from.y + from.h, y + T.h) : Math.min(from.x + from.w, x + T.w), mid = Math.floor((lo + hi) / 2);
                 const tiles = [];
@@ -144,13 +144,13 @@ const LevelLayouts = {
         return rooms;
     },
 
-    // A straight corridor between two rooms that face each other with 3+ tiles of overlap and 3-10 of clear gap
+    // A straight corridor between two rooms that face each other with 3+ tiles of overlap and 5-10 of clear gap
     _join(gen, world, a, b) {
         for (const d of Object.keys(LevelLayouts.DIRS)) {
             const [dx, dy] = LevelLayouts.DIRS[d];
             const gap = dx ? (dx > 0 ? b.x - (a.x + a.w) : a.x - (b.x + b.w)) : (dy > 0 ? b.y - (a.y + a.h) : a.y - (b.y + b.h));
             const lo = dx ? Math.max(a.y, b.y) : Math.max(a.x, b.x), hi = dx ? Math.min(a.y + a.h, b.y + b.h) : Math.min(a.x + a.w, b.x + b.w);
-            if (gap < 3 || gap > 10 || hi - lo < 5) continue;
+            if (gap < 5 || gap > 10 || hi - lo < 5) continue;
             const mid = Math.floor((lo + hi) / 2), tiles = [];
             for (let s = 1; s <= gap; s++) for (let o = -1; o <= 1; o++) tiles.push(dx ? [dx > 0 ? a.x + a.w - 1 + s : a.x - s, mid + o] : [mid + o, dy > 0 ? a.y + a.h - 1 + s : a.y - s]);
             if (tiles.some(([x, y]) => world[x]?.[y] !== gen.NOTHING)) continue;

@@ -5052,6 +5052,7 @@ class WeaponSystem {
         const C = this._kindlingCfg(), now = this.time.now, blue = (this._kindleIgniteUntil || 0) > now;
         if (now - (this._lastKindleTime || 0) < (blue ? C.BLUE_TICK : C.TICK)) return;
         this._lastKindleTime = now;
+        Sfx.sustain(this, blue ? 'blueflame' : 'flame', (blue ? C.BLUE_TICK : C.TICK) * 1.8);   // the roar, held while it burns
         this._gearFiredAt = now;   // the held weapon swings now (Creatures.gear)
         const T = this.TILE_SIZE, cam = this.cameras.main, tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null;   // from the gun's muzzle
         const px = tip?.x ?? this.player.x, py = tip?.y ?? this.player.y - 6;
@@ -5524,7 +5525,7 @@ class WeaponSystem {
         const sc = this.add.ellipse(x, y + 8, 34 * s, 14 * s, 0x140a06, 0.5).setDepth(0.62);
         this.tweens.add({ targets: sc, alpha: 0, delay: 1200, duration: 1200, onComplete: () => sc.destroy() });
         this._vfxFlash?.(x, y, 90 * s, col, 320, 0.9);
-        Sfx.play(this, 'erupt');
+        Sfx.play(this, 'kindle_boom');
     }
 
     _clearKindle(enemy) {
@@ -6256,6 +6257,7 @@ class WeaponSystem {
         const f = Math.min(1, (this._magmaHeat || 0) / this._magmaCfg().HEAT_MAX);
         this._magmaHeat = 0;
         this._magmaRippleReady = false;
+        Sfx.play(this, 'magma_surge', { f });
         this._magmaSurgeCdUntil = this.time.now + 1000;
         this._updateMagmaRippleBar();
 
@@ -7818,6 +7820,7 @@ class WeaponSystem {
                 this.world[tileX][tileY] === this.WALL ||
                 this.isInLockedRoom(tileX, tileY)) {
                 VisualFX.wallImpact(this, fireball.sprite.x, fireball.sprite.y, 'fire', fireball.vx, fireball.vy);
+                if (fireball.isStaffBall) Sfx.play(this, 'lava_splat');
                 // Only max-stack staff balls (leavesTrail) leave a lava pool on wall impact
                 if (fireball.isStaffBall && fireball.leavesTrail) this.spawnFireballLavaPool(tileX, tileY);
                 fireball.sprite.destroy();
@@ -7935,6 +7938,7 @@ class WeaponSystem {
             }
 
             if (hitEnemy) {
+                if (fireball.isStaffBall) Sfx.play(this, 'lava_splat');
                 // Only max-stack staff balls (leavesTrail = 6 fireballs) create 3×3 lava on impact
                 if (fireball.isStaffBall && fireball.leavesTrail) this.spawnFireballLavaPool(tileX, tileY);
                 fireball.sprite.destroy();
