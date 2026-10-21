@@ -316,6 +316,37 @@ class WorldGen {
         }
         this.rooms = [];
 
+        // Laid out fresh each time (LevelLayouts: the same rooms, a different winding path, side rooms and maybe a loop);
+        // the fixed map below if it can't fit them
+        const laid = typeof LevelLayouts !== 'undefined' && LevelLayouts.generate(this, world, LevelLayouts.RECIPES.gauntlet, Math.random);   // (not the level's seeded rng: a new shape every time)
+        if (laid) this.rooms = laid;
+        else this._gauntletFixed(world);
+        this.addWalls(world);
+
+        // Level 2 is a real dungeon — NOT isTutorial
+        this.isTutorial          = false;
+        this.isIceTutorial       = false;
+        this.isLightningTutorial = false;
+        this.isLevel2            = true;
+        this.currentTutorialRoom = -1;
+        this.tutorialWeaponLocked = false;
+
+        // Dynamic arrays — chest rooms and room 0 never locked
+        this.tutorialRoomCleared = this.rooms.map(() => false);
+        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
+            if (i === 0) return false;       // safe start
+            if (r.isChestRoom) return false; // free explore
+            return true;
+        });
+        this.tutorialRoomCleared[0] = true;
+
+        const boss = this.rooms[6];
+        this._dressRooms(world, 'gauntlet', [], [[boss.x + 12, boss.y + 10]]);   // the Voltslime's room left clear
+        return world;
+    }
+
+    // The Gauntlet as it was first built, room by room: the map when the laid-out one can't fit
+    _gauntletFixed(world) {
         // ── ROOM 0: Safe start (12×9) ──────────────────────────────────────
         const r0 = { x: 4, y: 44, w: 12, h: 9, doorPositions: [] };
         this.carveRoom(world, r0);
@@ -486,28 +517,6 @@ class WorldGen {
                 }
             }
         }
-
-        this.addWalls(world);
-
-        // Level 2 is a real dungeon — NOT isTutorial
-        this.isTutorial          = false;
-        this.isIceTutorial       = false;
-        this.isLightningTutorial = false;
-        this.isLevel2            = true;
-        this.currentTutorialRoom = -1;
-        this.tutorialWeaponLocked = false;
-
-        // Dynamic arrays — chest rooms and room 0 never locked
-        this.tutorialRoomCleared = this.rooms.map(() => false);
-        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
-            if (i === 0) return false;       // safe start
-            if (r.isChestRoom) return false; // free explore
-            return true;
-        });
-        this.tutorialRoomCleared[0] = true;
-
-        this._dressRooms(world, 'gauntlet', [], [[16, 67]]);   // the Voltslime's room left clear
-        return world;
     }
 
     generateLevel3() {

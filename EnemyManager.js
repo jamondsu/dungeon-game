@@ -81,6 +81,7 @@ class EnemyManager {
             cosmicMarkVisuals: null
         };
 
+        enemy._spawned = !!this._levelLive && !this._towerSpawning;   // summoned mid-fight (a queen's brood, a split, a bud): no glorps or potions off it
         this.enemies.push(enemy);
         this._vfxSpawn?.(enemy);   // Visuals.js (not for the ones a level starts with)
         if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, sprite, { mood: 'angry' });   // Creatures.js: eyes
@@ -2433,10 +2434,13 @@ class EnemyManager {
 
     // POISONED, from anything (a Rooter's ring, a trap, a Budding Slime's glob): DMG every EVERY ms
     // for MS. One poison at a time: a fresh dose replaces the one running, it never stacks.
+    // POISON: its ticks, and healing cut by POISON_CUT while it lasts (each frame claws back that share of whatever health
+    // came back since the last, rather than touching every heal)
     _poisonPlayer(dmg, every, ms) {
         if (!(this._poisonUntil > this.time.now)) {
             this.showStatusText(this.player.x, this.player.y - 30, 'POISONED', '#9ae04a');
             this._poisonTickAt = this.time.now;
+            this._poisonHp = this.health;
         }
         this._poisonUntil = this.time.now + ms; this._poisonDmg = dmg; this._poisonEvery = every;
     }
@@ -2445,7 +2449,10 @@ class EnemyManager {
         const p = this.player;
         if (time >= this._poisonUntil || !p?.active || this._deathScreenActive) { this._poisonUntil = 0; this.playerPoisoned = false; return; }
         this.playerPoisoned = true;   // its bubbles (Creatures.js)
+        const CUT = 0.6;   // POISON_CUT
+        if (this._poisonHp != null && this.health > this._poisonHp) this.health = this._poisonHp + (this.health - this._poisonHp) * (1 - CUT);
         if (time - this._poisonTickAt >= this._poisonEvery) { this._poisonTickAt = time; this.takeDamage(this._poisonDmg); }
+        this._poisonHp = this.health;
     }
 
     updateFloorTraps(time) {
@@ -2473,6 +2480,7 @@ class EnemyManager {
     // ─── GROUND DROPS ────────────────────────────────────────────────────────
 
     tryDropFromEnemy(enemy) {
+        if (enemy._spawned) return;
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         // 12% glorp drop
         if (Math.random() < 0.12) {

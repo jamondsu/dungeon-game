@@ -1187,73 +1187,62 @@ class LevelManager {
     // ─── LEVEL 2 ENEMY SPAWNING ───────────────────────────────────────────
 
     spawnLevel2Enemies() {
-        // R1: pillar gauntlet — add an ice elemental flanking
-        const r1 = [
-            { x: 23, y: 45 }, { x: 23, y: 50 },
-            { x: 34, y: 45 }, { x: 34, y: 50 },
-        ];
-        for (const p of r1) { const e = this.createEnemy(p.x, p.y, 30); e.tutorialRoomIndex = 1; }
-        this.createRangedEnemy(29, 47, 1);
-        // Ice elemental — iceImmune, slightly tougher
-        const r1ice = [{ x: 26, y: 47 }];
-        for (const p of r1ice) { const e = this.createEnemy(p.x, p.y, 50); e.tutorialRoomIndex = 1; this._tagResist(e, 'ice'); }
+        // Positions as the fixed map placed them, each moved with its room (the map is laid out fresh: LevelLayouts):
+        // O is where each story room stood on the fixed map
+        const O = [[4, 44], [20, 43], [42, 40], [64, 40], [65, 60], [36, 60], [4, 57]];
+        const at = (ri, x, y) => [this.rooms[ri].x + x - O[ri][0], this.rooms[ri].y + y - O[ri][1]];
+        const mob = (ri, x, y, hp) => { const e = this.createEnemy(...at(ri, x, y), hp); e.tutorialRoomIndex = ri; return e; };
+        const absorber = (ri, x, y, hp) => { const e = mob(ri, x, y, hp); e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); return e; };
 
-        // R2: wide brawl — add ult absorber healer in back
-        const r2Normal = [{ x: 45, y: 43 }, { x: 50, y: 54 }, { x: 55, y: 43 }];
-        const r2Fire   = [{ x: 47, y: 50 }, { x: 54, y: 50 }];
-        for (const p of r2Normal) { const e = this.createEnemy(p.x, p.y, 35); e.tutorialRoomIndex = 2; }
-        for (const p of r2Fire)   { const e = this.createEnemy(p.x, p.y, 35); e.tutorialRoomIndex = 2; this._tagResist(e, 'fire'); }
-        this.createRangedEnemy(57, 43, 2);
-        // Ult absorber healer hiding at the back
-        const r2abs = { x: 52, y: 47 };
-        { const e = this.createEnemy(r2abs.x, r2abs.y, 55); e.tutorialRoomIndex = 2; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        // R1: pillar gauntlet, an ice elemental flanking
+        for (const [x, y] of [[23, 45], [23, 50], [34, 45], [34, 50]]) mob(1, x, y, 30);
+        this.createRangedEnemy(...at(1, 29, 47), 1);
+        this._tagResist(mob(1, 26, 47, 50), 'ice');
 
-        // Chest branch rooms
+        // R2: wide brawl, an ult absorber healer at the back
+        for (const [x, y] of [[45, 43], [50, 54], [55, 43]]) mob(2, x, y, 35);
+        for (const [x, y] of [[47, 50], [54, 50]]) this._tagResist(mob(2, x, y, 35), 'fire');
+        this.createRangedEnemy(...at(2, 57, 43), 2);
+        absorber(2, 52, 47, 55);
+
+        // the side rooms: chests, and the elite den's guards
         this._spawnLevel2ChestRooms();
+        this.rooms.forEach((r, ri) => {
+            if (r.tpl !== 'elite') return;
+            const c = [r.x + Math.floor(r.w / 2), r.y + Math.floor(r.h / 2)];
+            for (const [dx, dy] of [[-4, -2], [4, -2], [-4, 2], [4, 2]]) { const e = this.createEnemy(c[0] + dx, c[1] + dy, 70); e.tutorialRoomIndex = ri; }
+            this._tagResist(this.createRangedEnemy(c[0], c[1] - 3, ri), Math.random() < 0.5 ? 'fire' : 'ice');
+            const T = this.TILE_SIZE, ch = LootFX.chest(this, c[0] * T + T / 2, c[1] * T + T / 2, 'gold');   // what it guards: a gold chest
+            (this.tutorialChests ||= []).push({ tileX: c[0], tileY: c[1], roomIndex: ri, container: ch.container, lid: ch.lid, body: ch.body, glow: ch.glow, kind: ch.kind, opened: false, isMimic: false, _mimicTriggered: false });
+        });
 
-        // R3: L-shape — mix in ice elemental and ult absorber
-        const r3 = [{ x: 76, y: 42 }, { x: 79, y: 42 }, { x: 82, y: 43 }];
-        const r3f = [{ x: 77, y: 51 }, { x: 80, y: 52 }];
-        for (const p of r3)  { const e = this.createEnemy(p.x, p.y, 38); e.tutorialRoomIndex = 3; }
-        for (const p of r3f) { const e = this.createEnemy(p.x, p.y, 38); e.tutorialRoomIndex = 3; this._tagResist(e, 'fire'); }
-        // Ice elemental pair
-        const r3ice = [{ x: 78, y: 46 }, { x: 82, y: 48 }];
-        for (const p of r3ice) { const e = this.createEnemy(p.x, p.y, 55); e.tutorialRoomIndex = 3; this._tagResist(e, 'ice'); }
-        // Ult absorber lurking in corner
-        { const e = this.createEnemy(74, 50, 65); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        // R3: L-shape, an ice elemental and an ult absorber
+        for (const [x, y] of [[76, 42], [79, 42], [82, 43]]) mob(3, x, y, 38);
+        for (const [x, y] of [[77, 51], [80, 52]]) this._tagResist(mob(3, x, y, 38), 'fire');
+        for (const [x, y] of [[78, 46], [82, 48]]) this._tagResist(mob(3, x, y, 55), 'ice');
+        absorber(3, 74, 50, 65);
 
         // R4: the lane maze (no traps: its walls are the puzzle)
-        [{ x:70,y:62 }, { x:75,y:69 }, { x:82,y:65 }].forEach(p => { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 4; });
+        for (const [x, y] of [[70, 62], [75, 69], [82, 65]]) mob(4, x, y, 40);
         // FIRST RESISTANT ENEMY IN THE GAME. Room 4 of level 2, fire-resistant, answered by
         // switching to ice. One enemy, late, so the aura is a curiosity rather than a wall.
-        this._tagResist(this.createRangedEnemy(78, 62, 4), 'fire');
-        // Ice elementals guarding the back
-        const r4ice = [{ x:80, y:62 }, { x:80, y:68 }];
-        for (const p of r4ice) { const e = this.createEnemy(p.x, p.y, 60); e.tutorialRoomIndex = 4; this._tagResist(e, 'ice'); }
+        this._tagResist(this.createRangedEnemy(...at(4, 78, 62), 4), 'fire');
+        for (const [x, y] of [[80, 62], [80, 68]]) this._tagResist(mob(4, x, y, 60), 'ice');
 
-        // R5: ambush — add ult absorber and more ice elementals
-        const r5  = [{ x:40,y:63 },{ x:40,y:70 },{ x:46,y:67 },{ x:51,y:63 },{ x:51,y:71 }];
-        const r5f = [{ x:45,y:62 },{ x:53,y:70 }];
-        for (const p of r5)  { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 5; }
-        for (const p of r5f) { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 5; this._tagResist(e, 'fire'); }
+        // R5: ambush, an ult absorber and more ice elementals
+        for (const [x, y] of [[40, 63], [40, 70], [46, 67], [51, 63], [51, 71]]) mob(5, x, y, 40);
+        for (const [x, y] of [[45, 62], [53, 70]]) this._tagResist(mob(5, x, y, 40), 'fire');
         // The mirror lesson one room later: ice-resistant, so the player learns the aura COLOUR
         // names the refused element rather than remembering one enemy as "the tanky one".
-        this._tagResist(this.createRangedEnemy(55, 63, 5), 'ice'); this.createRangedEnemy(55, 70, 5);
-        // Ice elementals flanking ambush
-        const r5ice = [{ x:43,y:65 }, { x:50,y:67 }];
-        for (const p of r5ice) { const e = this.createEnemy(p.x, p.y, 60); e.tutorialRoomIndex = 5; this._tagResist(e, 'ice'); }
-        // Ult absorber healer in the centre of the ambush
-        { const e = this.createEnemy(47, 66, 75); e.tutorialRoomIndex = 5; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        this._tagResist(this.createRangedEnemy(...at(5, 55, 63), 5), 'ice'); this.createRangedEnemy(...at(5, 55, 70), 5);
+        for (const [x, y] of [[43, 65], [50, 67]]) this._tagResist(mob(5, x, y, 60), 'ice');
+        absorber(5, 47, 66, 75);
 
-        // Boss arena guards — mix in ice elemental
-        const bossIdx = 6;
-        [{ x:8,y:61 },{ x:24,y:61 },{ x:8,y:73 },{ x:24,y:73 }].forEach(p => {
-            const e = this.createEnemy(p.x, p.y, 45); e.tutorialRoomIndex = bossIdx;
-        });
-        // One ice elemental guard in boss room
-        { const e = this.createEnemy(16, 62, 70); e.tutorialRoomIndex = bossIdx; this._tagResist(e, 'ice'); }
-        this.spawnVoltslimeBoss(16, 67);
-        this.spawnFinalLevelChest(16, 59, 'lightning');
+        // the boss arena: guards, the Voltslime, its chest
+        for (const [x, y] of [[8, 61], [24, 61], [8, 73], [24, 73]]) mob(6, x, y, 45);
+        this._tagResist(mob(6, 16, 62, 70), 'ice');
+        this.spawnVoltslimeBoss(...at(6, 16, 67));
+        this.spawnFinalLevelChest(...at(6, 16, 59), 'lightning');
     }
 
     _spawnLevel2ChestRooms() {
@@ -4290,12 +4279,12 @@ class LevelManager {
     // marks the ground round you, leaps and vanishes into it, then slashes it for FLURRY_MS, more
     // slashes in that time the angrier it is (SLASHES); the outer tiles cut deepest (RING_MULT). The marked ground grows with it too, from the
     // 3x3 round you to a 5x5 squircle in a frenzy (AREA_R): out of reach only if you dodge out
-    // during the tell or keep running. Each slash that finds you hurts and makes you BLEED (healing cut by
-    // BLEED_CUT for BLEED_MS). Wound all the way up it FRENZIES: blood-red, red-eyed, leaving
+    // during the tell or keep running. Each slash that finds you hurts and makes you BLEED for BLEED_MS:
+    // every tile you move while bleeding costs BLEED_STEP. Wound all the way up it FRENZIES: blood-red, red-eyed, leaving
     // afterimages.
     _hunterCfg() { return { HP: 140, SLOW: 2.4, FAST: 0.55, RAMP_TILES: 16, RAMP_MS: 12000, MELEE0: 2, MELEE1: 6, CHASE_R: 14,
-        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 7], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], SLASH_DMG: 6, SLASH_RAMP: 0.6,
-        BLEED_MS: 6000, BLEED_CUT: 0.6, BLEED_DMG: 1, BLEED_EVERY: 600, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
+        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 12], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], SLASH_DMG: 6, SLASH_RAMP: 0.6,
+        BLEED_MS: 6000, BLEED_STEP: 2, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
     createHunterSlime(x, y, ri) {
         const H = this._hunterCfg();
         const e = this.createEnemy(x, y, H.HP);
@@ -4321,14 +4310,15 @@ class LevelManager {
             if (e._huntPhase === 'tell' || e._huntPhase === 'gone') continue;   // its timers run those
             const d = Math.hypot(this.playerX - e.x, this.playerY - e.y);
             const held = e.isFrozen || e.isStunned;
-            if (d <= H.CHASE_R && !held) e._huntRun = Math.min(H.RAMP_TILES, e._huntRun + H.RAMP_TILES * Math.min(100, delta || 16) / H.RAMP_MS);   // (its rage kept in RAMP_TILES units: the cools take fractions of it)
+            const met = e.tutorialRoomIndex === undefined || !this.rooms?.[e.tutorialRoomIndex] || e.tutorialRoomIndex === this.getCurrentPlayerRoom();   // only once you're in its room: not through the walls before you've met
+            if (d <= H.CHASE_R && !held && met) e._huntRun = Math.min(H.RAMP_TILES, e._huntRun + H.RAMP_TILES * Math.min(100, delta || 16) / H.RAMP_MS);   // (its rage kept in RAMP_TILES units: the cools take fractions of it)
             const k = e._huntRun / H.RAMP_TILES;
             e._moveCdMult = H.SLOW + (H.FAST - H.SLOW) * k;
             e._meleeDmg = H.MELEE0 + (H.MELEE1 - H.MELEE0) * k;
             this._hunterFrenzy(e, k >= 1, time);
             const lvl = Math.min(4, Math.floor(k * 4 + 1e-6)), u = s._cfx;   // its ears fill with blood as it winds up
             if (u && u.set !== 'hunter' + lvl) CreatureFX.dress(u, 'hunter' + lvl);
-            if (d <= H.POUNCE_R + (H.POUNCE_R_MAX - H.POUNCE_R) * k && !held && time >= e._huntNext && !this._deathScreenActive) this._hunterPounce(e, k);
+            if (met && d <= H.POUNCE_R + (H.POUNCE_R_MAX - H.POUNCE_R) * k && !held && time >= e._huntNext && !this._deathScreenActive) this._hunterPounce(e, k);
         }
     }
     // Wound all the way up: the blood-red body and red eyes on (or off), afterimages and blood leaking off it
@@ -4476,10 +4466,9 @@ class LevelManager {
             G.fillStyle(A.b ?? A.r ?? A.g ?? A.v, 1).fillRect(ox + 0.5, 1.5, Math.max(0, (W - 1) * Math.min(1, left)), 1.5);
         });
     }
-    // BLEED: healing cut while it lasts. Rather than touch every heal, each frame claws back
-    // that share of whatever health came back since the last.
+    // BLEED: moving hurts. Every tile you go while it lasts (a dash, every tile it covers) costs BLEED_STEP.
     _bleedStart(ms) {
-        if (!(this._bleedUntil > this.time.now)) { this._bleedHp = this.health; this._bleedTickAt = this.time.now; }
+        if (!(this._bleedUntil > this.time.now)) { this._bleedAt = [this.playerX, this.playerY]; }
         this._bleedUntil = this.time.now + ms;
         this.showStatusText(this.player.x, this.player.y - 34, 'BLEEDING', '#ff4a4a');
     }
@@ -4487,13 +4476,16 @@ class LevelManager {
         if (!this._bleedUntil) return;
         const p = this.player;
         if (time >= this._bleedUntil || !p?.active) { this._bleedUntil = 0; return; }
-        const H = this._hunterCfg();
-        if (this.health > this._bleedHp) this.health = this._bleedHp + (this.health - this._bleedHp) * (1 - H.BLEED_CUT);
-        if (time - (this._bleedTickAt || 0) >= H.BLEED_EVERY) {   // and a small trickle of damage while it lasts
-            this._bleedTickAt = time;
-            this.takeDamage(H.BLEED_DMG * (this.enemyDamageScale || 1));
+        const H = this._hunterCfg(), [bx, by] = this._bleedAt || [this.playerX, this.playerY];
+        const steps = Math.abs(this.playerX - bx) + Math.abs(this.playerY - by);
+        if (steps > 0) {   // it moved: the wound opens with each tile
+            this._bleedAt = [this.playerX, this.playerY];
+            this.takeDamage(H.BLEED_STEP * steps * (this.enemyDamageScale || 1));
+            for (let k = 0; k < Math.min(6, steps * 2); k++) {
+                const m = this.add.image(p.x + (Math.random() - 0.5) * 16, p.y + 4, 'vfx_dot').setTint(0xc81e2a).setDepth((p.depth ?? 2) + 0.1).setScale(0.9);
+                this.tweens.add({ targets: m, x: m.x + (Math.random() - 0.5) * 20, y: m.y + 10, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => m.destroy() });
+            }
         }
-        this._bleedHp = this.health;
         if (time - (this._bleedDripAt || 0) > 150) {   // drips
             this._bleedDripAt = time;
             const m = this.add.image(p.x + (Math.random() - 0.5) * 18, p.y + 2, 'vfx_dot').setTint(0xc81e2a).setDepth((p.depth ?? 2) + 0.1).setScale(0.8);
@@ -5744,7 +5736,7 @@ class LevelManager {
             armored:      { name: 'Armored Slime',    role: 'Tank',      tint: 0x8a94a6,
                             desc: 'Plated on three sides that never turn: hits from those barely scratch it. One side is open and glows when you stand on it. Go round.' },
             hunter:       { name: 'Hunter Slime',     role: 'Stalker',   tint: 0x8c3c46,
-                            desc: 'Crawls at first, and gets faster and hits harder the longer it chases you; its ears fill with blood as it does. Get close and it leaps at the ground round you and slashes it apart, wider the angrier it is (up to five tiles across), the outer tiles cutting deepest. Every attack halves its rage. Its slashes make you bleed.' },
+                            desc: 'Crawls at first, and gets faster and hits harder the longer it chases you; its ears fill with blood as it does. Get close and it leaps at the ground round you and slashes it apart, wider the angrier it is (up to five tiles across), the outer tiles cutting deepest. Every attack halves its rage. Its slashes make you bleed: moving hurts for a while.' },
             frost:        { name: 'Frost Slime',      role: 'Zoner',     tint: 0x9fe8ff,
                             desc: 'Stops and lights the tiles round itself, then they all freeze at once. You can\'t dash out while it\'s lit, so step onto an unlit tile. Killed, it seals itself in ice: break the block before the ring closes, or it hatches a faster, harder Frostborn whose haze slows you.' },
             tidalguard:   { name: 'Tidal Guard',      role: 'Zoner',     tint: 0xb8912f,

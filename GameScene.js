@@ -367,7 +367,9 @@ class GameScene extends Phaser.Scene {
         this.floorTraps = [];
         this.groundDrops = [];
         this.enemyProjectiles = [];
+        this._levelLive = false;   // until the level's own enemies are in: anything made after is spawned in a fight (and drops nothing)
         this.spawnEnemies();
+        this._levelLive = true;
         this._spreadResistance();   // a share of every level's enemies resist an element (LevelManager)
         this._spreadUltBlockers();  // and a few block ults round them
         if (this.isLevel4) this._renderCrumbleZones();
@@ -1483,6 +1485,7 @@ class GameScene extends Phaser.Scene {
     generateLevel3(...a) { return WorldGen.prototype.generateLevel3.call(this, ...a); }
     generateLevel4(...a) { return WorldGen.prototype.generateLevel4.call(this, ...a); }
     generateLevel6(...a) { return WorldGen.prototype.generateLevel6.call(this, ...a); }
+    _gauntletFixed(...a) { return WorldGen.prototype._gauntletFixed.call(this, ...a); }
     canPlaceRoom(...a) { return WorldGen.prototype.canPlaceRoom.call(this, ...a); }
     carveRoom(...a) { return WorldGen.prototype.carveRoom.call(this, ...a); }
     connectRoomsMST(...a) { return WorldGen.prototype.connectRoomsMST.call(this, ...a); }
@@ -2708,7 +2711,7 @@ class GameScene extends Phaser.Scene {
         else                      nameMap = level1Names;
 
         const roomObj = this.rooms?.[room];
-        const name = nameMap[room] ?? (roomObj?.isChestRoom ? 'Chest Room' : null);
+        const name = roomObj?.name ?? nameMap[room] ?? (roomObj?.isChestRoom ? 'Chest Room' : null);   // (a laid-out side room carries its own)
         if (name) this.showRoomName(name);
     }
 

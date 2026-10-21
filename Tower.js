@@ -726,7 +726,8 @@ class TowerFloors {
             const s = this._towerSpots(1)[0]; if (!s) return; [x, y] = s;
         }
         if (p.boss) { this._towerBoss(p.boss, x, y); return; }
-        const e = p.kind.make(this, x, y);
+        this._towerSpawning = true;   // a wave's own enemies, not summoned ones: they drop as usual
+        let e; try { e = p.kind.make(this, x, y); } finally { this._towerSpawning = false; }
         if (!e) return;
         this._vfxSpawn?.(e);
         const T = this.towerRun;
