@@ -4292,7 +4292,7 @@ class LevelManager {
     // every tile you move while bleeding costs BLEED_STEP. Wound all the way up it FRENZIES: blood-red, red-eyed, leaving
     // afterimages.
     _hunterCfg() { return { HP: 140, SLOW: 2.4, FAST: 0.55, RAMP_TILES: 16, RAMP_MS: 12000, MELEE0: 2, MELEE1: 6, CHASE_R: 14,
-        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 18], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], FLURRY_DMG: 12, SLASH_RAMP: 1.31,
+        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 28], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], FLURRY_DMG: 12, SLASH_RAMP: 1.31,
         BLEED_MS: 6000, BLEED_STEP: 2, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
     createHunterSlime(x, y, ri) {
         const H = this._hunterCfg();

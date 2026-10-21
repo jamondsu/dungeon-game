@@ -2971,7 +2971,7 @@ class GardenScene extends Phaser.Scene {
             keep(this.add.text(x0 + RW / 2, top + 37, name, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffffff', stroke: '#1a0e08', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(D + 1.46).setAlpha(on ? 1 : 0.85))._ribbon = true;
             keep(this.add.zone(x0, top, RW, by - top + 4).setOrigin(0).setInteractive({ useHandCursor: true }).setDepth(D + 4)).on('pointerdown', () => { if (!on) this._logPanel(id, 0, null, (i > ci ? 1 : -1) * Math.abs(i - ci) * 2); });
         });
-        UIKit.button(this, { x: bx + 74, y: by - 30, w: 140, h: 40, label: '✕  CLOSE', accent: UIKit.PALETTE.accentGold, depth: D + 4, fontSize: '15px', fireOn: 'down', onClick: () => this._closePanel() }).objs.forEach(keep);   // up by the book's top-left corner, clear of the ribbons
+        UIKit.button(this, { x: bx + 74, y: by - 30, w: 140, h: 40, label: '✕  CLOSE', accent: UIKit.PALETTE.accentGold, depth: D + 4, fontSize: '15px', fireOn: 'down', onClick: () => this._closePanel() }).objs.forEach(o => { o._close = true; keep(o); });   // up by the book's top-left corner, clear of the ribbons
         const HAND = 'Georgia, "Times New Roman", serif';   // written by hand, in ink
         const txt = (x, y, s2, o = {}) => keep(this.add.text(x, y, s2, Object.assign({ fontSize: '13px', fontFamily: HAND, fontStyle: 'italic', color: INK }, o)).setDepth(D + 2));
         // the chapter's entries
@@ -3217,33 +3217,45 @@ class GardenScene extends Phaser.Scene {
     // and swings over the spine, growing toward you as it rises, while the book slides right so the open spread ends
     // up centred. The left page's writing comes up once the cover is down.
     _diaryOpen() {
-        const P2 = this._diaryParts, D = P2.D, objs = this._panelObjs, dim = objs[0];
+        const P2 = this._diaryParts, D = P2.D, objs = this._panelObjs, dim = objs[0], G = this._logGeo;
         const book = objs.filter(o => o && o !== dim && o.active && typeof o.setAlpha === 'function' && o.x !== undefined);
-        const left = book.filter(o => o !== P2.cover && ((o._side === 'L') || (o.getBounds && o.depth > D + 1.15 && o.depth < D + 6 && o.getBounds().centerX < P2.spx - 8)));
+        const left = book.filter(o => o !== P2.cover && !o._close && ((o._side === 'L') || (o.getBounds && o.depth > D + 1.15 && o.depth < D + 6 && o.getBounds().centerX < P2.spx - 8)));
+        // the left page, printed onto the inside of the cover: it rides over with it and lands with it (it used to fade in after)
+        const inKey = `diary_snap_in_${Date.now()}`, idt = this.textures.addDynamicTexture(inKey, Math.ceil(G.pw), Math.ceil(G.ph));
+        this._stamp(idt, [...left].sort((a, b) => a.depth - b.depth), G.lx, G.py);
         left.forEach(o => { o._a0 = o.alpha; o.setAlpha(0); });
         P2.g.setAlpha(0); P2.dg.setAlpha(0);
         const half = P2.bw / 2, keep = o => { objs.push(o); return o; };
         // the closed book's face: the cover's right half on top of everything until the cover itself starts to swing
         const shut = keep(this.add.image(P2.spx, P2.by, this._diaryTex('cover', half, P2.bh)).setOrigin(0).setDisplaySize(half, P2.bh).setScrollFactor(0).setDepth(D + 8.9));
         const sh2 = keep(this.add.graphics().setScrollFactor(0).setDepth(D + 0.9)); sh2.fillStyle(0x000000, 0.45); sh2.fillRoundedRect(P2.spx + 10, P2.by + 12, half, P2.bh, 14);
-        book.push(shut, sh2); P2.shd.setAlpha(0);
-        const under = book.filter(o => !left.includes(o) && !o._ribbon && o !== shut && o !== sh2 && o !== P2.g && o !== P2.dg && o !== P2.shd);
+        const inside = keep(this.add.image(G.lx, G.py, inKey).setOrigin(0).setScrollFactor(0).setDepth(D + 9.1).setVisible(false));
+        book.push(shut, sh2, inside); P2.shd.setAlpha(0);
+        const under = book.filter(o => !left.includes(o) && !o._ribbon && o !== shut && o !== sh2 && o !== inside && o !== P2.g && o !== P2.dg && o !== P2.shd);   // (the right page, and the CLOSE button: there as the cover lifts)
         under.forEach(o => { o._u0 = o.alpha; o.setAlpha(0); });
-        // closed and centred: everything starts half a page to the left, and a little above, and fades in as it lands
-        const f = { s: -half / 2, y: -26, a: 0 };
-        book.forEach(o => { o._x0 = o.x; o._y0 = o.y; o._b0 = o.alpha; });
-        const place = () => book.forEach(o => { if (!o.active) return; o.x = o._x0 + f.s; o.y = o._y0 + f.y; if (o === shut || o._ribbon) o.setAlpha(o._b0 * f.a); });
+        // closed and centred: the whole book starts half a page to the left and a little low, and slides up into place, solid (a book doesn't fade in)
+        const f = { s: -half / 2, y: 46 };
+        book.forEach(o => { o._x0 = o.x; o._y0 = o.y; });
+        const place = () => book.forEach(o => { if (!o.active) return; o.x = o._x0 + f.s; o.y = o._y0 + f.y; });
         place();
         const cw = P2.cover.frame.width; P2.cover.setCrop(cw / 2, 0, cw / 2, P2.cover.frame.height);
-        this.tweens.add({ targets: f, y: 0, a: 1, duration: 240, ease: 'Quad.easeOut', onUpdate: place, onComplete: () => {
+        this.tweens.add({ targets: f, y: 0, duration: 260, ease: 'Back.easeOut', onUpdate: place, onComplete: () => {
             this.tweens.add({ targets: f, s: 0, duration: 820, ease: 'Sine.easeInOut', onUpdate: place });
             const showUnder = () => { shut.destroy(); under.forEach(o => o.active && o.setAlpha(o._u0 ?? 1)); };   // once the cover is up off them
             this.tweens.add({ targets: sh2, alpha: 0, duration: 820 }); this.tweens.add({ targets: P2.shd, alpha: 1, duration: 820 });
-            this._flip({ spine: () => P2.spx + f.s, y: P2.by, w: half, h: P2.bh, dir: 1, kind: 'cover', dur: 760, D: D + 9, keep, onLift: showUnder, onDone: () => {
+            // past upright, the cover's inside faces you: as much of the left page as it covers, lit as it turns toward you
+            const gap = P2.spx - (G.lx + G.pw);
+            const onFrame = (cr, cl, lit, isFront) => {
+                if (!inside.active) return;
+                const w = isFront ? 0 : Math.max(0, Math.min(G.pw, cl - gap)), g = Math.round(255 * lit);
+                inside.setVisible(w > 1).setTint(Phaser.Display.Color.GetColor(g, g, Math.round(g * 0.96))).setCrop(G.pw - w, 0, w, G.ph);
+            };
+            this._flip({ spine: () => P2.spx + f.s, y: P2.by, w: half, h: P2.bh, dir: 1, kind: 'cover', dur: 760, D: D + 9, keep, onLift: showUnder, onFrame, onDone: () => {
                 if (!P2.cover.active) return;
                 P2.cover.setCrop();
-                this.tweens.add({ targets: [P2.g, P2.dg], alpha: 1, duration: 200 });
-                left.forEach(o => o.active && this.tweens.add({ targets: o, alpha: o._a0 ?? 1, duration: 260 }));
+                inside.destroy(); this.time.delayedCall(30, () => { if (this.textures.exists(inKey)) this.textures.remove(inKey); });
+                P2.g.setAlpha(1); P2.dg.setAlpha(1);
+                left.forEach(o => o.active && o.setAlpha(o._a0 ?? 1));   // down with the cover: there already
             } });
             Sfx.play(this, 'e_flip');
         } });
