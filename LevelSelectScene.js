@@ -947,12 +947,6 @@ class LevelSelectScene extends Phaser.Scene {
             const hop = () => { if (!spr.active) return; this.tweens.add({ targets: spr, y: feetY - 5 * sc, duration: 160, yoyo: true, ease: 'Quad.easeOut', onComplete: () => this.time.delayedCall(1400 + Math.random() * 1600, hop) }); };
             this.time.delayedCall(400 + Math.random() * 1200, hop);
             const u = sc / 1.2;   // the game draws at 1.2
-            if (key === 'armored') {   // its shields on three sides, one left open (LevelManager.drawArmorShields)
-                const g = this.add.graphics().setDepth(D + 4.02).setScrollFactor(0).setPosition(x, feetY - 7 * u).setScale(u);
-                const tick = () => { if (!g.active) return; g.clear(); LevelManager.drawArmorShields(g, 'E', false, this.time.now); };
-                tick(); const ev = this.time.addEvent({ delay: 60, loop: true, callback: tick }); g.once('destroy', () => ev.remove());
-                out.push(g);
-            }
             if (key === 'encased') {   // three pebbles held up round it (its shell is in its body: LevelManager.encBodyKey)
                 const peb = [0, 1, 2].map(() => this.add.image(x, feetY, LevelManager.encRubbleKey(this)).setScale(0.55 * u).setDepth(D + 4.03).setScrollFactor(0));
                 const t = { a: 0 };

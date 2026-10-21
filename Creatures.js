@@ -969,7 +969,8 @@ class CreatureFX {
         e._cfxDressed = true;
         const ts = e.sprite;
         const mk = this._enemyTypeKey?.(e);
-        if (mk && typeof SlimeModels !== 'undefined' && SlimeModels.DEFS[mk]) SlimeModels.wear(this, ts, mk);   // its own body (SlimeModels.js), not a tint
+        const model = e._modelKey || mk;   // (a kind can pick its own variant: the Armored Slime's open side)
+        if (model && typeof SlimeModels !== 'undefined' && SlimeModels.DEFS[model]) SlimeModels.wear(this, ts, model);   // its own body (SlimeModels.js), not a tint
         if (ts?._cfxTint) ts._cfxTint.settled = true;
         else if (ts) {
             const clean = !ts.tintFill && !e.isFrozen && !e._iceCube && !((e.burnStacks || 0) > 0) && !e.isBurning && !e.isWet && !e.isSuperConducted;

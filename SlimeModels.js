@@ -88,6 +88,22 @@ const SlimeModels = {
         }
         P.put(R0 + 1, b - 1, 0x1a1210);
     },
+    _armorGap(P, side) {
+        const A = SlimeModels.DEFS.armored;
+        for (let y = P.top; y <= P.bot; y++) for (let x = 0; x < P.w; x++) { const t = P.tone(x, y); if (t >= 0) { const c = A.pal[t]; P.put(x, y, (c[0] << 16) | (c[1] << 8) | c[2]); } }   // its steel
+        A.paint(P);
+        const hot = (x, y, k) => P.put(x, y, k === 0 ? 0x1a0e04 : k === 1 ? 0xd8701a : 0xffd060);   // rim, glow, core
+        if (side === 'E' || side === 'W') {
+            for (let y = P.top + 2; y < P.bot; y++) {
+                const edge = side === 'E' ? P.r(y) : P.l(y), d = side === 'E' ? -1 : 1;
+                hot(edge + d * 4, y, 0); hot(edge + d * 3, y, 1); hot(edge + d * 2, y, 2); hot(edge + d, y, y % 2 ? 2 : 1);
+            }
+        } else if (side === 'N') {
+            for (let x = P.cx - 4; x <= P.cx + 4; x++) { hot(x, P.top + 3, 0); hot(x, P.top + 2, 1); hot(x, P.top + 1, Math.abs(x - P.cx) < 3 ? 2 : 1); }
+        } else {
+            for (let x = P.cx - 5; x <= P.cx + 5; x++) { hot(x, P.bot - 4, 0); hot(x, P.bot - 3, 1); hot(x, P.bot - 2, Math.abs(x - P.cx) < 4 ? 2 : 1); hot(x, P.bot - 1, 1); }
+        }
+    },
     _flowers(P, n) {   // n tiny flowers on the body: four petals round a sun-yellow middle, pink and white in turn
         const spots = [[-5, 3], [4, 2], [-1, 5], [6, 5], [-7, 6]].slice(0, n);
         spots.forEach(([dx, dy], i) => {
@@ -198,6 +214,11 @@ const SlimeModels = {
             for (let y = rim + 4; y < P.bot; y++) for (let x = P.l(y) + 1; x < P.r(y); x++) if ((x + y) % 2) P.put(x, y, 0x5a6476);   // chainmail
             P.stamp(['.k.', 'kWk', 'kwk'], P.cx - 1, P.top - 2, { k: 0x10121a, W: 0xe8eef8, w: 0x8a94a6 });   // the crest
         } },
+        // the same knight with one plate gone, on the side it leaves open: a split in the steel, the slime glowing through
+        armored_E: { pal: null, paint(P) { SlimeModels._armorGap(P, 'E'); } },
+        armored_W: { pal: null, paint(P) { SlimeModels._armorGap(P, 'W'); } },
+        armored_N: { pal: null, paint(P) { SlimeModels._armorGap(P, 'N'); } },
+        armored_S: { pal: null, paint(P) { SlimeModels._armorGap(P, 'S'); } },
         // ── the Slime CEO: charcoal pinstripe, gold buttons (its hat and tie stay)
         ceo: { pal: [[14, 14, 18], [40, 40, 50], [66, 68, 80], [104, 108, 122], [168, 172, 186]], paint(P) {
             for (let y = P.top + 2; y < P.bot; y++) for (let x = P.l(y) + 2; x < P.r(y) - 1; x += 3) if (P.tone(x, y) > 0) P.put(x, y, 0x5a5c6c);

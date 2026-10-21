@@ -1383,6 +1383,7 @@ class WeaponSystem {
     //   LIVE       current runs through it: it takes WIRE_DMG a TICK
     //   INSULATOR  it takes only INS_TAKE of that, and the whole web (every clamp, line, burst and current) does
     //              INS_NERF as much per insulator, but every daze lasts INS_DAZE longer: control for damage
+    //   (Superconducted: live and insulated clamps while their circuit is closed, and wherever a current runs; never a capacitor)
     //   CAPACITOR  it takes nothing; the current it would have taken is stored, and every CAP_MS it bursts: CAP_BASE
     //              plus CAP_X times what it stored, forked out and shared between everything within CAP_R (+CAP_SPREAD
     //              of the total for each enemy past the first), so it spreads damage where a live wire focuses it
@@ -1392,7 +1393,7 @@ class WeaponSystem {
     // wired enemy dies the clamp jumps to the nearest unwired enemy in JUMP_R.
     _conductorCfg() {
         const reach = WeaponLevels.perk('conductor', 'reach'), more = WeaponLevels.perk('conductor', 'wires');
-        return { CD: 650, PULSE_CD: 420, PULSE_SPEED: 620, PULSE_DMG: 6, PULSE_DAZE: 450, LAND_DAZE: 400, INS_NERF: 0.65, INS_DAZE: 0.6, RANGE: 8 + reach, CURSOR_R: 2.5, SNAP: 18 + reach, FLY_MS: 150, SLING: 330, WIRES: 3 + more, ARC_R: 6, JUMP_R: 3, CROSS_R: 0.65,
+        return { CD: 650, PULSE_CD: 420, PULSE_SPEED: 620, PULSE_DMG: 6, PULSE_DAZE: 450, LAND_DAZE: 400, INS_NERF: 0.65, INS_DAZE: 0.6, INS_SC: 2500, PULSE_SC: 3500, RANGE: 8 + reach, CURSOR_R: 2.5, SNAP: 18 + reach, FLY_MS: 150, SLING: 330, WIRES: 3 + more, ARC_R: 6, JUMP_R: 3, CROSS_R: 0.65,
             TICK: 300, LATCH_DMG: 3, WIRE_DMG: 4, CROSS_DMG: 5, INS_TAKE: 0.3,
             CIRCUIT: 2, CAP_MS: 3000, CAP_R: 2.5, CAP_BASE: 3, CAP_X: 0.6, CAP_SPREAD: 0.3,
             COL: 0xffe14a, HOT: 0xfff8c0, MODES: ['live', 'ins', 'cap'], MCOL: { live: 0xffe14a, ins: 0x7fd0ff, cap: 0xff9a3a } };
@@ -1595,7 +1596,6 @@ class WeaponSystem {
                 this._condSpark(e.sprite.x, e.sprite.y - 4, 14);
                 this._vfxFlash?.(e.sprite.x, e.sprite.y, 40, C.COL, 220, 0.8);
             }
-            if (w.on && e.health > 0) this._condSC(e, 700);
         }
         const on = wires.filter(w => w.on && w.e.sprite?.active && w.e.health > 0);
         const pairs = this._condPairs = [];   // wired enemies close enough arc together, and each arc closes a circuit through you
@@ -1605,6 +1605,9 @@ class WeaponSystem {
             if (Math.hypot(a.x - b.x, a.y - b.y) > C.ARC_R * T || !this._condClear(a.x, a.y, b.x, b.y)) continue;
             pairs.push([on[i], on[j]]); on[i].closed = on[j].closed = true;
         }
+        // Superconducted is earned through the circuit: a live or insulated clamp holds it while its loop is closed (an insulator
+        // keeps it for INS_SC after), a capacitor never does, so reactions for your other elements come from building the loop
+        for (const w of on) if (w.closed && w.mode !== 'cap' && w.e.health > 0) this._condSC(w.e, w.mode === 'ins' ? C.INS_SC : 700);
         if (on.some(w => w.closed && !w.was)) {   // a loop just closed
             for (const w of on) if (w.closed && !w.was) { this._condSpark(w.e.sprite.x, w.e.sprite.y - 4, 12); VisualFX.ripple(this, w.e.sprite.x, w.e.sprite.y - 4, 4, 22, 0xffffff, { duration: 220 }); }
             if (!on.some(w => w.was)) this.showStatusText(this.player.x, this.player.y - 30, 'CIRCUIT', '#fff08a');
@@ -1696,6 +1699,7 @@ class WeaponSystem {
                     const web = this._condWebMul(on);
                     this._condHit(hit, C.PULSE_DMG * web.dmg * this.damageScaling);
                     this._condDaze(hit, C.PULSE_DAZE * web.daze);
+                    if ((this._condWires || []).find(q => q.e === hit)?.mode !== 'cap') this._condSC(hit, C.PULSE_SC);   // a current renews the mark on what it runs through (capacitors aside)
                     VisualFX.ripple(this, hit.sprite.x, hit.sprite.y - 4, 6, 30, C.HOT, { duration: 260 });
                     this._vfxFlash?.(hit.sprite.x, hit.sprite.y, 60, C.COL, 240, 0.9);
                     this._condSpark(hit.sprite.x, hit.sprite.y - 4, 10);

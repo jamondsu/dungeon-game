@@ -52,6 +52,19 @@ class TowerFloors {
         { id: 'hunter',    cost: 4, from: 11, role: 'melee', make: (S, x, y) => S.createHunterSlime(x, y, 0) },
         { id: 'bud',       cost: 3, from: 10, role: 'melee', make: (S, x, y) => S.createBuddingSlime(x, y, 0) },
         { id: 'sniper',    cost: 3, from: 14, role: 'ranged', make: (S, x, y) => S.createUpgradedSniper(x, y, 0) },
+        // the Void Rift's, the Fracture's and the Cistern's, later up (water kinds only on a floor with pools: `water`)
+        { id: 'lightningelem', cost: 3, from: 8,  role: 'ranged',  make: (S, x, y) => S.createLightningElemental(x, y, 0) },
+        { id: 'voidsniper',    cost: 3, from: 9,  role: 'ranged',  make: (S, x, y) => S.createVoidSniper(x, y, 0) },
+        { id: 'singularity',   cost: 4, from: 11, role: 'melee',   make: (S, x, y) => S.createSingularitySlime(x, y, 0) },
+        { id: 'encased',       cost: 4, from: 13, role: 'ranged',  make: (S, x, y) => S.createEncasedSlime(x, y, 0) },
+        { id: 'frost',         cost: 5, from: 15, role: 'elite',   make: (S, x, y) => S.createFrostSlime(x, y, 0) },
+        { id: 'drowner',       cost: 3, from: 15, role: 'melee',   water: true, make: (S, x, y) => S.createDrowner(x, y, 0) },
+        { id: 'ripplerunner',  cost: 3, from: 15, role: 'ranged',  water: true, make: (S, x, y) => S.createRipplerunner(x, y, 0) },
+        { id: 'tidecaller',    cost: 4, from: 17, role: 'support', water: true, make: (S, x, y) => S.createTidecaller(x, y, 0) },
+        { id: 'waverider',     cost: 4, from: 17, role: 'melee',   water: true, make: (S, x, y) => S.createWaveRider(x, y, 0) },
+        { id: 'tidalguard',    cost: 4, from: 19, role: 'ranged',  water: true, make: (S, x, y) => S.createTidalGuard(x, y, 0) },
+        { id: 'wishingwell',   cost: 4, from: 19, role: 'support', water: true, make: (S, x, y) => S.createWishingWell(x, y, 0) },
+        { id: 'conduit',       cost: 4, from: 20, role: 'ranged',  water: true, make: (S, x, y) => S.createConduit(x, y, 0) },
     ];
     // A normal floor's PLAN (from floor PLAN_FROM): how many come (count), how strong each can be (budget), who's
     // likelier (roles), and the layouts that suit it. Rolled with the arena (generateTowerArena), named in the banner.
@@ -71,7 +84,7 @@ class TowerFloors {
         for (const [id, p] of P) if ((r -= p.w) < 0) return id;
         return 'mixed';
     }
-    static BOSSES = ['voltslime', 'sovereign', 'brood'];   // floor 10, 20, 30, then round again
+    static BOSSES = ['voltslime', 'sovereign', 'brood', 'geode'];   // floor 10, 20, 30, 40, then round again
 
     // Floor twists: every TWIST_EVERY-th floor from floor 5 (boss floors aside) bends one
     // rule, borrowed from the story where it can be. `from`: the first floor it can roll on.
@@ -588,12 +601,15 @@ class TowerFloors {
             this._towerSpawn(p);
         }
         if (this.voidSovereignBoss?.active) this._updateVoidSovereign(time);   // its update lives in the Void Rift's otherwise
+        if (this.fractureCore?.active) this._updateFractureCore(time, this.game.loop.delta);   // and the Geode's in the Fracture's
         const alive = (this.enemies || []).some(e => e.sprite?.active && e.health > 0)
-            || this.voltslimeBoss?.active || this.voidSovereignBoss?.active || (this.portals || []).some(p => p.active);
+            || this.voltslimeBoss?.active || this.voidSovereignBoss?.active || this.fractureCore?.active || (this.portals || []).some(p => p.active);
         // a boss at half health reshapes its arena
         if (T.boss && T.state === 'fight' && !T.shifted) {
             const bs = [this.voltslimeBoss, this.voidSovereignBoss, ...(this.portals || [])].filter(b => b?.active && b.maxHp);
             if (bs.length && bs.reduce((a, b) => a + b.hp, 0) <= 0.5 * bs.reduce((a, b) => a + b.maxHp, 0)) { T.shifted = true; this._towerShift(); }
+            const gc = this.fractureCore;   // (the Geode keeps health, not hp)
+            if (gc?.active && gc.health <= 0.5 * gc.maxHealth) { T.shifted = true; this._towerShift(); }
         }
         if (T.state === 'start' && time >= T.nextAt) { T.state = 'fight'; this._towerWave(); }
         else if (T.state === 'fight' && !alive && !T.pending.length) {
@@ -656,7 +672,8 @@ class TowerFloors {
         }
         const P = TowerFloors.PLANS[T.plan || 'mixed'];
         const n = Math.max(1, Math.round((T.total || TowerFloors.crowd(T.floor)) * (T.split?.[T.wave - 1] ?? 1 / C.WAVES) * (T.twist?.id === 'swarm' ? 1.5 : 1))) + (T.wave === C.WAVES ? 1 : 0);
-        const pool = TowerFloors.POOL.filter(p => p.from <= T.floor);
+        const wet = (this.waterTiles?.size || 0) >= 8;   // a floor laid out with pools
+        const pool = TowerFloors.POOL.filter(p => p.from <= T.floor && (!p.water || wet));
         let budget = Math.round(n * (1.2 + T.floor / 12) * P.budget);
         const spots = this._towerSpots(n);
         // the plan's roles weigh the draw; a floor holds two of any heavy kind at most, and one of each elite.
@@ -722,6 +739,10 @@ class TowerFloors {
         const k = this.enemyHealthScale / TowerFloors.CFG.BASE_HP;
         if (kind === 'voltslime') { this.spawnVoltslimeBoss(x, y); const b = this.voltslimeBoss; if (b) { b.hp = b.maxHp = Math.round(b.maxHp * k); } }
         else if (kind === 'sovereign') { this.spawnVoidSovereignBoss(x, y); const b = this.voidSovereignBoss; if (b) { b.hp = b.maxHp = Math.round(b.maxHp * k); } }
+        else if (kind === 'geode') {   // the Fracture's Geode, risen in the middle of the arena
+            this._spawnFractureCore(this._towerArena.room, true);
+            const c = this.fractureCore; if (c) c.health = c.maxHealth = Math.round(c.maxHealth * k);
+        }
         else {   // the Brood: two Queen Slimes, each tougher than a story queen, breeding all fight
             const A = this._towerArena;
             for (const [i, qx] of [[0, A.room.x + Math.floor(A.room.w * 0.25)], [1, A.room.x + Math.floor(A.room.w * 0.75)]]) {

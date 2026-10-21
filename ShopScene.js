@@ -244,7 +244,7 @@ class ShopScene extends Phaser.Scene {
 
             // Shelf: every weapon of the element standing on the plank; locked ones in shadow
             // with a price tag; the selected one marked from below.
-            const span = S.x1 - S.x0 - 120;
+            const span = S.x1 - S.x0 - 120, want = this._shopTag;
             list.forEach((it, k) => {
                 const x = S.x0 + 60 + span * (list.length === 1 ? 0.5 : k / (list.length - 1));
                 const key = MenuArt.iconSheet(this, it.id);
@@ -252,6 +252,7 @@ class ShopScene extends Phaser.Scene {
                 if (key) {
                     const ic = track(weaponObjs, this.add.sprite(x, SHELF_Y + 2, key, '0').setOrigin(0.5, 1).setScale((on ? 2.6 : 2.2) * this._layout.UI).setDepth(3));
                     if (!it.unlocked || sealed) ic.setTint(0x3a3028);
+                    if (want && !(ShopScene.WEAPON_TAGS[it.id] || []).includes(want)) ic.setAlpha(0.22);   // the filter: not this kind
                     if (on) ic.play(key);
                     if (it.unlocked) this._enchAura(ic, it.id).forEach(o => track(weaponObjs, o));   // enchanted: it glows on the shelf
                 }
@@ -272,6 +273,25 @@ class ShopScene extends Phaser.Scene {
                 const hit = track(weaponObjs, this.add.zone(x, SHELF_Y - 26, 64, 64).setInteractive({ useHandCursor: true }).setDepth(12));
                 hit.on('pointerdown', () => { if (k !== this._shopWi) goTo(k); });
             });
+
+            // The filter chips, over the shelf: ALL, then each kind; a count of matches in each element beside its name
+            {
+                let fx = S.x0 + 10;
+                for (const t of [null, ...Object.keys(ShopScene.TAG_DEFS)]) {
+                    const [name, col] = t ? ShopScene.TAG_DEFS[t] : ['ALL', 0xe8d6ae], on = (want || null) === t;
+                    const n = t ? ELEMENTS.reduce((a, e2) => a + weaponsOf(e2).filter(x => (ShopScene.WEAPON_TAGS[x.id] || []).includes(t)).length, 0) : 0;
+                    const b = track(weaponObjs, this.add.text(fx, SHELF_Y + 46, t ? `${name} ${n}` : name, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold',
+                        color: on ? '#1a120c' : UIKit._hex(col), backgroundColor: on ? UIKit._hex(col) : '#1c1410', padding: { x: 5, y: 2 } }).setDepth(12).setInteractive({ useHandCursor: true }));
+                    b.on('pointerdown', () => { this._shopTag = this._shopTag === t ? null : t; Sfx.play(this, 'click');
+                        if (t && !(ShopScene.WEAPON_TAGS[list[this._shopWi]?.id] || []).includes(t)) {   // jump to the first match: this element, else the next that has one
+                            const i0 = list.findIndex(x => (ShopScene.WEAPON_TAGS[x.id] || []).includes(t));
+                            if (i0 >= 0) this._shopWi = i0;
+                            else { const ei = ELEMENTS.findIndex(e2 => weaponsOf(e2).some(x => (ShopScene.WEAPON_TAGS[x.id] || []).includes(t))); if (ei >= 0) { this._shopEl = ei; this._shopWi = weaponsOf(ELEMENTS[ei]).findIndex(x => (ShopScene.WEAPON_TAGS[x.id] || []).includes(t)); renderAwning(); } }
+                        }
+                        renderWeapon(0); });
+                    fx += b.width + 5;
+                }
+            }
 
             // The weapon on the turntable, under the spotlight (_turntable).
             const ttObjs = this._turntable(acc, MenuArt.iconSheet(this, w.id), { anim: true, dim: !owned, fromDir, scale: 5.5 });
@@ -576,7 +596,15 @@ class ShopScene extends Phaser.Scene {
         keep(this.add.text(L, y, w.name, {
             fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: INK, wordWrap: { width: T.w - 40 },
         }).setDepth(D + 1));
-        y += 40;
+        y += 36;
+        let cx = L;   // what kind of weapon it is (ShopScene.WEAPON_TAGS)
+        for (const t of ShopScene.WEAPON_TAGS[w.id] || []) {
+            const [name, col] = ShopScene.TAG_DEFS[t];
+            const c = keep(this.add.text(cx, y, name, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: '#f8f0dc',
+                backgroundColor: UIKit._hex(MenuArt.mix(col, 0x3b2716, 0.45)), padding: { x: 5, y: 2 } }).setDepth(D + 1));
+            cx += c.width + 5;
+        }
+        y += 22;
         g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(L, y, R, y);
         y += 10;
         y += this._richText(keep, L, y, w.desc.replace(/\n/g, ' '), {
@@ -1966,6 +1994,18 @@ ShopScene.TIER = {
 // superconduction); ice is the utility element (chill, cubes, marks, the cannon's heal).
 // Cosmic weapons are buffs and aren't rated. Judgement, not measurement: keep it in step with
 // ShopScene.DPS below when a weapon changes.
+// What kind of weapon each is, three ways: its reach (close or ranged), what it's for (one target or crowds), and
+// a role if it has one (control: holds enemies down; setup: marks or primes them for something else; buff: helps you).
+// Shown on its tag, and the filter over the shelf picks by them.
+ShopScene.WEAPON_TAGS = {
+    flame_fists: ['close', 'single'], flame_sword: ['close', 'crowd'], magma_staff: ['ranged', 'single'], ignition: ['ranged', 'single'],
+    ice_fists: ['close', 'single', 'control'], icicle_cannon: ['ranged', 'crowd', 'control'], fractal_shard: ['ranged', 'single', 'setup'],
+    lightning_fists: ['close', 'crowd'], orb_emitter: ['ranged', 'crowd', 'setup'], ball_lightning: ['ranged', 'crowd', 'setup'], conductor: ['ranged', 'crowd', 'control'],
+    cosmic_fists: ['close', 'single', 'buff'], barrier_staff: ['buff', 'control'], astrolabe: ['crowd', 'setup'], singularity_staff: ['ranged', 'crowd', 'control'], void_blade: ['close', 'crowd', 'control'],
+};
+ShopScene.TAG_DEFS = { close: ['CLOSE', 0xe07a4a], ranged: ['RANGED', 0x5aa8e0], single: ['ONE TARGET', 0xd8b04a], crowd: ['CROWDS', 0x8ad06a],
+    control: ['CONTROL', 0x7fd0ff], setup: ['SETUP', 0xc08aff], buff: ['BUFF', 0xffd84a] };
+
 ShopScene.RATINGS = {
     flame_fists: [6, 2, 1], flame_sword: [6, 3, 1], magma_staff: [8, 4, 2], ignition: [10, 2, 1],
     ice_fists: [4, 2, 7], icicle_cannon: [5, 5, 7], fractal_shard: [6, 6, 9],
@@ -1982,11 +2022,11 @@ ShopScene.DPS = {   // re-measured 2026-10-20 (Ignition as the flamethrower: lit
 // What the *keywords* in the shop's descriptions mean (ShopScene._richText's popouts).
 ShopScene.KEYWORDS = {
     // (the guide's words: LevelSelectScene's guide pages use them too)
-    circuit: ['Circuit', 'With the Circuit Breaker: when two of your wired enemies arc to each other, the loop through you closes and glows white. Its wires and arc do double.'],
-    'live wire': ['Live Wire', 'The Circuit Breaker\'s plain clamp (yellow): current runs through the enemy and hurts it every 0.3s.'],
-    insulator: ['Insulator (G)', 'A Circuit Breaker clamp (blue): its enemy takes only 30% of the current, and the whole web (lines, clamps, bursts and currents) does 35% less for each insulator on it, but every daze the web gives lasts 60% longer. Control for damage.'],
-    current: ['Current (R)', 'Press R: a big blob of current runs down the wire nearest your aim, on through the arcs, and back to you along the last wire. Every enemy it passes is dazed and takes a small hit.'],
-    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). A closed circuit and insulators fill it faster.'],
+    circuit: ['Circuit', 'With the Circuit Breaker: when two of your wired enemies arc to each other, the loop through you closes and glows white. Its wires and arc do double, and its live and insulated clamps are *Superconducted* while it stays closed.'],
+    'live wire': ['Live Wire', 'The Circuit Breaker\'s plain clamp (yellow): current runs through the enemy and hurts it every 0.3s. Superconducted while its circuit is closed.'],
+    insulator: ['Insulator (G)', 'A Circuit Breaker clamp (blue): its enemy takes only 30% of the current, and the whole web (lines, clamps, bursts and currents) does 35% less for each insulator on it, but every daze the web gives lasts 60% longer, and its enemy stays Superconducted longest. Control for damage.'],
+    current: ['Current (R)', 'Press R: a big blob of current runs down the wire nearest your aim, on through the arcs, and back to you along the last wire. Every enemy it passes is dazed, takes a small hit, and is Superconducted for a few seconds (capacitors aside).'],
+    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). A capacitor is never Superconducted: it is all damage, no reactions.'],
     reaction: ['Reaction', 'A hit on an enemy carrying another element\'s status (burning, chilled or cubed, superconducted, hexed). It charges your ult three times as much as a plain hit.'],
     residue: ['Residue', 'A hit on an enemy another element hit in the last 1.5s, with no status of it left: ult charge x1.75.'],
     resist: ['Resistance', 'A ring under an enemy in an element\'s colour: that element\'s hits land at 40%. A ring split in two or three resists two or three elements. Nothing resists cosmic.'],

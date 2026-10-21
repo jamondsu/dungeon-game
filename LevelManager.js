@@ -3782,7 +3782,7 @@ class LevelManager {
     // over your head. The steal tears the gem out of you and it holds it; your gem at the bottom goes grey with the
     // Leech sat on it, laughing. Kill it and the gem is flung back into you. A thing of the void: with its prize, every
     // PORT_CD it slips into a portal and comes out PORT_DIST further along its escape.
-    _leechCfg() { return { HP: 70, SPEED: 1.4, SETTLE: 5000, WARN: 1400, STAGGER: 250, FLEE_MS: 300, PORT_CD: 6000, PORT_DIST: 5, PORT_MS: 420,
+    _leechCfg() { return { HP: 70, SPEED: 1.4, SETTLE: 5000, WARN: 1400, STAGGER: 250, FLEE_MS: 300, PORT_CD: 4000, PORT_DIST: 5, PORT_MS: 420,
         COLS: { fire: 0xff6a1a, ice: 0x7fd8ff, lightning: 0xffe040, cosmic: 0xb070ff },
         PALS: { fire: [[40, 8, 4], [120, 34, 10], [200, 80, 24], [255, 150, 60], [255, 220, 160]], ice: [[10, 36, 60], [30, 96, 150], [80, 170, 220], [160, 226, 255], [236, 252, 255]],
                 lightning: [[40, 34, 6], [110, 96, 10], [190, 170, 20], [250, 236, 70], [255, 252, 200]], cosmic: [[20, 8, 36], [56, 22, 96], [100, 50, 160], [160, 110, 220], [230, 200, 255]] } }; }
@@ -3926,16 +3926,19 @@ class LevelManager {
     }
     // Into a portal and out of another PORT_DIST tiles on, the furthest open tile from you round there
     _leechPort(e, time) {
-        const L = this._leechCfg(), T = this.TILE_SIZE, ax = e.x - this.playerX, ay = e.y - this.playerY, len = Math.hypot(ax, ay) || 1;
+        // anywhere open PORT_DIST-ish away (a ring 3 to PORT_DIST + 2 round it), the furthest from you: backed into a corner
+        // it still slips out sideways or past you
+        const L = this._leechCfg(), T = this.TILE_SIZE, R = L.PORT_DIST + 2;
         let best = null, bestD = -1;
-        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-            const x = Math.round(e.x + ax / len * L.PORT_DIST) + dx, y = Math.round(e.y + ay / len * L.PORT_DIST) + dy;
-            if (this.world[x]?.[y] !== this.FLOOR || this.isInLockedRoom?.(x, y) || this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) continue;
-            const d = Math.hypot(x - this.playerX, y - this.playerY);
+        for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+            const r = Math.hypot(dx, dy), x = e.x + dx, y = e.y + dy;
+            if (r < 3 || r > R || this.world[x]?.[y] !== this.FLOOR || this.isInLockedRoom?.(x, y) || (x === this.playerX && y === this.playerY)
+                || this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) continue;
+            const d = Math.hypot(x - this.playerX, y - this.playerY) + Math.random() * 0.5;
             if (d > bestD) { bestD = d; best = [x, y]; }
         }
+        if (!best) { e._portNext = time + 1000; return false; }   // nowhere to go: try again in a moment
         e._portNext = time + L.PORT_CD;
-        if (!best) return false;
         e._porting = true;
         const portal = (x, y) => {   // a swirl of the void opening on the floor, then closing
             const g = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.03).setPosition(x, y + 8);
@@ -4212,33 +4215,11 @@ class LevelManager {
         const dx = x - this.playerX, dy = y - this.playerY;   // the open side faces away from you
         e._armorWeak = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'E' : 'W') : (dy >= 0 ? 'S' : 'N');
         e._moveCdMult = A.SPEED; e._meleeDmg = A.MELEE;
-        const k = LevelManager.bodyKey(this, 'armored');   // steel
-        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        e._modelKey = 'armored_' + e._armorWeak;   // its body shows the open side: a plate gone, the slime glowing through (SlimeModels)
+        SlimeModels.wear(this, e.sprite, e._modelKey);
         e._baseScale = this.SLIME_SCALE * A.SCALE; e.sprite.setScale(e._baseScale); LevelManager.seat(e, A.SCALE);   // a big one: it's a tank
         e._armorGfx = this.add.graphics().setDepth((e.sprite.depth ?? 1) + 0.05);
         return e;
-    }
-    // Its shields, drawn round its body at (0, 0) in graphics g: a curved steel plate hugging each of three sides (a dark
-    // edge, a lit rim, gold rivets), and on the side it left open a gap where its body glows, gold when you're on that side.
-    static drawArmorShields(g, weak, open, time) {
-        const RX = 11.5, RY = 7, TH = 4, ARC = { E: 0, S: 90, W: 180, N: 270 }, rad = d => d * Math.PI / 180;
-        const pt = (deg, r) => ({ x: Math.cos(rad(deg)) * (RX + r), y: Math.sin(rad(deg)) * (RY + r * 0.7) });
-        for (const side of ['N', 'E', 'W', 'S']) {   // the back first, the front last
-            const c = ARC[side], a0 = c - 46, a1 = c + 46, band = (r0, r1, d0 = a0, d1 = a1) => {
-                const p = []; for (let d = d0; d <= d1; d += 6) p.push(pt(d, r1)); for (let d = d1; d >= d0; d -= 6) p.push(pt(d, r0)); return p;
-            };
-            if (side === weak) {   // the open side: a split in the steel, the slime glowing through
-                const pulse = 0.55 + 0.45 * Math.sin(time / 140), col = open ? 0xffd84a : 0xff6a3a, a = open ? 1 : 0.5 + 0.35 * pulse;
-                g.fillStyle(col, 0.22 * a).fillPoints(band(-2, TH + 2, c - 30, c + 30), true);
-                g.lineStyle(2, col, a).strokePoints(Array.from({ length: 11 }, (_, k) => pt(c - 25 + k * 5, 1)), false);
-                continue;
-            }
-            g.fillStyle(0x14161c, 1).fillPoints(band(-1, TH + 1), true);
-            g.fillStyle(0x7a8498, 1).fillPoints(band(0, TH), true);
-            g.lineStyle(1.5, 0xd6dee8, 1).strokePoints(Array.from({ length: 16 }, (_, k) => pt(a0 + 3 + k * 5.6, TH - 0.5)), false);   // its lit rim
-            g.lineStyle(1, 0x3a4250, 1).strokePoints(Array.from({ length: 16 }, (_, k) => pt(a0 + 3 + k * 5.6, 0.8)), false);
-            for (const d of [c - 28, c, c + 28]) { const p = pt(d, TH / 2); g.fillStyle(0x2a1e06, 1).fillCircle(p.x, p.y, 1.6); g.fillStyle(0xffd84a, 1).fillCircle(p.x - 0.3, p.y - 0.3, 0.9); }   // rivets
-        }
     }
     // The side of it you're on: your tile against its, the longer axis deciding (a dead diagonal counts as plated)
     _armorSide(e) {
@@ -4267,7 +4248,9 @@ class LevelManager {
             const s = e.sprite, base = this.SLIME_SCALE || 1, kx = Math.abs(s.scaleX) / base, ky = s.scaleY / base;   // its size and the hop's squash both carry to the shields
             g.clear().setPosition(Math.round(s.x), Math.round(s.y + (26.5 - s.originY * 32) * s.scaleY)).setScale(kx, ky).setAlpha(s.alpha);   // round the body, which sits low in its frame
             const open = this._armorSide(e) === e._armorWeak;
-            LevelManager.drawArmorShields(g, e._armorWeak, open, time);
+            // a soft glow over the gap in its steel: dull while you're round its plates, bright gold when you're on the open side
+            const W = e._armorWeak, sx = W === 'E' ? 1 : W === 'W' ? -1 : 0, sy = W === 'S' ? 1 : W === 'N' ? -1 : 0, pulse = 0.55 + 0.45 * Math.sin(time / 140);
+            g.fillStyle(open ? 0xffd84a : 0xff7a2a, open ? 0.35 + 0.2 * pulse : 0.12 + 0.08 * pulse).fillCircle(sx * 7, sy * 4, open ? 7 : 5);
         }
     }
     // ── CHEVRONS ─────────────────────────────────────────────────────────────
@@ -4636,7 +4619,7 @@ class LevelManager {
     static bodyKey(scene, kind) { const L = LevelManager.LOOKS[kind]; return L ? LevelManager.slimeRecolor(scene, 'slime_' + kind, L.pal, L.glint) : null; }
     // { tex, anim, tint } for a codex key, in any scene
     static look(scene, key) {
-        let tex = (typeof SlimeModels !== 'undefined' && SlimeModels.key(scene, key)) || (key === 'wraith' ? LevelManager.wraithBodyKey(scene) : LevelManager.bodyKey(scene, key));
+        let tex = (typeof SlimeModels !== 'undefined' && SlimeModels.key(scene, key === 'armored' ? 'armored_E' : key)) || (key === 'wraith' ? LevelManager.wraithBodyKey(scene) : LevelManager.bodyKey(scene, key));
         if (!tex && key === 'frost') tex = LevelManager.frostSlimeKey(scene, false);
         if (!tex && key.startsWith('shade')) { const F = LevelManager.prototype._shadeCfg().FORMS[key.split('_')[1] || 'void']; tex = LevelManager.slimeRecolor(scene, 'slime_shade_' + (key.split('_')[1] || 'void'), F.pal, F.glint); }
         if (!tex && key === 'leech') tex = LevelManager.slimeRecolor(scene, 'slime_leech_cosmic', LevelManager.prototype._leechCfg().PALS.cosmic);
@@ -5355,7 +5338,7 @@ class LevelManager {
     // the room you are standing in, so a sealed room's Tidecaller does not flood the
     // level while you are three rooms away.
     _updateCisternEnemies(time, delta) {
-        if (!(this.isLevel6 || this.trainingRun) || !this.enemies) return;   // (the Training Ground spawns Cistern kinds too: they stood idle there)
+        if (!(this.isLevel6 || this.trainingRun || this.towerRun) || !this.enemies) return;   // (the Training Ground and the Tower spawn Cistern kinds too: they stood idle there)
         this._frostHazeMult = 1;   // set again below while you stand in a Frostborn's haze
         const room = this.getCurrentPlayerRoom();
         const PX = this.playerX, PY = this.playerY;
@@ -5705,7 +5688,7 @@ class LevelManager {
     }
 
     _enemyCodex() {
-        return {
+        const C = {
             slime:        { name: 'Slime',            role: 'Chaser',    tint: 0xcc3333,
                             desc: 'Walks at you and hits you on contact. Five times slower than you are.' },
             berserker:    { name: 'Berserker',        role: 'Charger',   tint: 0xff4444,
@@ -5765,6 +5748,11 @@ class LevelManager {
             conduit:      { name: 'Conduit',          role: 'Emplacement',tint: 0xe8ff3a,
                             desc: 'Arcs lightning at you within five tiles, and electrifies every wet tile within four, so standing in live water hurts on a timer. Resists lightning. Burn a dry path or kill it.' },
         };
+        // each card in its body's own colour (SlimeModels / LOOKS), not the old tint it wore over the red slime
+        const pal = k => (typeof SlimeModels !== 'undefined' && SlimeModels.DEFS[k]?.pal) || LevelManager.LOOKS[k]?.pal;
+        for (const k of Object.keys(C)) { const p = pal(k); if (p) C[k].tint = (p[3][0] << 16) | (p[3][1] << 8) | p[3][2]; }
+        if (C.gem) C.gem.tint = 0xff6ad8;   // every colour: its pink
+        return C;
     }
 
     _seenEnemies() {
@@ -6201,8 +6189,8 @@ class LevelManager {
     }
 
     // The Geode (see THE GEODE below): it rises in the middle of the room in its shell
-    _spawnFractureCore() {
-        const room = this.rooms[6], C = this._geodeCfg(), TS = this.TILE_SIZE;
+    _spawnFractureCore(room = this.rooms[6], tower = false) {   // (the Tower raises one in its arena: no chest there)
+        const C = this._geodeCfg(), TS = this.TILE_SIZE;
         const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2), now = this.time.now;
         const container = this.add.container(cx * TS + TS / 2, cy * TS + TS / 2).setDepth(3).setScale(0.2).setAlpha(0.3);
         const glow = this.textures.exists('vfx_glow') ? this.make.image({ x: 0, y: 0, key: 'vfx_glow' }, false).setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa63a).setAlpha(0.55).setScale(1.1) : null;
@@ -6220,7 +6208,7 @@ class LevelManager {
         this._debrisBossRoom = room;
         this._debrisTiles = []; this._debrisWarnings = []; this._fissures = [];   // (other code still asks after these)
         this._fractureWeakPoints = []; this._wpSequenceIdx = 0;
-        this.spawnFinalLevelChest(cx, room.y + 3, null);
+        if (!tower) this.spawnFinalLevelChest(cx, room.y + 3, null);
         this.tweens.add({ targets: container, scale: 1, alpha: 1, duration: C.RISE_MS * 1.5, ease: 'Back.easeOut', onComplete: () => this._geodeArm() });
         BossFX.blast(this, container.x, container.y, 60, 'shell'); Sfx.play(this, 'roar');
         this._showRhythmSessionBanner('THE GEODE', '#ffb25a', 'Break its shell: heat a plate with fire, then shatter it with ice.');
@@ -6728,7 +6716,7 @@ class LevelManager {
         if (!core?.active) return;
         core.active = false;
         Sfx.play(this, 'bossdie');
-        Progress.announce(this, Progress.rewardBoss('fracture').frags);
+        if (!this.towerRun) Progress.announce(this, Progress.rewardBoss('fracture').frags);   // (the Tower pays its own way)
         if (core.rhythm) { core.rhythm.g.destroy(); for (const [, lb] of core.rhythm.labels) lb.destroy(); core.rhythm = null; }
         this._bfxCoreDeath(core);
         this.cameras.main.shake(400, 0.02);
