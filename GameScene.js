@@ -1033,7 +1033,7 @@ class GameScene extends Phaser.Scene {
         const preDashX = this.playerX, preDashY = this.playerY;
         if (!this.cosmicDashAim()) return;
         const tilesMoved = Math.max(Math.abs(this.playerX - preDashX), Math.abs(this.playerY - preDashY));
-        Sfx.play(this, 'dash');
+        Sfx.play(this, 'dash'); Sfx.play(this, 'csplace');   // (and a soft struck bell: the cosmic dash's own)
         PlayerStats.onDash(this);   // Rolling Guard
         if (!this._cosmicDashTilesLog) this._cosmicDashTilesLog = [];
         const now = this.time.now;

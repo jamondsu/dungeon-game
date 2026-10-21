@@ -5033,6 +5033,7 @@ class ElementSystem {
         const passed = el === 'lightning' ? [] : (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0
             && path.some(([x, y]) => wide.some(w => e.x === x - dirY * w && e.y === y + dirX * w)));
         if (el === 'lightning') this._dashDazeFx(landX, landY, this.cosmicDashStunDuration);
+        if (el === 'ice') Sfx.play(this, 'freeze');   // a frost trail (it chills what it passes)
         for (const e of passed) {
             if (el === 'ice') {   // one stack; if that fills its bar it's cubed there and then (applyChill). Once per enemy per 3s, so a pack can't be farmed
                 if (now - (e._dashChillAt ?? -1e9) < 3000) continue;

@@ -653,6 +653,8 @@ class HUD {
 
         const healModeActive = this.time.now < (this._frostShieldUntil || 0);   // the Frost Shield is up
         const chargeFrac     = Math.min((this._icicleHitCounter || 0) / HITS_TO_CHARGE, 1);
+        if (chargeFrac >= 1 && this._icicleSaid === false) Sfx.play(this, 'rready', { el: 'ice' });   // the Frost Shield charged
+        this._icicleSaid = chargeFrac >= 1;
 
         // Create bar objects once
         if (!this._icicleBarBg?.active) {   // (dead after a floor change: the scene object outlives it)

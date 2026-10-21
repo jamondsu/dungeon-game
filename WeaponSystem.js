@@ -3555,6 +3555,7 @@ class WeaponSystem {
         const FC = this._fractalCfg();
         e._fracMarkUntil = 0; e._fracMarkG?.destroy(); e._fracMarkG = null; this._fracMarked?.delete(e);
         this._fracCharge = Math.min(FC.CHARGES, (this._fracCharge || 0) + 1);
+        if (this._fracCharge >= FC.CHARGES) Sfx.play(this, 'rready', { el: 'ice' });
         const p = e.sprite; if (p?.active) { this._vfxFlash?.(p.x, p.y, 36, 0x9fe8ff, 160, 0.7); this.showStatusText(p.x, p.y - 30, this._fracCharge >= FC.CHARGES ? 'R READY' : `+1  ${this._fracCharge}/${FC.CHARGES}`, '#bff4ff'); }
     }
     _fractalGamble() {
@@ -5685,6 +5686,8 @@ class WeaponSystem {
             frac = 1;
             state = 'ready';
         }
+        if (state === 'ready' && this._kindleState && this._kindleState !== 'ready') Sfx.play(this, 'rready', { el: 'fire' });   // Blue Flame back
+        this._kindleState = state;
 
         if (!this._kindleBar?.bg?.active) {   // the scene object outlives a floor change; its old graphics do not
             this._kindleBar = {
@@ -6433,6 +6436,8 @@ class WeaponSystem {
         const BAR_W = 40, BAR_H = 4;
         const pct   = Math.min((this._magmaHeat || 0) / this._magmaCfg().HEAT_MAX, 1);   // the heat the Surge would dump
         const ready = this._magmaRippleReady === true;
+        if (ready && this._surgeSaid === false) Sfx.play(this, 'rready', { el: 'fire' });   // Surge has come ready
+        this._surgeSaid = ready;
 
         if (!this._magmaRippleBarBg?.active) {   // (dead after a floor change)
             this._magmaRippleBarBg   = this.add.graphics().setDepth(5.6);

@@ -1007,7 +1007,7 @@ class CombatSystem {
             const p = this.player, left = (this._frostShieldUntil || 0) - this.time.now;
             if (!p?.active || !g.active || left <= 0) {
                 this.events.off('update', tick);
-                if (g.active) { const x = g.x, y = g.y; g.destroy(); if (p?.active) for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, s = this.add.triangle(x, y, 0, 6, 2, 0, 4, 6, 0xd8f4ff).setDepth(p.depth + 0.1); this.tweens.add({ targets: s, x: x + Math.cos(a) * 30, y: y + Math.sin(a) * 22 + 10, angle: 200, alpha: 0, duration: 450, onComplete: () => s.destroy() }); } Sfx.play(this, 'kill'); }
+                if (g.active) { const x = g.x, y = g.y; g.destroy(); if (p?.active) for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, s = this.add.triangle(x, y, 0, 6, 2, 0, 4, 6, 0xd8f4ff).setDepth(p.depth + 0.1); this.tweens.add({ targets: s, x: x + Math.cos(a) * 30, y: y + Math.sin(a) * 22 + 10, angle: 200, alpha: 0, duration: 450, onComplete: () => s.destroy() }); } Sfx.play(this, 'shatter'); }
                 return;
             }
             const t = this.time.now, R = this.TILE_SIZE * 0.95, fade = Math.min(1, (t - T0) / 160) * (left < 1000 ? 0.45 + 0.55 * (Math.floor(t / 90) % 2) : 1), hit = Math.max(0, 1 - (t - (this._frostShieldHitAt || 0)) / 260);

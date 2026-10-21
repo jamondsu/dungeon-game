@@ -18,7 +18,7 @@ const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
            w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
            lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30, bosshit: 70,
-           tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200 },
+           tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300 },
     _last: {},
     _noiseBuf: null,
     _master: null,
@@ -390,6 +390,12 @@ const Sfx = {
             else if (k === 'bleed') { this._noise(ctx, t, { filter: 'bandpass', f0: 900, f1: 400, q: 1.5, dur: 0.12, vol: 0.2 }); this._tone(ctx, t, { type: 'sine', f0: 200, f1: 90, dur: 0.15, vol: 0.12 }); }
             else if (k === 'slow') this._tone(ctx, t, { type: 'sine', f0: 600, f1: 200, dur: 0.35, vol: 0.07 });
             else { this._tone(ctx, t, { type: 'triangle', f0: 500, f1: 480, dur: 0.08, vol: 0.06 }); this._tone(ctx, t + 0.09, { type: 'triangle', f0: 420, f1: 400, dur: 0.08, vol: 0.05 }); }
+        },
+        rready(ctx, t, o, j) {             // a weapon's R ready: two quick notes up (o.el: warm for fire, glassy for ice)
+            const [a, b, type] = o.el === 'fire' ? [392, 587, 'triangle'] : o.el === 'ice' ? [880, 1319, 'sine'] : [523, 784, 'triangle'];
+            this._tone(ctx, t, { type, f0: a, dur: 0.09, vol: 0.07 });
+            this._tone(ctx, t + 0.07, { type, f0: b, dur: 0.16, vol: 0.07 });
+            if (o.el === 'ice') this._glass(ctx, t + 0.07, { n: 3, spread: 0.06, f: 2600, vol: 0.02, dur: 0.25 });
         },
         // A hit on a boss: the element's hit with weight under it, the dull thud of a big body.
         bosshit(ctx, t, o, j) {
