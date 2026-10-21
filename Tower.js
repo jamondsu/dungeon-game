@@ -294,7 +294,7 @@ class TowerFloors {
                     // the counter: the banked total less what's still flying (right whatever else pays)
                     if (gt?.active) { gt.setText(`✦ ${S.totalGlorps - S._glorpFlying} Glorps`); S.tweens.killTweensOf(gt); gt.setScale(1.18); S.tweens.add({ targets: gt, scale: 1, duration: 160, ease: 'Quad.easeOut' }); }
                     if (coin?.active) { S.tweens.killTweensOf(coin); coin.setScale(3.3); S.tweens.add({ targets: coin, scale: 2.6, duration: 160, ease: 'Quad.easeOut' }); }
-                    if (i % 2 === 0) Sfx.play(S, 'pickup');   // a dozen at once is noise
+                    if (i % 2 === 0) Sfx.play(S, 'coin');   // a dozen at once is noise
                 } }) });
         }
     }
@@ -667,7 +667,7 @@ class TowerFloors {
         if (T.boss) {
             const kind = TowerFloors.BOSSES[Math.floor(T.floor / C.BOSS_EVERY - 1) % TowerFloors.BOSSES.length];
             T.pending.push(this._towerTelegraph(A.cx, A.room.y + 4, { boss: kind }, 1600));
-            Sfx.play(this, 'roar');
+            Sfx.play(this, 'roar', { big: true });
             return;
         }
         const P = TowerFloors.PLANS[T.plan || 'mixed'];

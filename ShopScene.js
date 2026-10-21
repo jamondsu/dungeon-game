@@ -948,7 +948,7 @@ class ShopScene extends Phaser.Scene {
         if (!key) WeaponLevels.setLevel(id, WeaponLevels.level(id) + 1);
         else WeaponLevels.setPerk(id, key, WeaponLevels.perk(id, key) + 1);
         this._refreshCurrency();
-        Sfx.play(this, 'pickup');
+        Sfx.play(this, 'coin');
         const d = key && WeaponLevels._def(id, key), p = key ? WeaponLevels.perk(id, key) : 0;
         this.setGlurpDialogue(!key ? `"Sharper! Power ${WeaponLevels.level(id)}."` : `"${d[1]} ${p}! ${d[5](p)}."`);
         this.time.delayedCall(0, () => this._renderWeapon?.(0));
@@ -1107,7 +1107,7 @@ class ShopScene extends Phaser.Scene {
         localStorage.setItem('glorps', this.glorps);
         PlayerStats.setLevel(id, lvl + 1);
         this._refreshCurrency();
-        Sfx.play(this, 'pickup');
+        Sfx.play(this, 'coin');
         const t = PlayerStats.TALENTS[id].find(t => t.at === lvl + 1);
         this.setGlurpDialogue(t ? `"${d.name} ${lvl + 1}! You've earned ${t.name}!"` : `"${d.name} ${lvl + 1}! ${PlayerStats.describe(id, lvl + 1)}."`);
         if (t) Sfx.play(this, 'ult');
@@ -1164,7 +1164,7 @@ class ShopScene extends Phaser.Scene {
         this._refreshCurrency();
         this.setGlurpDialogue('"Sold! Enjoy your ' + w.name + '!"');
         // Coins burst off the turntable, then the stall rebuilds with the weapon owned.
-        Sfx.play(this, 'pickup');
+        Sfx.play(this, 'coin');
         const L = this._layout;
         if (L && this.textures.exists('mn_px2')) {
             const p = this.add.particles(L.S.cx, L.CT - 60, 'mn_px2', {
@@ -1188,7 +1188,7 @@ class ShopScene extends Phaser.Scene {
         localStorage.setItem('ultFragments', this.fragments);
         localStorage.setItem('ultStage_' + ultKey, stageNum);
         this._refreshCurrency();
-        Sfx.play(this, 'pickup');
+        Sfx.play(this, 'coin');
         this.setGlurpDialogue('"Stage ' + stageNum + ' unlocked! Nice!"');
         this.time.delayedCall(0, () => this._showUltTab({ bought: ultKey }));
     }
@@ -1608,7 +1608,7 @@ class ShopScene extends Phaser.Scene {
             localStorage.setItem('glorps', this.glorps);
             this.unlockGadget(id);
             this._refreshCurrency();
-            Sfx.play(this, 'pickup');
+            Sfx.play(this, 'coin');
             this.setGlurpDialogue(`"${def.name}, yours to keep! Put it in a slot to bring it along."`);
         } else {
             const slot = this._gadgetSlot || 0, lo = this.gadgetLoadout();
@@ -1774,7 +1774,7 @@ class ShopScene extends Phaser.Scene {
             Relics.give(r.id);
             if (Relics.worn().length < Relics.slots()) Relics.toggle(r.id);
             this._refreshCurrency();
-            Sfx.play(this, 'pickup');
+            Sfx.play(this, 'coin');
             this.setGlurpDialogue(`"The ${r.name}, yours for good. ${Relics.worn().includes(r.id) ? 'Already on you.' : 'Make room to wear it.'}"`);
         } else {
             const before = Relics.worn().includes(r.id), now = Relics.toggle(r.id);

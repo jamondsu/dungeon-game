@@ -817,6 +817,7 @@ class LevelManager {
         }
         if (!this.waterTiles || !this.waterTiles.size) return;
         if (!this.isWaterAt(tx, ty)) return;
+        Sfx.play(this, 'splash', { soft: true });   // a step in it
         if (this.currentElement === 'ice' || this.currentElement === 'cosmic') return;
         this._waterSlowUntil = (time ?? this.time.now) + this._waterCfg().SLOW_MS;
     }
@@ -2887,6 +2888,7 @@ class LevelManager {
     _drownSubmergePlayer(untilTime) {
         const p = this.player;
         if (!p?.active) return;
+        Sfx.play(this, 'splash', { big: true }); Sfx.play(this, 'bubbles');   // dragged under
         const fw = p.frame?.width  ?? p.width  ?? 16;
         const fh = p.frame?.height ?? p.height ?? 16;
         if (p.setCrop) p.setCrop(0, 0, fw, Math.max(1, Math.floor(fh * 0.52)));
@@ -3010,6 +3012,7 @@ class LevelManager {
 
     // The marker that rides over YOUR head while a Drowner is committed to you.
     _drownWarn(e) {
+        Sfx.play(this, 'tell', { ms: 700 });
         const g = this.add.graphics().setDepth(6);
         g.fillStyle(0x5a2d6b, 0.55); g.fillCircle(0, 0, 13);
         g.lineStyle(2.4, 0xd8b4ff, 0.95); g.strokeCircle(0, 0, 13);
@@ -3091,6 +3094,7 @@ class LevelManager {
     // 3x3 of permanent water, wherever the orb ends its life.
     _rippleDetonate(o) {
         const TS = this.TILE_SIZE;
+        Sfx.play(this, 'splash');
         const tx = Math.floor(o.x / TS), ty = Math.floor(o.y / TS);
         for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
             const x = tx + dx, y = ty + dy;
@@ -3226,6 +3230,7 @@ class LevelManager {
     }
 
     _waveTell(e) {
+        Sfx.play(this, 'tell', { ms: 700 });
         const g = this.add.graphics().setDepth(6);
         g.fillStyle(0x1b3f6b, 0.6); g.fillCircle(0, 0, 12);
         g.lineStyle(2.4, 0xdff3ff, 0.95); g.strokeCircle(0, 0, 12);
@@ -3395,7 +3400,27 @@ class LevelManager {
             }
         }
     }
-    // Inside a Frost Slime's lit grid (its square, while the telegraph runs): no dashing out of it
+    // GLU: no dashing while it holds. Given by a Frost Slime's lit grid (while you're in it), an Ult Absorber's stolen lightning
+    // (SHORTED), the ice ult's shell; read by every way a dash starts (GameScene's dash queue, the cosmic hops). label: what pops
+    // up over you when it takes hold (null: nothing, when something else already says so).
+    _applyGlu(ms, label = 'GLU') {
+        const now = this.time.now, fresh = !(this._gluUntil > now);
+        this._gluUntil = Math.max(this._gluUntil || 0, now + ms);
+        if (fresh && label && this.player?.active) { this.showStatusText(this.player.x, this.player.y - 30, label, '#e8c84a'); Sfx.play(this, 'status', { kind: 'glu' }); }
+    }
+    _glued() { return this._gluUntil > this.time.now; }
+    // Every frame: a Frost Slime's grid keeps it on you while you're in it, and while it holds there's goo at your feet
+    _updateGlu() {
+        if (this._frostPinned()) this._applyGlu(150);
+        const p = this.player, on = this._glued() && p?.active;
+        if (!on) { if (this._gluFx) { this._gluFx.destroy(); this._gluFx = null; } return; }
+        const g = this._gluFx?.active ? this._gluFx : (this._gluFx = this.add.graphics()), t = this.time.now;
+        g.clear().setPosition(p.x, p.y + 6).setDepth((p.depth ?? 2) - 0.05);
+        g.fillStyle(0xb88a28, 0.6).fillEllipse(0, 0, 30 + Math.sin(t * 0.006) * 2, 10);
+        g.fillStyle(0xf0d060, 0.6).fillEllipse(-4, -1, 12, 4);
+        for (let k = 0; k < 3; k++) { const a = k / 3 * Math.PI * 2 + t * 0.002; g.fillStyle(0xb88a28, 0.75).fillCircle(Math.cos(a) * 12, Math.sin(a) * 3 - 1, 2); }   // strings of it
+    }
+    // Inside a Frost Slime's lit grid (its square, while the telegraph runs): no dashing out of it (a Glu, _updateGlu)
     _frostPinned() {
         const R = this._frostCfg().GRID_R;
         return (this.enemies || []).some(e => e._isFrost && e._fgAim && e.sprite?.active && Math.max(Math.abs(this.playerX - e.x), Math.abs(this.playerY - e.y)) <= R);
@@ -4293,7 +4318,7 @@ class LevelManager {
     // afterimages.
     _hunterCfg() { return { HP: 140, SLOW: 2.4, FAST: 0.55, RAMP_TILES: 16, RAMP_MS: 12000, MELEE0: 2, MELEE1: 6, CHASE_R: 14,
         POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 28], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], FLURRY_DMG: 12, SLASH_RAMP: 1.31,
-        BLEED_MS: 6000, BLEED_STEP: 2, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
+        BLEED_MS: 6000, BLEED_STEP: 2, BLEED_DASH: 0.5, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
     createHunterSlime(x, y, ri) {
         const H = this._hunterCfg();
         const e = this.createEnemy(x, y, H.HP);
@@ -4491,9 +4516,11 @@ class LevelManager {
         if (time >= this._bleedUntil || !p?.active) { this._bleedUntil = 0; return; }
         const H = this._hunterCfg(), [bx, by] = this._bleedAt || [this.playerX, this.playerY];
         const steps = Math.abs(this.playerX - bx) + Math.abs(this.playerY - by);
-        if (steps > 0) {   // it moved: the wound opens with each tile
+        if (steps > 0) {   // it moved: the wound opens with each tile (a dash too, at BLEED_DASH a tile: a dash's dodge doesn't close your own wound)
             this._bleedAt = [this.playerX, this.playerY];
-            this.takeDamage(H.BLEED_STEP * steps * (this.enemyDamageScale || 1));
+            const dashing = this.time.now < (this._dashInvulnUntil || 0);
+            this._ownWound = true;
+            try { this.takeDamage(H.BLEED_STEP * steps * (dashing ? H.BLEED_DASH : 1) * (this.enemyDamageScale || 1)); } finally { this._ownWound = false; }
             for (let k = 0; k < Math.min(6, steps * 2); k++) {
                 const m = this.add.image(p.x + (Math.random() - 0.5) * 16, p.y + 4, 'vfx_dot').setTint(0xc81e2a).setDepth((p.depth ?? 2) + 0.1).setScale(0.9);
                 this.tweens.add({ targets: m, x: m.x + (Math.random() - 0.5) * 20, y: m.y + 10, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => m.destroy() });
@@ -5086,6 +5113,7 @@ class LevelManager {
 
                     // IMPACT — the puddle appears here, not before
                     this._wwBlob(tx, ty, 6 + Math.floor(Math.random() * 8));
+                    Sfx.play(this, 'splash');
                     const sp = this.add.graphics().setDepth(2.3);
                     sp.x = px; sp.y = py;
                     sp.lineStyle(2.5, 0xbdf6ff, 0.85); sp.strokeCircle(0, 0, 7);
@@ -5108,6 +5136,7 @@ class LevelManager {
 
     _wwPulse(e, time) {
         const TS = this.TILE_SIZE;
+        Sfx.play(this, 'lob');
         const n = 2 + Math.floor(Math.random() * 3);          // 2-4 globs
         let thrown = 0;
         for (let i = 0; i < n; i++) {
@@ -5293,6 +5322,7 @@ class LevelManager {
 
     _tgFire(e, time) {
         const TS = this.TILE_SIZE;
+        Sfx.play(this, 'swing');   // the trident thrown
         // Hitscan: whatever is standing on a lit tile at this instant takes it.
         const hit = e._tgAimTiles.some(t => t.x === this.playerX && t.y === this.playerY);
         if (hit) {
@@ -5574,6 +5604,7 @@ class LevelManager {
                         e._waveSpeed = e._waveSpeed0;
                         e._waveLastHit = 0;
                         this.showStatusText?.(e.sprite.x, e.sprite.y - 26, 'TORRENT', '#dff3ff');
+                        Sfx.play(this, 'splash', { big: true });   // the wave goes
                         // The charge IS a speedup -- it is the whole threat -- so it gets
                         // up-arrows, cleared when the charge ends below.
                         this._setSpeedIndicator?.(e, 'wave', 'speed_anchor', true, 200);
@@ -6223,7 +6254,7 @@ class LevelManager {
         this._fractureWeakPoints = []; this._wpSequenceIdx = 0;
         if (!tower) this.spawnFinalLevelChest(cx, room.y + 3, null);
         this.tweens.add({ targets: container, scale: 1, alpha: 1, duration: C.RISE_MS * 1.5, ease: 'Back.easeOut', onComplete: () => this._geodeArm() });
-        BossFX.blast(this, container.x, container.y, 60, 'shell'); Sfx.play(this, 'roar');
+        BossFX.blast(this, container.x, container.y, 60, 'shell'); Sfx.play(this, 'roar', { big: true });
         this._showRhythmSessionBanner('THE GEODE', '#ffb25a', 'Break its shell: heat a plate with fire, then shatter it with ice.');
         this.cameras.main.shake(260, 0.006);
     }
@@ -9111,7 +9142,7 @@ class LevelManager {
     _voidSovereignPhase2Transition() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '⚠ PHASE 2', '#ff4400');
-        Sfx.play(this, 'roar'); Sfx.play(this, 'slam');
+        Sfx.play(this, 'roar', { big: true }); Sfx.play(this, 'slam');
         this.cameras.main.shake(200, 0.015);
 
         // Destroy corner pillars. These were the Voltslime arena's coordinates (level 2's room 6):

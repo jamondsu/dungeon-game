@@ -655,6 +655,7 @@ class ElementSystem {
         this._ultArmor?.end?.();   // (the suit comes off under the ice, early or not)
         this._staggerUntil = Math.max(this._staggerUntil || 0, this._iceShellUntil);   // held still
         this._dashInvulnUntil = Math.max(this._dashInvulnUntil || 0, this._iceShellUntil);   // untouchable
+        this._applyGlu(F.SHELL_MS, null);   // and no dashing out of it (it says ENCASED itself)
         // the crust: a block of ice in your own shape, thick, the cube's ice (deep blue, a bright upper face, gloss, facets, cracks)
         const key = this._iceShellTex(p), img = this.add.image(p.x, p.y, key).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setDepth(p.depth + 0.02).setAlpha(0);
         img.setDisplayOrigin(p.displayOriginX + 6, p.displayOriginY + 6);   // (its 6px border round the frame)
@@ -1373,7 +1374,7 @@ class ElementSystem {
             } else if (stage === 'snap') {   // back where you began; the camera pulls back out; a snap of the fingers
                 drawWeb(1);
                 cam.setZoom(z0 * (1 + (C.ZOOM - 1) * (1 - Math.min(1, e / C.SNAP_MS))));
-                if (e >= C.SNAP_MS && !this._forkSnapped) { this._forkSnapped = true; Sfx.play(this, 'e_snap'); restoreCam(); }
+                if (e >= C.SNAP_MS && !this._forkSnapped) { this._forkSnapped = true; Sfx.play(this, 'snap'); restoreCam(); }
                 if (e >= C.SNAP_MS + C.BOOM_MS) { this._forkSnapped = false; cam.setZoom(z0); stage = 'boom'; t0 = now; this._forkStop = false; this._freezeClock?.(false); this._forkIgnite(order, segs, combos); }
             } else if (stage === 'boom') {   // the web goes off: white-hot and thick, then fading
                 const k = e / 700; dim.setAlpha(Math.max(0, 0.4 - k));

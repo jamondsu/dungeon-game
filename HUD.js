@@ -426,7 +426,7 @@ class HUD {
                         sp.destroy();
                         const n = ++landed === pieces ? c.v - given : Math.round(share * landed) - given;   // by landing order: they don't arrive in the order they left
                         given += n; addPurse(c.k, n);
-                        Sfx.play(this, 'pickup');
+                        Sfx.play(this, c.k === 'glorp' ? 'coin' : 'pickup');
                         const fl = keep(this.add.image(p.x, p.y, 'vfx_glow').setTint(c.col).setBlendMode(Phaser.BlendModes.ADD).setDepth(D + 5).setScale(0.6).setAlpha(0.8));
                         this.tweens.add({ targets: fl, scale: 1.4, alpha: 0, duration: 260, onComplete: () => fl.destroy() });
                     } });
@@ -498,7 +498,7 @@ class HUD {
         const want = tf ? (tf.full ? 'ascendant' : 'rift') : boss ? 'boss' : (LEVEL[this.currentLevelIndex] || 'gauntlet');
         Telemetry.boss(this, !!boss);
         if (want !== Music._cur) {
-            if (want === 'boss') Sfx.play(this, 'roar');
+            if (want === 'boss') Sfx.play(this, 'roar', { big: true });
             Music.play(this, want);
         }
     }

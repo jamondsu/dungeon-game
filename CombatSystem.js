@@ -1037,7 +1037,7 @@ class CombatSystem {
         if (this.time.now < (this._frostShieldUntil || 0)) amount = this._frostShieldHit(amount);
         if (this._cs && this.time.now < this._cs.horizonUntil) { const src = this._hitBy?.sprite; this._cs.horizonHitAt = this.time.now; this._cs.horizonHitA = src && this.player ? Math.atan2(src.y - this.player.y, src.x - this.player.x) : -Math.PI / 2; }   // the Event Horizon ripples where it's hit
         // Mid-dash: the hit passes through you (ElementSystem.playerDash).
-        if (this.time.now < (this._dashInvulnUntil || 0)) return;
+        if (this.time.now < (this._dashInvulnUntil || 0) && !this._ownWound) return;   // (a bleed's wound opens dashing or not)
         if (this._wheel?.('inv')) return;   // the Wheel of Fate: untouchable
         // Untargetable during Thunderhead or Lightning Ult (Fork)
         if (this.thunderheadActive || this.lightningUltInvuln) {
@@ -1703,8 +1703,7 @@ class CombatSystem {
                     this.tweens.add({ targets: f, k: 1, duration: 520, onUpdate: () => { web.clear(); const th = 2.2 - f.k * 1.6; this._forkBolt(web, from, to, th, true); for (const q of forks) this._forkBolt(web, to, q, th * 0.6, false); web.setAlpha(1 - f.k); }, onComplete: () => web.destroy() });
                     if (safe() || !near(tx, ty, 1.5)) return;
                     hurt(4);
-                    this._dashReadyAt = Math.max(this._dashReadyAt || 0, this.time.now + 2500);
-                    this.showStatusText(this.player.x, this.player.y - 34, 'SHORTED: NO DASH', '#ffe24a');
+                    this._applyGlu?.(2500, 'SHORTED: GLU');
                 } });
             });
         } else {

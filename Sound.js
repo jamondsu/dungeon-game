@@ -18,7 +18,7 @@ const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
            w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
            lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30, bosshit: 70,
-           tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300 },
+           tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
     _last: {},
     _noiseBuf: null,
     _master: null,
@@ -70,7 +70,9 @@ const Sfx = {
 
     // Recorded sounds (assets/sfx), fetched and decoded once there's an audio context. A sound that uses one plays its
     // synth version until it's in (or if it never loads).
-    SAMPLES: { evil_laugh: 'assets/sfx/evil_laugh.wav' },
+    // (CC0 from Freesound, Pixabay for the snap: see assets/sfx/CREDITS.md)
+    SAMPLES: Object.fromEntries(['evil_laugh', 'snap', 'roar', 'roar_big', 'bossdie', 'lava_loop', 'lava_pop1', 'lava_pop2', 'sear', 'crackle',
+        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles'].map(k => [k, `assets/sfx/${k}.wav`])),
     _buf: {},
     _loadSamples(ctx) {
         if (typeof fetch !== 'function') return;
@@ -206,6 +208,11 @@ const Sfx = {
         // lava near you: a boil: a gurgle wandering in the middle, a low simmer under it, a soft sear fluttering over them
         lava(ctx, t) {
             const out = ctx.createGain(), nodes = []; out.gain.value = 0.0001; out.connect(this._master);
+            const rec = this._buf.lava_loop;
+            if (rec) {   // the recording (a seamless 4s loop)
+                const s = ctx.createBufferSource(); s.buffer = rec; s.loop = true; s.connect(out); s.start(t, Math.random() * rec.duration); nodes.push(s);
+                return { out, vol: 0.3, nodes };
+            }
             const sear = this._band(ctx, t, out, nodes, 'bandpass', 1100, 1.2, 0.25);
             const mid = this._band(ctx, t, out, nodes, 'bandpass', 380, 2.5, 0.7);
             const low = this._band(ctx, t, out, nodes, 'lowpass', 120, 0.8, 1);
@@ -389,6 +396,7 @@ const Sfx = {
             else if (k === 'poison') { this._bubbles(ctx, t, { n: 4, spread: 0.2, f: 200, vol: 0.07 }); this._tone(ctx, t, { type: 'sawtooth', f0: 180, f1: 120, dur: 0.25, vol: 0.04 }); }
             else if (k === 'bleed') { this._noise(ctx, t, { filter: 'bandpass', f0: 900, f1: 400, q: 1.5, dur: 0.12, vol: 0.2 }); this._tone(ctx, t, { type: 'sine', f0: 200, f1: 90, dur: 0.15, vol: 0.12 }); }
             else if (k === 'slow') this._tone(ctx, t, { type: 'sine', f0: 600, f1: 200, dur: 0.35, vol: 0.07 });
+            else if (k === 'glu') { this._tone(ctx, t, { type: 'sine', f0: 240, f1: 120, dur: 0.22, vol: 0.14 }); this._bubbles(ctx, t + 0.04, { n: 3, spread: 0.15, f: 160, vol: 0.07 }); }   // stuck: a thick squelch
             else { this._tone(ctx, t, { type: 'triangle', f0: 500, f1: 480, dur: 0.08, vol: 0.06 }); this._tone(ctx, t + 0.09, { type: 'triangle', f0: 420, f1: 400, dur: 0.08, vol: 0.05 }); }
         },
         rready(ctx, t, o, j) {             // a weapon's R ready: two quick notes up (o.el: warm for fire, glassy for ice)
@@ -396,6 +404,20 @@ const Sfx = {
             this._tone(ctx, t, { type, f0: a, dur: 0.09, vol: 0.07 });
             this._tone(ctx, t + 0.07, { type, f0: b, dur: 0.16, vol: 0.07 });
             if (o.el === 'ice') this._glass(ctx, t + 0.07, { n: 3, spread: 0.06, f: 2600, vol: 0.02, dur: 0.25 });
+        },
+        snap(ctx, t, o, j) {               // a finger snap (Fork's), ringing out
+            if (!this._sample(ctx, t, { name: 'snap', vol: 0.5, space: 0.25 })) this.SOUNDS.e_snap.call(this, ctx, t, o, j);
+        },
+        coin(ctx, t, o, j) {               // glorps: a coin landing in the purse, a purchase
+            if (!this._sample(ctx, t, { name: 'coin', rate: 0.9 + Math.random() * 0.25, vol: 0.4 })) this.SOUNDS.pickup.call(this, ctx, t, o, j);
+        },
+        splash(ctx, t, o, j) {             // water: a step in it (soft), a body going in or a wave (o.big)
+            if (this._sample(ctx, t, { name: o.big ? 'splash_big' : 'splash', rate: (o.big ? 0.85 : 1) * j * (0.92 + Math.random() * 0.16), vol: o.big ? 0.5 : o.soft ? 0.18 : 0.3 })) return;
+            this._noise(ctx, t, { filter: 'lowpass', f0: o.big ? 1400 : 2000, f1: 300, dur: o.big ? 0.35 : 0.12, vol: o.big ? 0.22 : 0.1 });
+            this._bubbles(ctx, t + 0.03, { n: o.big ? 5 : 2, spread: 0.2, f: 300, vol: 0.05 });
+        },
+        bubbles(ctx, t, o, j) {            // a rush of bubbles (going under)
+            if (!this._sample(ctx, t, { name: 'bubbles', rate: j, vol: 0.3 })) this._bubbles(ctx, t, { n: 8, spread: 0.5, f: 260, vol: 0.06 });
         },
         // A hit on a boss: the element's hit with weight under it, the dull thud of a big body.
         bosshit(ctx, t, o, j) {
@@ -481,9 +503,11 @@ const Sfx = {
             this._tone(ctx, t, { type, f0: f, f1: f * 0.97, dur: 0.045, vol, attack: 0.003 });
         },
         lava_pop(ctx, t, o, j) {           // a bubble bursting on the lava
+            if (this._sample(ctx, t, { name: Math.random() < 0.5 ? 'lava_pop1' : 'lava_pop2', rate: 0.85 + Math.random() * 0.3, vol: 0.32 })) return;
             this._bubbles(ctx, t, { n: 2, spread: 0.08, f: 170, vol: 0.06 });
         },
-        sear(ctx, t, o, j) {               // something standing in lava catching: a hot rush and a crackle
+        sear(ctx, t, o, j) {               // something standing in lava catching: a hot pop and a sizzle
+            if (this._sample(ctx, t, { name: 'sear', rate: j, vol: 0.4 })) return;
             this._noise(ctx, t, { filter: 'bandpass', f0: 1400 * j, f1: 800, q: 1, dur: 0.25, vol: 0.24, attack: 0.01 });
             this._crackle(ctx, t, { n: 5, spread: 0.15, f: 900, vol: 0.14 });
         },
@@ -492,7 +516,7 @@ const Sfx = {
             this._noise(ctx, t, { filter: 'lowpass', f0: 300, f1: 2600, dur: 0.12, vol: 0.2, attack: 0.04 });
             this._noise(ctx, t + 0.1, { filter: 'lowpass', f0: 2600, f1: 200, dur: 0.4, vol: 0.2 });
             this._tone(ctx, t + 0.05, { type: 'sine', f0: 130 * j, f1: 40, dur: 0.35, vol: 0.24 });
-            this._crackle(ctx, t + 0.12, { n: 8, spread: 0.4, f: 1000, vol: 0.07 });
+            if (!this._sample(ctx, t + 0.12, { name: 'crackle', rate: 1.1, vol: 0.3 })) this._crackle(ctx, t + 0.12, { n: 8, spread: 0.4, f: 1000, vol: 0.07 });
         },
         meteor_fall(ctx, t, o, j) {        // a meteor coming down (o.ms its fall): a whistle dropping, a fire roar swelling (o.small: a Meteor Strike one)
             const d = (o.ms || 520) / 1000, v = o.small ? 0.45 : 1;
@@ -504,7 +528,7 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sine', f0: 95 * j, f1: 28, dur: 0.55, vol: 0.32 * v });
             this._noise(ctx, t, { filter: 'lowpass', f0: 3000, f1: 140, dur: 0.5, vol: 0.26 * v });
             this._crackle(ctx, t + 0.02, { n: 7, spread: 0.12, f: 700, vol: 0.14 * v, q: 1.2 });
-            this._crackle(ctx, t + 0.15, { n: o.small ? 4 : 10, spread: 0.6, f: 1000, vol: 0.06 * v });
+            if (!this._sample(ctx, t + 0.15, { name: 'crackle', rate: 0.9 + Math.random() * 0.2, vol: 0.32 * v })) this._crackle(ctx, t + 0.15, { n: o.small ? 4 : 10, spread: 0.6, f: 1000, vol: 0.06 * v });
         },
         w_ice_fists(ctx, t, o, j) {        // a crisp crack of ice
             this._noise(ctx, t, { filter: 'highpass', f0: 3000, f1: 1500, dur: 0.05, vol: 0.14 });
@@ -590,12 +614,12 @@ const Sfx = {
             this._noise(ctx, t, { filter: 'lowpass', f0: 2500, f1: 120, dur: 0.4 * big, vol: 0.26 });
         },
         freeze(ctx, t, o, j) {             // ice closing over something: frost crackling across it, then a glassy set
-            this._crackle(ctx, t, { n: 10, spread: 0.18, f: 2200, vol: 0.12, q: 1.5 });
+            if (!this._sample(ctx, t, { name: 'ice_crack', rate: 1.1 * j, vol: 0.32 })) this._crackle(ctx, t, { n: 10, spread: 0.18, f: 2200, vol: 0.12, q: 1.5 });
             this._tone(ctx, t + 0.12, { type: 'sine', f0: 2600 * j, f1: 2500 * j, dur: 0.3, vol: 0.05 });
             this._tone(ctx, t + 0.12, { type: 'sine', f0: 3900 * j, dur: 0.2, vol: 0.02 });
         },
         shatter(ctx, t, o, j) {            // ice breaking apart: a hard crack, shards ringing out, a scatter of pieces
-            this._noise(ctx, t, { filter: 'bandpass', f0: 1800, f1: 900, q: 1, dur: 0.06, vol: 0.22 });
+            if (!this._sample(ctx, t, { name: 'ice_crack2', rate: j, vol: 0.5 })) this._noise(ctx, t, { filter: 'bandpass', f0: 1800, f1: 900, q: 1, dur: 0.06, vol: 0.22 });
             this._tone(ctx, t, { type: 'triangle', f0: 260 * j, f1: 120, dur: 0.08, vol: 0.16 });
             this._glass(ctx, t + 0.01, { n: 7, spread: 0.06, f: 2600 * j, vol: 0.035, dur: 0.3 });
             this._crackle(ctx, t + 0.06, { n: 6, spread: 0.25, f: 1800, vol: 0.06 });
@@ -677,7 +701,8 @@ const Sfx = {
             this._tone(ctx, t, { type: 'triangle', f0: 520 + 700 * p, dur: 0.05, vol: 0.06 });
             this._noise(ctx, t, { filter: 'highpass', f0: 3000, dur: 0.02, vol: 0.05 });
         },
-        e_flip(ctx, t) {                   // a card turning over
+        e_flip(ctx, t, o, j) {             // a card turning over, a page of the diary: paper
+            if (this._sample(ctx, t, { name: 'page', rate: 0.9 + Math.random() * 0.2, vol: 0.35 })) return;
             this._noise(ctx, t, { filter: 'bandpass', f0: 1200, f1: 3200, q: 2, dur: 0.12, vol: 0.12 });
         },
         // the hush before a big one lands: a riser, longer and wider the rarer it is
@@ -759,13 +784,16 @@ const Sfx = {
                 this._tone(ctx, t + d, { type: 'triangle', f0: f / 2, dur: d === 0.4 ? 0.7 : 0.14, vol: 0.08 });
             });
         },
-        roar(ctx, t) {                     // a boss wakes up
+        roar(ctx, t, o, j) {               // a boss wakes up (o.big: the long roar), or a creature rears up
+            if (this._sample(ctx, t, { name: o.big ? 'roar_big' : 'roar', rate: (o.big ? 0.9 : 1) * (1 + (j - 1) * 0.5), vol: o.big ? 0.55 : 0.45, space: 0.25 })) return;
             this._tone(ctx, t, { type: 'sawtooth', f0: 70, f1: 45, dur: 1.0, vol: 0.14, attack: 0.1 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 200, dur: 1.0, vol: 0.2, attack: 0.15 });
         },
-        bossdie(ctx, t) {                  // a boss down: a long collapse, then a chime
-            this._tone(ctx, t, { type: 'sine', f0: 200, f1: 30, dur: 1.4, vol: 0.28 });
-            this._noise(ctx, t, { filter: 'lowpass', f0: 3000, f1: 80, dur: 1.4, vol: 0.24 });
+        bossdie(ctx, t) {                  // a boss down: its dying breath (or a long collapse), then a chime
+            if (!this._sample(ctx, t, { name: 'bossdie', vol: 0.25, space: 0.3 })) {
+                this._tone(ctx, t, { type: 'sine', f0: 200, f1: 30, dur: 1.4, vol: 0.28 });
+                this._noise(ctx, t, { filter: 'lowpass', f0: 3000, f1: 80, dur: 1.4, vol: 0.24 });
+            }
             [523, 784, 1046].forEach((f, i) => this._tone(ctx, t + 1 + i * 0.1, { type: 'sine', f0: f, dur: 0.6, vol: 0.06 }));
         },
         fragment(ctx, t) {                 // fragments earned: crystal shimmer

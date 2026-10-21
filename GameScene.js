@@ -550,7 +550,7 @@ class GameScene extends Phaser.Scene {
         this.DASH_COOLDOWN = 1100;   // ms
         this.DASH_IFRAMES = 220;     // ms untouchable from the start of a dash
         this.FIRE_DASH = { RUSH: 12, STAGGER: 300, OPEN_MS: 600, ERUPT: 16 };   // its hit going through, the stagger, the fissure's wait, each eruption's burst (x damageScaling)
-        this._dashReadyAt = 0;
+        this._dashReadyAt = 0; this._gluUntil = 0; this._gluFx = null;
         this._dashInvulnUntil = 0;
         this._lastMoveDir = { x: 0, y: 1 };
 
@@ -1027,7 +1027,7 @@ class GameScene extends Phaser.Scene {
         this._cosmicHop();
         this.time.delayedCall(HOP_GAP, () => {
             this._cosmicHops = false; this.lastCosmicDashTime = this.time.now;
-            if (this.currentElement === 'cosmic' && !this._deathScreenActive && !this._csRooted?.()) this._cosmicHop();
+            if (this.currentElement === 'cosmic' && !this._deathScreenActive && !this._csRooted?.() && !this._glued()) this._cosmicHop();
         });
     }
     _cosmicHop() {
@@ -1106,7 +1106,7 @@ class GameScene extends Phaser.Scene {
         const preUpdatePlayerX = this.playerX;
         const preUpdatePlayerY = this.playerY;
 
-        if (this.currentElement === 'cosmic' && this.shiftKey.isDown && !this.shiftWasDown && !this._csRooted?.() && !this._frostPinned?.()) {   // (pinned: falls to the queue below, which refuses it)
+        if (this.currentElement === 'cosmic' && this.shiftKey.isDown && !this.shiftWasDown && !this._csRooted?.() && !this._glued()) {   // (glued: falls to the queue below, which refuses it)
             // Use stored pointer + scroll for guaranteed world coords
             const mouseWorldX = this.pointerX + this.cameras.main.scrollX;
             const mouseWorldY = this.pointerY + this.cameras.main.scrollY;
@@ -1120,10 +1120,11 @@ class GameScene extends Phaser.Scene {
         this._updateGlide(this.time.now);   // a dash in progress (ElementSystem.js). The scene clock, as the dash set it: after a pause
         // the frame's `time` runs ahead of it by the pause, and the glide finished on its first frame
         // Dash: the way the movement keys point, or the way you last moved.
-        if (this._dashQueued && (this._csRooted?.() || this._iceShellUntil > this.time.now)) this._dashQueued = false;   // transforming or encased: no dash
-        if (this._dashQueued && this._frostPinned?.()) {   // inside a Frost Slime's lit grid: no movement skills
+        this._updateGlu();
+        if (this._dashQueued && this._csRooted?.()) this._dashQueued = false;   // transforming: no dash
+        if (this._dashQueued && this._glued()) {   // a Glu (LevelManager._applyGlu): no dashing
             this._dashQueued = false;
-            if (this.time.now - (this._pinnedSaidAt || 0) > 700) { this._pinnedSaidAt = this.time.now; this.showStatusText(this.player.x, this.player.y - 30, 'FROZEN IN PLACE', '#bff4ff'); }
+            if (this.time.now - (this._pinnedSaidAt || 0) > 700) { this._pinnedSaidAt = this.time.now; this.showStatusText(this.player.x, this.player.y - 30, 'GLUED', '#e8c84a'); Sfx.play(this, 'deny'); }
         }
         if (this._dashQueued) {
             this._dashQueued = false;
@@ -1716,6 +1717,9 @@ class GameScene extends Phaser.Scene {
     _waterPatch(...a) { return LevelManager.prototype._waterPatch.call(this, ...a); }
     _frostGridTick(...a) { return LevelManager.prototype._frostGridTick.call(this, ...a); }
     _frostPinned(...a) { return LevelManager.prototype._frostPinned.call(this, ...a); }
+    _applyGlu(...a) { return LevelManager.prototype._applyGlu.call(this, ...a); }
+    _glued(...a) { return LevelManager.prototype._glued.call(this, ...a); }
+    _updateGlu(...a) { return LevelManager.prototype._updateGlu.call(this, ...a); }
     _bakeWater(...a) { return LevelManager.prototype._bakeWater.call(this, ...a); }
     _redrawWater(...a) { return LevelManager.prototype._redrawWater.call(this, ...a); }
     generateWaterBlobs(...a) { return LevelManager.prototype.generateWaterBlobs.call(this, ...a); }
