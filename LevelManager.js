@@ -7469,6 +7469,7 @@ class LevelManager {
         // opts.src (a projectile): it lands once on this queen, not every frame it overlaps her
         if (opts.src) { const hit = portal._hitBy ||= new WeakSet(); if (hit.has(opts.src)) return; hit.add(opts.src); }
         if (opts.src?.volleyId) damage *= this._volleyMult(portal, opts.src.volleyId);   // a cone of shots on one queen: each after the first counts for less, as on a boss
+        Sfx.play(this, 'bosshit', { el: this.currentElement });   // (queens take hits here, not through damageEnemy)
         const time = this.time.now;
 
         // ── PORTALS USE BRITTLE, NOT FREEZE ──────────────────────────────────

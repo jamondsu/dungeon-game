@@ -1146,7 +1146,13 @@ class CombatSystem {
         if (boss._decayOwed > 0) boss._decayOwed = Math.max(0, boss._decayOwed - damage);   // locks the decay in
         return damage;
     }
+    // A hit on whatever boss stands on that tile. Boss hits skip damageEnemy, so their sound is made here: the element's hit with a big body's thud under it.
     damageBossAtTile(tileX, tileY, damage, sourceId, element = null) {
+        const hit = this._damageBossAtTile(tileX, tileY, damage, sourceId, element);
+        if (hit) Sfx.play(this, 'bosshit', { el: element || this.currentElement });
+        return hit;
+    }
+    _damageBossAtTile(tileX, tileY, damage, sourceId, element = null) {
         // ── Helper: per-source cooldown guard ────────────────────────────────
         const _cooldownOk = (boss) => {
             if (sourceId === undefined) return true;

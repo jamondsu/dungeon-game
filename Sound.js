@@ -17,7 +17,7 @@
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
            w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
-           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30 },
+           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30, bosshit: 70 },
     _last: {},
     _noiseBuf: null,
     _master: null,
@@ -325,6 +325,12 @@ const Sfx = {
             else if (o.el === 'lightning') this._tone(ctx, t, { type: 'square', f0: 1400 * j, f1: 300, dur: 0.06, vol: 0.06 });
             else if (o.el === 'cosmic') this._tone(ctx, t, { type: 'sine', f0: 700 * j, f1: 260, dur: 0.12, vol: 0.12 });
             else this._tone(ctx, t, { type: 'triangle', f0: 220 * j, f1: 120, dur: 0.06, vol: 0.14 });
+        },
+        // A hit on a boss: the element's hit with weight under it, the dull thud of a big body.
+        bosshit(ctx, t, o, j) {
+            this.SOUNDS.hit.call(this, ctx, t, o, j);
+            this._tone(ctx, t, { type: 'sine', f0: 120 * j, f1: 55, dur: 0.12, vol: 0.1 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 200, dur: 0.08, vol: 0.07 });
         },
         // A slime bursting: a wet pop and a falling thump.
         kill(ctx, t, o, j) {

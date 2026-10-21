@@ -2037,6 +2037,7 @@ class GameScene extends Phaser.Scene {
     _frostShieldFx(...a) { return CombatSystem.prototype._frostShieldFx.call(this, ...a); }
     _frostShieldHit(...a) { return CombatSystem.prototype._frostShieldHit.call(this, ...a); }
     damageBossAtTile(...a) { return CombatSystem.prototype.damageBossAtTile.call(this, ...a); }
+    _damageBossAtTile(...a) { return CombatSystem.prototype._damageBossAtTile.call(this, ...a); }
     _zapBosses(...a) { return CombatSystem.prototype._zapBosses.call(this, ...a); }
     gainUltCharge(...a) { return CombatSystem.prototype.gainUltCharge.call(this, ...a); }
     _noteUltHit(...a)   { return CombatSystem.prototype._noteUltHit.call(this, ...a); }

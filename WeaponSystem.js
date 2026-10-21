@@ -2950,6 +2950,7 @@ class WeaponSystem {
         const time = this.time.now;
         // Check frozen BEFORE iceImmune — frozen ice elementals can be shattered
         if (enemy.isFrozen) { this._clearFreezeVisuals(enemy); this._triggerShatterBurst(enemy); return; }
+        Sfx.play(this, 'hit', { el: 'ice' });   // (these hits skip damageEnemy, where the others make theirs)
 
         // Ice elementals (iceImmune) take NO chip damage — only chill stacks toward freeze/shatter
         if (!enemy.iceImmune) {
@@ -2977,6 +2978,7 @@ class WeaponSystem {
             return;
         }
         if (enemy.isFrozen) { this._clearFreezeVisuals(enemy); this._triggerShatterBurst(enemy, shatterMult); return; } // cannon: scaled shatter
+        Sfx.play(this, 'hit', { el: 'ice' });
 
         if (!enemy.iceImmune) {
             const _rd1492 = this.resolveElementalHit(enemy, damage, 'ice');
@@ -3007,6 +3009,7 @@ class WeaponSystem {
             this._triggerShatterBurst(enemy, 1.6); // Fractal Shard — buffed shatter damage
             return;
         }
+        Sfx.play(this, 'hit', { el: 'ice' });
         // Ice elementals: skip chip damage, only chill toward shatter
         if (!enemy.iceImmune) {
             const _rd1532 = this.resolveElementalHit(enemy, damage, 'ice');
@@ -3162,6 +3165,7 @@ class WeaponSystem {
         if (enemy._justFrozenAt && this.time.now - enemy._justFrozenAt < 200) return;
         if (!enemy._shatterTriggered) {
             enemy._shatterTriggered = true;
+            Sfx.play(this, 'shatter');
 
             // Kill all tweens, then force correct position+scale on next frame
             // (onComplete of killed tweens may still fire this frame)
