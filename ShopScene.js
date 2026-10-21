@@ -1210,7 +1210,7 @@ class ShopScene extends Phaser.Scene {
         this._glurpTyper = this.time.addEvent({ delay: 16, loop: true, callback: () => {
             n = Math.min(full.length, n + 2);
             T.setText(full.slice(0, n) + full.slice(n).replace(/[^\n]/g, ' '));
-            if ((n >> 1) % 3 === 0 && /[a-z0-9]/i.test(full[n - 1] || '')) Sfx.play(this, 'blip', { v: 'glurp' });
+            if ((n >> 1) % 5 === 0 && /[a-z0-9]/i.test(full[n - 1] || '')) Sfx.play(this, 'blip', { v: 'glurp' });
             if (n >= full.length) this._glurpTyper.remove();
         } });
     }

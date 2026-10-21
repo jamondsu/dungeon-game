@@ -862,7 +862,7 @@ class TutorialManager {
         const typer = this.time.addEvent({ delay: 16, loop: true, callback: () => {
             n = Math.min(message.length, n + 2);
             msg.setText(message.slice(0, n));
-            if (speakerName && (n >> 1) % 3 === 0 && /[a-z0-9]/i.test(message[n - 1] || '')) Sfx.play(this, 'blip', { v: speakerName.toLowerCase() });   // the speaker's voice, every few letters
+            if (speakerName && (n >> 1) % 5 === 0 && /[a-z0-9]/i.test(message[n - 1] || '')) Sfx.play(this, 'blip', { v: speakerName.toLowerCase() });   // the speaker's voice, every few letters
             if (n >= message.length) { typer.remove(); foot.setAlpha(1); this.tweens.add({ targets: foot, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 }); }
         } });
         this._dialogueTyper = typer;

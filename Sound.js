@@ -17,7 +17,7 @@
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
            w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
-           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30, bosshit: 70,
+           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 60, bosshit: 70,
            tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
     _last: {},
     _noiseBuf: null,
@@ -72,7 +72,7 @@ const Sfx = {
     // synth version until it's in (or if it never loads).
     // (CC0 from Freesound, Pixabay for the snap: see assets/sfx/CREDITS.md)
     SAMPLES: Object.fromEntries(['evil_laugh', 'snap', 'roar', 'roar_big', 'bossdie', 'lava_loop', 'lava_pop1', 'lava_pop2', 'sear', 'crackle',
-        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles'].map(k => [k, `assets/sfx/${k}.wav`])),
+        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_burst', 'zap', 'magic_whoosh'].map(k => [k, `assets/sfx/${k}.wav`])),
     _buf: {},
     _loadSamples(ctx) {
         if (typeof fetch !== 'function') return;
@@ -435,8 +435,17 @@ const Sfx = {
             this._tone(ctx, t, { type: 'square', f0: 240 * j, f1: 90, dur: 0.16, vol: 0.12 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 150, dur: 0.14, vol: 0.2 });
         },
-        // Air rushing past.
+        // A dash, each element its own (o.el): a fire whoosh, a whoosh with ice cracking under it, an electric zap (the blink),
+        // a magic whoosh (the cosmic hop); air rushing past when the recordings aren't in
         dash(ctx, t, o, j) {
+            const r = 0.94 + Math.random() * 0.12;
+            if (o.el === 'fire' ? this._sample(ctx, t, { name: 'fire_whoosh', rate: r, vol: 0.45 })
+                : o.el === 'lightning' ? this._sample(ctx, t, { name: 'zap', rate: r, vol: 0.4 })
+                : o.el === 'cosmic' ? this._sample(ctx, t, { name: 'magic_whoosh', rate: r, vol: 0.45 })
+                : this._sample(ctx, t, { name: 'dash_whoosh', rate: r, vol: 0.4 })) {
+                if (o.el === 'ice') this._sample(ctx, t + 0.03, { name: 'ice_crack', rate: 1.2, vol: 0.18 });
+                return;
+            }
             this._noise(ctx, t, { filter: 'bandpass', f0: 500 * j, f1: 2400 * j, q: 1.2, dur: 0.17, vol: 0.32, attack: 0.02 });
         },
         // Two quick notes, rising: the element changed.
@@ -511,6 +520,9 @@ const Sfx = {
             this._noise(ctx, t, { filter: 'bandpass', f0: 1400 * j, f1: 800, q: 1, dur: 0.25, vol: 0.24, attack: 0.01 });
             this._crackle(ctx, t, { n: 5, spread: 0.15, f: 900, vol: 0.14 });
         },
+        flameburst(ctx, t, o, j) {         // the fire dash's path erupting: a burst of flame
+            if (!this._sample(ctx, t, { name: 'fire_burst', rate: 0.92 + Math.random() * 0.16, vol: 0.45 })) this.SOUNDS.erupt.call(this, ctx, t, o, j);
+        },
         // (Ignition has no w_ sound: its flame is LOOPS.flame, held while it burns)
         kindle_boom(ctx, t, o, j) {        // a kindled mark going up (G): a gassy whoomph and a crackle
             this._noise(ctx, t, { filter: 'lowpass', f0: 300, f1: 2600, dur: 0.12, vol: 0.2, attack: 0.04 });
@@ -555,8 +567,9 @@ const Sfx = {
             this._noise(ctx, t + 0.04, { filter: 'bandpass', f0: 4200 * j, f1: 2600, q: 2.5, dur: 0.09, vol: 0.1 });
         },
         // ── LIGHTNING ────────────────────────────────────────────────────────
-        zap(ctx, t, o, j) {                // one fork: a dry crackle with a buzzing tick in it
+        zap(ctx, t, o, j) {                // one fork: an electric zap (a recording, pitched about so a chain doesn't repeat itself)
             const v = o.soft ? 0.5 : 1;
+            if (this._sample(ctx, t, { name: 'zap', rate: 0.8 + Math.random() * 0.5, vol: 0.28 * v })) return;
             this._noise(ctx, t, { filter: 'bandpass', f0: (3000 + Math.random() * 2500) * j, f1: 1800, q: 3, dur: 0.05, vol: 0.13 * v });
             this._tone(ctx, t, { type: 'square', f0: (900 + Math.random() * 900) * j, f1: 220, dur: 0.035, vol: 0.035 * v });
             this._noise(ctx, t + 0.02, { filter: 'highpass', f0: 6000, dur: 0.025, vol: 0.06 * v });

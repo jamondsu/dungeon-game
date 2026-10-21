@@ -255,7 +255,7 @@ class ElementSystem {
             SIZE: [0.75, 1.6], R: [1.3, 1.2], DMG: 16, DAZE_MS: 1000,   // impact radius R0 + R1 * size tiles; DMG * size; each one it hits is dazed and takes a Super Burn stack
             HEAL_TICK: 0.0025, HEAL_CAP: 0.03, HEAL_TOTAL: 0.2, OVERHEAL: 0.2,   // of your max HP: a burn tick, at most a second, at most over the whole ult; and how far past full it can take you
             DASH_TILES: 6, ZOOM: 1.45,   // the fire dash while it runs: farther (its quicker recovery is gone: too strong)
-            POOL_MS: 2500, POOL_STRIKE_MS: 1500,   // each meteor leaves a pool of white-hot lava that Super Burns what stands in it: a plus of 5 tiles, a Meteor Strike's one tile
+            POOL_MS: 1500, POOL_BIG: 1.25,   // each meteor leaves a pool of white-hot lava for POOL_MS that Super Burns what stands in it: 3x3, or a 5x5 squircle from one POOL_BIG or bigger
             AURA_R: 6, AURA_EVERY: 1000,   // the fiery aura round you: every AURA_EVERY one enemy in AURA_R tiles takes a Super Burn stack, picked by its HP (more HP, likelier)
             STRIKE_N: [2, 3],   // the periodic strikes after the opening volley, this many at a time
             // Meteor Strike (the attack once the opening volley's down): click an area and N meteors fall into it at random, AREA
@@ -445,9 +445,11 @@ class ElementSystem {
         }, onComplete: () => this.tweens.add({ targets: [rock, glow, cr, crk], alpha: 0, duration: 400, onComplete: () => [rock, glow, cr, crk].forEach(o => o.destroy()) }) });
         // the hit: damage, Dazed for 2s, a Super Burn stack (stage 2: the supernova fuse too)
         if (B?.hostile) { B.hostile(tx, ty, R); return; }   // an Ult Absorber's stolen meteor: it lands on you, not them
-        for (const [ox, oy] of B ? [[0, 0]] : [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {   // its pool
+        const PR = size >= C.POOL_BIG ? 2 : 1;   // its pool
+        for (let ox = -PR; ox <= PR; ox++) for (let oy = -PR; oy <= PR; oy++) {
+            if (PR === 2 && Math.abs(ox) === 2 && Math.abs(oy) === 2) continue;   // (the squircle: corners off)
             if (this.world?.[tx + ox]?.[ty + oy] !== this.FLOOR) continue;
-            this.spawnIgnitionTrail((tx + ox) * T + T / 2, (ty + oy) * T + T / 2, B ? C.POOL_STRIKE_MS : C.POOL_MS, { superBurn: true });
+            this.spawnIgnitionTrail((tx + ox) * T + T / 2, (ty + oy) * T + T / 2, C.POOL_MS, { superBurn: true });
         }
         const stage2 = parseInt(localStorage.getItem('ultStage_fire') || '1') >= 2;
         if (B) {   // a Meteor Strike meteor: everything in reach hit and dazed a moment; the enemy with the most HP it hit Super Burned
@@ -5034,7 +5036,6 @@ class ElementSystem {
         const passed = el === 'lightning' ? [] : (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0
             && path.some(([x, y]) => wide.some(w => e.x === x - dirY * w && e.y === y + dirX * w)));
         if (el === 'lightning') this._dashDazeFx(landX, landY, this.cosmicDashStunDuration);
-        if (el === 'ice') Sfx.play(this, 'freeze');   // a frost trail (it chills what it passes)
         for (const e of passed) {
             if (el === 'ice') {   // one stack; if that fills its bar it's cubed there and then (applyChill). Once per enemy per 3s, so a pack can't be farmed
                 if (now - (e._dashChillAt ?? -1e9) < 3000) continue;
@@ -5055,7 +5056,6 @@ class ElementSystem {
         // of damage round it and lava for 0.7s (it dries before lava's second stack, LAVA_MS 800: one burn a dash)
         if (el === 'fire') {
             const tiles = [[fromX, fromY], ...path].filter(([x, y]) => x !== landX || y !== landY), T = this.TILE_SIZE, OPEN_MS = this.FIRE_DASH.OPEN_MS, STEP = 90, burnt = new Set();
-            Sfx.play(this, 'fissure');
             tiles.forEach(([x, y], k) => {
                 const px = x * T + T / 2, py = y * T + T / 2, c = this.add.graphics().setDepth(0.24).setPosition(px, py), born = this.time.now, seed = x * 31 + y * 17;
                 const f = { g: 0 }, redraw = () => { if (!c.active) return; c.clear(); VisualFX.crackTile(c, T, seed, dirX, dirY, 0.25 + 0.75 * f.g, f.g, this.time.now - born); };
@@ -5065,13 +5065,12 @@ class ElementSystem {
                     if (Math.random() < 0.05 + 0.25 * f.g) { const e = this.add.rectangle(px + (Math.random() - 0.5) * T * 0.6, py, 2, 2, Math.random() < 0.5 ? 0xffe08a : 0xff6a1a).setDepth(3.5).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: e, y: py - 8 - Math.random() * 12, x: e.x + (Math.random() - 0.5) * 6, alpha: 0, duration: 420, onComplete: () => e.destroy() }); }   // embers
                     if (Math.random() < 0.06 * f.g) { const sm = this.add.circle(px + (Math.random() - 0.5) * T * 0.5, py, 3, 0x2a1e18, 0.35).setDepth(3.4); this.tweens.add({ targets: sm, y: py - 22, scale: 2.4, alpha: 0, duration: 900, onComplete: () => sm.destroy() }); }   // smoke
                 } });
-                this.time.delayedCall(OPEN_MS * 0.55, () => { if (k === 0) Sfx.play(this, 'fissure'); });   // it groans wider
                 this.time.delayedCall(OPEN_MS + k * STEP, () => {
                     if (!c.active) return;
                     this.tweens.add({ targets: c, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => c.destroy() });
                     this.spawnIgnitionTrail?.(px, py, 700);
                     for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) this._evaporate?.(x + ox, y + oy, 6);   // it boils the water round it off to fog
-                    Sfx.play(this, 'erupt');
+                    Sfx.play(this, 'flameburst');
                     // the burst: anything on it or beside it, once a dash
                     for (const e of [...(this.enemies || [])]) {
                         if (!e.sprite?.active || e.health <= 0 || burnt.has(e) || Math.max(Math.abs(e.x - x), Math.abs(e.y - y)) > 1) continue;
@@ -5123,7 +5122,7 @@ class ElementSystem {
             this._updateGlide(now + 16); }
         this._vfxHop?.(p);
         this._dashFx(el, x0, y0 - this.SLIME_Y_OFFSET, x1, y1 - this.SLIME_Y_OFFSET, col);
-        Sfx.play(this, 'dash');
+        Sfx.play(this, 'dash', { el });
         PlayerStats.onDash(this);   // Rolling Guard
 
         this.updateHUD();
