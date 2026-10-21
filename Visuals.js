@@ -661,7 +661,9 @@ void main() {
                 this.time.delayedCall(1700, () => f.c.destroy());
                 continue;
             }
-            if (f.x1 < v.x - T * 2 || f.x0 > v.right + T * 2 || f.y1 < v.y - T * 2 || f.y0 > v.bottom + T * 2) continue;
+            const off = f.x1 < v.x - T * 3 || f.x0 > v.right + T * 3 || f.y1 < v.y - T * 3 || f.y0 > v.bottom + T * 3;   // (puffs spill ~2.2 tiles past the room)
+            if (f.c.visible === off) f.c.setVisible(!off);   // off screen it isn't drawn: hundreds of puffs a room, and _vfxCull skips big containers
+            if (off) continue;
             for (const p of f.puffs) { const b = 1 + 0.08 * Math.sin(time * 0.0012 + p._ph); p.setScale(p._s * b, p._sy * b); }   // on screen: its edge breathes
         }
     }
