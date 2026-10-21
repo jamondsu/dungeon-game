@@ -733,22 +733,33 @@ class TutorialManager {
         this.input.keyboard.enabled = false;
         this.isPointerDown = false;
 
-        // Player shrinks and falls into pit
-        this.tweens.add({
-            targets: this.player,
-            scaleX: 0, scaleY: 0,
-            duration: 400,
-            ease: 'Power2'
-        });
+        // The jump: a hop up off the floor, stretching, then a dive into the middle of the rift, spinning and shrinking away
+        // (its fists hidden: Creatures.gear), the rift flaring as it takes you, then the screen goes black
+        const p = this.player, T = this.TILE_SIZE, P = this._tutorialPit, cx = P.pitX * T + T / 2, cy = P.pitY * T + T / 2;
+        const sx = p.scaleX, sy = p.scaleY, y0 = p.y;
+        this.tweens.killTweensOf(p); this._step = null;
+        this._tutFalling = true;
+        Sfx.play(this, 'swing', { soft: true });
+        this.tweens.add({ targets: p, x: cx, y: y0 - 20, scaleX: sx * 0.85, scaleY: sy * 1.2, duration: 230, ease: 'Quad.easeOut', onComplete: () => {
+            Sfx.play(this, 'whoosh');
+            this.tweens.add({ targets: p, y: cy - 2, scaleX: sx * 0.12, scaleY: sy * 0.12, angle: 200, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => {
+                p.setVisible(false);
+                Sfx.play(this, 'portal', { close: true });
+                this._vfxFlash?.(cx, cy, T * 3, 0xc07cff, 360, 0.9);
+                const core = P.ring1?.list?.[0];   // the vortex spins up as it swallows you
+                if (core) { this.tweens.killTweensOf(core); this.tweens.add({ targets: core, angle: core.angle - 720, duration: 900, ease: 'Cubic.easeOut' }); }
+                if (P.ring1) this.tweens.add({ targets: P.ring1, scaleX: P.ring1.scaleX * 1.25, scaleY: P.ring1.scaleY * 1.25, duration: 160, yoyo: true, ease: 'Quad.easeOut' });
+            } });
+        } });
 
-        // Screen fades to black
-        const blackOut = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
+        // Screen fades to black (its fill opaque, the rectangle fading in: a fill alpha of 0 left it invisible however the alpha went)
+        const blackOut = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 1).setAlpha(0)
             .setDepth(2000).setScrollFactor(0);
         this.tweens.add({
             targets: blackOut,
             alpha: 1,
-            duration: 600,
-            delay: 200,
+            duration: 500,
+            delay: 700,
             onComplete: () => this.playVoidFallScene(blackOut)
         });
     }
@@ -814,7 +825,7 @@ class TutorialManager {
             localStorage.setItem('fireTutorialComplete', '1');
         }
 
-        const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0)
+        const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 1).setAlpha(0)
             .setDepth(3000).setScrollFactor(0);
         this.tweens.add({
             targets: flash, alpha: 1, duration: 400,

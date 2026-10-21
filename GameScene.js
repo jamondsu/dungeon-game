@@ -550,7 +550,7 @@ class GameScene extends Phaser.Scene {
         this.DASH_COOLDOWN = 1100;   // ms
         this.DASH_IFRAMES = 220;     // ms untouchable from the start of a dash
         this.FIRE_DASH = { RUSH: 12, STAGGER: 300, OPEN_MS: 600, ERUPT: 16 };   // its hit going through, the stagger, the fissure's wait, each eruption's burst (x damageScaling)
-        this._dashReadyAt = 0; this._gluUntil = 0; this._gluFx = null;
+        this._dashReadyAt = 0; this._gluUntil = 0; this._gluFx = null; this._tutFalling = false;
         this._dashInvulnUntil = 0;
         this._lastMoveDir = { x: 0, y: 1 };
 

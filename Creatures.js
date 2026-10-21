@@ -561,7 +561,7 @@ class CreatureFX {
         const id = scene.equippedWeapons?.[scene.currentElement];
         const def = CreatureFX.GEAR()[id];
         const key = def && typeof MenuArt !== 'undefined' ? MenuArt.iconSheet(scene, id) : null;
-        const show = !!(p?.active && key && p.visible !== false && (p.alpha ?? 1) > 0.05 && !scene._deathScreenActive && !(scene._iceShellUntil > scene.time.now));   // (hidden while the ice ult encases you)
+        const show = !!(p?.active && key && p.visible !== false && (p.alpha ?? 1) > 0.05 && !scene._deathScreenActive && !(scene._iceShellUntil > scene.time.now) && !scene._tutFalling);   // (hidden while the ice ult encases you)
         if (!show) { if (G) { G.main.setVisible(false); G.off.setVisible(false); } return; }
         if (!G) {
             const mk = () => scene.add.sprite(p.x, p.y, key, '0');
