@@ -72,7 +72,7 @@ class GameScene extends Phaser.Scene {
         // left traps unable to poison again, and one that ended rooted left you unable to walk
         // on any level that does not clear roots itself.
         this.playerPoisoned = false; this._poisonTickCount = 0; this._elStolen = null;
-        this._poisonUntil = 0; this._bleedUntil = 0; this._drippingUntil = 0; this._playerRooted = false; this._hurtTotal = 0;   // (the scene object outlives a restart: what was on you mustn't come with it)
+        this._poisonUntil = 0; this._bleedUntil = 0; this._pBurnUntil = 0; this._pBurn = 0; this._absHexUntil = 0; this._drippingUntil = 0; this._playerRooted = false; this._hurtTotal = 0;   // (the scene object outlives a restart: what was on you mustn't come with it)
         this._playerRooted  = false; this._playerRootUntil = 0; this._ccImmuneUntil = 0;
 
         // Remove any extra cameras added by the death screen
@@ -697,7 +697,7 @@ class GameScene extends Phaser.Scene {
         this._lastCombatAt = -1e9;
         if (!this.trainingRun) Telemetry.begin(this); else this._tele = null;   // the run's record (Telemetry.js)
         this.events.once('shutdown', () => Telemetry.end(this, 'quit'));   // left mid-level
-        this._fragsThisLevel = 0;   // fragments paid this level (Progress.announce)
+        this._fragsThisLevel = 0; this._achThisLevel = [];   // fragments paid this level (Progress.announce)
         this.allies = [];           // the decoy now, voidlets later (CombatSystem._addAlly)
         this._musicCheckAt = 0;     // HUD._updateMusic (the scene object outlives a restart)
         this._frostShieldUntil = 0; // the Icicle Cannon's Frost Shield
@@ -2011,6 +2011,7 @@ class GameScene extends Phaser.Scene {
     orbEmitterAttack(...a)            { return WeaponSystem.prototype.orbEmitterAttack.call(this, ...a); }
     _drawOrbEmitterGfx(...a) { return WeaponSystem.prototype._drawOrbEmitterGfx.call(this, ...a); }
     _superconduct(...a) { return WeaponSystem.prototype._superconduct.call(this, ...a); }
+    _statusPop(...a) { return WeaponSystem.prototype._statusPop.call(this, ...a); }
     _orbHitEnemy(...a) { return WeaponSystem.prototype._orbHitEnemy.call(this, ...a); }
     spawnFireballLavaPool(...a)  { return WeaponSystem.prototype.spawnFireballLavaPool.call(this, ...a); }
     fractalShardAttack(...a)    { return WeaponSystem.prototype.fractalShardAttack.call(this, ...a); }
@@ -2040,6 +2041,7 @@ class GameScene extends Phaser.Scene {
     _ultStatusOf(...a)  { return CombatSystem.prototype._ultStatusOf.call(this, ...a); }
     switchToElement(...a) { return CombatSystem.prototype.switchToElement.call(this, ...a); }
     updateUltAbsorbers(...a) { return CombatSystem.prototype.updateUltAbsorbers.call(this, ...a); }
+    _absorberCast(...a) { return CombatSystem.prototype._absorberCast.call(this, ...a); }
     updateBurnEffects(...a) { return CombatSystem.prototype.updateBurnEffects.call(this, ...a); }
     showBurnVisual(...a) { return CombatSystem.prototype.showBurnVisual.call(this, ...a); }
     clearBurnVisual(...a) { return CombatSystem.prototype.clearBurnVisual.call(this, ...a); }
@@ -2199,6 +2201,8 @@ class GameScene extends Phaser.Scene {
     pointToLineDistance(...a) { return ElementSystem.prototype.pointToLineDistance.call(this, ...a); }
     activateCosmicBlackHole(...a) { return ElementSystem.prototype.activateCosmicBlackHole.call(this, ...a); }
     detonateCosmicBomb(...a) { return ElementSystem.prototype.detonateCosmicBomb.call(this, ...a); }
+    _voidBombFx(...a) { return ElementSystem.prototype._voidBombFx.call(this, ...a); }
+    _voidBurstFx(...a) { return ElementSystem.prototype._voidBurstFx.call(this, ...a); }
     updateCosmicBlackHoleProjectile(...a) { return ElementSystem.prototype.updateCosmicBlackHoleProjectile.call(this, ...a); }
     deployCosmicBlackHole(...a) { return ElementSystem.prototype.deployCosmicBlackHole.call(this, ...a); }
     updateCosmicBlackHole(...a) { return ElementSystem.prototype.updateCosmicBlackHole.call(this, ...a); }

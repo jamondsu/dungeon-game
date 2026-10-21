@@ -4437,7 +4437,7 @@ class LevelManager {
         Sfx.play(this, 'clink');
     }
     // What's on you, as a row of small pixel icons over your head, each with its time running down beneath:
-    // dripping, bleeding, poisoned, rooted (one graphics, redrawn each frame)
+    // dripping, bleeding, poisoned, rooted, burning, hexed (one graphics, redrawn each frame)
     _playerStatusRow(time) {
         const p = this.player;
         const on = [];
@@ -4445,6 +4445,8 @@ class LevelManager {
         if ((this._bleedUntil || 0) > time) on.push(['bleed', (this._bleedUntil - time) / this._hunterCfg().BLEED_MS]);
         if ((this._poisonUntil || 0) > time) on.push(['poison', Math.min(1, (this._poisonUntil - time) / 4000)]);
         if (this._playerRooted && (this._playerRootUntil || 0) > time) on.push(['root', Math.min(1, (this._playerRootUntil - time) / 1500)]);
+        if ((this._pBurnUntil || 0) > time) on.push(['burn', (this._pBurnUntil - time) / 3000]);
+        if ((this._absHexUntil || 0) > time) on.push(['hex', (this._absHexUntil - time) / 4000]);
         const g = this._statusRowG;
         if (!on.length || !p?.active || this._deathScreenActive) { if (g?.active) g.clear(); return; }
         const G = g?.active ? g : (this._statusRowG = this.add.graphics().setDepth(5.5));
@@ -4454,6 +4456,8 @@ class LevelManager {
             bleed:  { rows: ['...k...', '..krk..', '.krrrk.', 'krrwrrk', 'krrrrrk', 'krrrrrk', '.krrrk.', '..kkk..'], r: 0xd8202e, w: 0xffb0b0 },
             poison: { rows: ['.k...k.', 'kgk.kwk', '.k.kgk.', '..kgggk', '.kggwgk', 'kggggk.', 'kgggk..', '.kkk...'], g: 0x8ae04a, w: 0xe8ffd0 },
             root:   { rows: ['..k.k..', '.kvkvk.', '.kvkvk.', '..kvk..', 'k.kvk.k', 'vkkvkkv', '.vvvvv.', '..kkk..'], v: 0x6a4a26 },
+            burn:   { rows: ['...k...', '..kok..', '.kooyk.', '.koyok.', 'kooyyok', 'koyyyok', '.koyok.', '..kkk..'], o: 0xff6a20, y: 0xffd040 },
+            hex:    { rows: ['.kkkkk.', 'k.khk.k', 'kkhhhkk', 'khhwhhk', 'kkhhhkk', 'k.khk.k', '.kkkkk.', '.......'], h: 0xb05cff, w: 0xf0d0ff },
         };
         const S = 1.5, W = 7 * S, GAP = 4, x0 = -(on.length * (W + GAP) - GAP) / 2;
         on.forEach(([kind, left], i) => {
@@ -4463,7 +4467,7 @@ class LevelManager {
                 G.fillStyle(c === 'k' ? 0x14090a : A[c], 1).fillRect(ox + x * S, y * S - 12 + bob, S, S);
             }));
             G.fillStyle(0x14090a, 0.9).fillRect(ox, 1, W, 2.5);   // its time, running down
-            G.fillStyle(A.b ?? A.r ?? A.g ?? A.v, 1).fillRect(ox + 0.5, 1.5, Math.max(0, (W - 1) * Math.min(1, left)), 1.5);
+            G.fillStyle(A.b ?? A.r ?? A.g ?? A.v ?? A.o ?? A.h, 1).fillRect(ox + 0.5, 1.5, Math.max(0, (W - 1) * Math.min(1, left)), 1.5);
         });
     }
     // BLEED: moving hurts. Every tile you go while it lasts (a dash, every tile it covers) costs BLEED_STEP.

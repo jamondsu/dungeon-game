@@ -19,7 +19,7 @@
 //                  Event Horizon: -30% damage taken while it's out and 5s after (12s)
 //   Void Blade     hold to charge, release to slash: longer, wider and a longer stun the
 //                  longer you held (3-7 tiles, 1-3 wide, 0.6-1.8s). Retribution, 10s: when
-//                  you're hit, everything within 3 tiles is Hexed for 5s (+25% damage
+//                  you're hit, everything within 3 tiles is Hexed for 5s (up to +45%
 //                  taken, -40% speed, a mark)                                        (12s)
 //   Ascend (ult)   10s: +25% max HP, free switching, fluid blasts, trail and waves, your boon at full
 //                  strength, then a supernova that cashes every mark in reach in as damage
@@ -80,7 +80,7 @@ class CosmicSystem {
             BLADE:   { CD: 12000, MS: 10000, HOLD_MAX: 3500 * (1 - 0.15 * WeaponLevels.perk('void_blade', 'charge')), TILES: 3, TILES_MAX: 18, W0: 0.35, W1: 0.6, DMG: 10, DMG_MAX: 18,
                        FAN: 0.13 * WeaponLevels.perk('void_blade', 'fan'),   // Fan Cut: half-width added per tile out
                        STUN: 600, STUN_MAX: 3500 + 2500 * WeaponLevels.perk('void_blade', 'stun') / 3, STUN_CURVE: 1.8, SLOW: 2.6, ZOOM: 0.14, CASCADE_MS: 30, FLUID_MS: 2500, FLUID_MAX: 6500, FLUID_TICK: 2000,
-                       HEX_R: 3, HEX_MS: 5000, HEX_STACKS: [1.07, 1.15, 1.25], HEX_SLOW: 0.6,
+                       HEX_R: 3, HEX_MS: 5000, HEX_STACKS: [1.10, 1.25, 1.45], HEX_SLOW: 0.6,
                        // the blade's own Hex (from its fluid) outlasts every other source, longer the longer the charge
                        HEX_BLADE_MS: 6000, HEX_BLADE_MAX: 14000 },
             ASCEND:  { MS: 10000, HP: 0.25, NOVA_R: 4, NOVA_BASE: 12, NOVA_PER_MARK: 8, TAKEN_S2: 0.8,
@@ -113,7 +113,7 @@ class CosmicSystem {
             // is eight objects, a star of four pairs crashing into the centre (MULT × a pair's
             // hit, in a wider COLLAPSE_R; each pierces at PIERCE_SHARE). They
             // pass through walls, drag what they pierce along, and Hex what they land on
-            // (Void Blade's Hex: +25% damage taken, slowed). A longer form than the partial
+            // (Void Blade's Hex: up to +45% damage taken, slowed). A longer form than the partial
             // one's, so spending the third layer is always worth it.
             TF3:     { SLAM_R: 3, SLAM_DMG: 30, DAZE_MS: 1500, FORM_MS: 11000, FORM_MAX_MS: 18000,
                        REGEN: 0.0008, REGEN_MS: 50,
@@ -501,7 +501,7 @@ class CosmicSystem {
         this.cameras.main.shake(60, 0.004);
     }
 
-    // One more Hex stack (3 at most): +7% / +15% / +25% damage taken, slowed. The timer keeps whichever
+    // One more Hex stack (3 at most): +10% / +25% / +45% damage taken, slowed. The timer keeps whichever
     // lasts longer, what's left or the new one; when it runs out the stacks fall off one a second
     // (_csUpdateMarks). Every cosmic Hex goes through here (the fluid, Retribution, collapses).
     // `ms`: how long this source's Hex lasts; a shorter one never cuts a longer one short.

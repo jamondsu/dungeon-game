@@ -358,11 +358,14 @@ class CreatureFX {
     //              behind it, snowflakes circling, cold mist at its feet
     //   lightning  Lightning God: a storm-dark plate etched with glowing circuits, a crackling halo with nodes over it,
     //              eyes alight, arcs crawling, now and then a bolt from the halo to the ground
-    static ultArmor(scene, el, ms) {
-        const p = scene.player; if (!p?.active || !['fire', 'ice', 'lightning'].includes(el)) return;
-        scene._ultArmor?.end?.();
+    // `target`: another creature's sprite to wear it instead (an Ult Absorber with an ult it stole): a partial suit, the shell
+    // thinner, no rune circle or screen wash, and cosmic gets one too (a void shell, stars circling).
+    static ultArmor(scene, el, ms, target = null) {
+        const p = target || scene.player, part = !!target, holder = part ? target : scene;
+        if (!p?.active || !['fire', 'ice', 'lightning', ...(part ? ['cosmic'] : [])].includes(el)) return;
+        holder._ultArmor?.end?.();
         const ADD = Phaser.BlendModes.ADD;
-        const K = { fire: { tint: 0x1e100c, a: 0.9, rim: 0xff7a2a, ra: 0.5, floor: 0xff5a1a }, ice: { tint: 0x9ad8ff, a: 0.55, rim: 0xffffff, ra: 0.5, floor: 0x9ad8ff }, lightning: { tint: 0x1a1a34, a: 0.82, rim: 0xffe14a, ra: 0.55, floor: 0xffe14a } }[el];
+        const K = { fire: { tint: 0x1e100c, a: 0.9, rim: 0xff7a2a, ra: 0.5, floor: 0xff5a1a }, ice: { tint: 0x9ad8ff, a: 0.55, rim: 0xffffff, ra: 0.5, floor: 0x9ad8ff }, cosmic: { tint: 0x1a0a2e, a: 0.85, rim: 0xb47cff, ra: 0.55, floor: 0x9966ff }, lightning: { tint: 0x1a1a34, a: 0.82, rim: 0xffe14a, ra: 0.55, floor: 0xffe14a } }[el];
         const shell = scene.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(K.tint);
         const rim = scene.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(K.rim).setBlendMode(ADD);
         const floor = scene.textures.exists('vfx_glow') ? scene.add.image(p.x, p.y, 'vfx_glow').setTint(K.floor).setBlendMode(ADD) : null;
@@ -371,6 +374,7 @@ class CreatureFX {
         const runes = scene.add.graphics().setBlendMode(ADD), edge = scene.add.graphics().setScrollFactor(0).setDepth(19).setBlendMode(ADD);
         { const W = scene.scale.width, H = scene.scale.height; for (let k = 0; k < 14; k++) { const a = 0.05 * (1 - k / 14); edge.fillStyle(K.rim, a); edge.fillRect(0, k * 6, W, 6); edge.fillRect(0, H - (k + 1) * 6, W, 6); edge.fillRect(k * 6, 0, 6, H); edge.fillRect(W - (k + 1) * 6, 0, 6, H); } }
         scene._vfxSort?.(edge);
+        if (part) { edge.setVisible(false); runes.setVisible(false); }
         let pulseAt = t0;
         const R = (seed => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296))(el.length * 7919);
         // the lava seams / circuits: a few branching paths over the body, fixed for the whole ult
@@ -383,10 +387,10 @@ class CreatureFX {
         let arcs = [], arcAt = 0, boltAt = t0 + 400;
         const tick = () => {
             const now = scene.time.now, life = (now - t0) / ms, tt = now - t0;
-            if (!shell.active || !rim.active) { scene.events.off('update', tick); if (scene._ultArmor === A) scene._ultArmor = null; return; }   // destroyed under it (ended mid-frame, or a floor change / death: scene events outlive the objects). It used to throw here, and a throw in a Phaser step ends the game loop for good
+            if (!shell.active || !rim.active) { scene.events.off('update', tick); if (holder._ultArmor === A) holder._ultArmor = null; return; }   // destroyed under it (ended mid-frame, or a floor change / death: scene events outlive the objects). It used to throw here, and a throw in a Phaser step ends the game loop for good
             if (!p.active || life >= 1) return A.end();
             const fade = Math.min(1, (now - t0) / 200, (ms - (now - t0)) / 300), d = p.depth ?? 1, sx = p.scaleX, sy = p.scaleY, vis = p.visible, al = (p.alpha ?? 1) * fade;
-            for (const [o, ds, a, k] of [[shell, 0.0004, K.a, 1], [rim, -0.01, K.ra * (0.7 + 0.3 * Math.sin(now * (el === 'lightning' ? 0.05 : 0.01))), 1.12]])
+            for (const [o, ds, a, k] of [[shell, 0.0004, K.a * (part ? 0.6 : 1), 1], [rim, -0.01, K.ra * (0.7 + 0.3 * Math.sin(now * (el === 'lightning' ? 0.05 : 0.01))), 1.12]])
                 o.setTexture(p.texture.key, p.frame.name).setPosition(p.x, p.y).setOrigin(p.originX, p.originY).setScale(sx * k, sy * k).setFlipX(p.flipX).setDepth(d + ds).setAlpha(a * al).setVisible(vis);
             const ox = fw * p.originX, oy = fh * p.originY, px = Math.max(1, Math.abs(sx)), dir = p.flipX ? -1 : 1;
             const wx = u => p.flipX ? p.x + (ox - u * fw) * Math.abs(sx) : p.x + (u * fw - ox) * Math.abs(sx), wy = v => p.y + (v * fh - oy) * Math.abs(sy);
@@ -394,7 +398,7 @@ class CreatureFX {
             if (floor) floor.setPosition(cx, feet - px * 2).setDisplaySize(W * 3.2, W * 1.1).setDepth(d - 0.02).setAlpha((0.35 + 0.15 * Math.sin(now * 0.006)) * al).setVisible(vis);
             for (const o of [back, g, glow]) o.clear().setAlpha(al).setVisible(vis);
             // the rune circle: two rings, the element's glyph-marks between them, turning; a pulse ring out every half second
-            runes.clear().setDepth(d - 0.03).setAlpha(al * (0.75 + 0.25 * Math.sin(now * 0.006))).setVisible(vis);
+            runes.clear().setDepth(d - 0.03).setAlpha(al * (0.75 + 0.25 * Math.sin(now * 0.006))).setVisible(vis && !part);
             const rx = W * 2.1, ry = W * 0.75, rot = tt * 0.0012, rc = K.rim;
             runes.lineStyle(px * 1.2, rc, 0.8); runes.strokeEllipse(cx, feet, rx * 2, ry * 2); runes.lineStyle(px * 0.8, rc, 0.5); runes.strokeEllipse(cx, feet, rx * 1.6, ry * 1.6);
             for (let k = 0; k < 8; k++) {
@@ -406,12 +410,12 @@ class CreatureFX {
             }
             for (let k = 0; k < 3; k++) { const a = -rot * 1.6 + k / 3 * Math.PI * 2; runes.lineBetween(cx + Math.cos(a) * rx * 0.8, feet + Math.sin(a) * ry * 0.8, cx + Math.cos(a + 2.094) * rx * 0.8, feet + Math.sin(a + 2.094) * ry * 0.8); }   // a triangle turning the other way
             edge.setAlpha(fade * (0.75 + 0.25 * Math.sin(now * 0.004)));
-            if (now - pulseAt > 520) {
+            if (!part && now - pulseAt > 520) {
                 pulseAt = now;
                 const ring = scene.add.ellipse(cx, feet, rx * 0.6, ry * 0.6).setStrokeStyle(px * 1.2, rc, 0.9).setBlendMode(ADD).setDepth(d - 0.03);
                 scene.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 650, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
             }
-            if (Math.random() < 0.35) {   // motes of its light rising off the circle
+            if (!part && Math.random() < 0.35) {   // motes of its light rising off the circle
                 const a = Math.random() * Math.PI * 2, m = scene.add.rectangle(cx + Math.cos(a) * rx * 0.9, feet + Math.sin(a) * ry * 0.9, px * 1.2, px * 2.4, rc).setBlendMode(ADD).setDepth(d + 0.01);
                 scene.tweens.add({ targets: m, y: m.y - 26 - Math.random() * 20, alpha: 0, duration: 700 + Math.random() * 300, onComplete: () => m.destroy() });
             }
@@ -446,6 +450,11 @@ class CreatureFX {
                     const G = z ? glow : back; G.lineStyle(px * 0.8, 0xffffff, 0.9); for (let k = 0; k < 3; k++) { const b = k * Math.PI / 3 + tt * 0.002; G.lineBetween(x - Math.cos(b) * px * 2, y - Math.sin(b) * px * 2, x + Math.cos(b) * px * 2, y + Math.sin(b) * px * 2); }
                 }
                 if (Math.random() < 0.1) { const m = scene.add.circle(cx + (Math.random() - 0.5) * W * 2.4, feet, px * 1.5, 0xe8f8ff, 0.16).setDepth(d - 0.01); scene.tweens.add({ targets: m, x: m.x + (Math.random() - 0.5) * 16, scale: 2.2, alpha: 0, duration: 1100, onComplete: () => m.destroy() }); }   // a thin cold mist
+            } else if (el === 'cosmic') {
+                for (let k = 0; k < 5; k++) {   // stars circling it, the far ones behind
+                    const a = k / 5 * Math.PI * 2 + tt * 0.002, x = cx + Math.cos(a) * W * 1.2, y = top + W * 0.4 + Math.sin(a) * W * 0.4, G = Math.sin(a) > 0 ? glow : back;
+                    G.fillStyle(k % 2 ? 0xe0c8ff : 0xb47cff, 0.95); G.fillRect(x - px, y - px * 2.2, px * 2, px * 4.4); G.fillRect(x - px * 2.2, y - px, px * 4.4, px * 2);
+                }
             } else {
                 const hy = top - W * 0.55 + Math.sin(now * 0.004) * px;   // the halo, over it
                 glow.lineStyle(px * 1.6, 0xffe14a, 0.9); glow.strokeEllipse(cx, hy, W * 1.5, W * 0.45);
@@ -455,7 +464,7 @@ class CreatureFX {
                 for (const u of [0.38, 0.62]) { glow.fillStyle(0xfff6a0, 0.9); glow.fillCircle(wx(u), wy(0.78), px * 1.5); glow.fillStyle(0xffffff, 1); glow.fillCircle(wx(u), wy(0.78), px * 0.7); }   // eyes alight
                 if (now > arcAt) { arcAt = now + 70; arcs = Array.from({ length: 3 }, () => [[0.2 + Math.random() * 0.6, 0.68 + Math.random() * 0.28], [0.2 + Math.random() * 0.6, 0.68 + Math.random() * 0.28]]); }
                 for (const [a, b] of arcs) { glow.lineStyle(px * 1.1, 0xfff6a0, 1); glow.beginPath(); glow.moveTo(wx(a[0]), wy(a[1])); for (let k = 1; k <= 4; k++) glow.lineTo(wx(a[0] + (b[0] - a[0]) * k / 4) + (Math.random() - 0.5) * 3 * px, wy(a[1] + (b[1] - a[1]) * k / 4) + (Math.random() - 0.5) * 3 * px); glow.strokePath(); }
-                if (now > boltAt) {   // a bolt from the halo to the ground beside it
+                if (!part && now > boltAt) {   // a bolt from the halo to the ground beside it
                     boltAt = now + 500 + Math.random() * 600;
                     const gx = cx + (Math.random() < 0.5 ? -1 : 1) * W * (1 + Math.random()), bolt = scene.add.graphics().setDepth(d + 0.03).setBlendMode(ADD);
                     let bx = cx + (gx > cx ? 1 : -1) * W * 0.6, by = hy; bolt.lineStyle(px * 1.4, 0xfff6a0, 1); bolt.beginPath(); bolt.moveTo(bx, by);
@@ -465,7 +474,7 @@ class CreatureFX {
                 }
             }
         };
-        const A = scene._ultArmor = { el, end: () => { scene.events.off('update', tick); for (const o of [shell, rim, back, g, glow, floor, runes]) o?.destroy(); if (edge.active) scene.tweens.add({ targets: edge, alpha: 0, duration: 300, onComplete: () => edge.destroy() }); if (scene._ultArmor === A) scene._ultArmor = null; } };
+        const A = holder._ultArmor = { el, end: () => { scene.events.off('update', tick); for (const o of [shell, rim, back, g, glow, floor, runes]) o?.destroy(); if (edge.active) scene.tweens.add({ targets: edge, alpha: 0, duration: 300, onComplete: () => edge.destroy() }); if (holder._ultArmor === A) holder._ultArmor = null; } };
         scene.events.on('update', tick); scene.events.once('shutdown', A.end);
         tick();
         // putting it on: a flash of the element over the slime, and a ring out across the floor
@@ -473,6 +482,7 @@ class CreatureFX {
         scene.tweens.add({ targets: flash, scaleX: p.scaleX, scaleY: p.scaleY, alpha: 0, duration: 320, onComplete: () => flash.destroy() });
         const ring = scene.add.ellipse(p.x, p.y + 10, 20, 8).setStrokeStyle(2, K.rim, 1).setBlendMode(ADD).setDepth((p.depth ?? 1) - 0.01);
         scene.tweens.add({ targets: ring, scale: 6, alpha: 0, duration: 560, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+        if (part) return;
         const pillar = scene.add.rectangle(p.x, p.y - 60, 26, 160, K.rim, 0.55).setBlendMode(ADD).setDepth((p.depth ?? 1) + 0.04);
         scene.tweens.add({ targets: pillar, scaleX: 0.1, alpha: 0, duration: 520, ease: 'Quad.easeIn', onComplete: () => pillar.destroy() });   // a column of its light, collapsing onto it
         scene.cameras.main.shake(180, 0.006);

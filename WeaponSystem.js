@@ -1421,6 +1421,7 @@ class WeaponSystem {
     _condWebMul(on) { const C = this._conductorCfg(), n = on.filter(w => w.mode === 'ins').length; return { dmg: Math.pow(C.INS_NERF, n), daze: 1 + C.INS_DAZE * n }; }
     _condDaze(e, ms) {
         if (e._big || !e.sprite?.active || e.health <= 0) return;
+        if (!(e.isStunned && e.stunnedUntil > this.time.now)) this._statusPop(e, 'DAZED', '#fff6a0');
         e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, this.time.now + ms);
     }
     _condTip() { const t = this._condWielding() && typeof CreatureFX !== 'undefined' && CreatureFX.gearTip?.(this); return t || { x: this._shotX(), y: this._shotY() }; }   // the staff's head (you, while you hold something else)
@@ -2716,12 +2717,20 @@ class WeaponSystem {
     _superconduct(enemy, ms = this.superConductDuration || 5000) {
         if (!enemy?.sprite?.active || this._phasedOut(enemy)) return;
         if (enemy._immuneFx === 'lightning') { if (enemy.sprite?.active && this.time.now - (enemy._fxNoAt || 0) > 900) { enemy._fxNoAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 30, "CAN'T AMP", '#fff080'); } return; }   // an Adaptive Shade in its lightning form
+        if (!(enemy.isSuperConducted && enemy.superConductUntil > this.time.now)) this._statusPop(enemy, 'AMPED', '#ffff44');
         enemy.isSuperConducted = true;
         enemy.superConductUntil = Math.max(enemy.superConductUntil || 0, this.time.now + ms);
         if (enemy.superConductVisual?.container?.active) return;
         const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 18, WeaponSystem.superconductKey(this)).setDepth(3).setScale(1.3);
         this.tweens.add({ targets: mark, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 });
         enemy.superConductVisual = { container: mark, g: mark };
+    }
+
+    // A status an enemy just got, popped over it: once a second each at most (a held current or a crowd of forks would bury the fight)
+    _statusPop(e, text, col) {
+        const now = this.time.now, k = '_pop' + text;
+        if (!e?.sprite?.active || now - (e[k] || 0) < 1000) return;
+        e[k] = now; this.showStatusText(e.sprite.x, e.sprite.y - 10, text, col);
     }
 
     // A Queen or a boss struck: its damage, the charge, the forks out to what's round it, then on to the next
@@ -2791,10 +2800,7 @@ class WeaponSystem {
             this.damageEnemy(forkTarget, FORK_DMG, 'lightning');
             // Forks amp what they hit, so the orb can bounce on into the crowd (the bounce
             // goes only to amped enemies, and only a direct hit used to make one).
-            if (this._dmgLanded && forkTarget.health > 0 && forkTarget._immuneFx !== 'lightning') {
-                forkTarget.isSuperConducted = true;
-                forkTarget.superConductUntil = Math.max(forkTarget.superConductUntil || 0, this.time.now + (this.superConductDuration || 5000));
-            }
+            if (this._dmgLanded && forkTarget.health > 0) this._superconduct(forkTarget);
         }
         // Fork to boss too
         this.damageBossAtTile(enemy.x, enemy.y, FORK_DMG, undefined, 'lightning');

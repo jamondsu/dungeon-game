@@ -82,6 +82,7 @@ const Achievements = {
         if (R.dust && typeof Enchants !== 'undefined') Enchants.addDust(R.dust);
         if (R.books && typeof Enchants !== 'undefined') Enchants.addBooks(R.books);
         if (R.seed && typeof Garden !== 'undefined') Garden.give(R.seed);
+        scene?._achThisLevel?.push(a);   // the win screen's cards
         if (scene?.add) this.toast(scene, a);
     },
     rewardText(a) {

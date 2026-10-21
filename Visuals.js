@@ -386,6 +386,17 @@ class VisualFX {
     }
     // Drawn on the floor under the darkness (depth 0.3) by default, so it only shows where the
     // room is lit and never glows out through the walls.
+    // A puff of smoke, 64 x 64, white so it takes a tint: a soft round falloff broken up by cloudy noise
+    static smokeKey(scene) {
+        return MenuArt.tex(scene, 'fx_smoke', 64, 64, P => {
+            const n = MenuArt.noise(41), n2 = MenuArt.noise(77);
+            for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+                const d = Math.hypot(x + 0.5 - 32, y + 0.5 - 32) / 32, cl = 0.55 + 0.45 * (0.65 * n(x * 0.09, y * 0.09) + 0.35 * n2(x * 0.22, y * 0.22));
+                const a = Math.max(0, 1 - d * d * (1.25 - 0.5 * cl)) * cl;
+                if (a > 0.01) P.put(x, y, 0xffffff, Math.min(1, a * 1.15));
+            }
+        });
+    }
     static aura(scene, x, y, radius, color, { style = 'field', depth = 0.25, alpha = 1, breathe = true } = {}) {
         const img = scene.add.image(x, y, VisualFX.auraTex(scene, style))
             .setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth).setAlpha(alpha);
@@ -596,32 +607,62 @@ void main() {
             if (out !== !!o._vfxCulled) { o._vfxCulled = out; if (out) o.cameraFilter |= bit; else o.cameraFilter &= ~bit; }
         }
     }
-    // ROOM FOG: in a level of rooms, a room you haven't reached yet lies under dark fog, what's in it unseen (and not drawn:
+    // ROOM FOG: in a level of rooms, a room you haven't reached yet lies under smoke, what's in it unseen (and not drawn:
     // _vfxCull). Coming within FOG_NEAR tiles of it lifts its fog for good. Not the Tower or the Training Ground: one room.
+    // Each room's fog: a dark core, its edge a ring of soft smoke puffs spilling past the room and breathing slowly, pale wisps
+    // drifting over it; lifting, the puffs roll outward and thin away. (One container a room: too many children for _vfxCull.)
     _fogUpdate(time) {
         if (this.towerRun || this.trainingRun || !this.rooms?.length || !this.player) return;
-        const T = this.TILE_SIZE, NEAR = 2;
+        const T = this.TILE_SIZE, NEAR = 2, DARK = 0x05060a;
         if (!this._fog) {
+            const key = VisualFX.smokeKey(this);
             this._fog = this.rooms.map((r, i) => {
                 const x0 = (r.x - 0.5) * T, y0 = (r.y - 2) * T, x1 = (r.x + r.w + 0.5) * T, y1 = (r.y + r.h + 0.5) * T;   // (up over its wall's face too)
-                const g = this.add.graphics().setDepth(4.95);
-                g.fillStyle(0x05060a, 0.97).fillRect(x0, y0, x1 - x0, y1 - y0);
-                for (let k = 0; k < Math.max(2, Math.round(r.w * r.h / 40)); k++) {   // slow drifts of mist in it
-                    const mx = x0 + Math.random() * (x1 - x0), my = y0 + Math.random() * (y1 - y0);
-                    g.fillStyle(0x2a3040, 0.08).fillEllipse(mx, my, T * (3 + Math.random() * 4), T * (1.5 + Math.random() * 2));
+                const c = this.add.container(0, 0).setDepth(4.95), puffs = [];
+                const core = this.add.graphics();
+                core.fillStyle(DARK, 0.97).fillRect(x0 + T * 1.6, y0 + T * 1.6, x1 - x0 - T * 3.2, y1 - y0 - T * 3.2);
+                c.add(core);
+                const W = x1 - x0, H = y1 - y0;
+                for (const [inset, gap, size] of [[T * 0.4, 0.7, 3.2], [T * 1.7, 1.1, 4.2]]) {   // two rings of puffs: the ragged edge, and one further in to hide where the core starts
+                const per = 2 * (W + H - 4 * inset), n = Math.ceil(per / (T * gap)), bx0 = x0 + inset, by0 = y0 + inset, bx1 = x1 - inset, by1 = y1 - inset, BW = bx1 - bx0, BH = by1 - by0;
+                for (let k = 0; k < n; k++) {
+                    let d = (k + Math.random() * 0.6) / n * per, x, y;
+                    if (d < BW) { x = bx0 + d; y = by0; } else if ((d -= BW) < BH) { x = bx1; y = by0 + d; } else if ((d -= BH) < BW) { x = bx1 - d; y = by1; } else { d -= BW; x = bx0; y = by1 - d; }
+                    const ox = (x0 + x1) / 2 - x, oy = (y0 + y1) / 2 - y, ol = Math.hypot(ox, oy) || 1, j = (Math.random() - 0.5) * T * 1.1;
+                    const s = (size * (0.75 + Math.random() * 0.5)) * T / 64;
+                    const p = this.add.image(x + ox / ol * j, y + oy / ol * j, key).setTint(DARK).setAlpha(1).setScale(s * (0.9 + Math.random() * 0.25), s).setRotation(Math.random() * 6.28);
+                    p._s = p.scaleX; p._sy = p.scaleY; p._ph = Math.random() * 6.28; p._ox = -ox / ol; p._oy = -oy / ol;
+                    puffs.push(p);
                 }
-                this._vfxSort?.(g);
-                return { r, g, x0, y0, x1, y1, lifted: false };
+                }
+                c.add(puffs);
+                const wisps = [];
+                for (let k = 0; k < Math.max(2, Math.round(r.w * r.h / 30)); k++) {   // pale wisps drifting over it
+                    const w = this.add.image(x0 + T + Math.random() * (W - 2 * T), y0 + T + Math.random() * (H - 2 * T), key).setTint(0x30323a).setAlpha(0.1 + Math.random() * 0.08)
+                        .setScale((3 + Math.random() * 3) * T / 64, (1.6 + Math.random() * 1.4) * T / 64).setRotation((Math.random() - 0.5) * 0.4);
+                    this.tweens.add({ targets: w, x: w.x + (Math.random() < 0.5 ? -1 : 1) * T * (1 + Math.random() * 1.5), rotation: w.rotation + (Math.random() - 0.5) * 0.5, duration: 5000 + Math.random() * 4000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                    wisps.push(w);
+                }
+                c.add(wisps);
+                this._vfxSort?.(c);
+                return { r, c, core, puffs, wisps, x0, y0, x1, y1, lifted: false };
             });
         }
-        const px = this.playerX, py = this.playerY;
+        const px = this.playerX, py = this.playerY, v = this.cameras.main.worldView;
         for (const f of this._fog) {
             if (f.lifted) continue;
             const r = f.r;
-            if (px >= r.x - NEAR && px < r.x + r.w + NEAR && py >= r.y - NEAR && py < r.y + r.h + NEAR) {   // close enough: it lifts
+            if (px >= r.x - NEAR && px < r.x + r.w + NEAR && py >= r.y - NEAR && py < r.y + r.h + NEAR) {   // close enough: it lifts, rolling away
                 f.lifted = true;
-                this.tweens.add({ targets: f.g, alpha: 0, duration: 600, ease: 'Quad.easeOut', onComplete: () => f.g.destroy() });
+                this.tweens.killTweensOf(f.wisps);
+                this.tweens.add({ targets: [f.core, ...f.wisps], alpha: 0, duration: 700, ease: 'Quad.easeOut' });
+                for (const p of f.puffs) this.tweens.add({ targets: p, x: p.x + p._ox * T * (1 + Math.random() * 1.5), y: p.y + p._oy * T * (1 + Math.random() * 1.5), scaleX: p._s * 1.6, scaleY: p._sy * 1.6, alpha: 0, rotation: p.rotation + (Math.random() - 0.5),
+                    duration: 900 + Math.random() * 500, delay: Math.random() * 200, ease: 'Quad.easeOut' });
+                this.time.delayedCall(1700, () => f.c.destroy());
+                continue;
             }
+            if (f.x1 < v.x - T * 2 || f.x0 > v.right + T * 2 || f.y1 < v.y - T * 2 || f.y0 > v.bottom + T * 2) continue;
+            for (const p of f.puffs) { const b = 1 + 0.08 * Math.sin(time * 0.0012 + p._ph); p.setScale(p._s * b, p._sy * b); }   // on screen: its edge breathes
         }
     }
     // Is (x, y) inside a room still under fog?

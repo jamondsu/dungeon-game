@@ -718,6 +718,8 @@ class CombatSystem {
             if (enemy._ultAbsorberAura)  { this.tweens.killTweensOf(enemy._ultAbsorberAura);  enemy._ultAbsorberAura.destroy();  }
             if (enemy._ultAbsorberMark)  { enemy._ultAbsorberMark.destroy(); }
             if (enemy._drainBeam)        { enemy._drainBeam.clear(); enemy._drainBeam.destroy(); enemy._drainBeam = null; }
+        if (enemy._absGlow)          { enemy._absGlow.destroy(); enemy._absGlow = null; }
+            if (enemy._absGlow)          { enemy._absGlow.destroy(); enemy._absGlow = null; }
             if (enemy._absorberBuffAura) { this.tweens.killTweensOf(enemy._absorberBuffAura); enemy._absorberBuffAura.destroy(); enemy._absorberBuffAura = null; }
             if (enemy.sprite) enemy.sprite.destroy();
             const idx = this.enemies.indexOf(enemy);
@@ -1051,7 +1053,8 @@ class CombatSystem {
 
         // damageReductionMultiplier is Cosmic.js' (rewritten every frame); armor (Stats.js) is its own.
         // Then the armor talents (Stats.js): Aegis can absorb it outright.
-        if (this.time.now < (this._iceFrostUntil || 0)) amount *= this._iceFrostCfg?.().TAKEN ?? 2;   // the ice ult: this cold, you're fragile
+        if (this.time.now < (this._iceFrostUntil || 0)) amount *= this._iceFrostCfg?.().TAKEN ?? 2;
+        if (this.time.now < (this._absHexUntil || 0)) amount *= 1.5;   // an Ult Absorber's Hex   // the ice ult: this cold, you're fragile
         const actualDamage = PlayerStats.hurt(this, amount * this.damageReductionMultiplier * (this.statTakenMult ?? 1) * Enchants.taken(this.equippedWeapons?.[this.currentElement]));   // Bulwark: the weapon you hold
         if (actualDamage <= 0) return;
         this._hurtTotal = (this._hurtTotal || 0) + actualDamage;   // a Tower floor without a scratch (Achievements.onFloor)
@@ -1517,189 +1520,202 @@ class CombatSystem {
 
     updateUltAbsorbers(time) {
         if (!this.enemies) return;
-        const ABSORB_RADIUS  = TutorialManager.ULT_BLOCK_R;   // tiles, round: the zone it draws (it was 4, measured as a diamond)
-        const DRAIN_PER_SEC  = 6;    // ult charge drained per second while in range (18 till 2026-10-20: a gem in ~5s)
+        const ABSORB_RADIUS  = TutorialManager.ABSORB_R;   // tiles, round: the zone it draws
+        const STEAL          = 25;   // ult charge taken from your fullest gem each throw (a quarter of a gem)
+        const STEAL_CD       = 7000; // ms between throws while you're in its zone
+        const FIRST_MS       = 1500; // ms from walking in to its first throw
         const HEAL_RADIUS    = 4;    // tiles, round — enemies healed around absorber
-        const HEAL_PER_SEC   = 0.08; // of their max health a second, while it's drinking
-
-        for (const enemy of this.enemies) {
-            if (!enemy.isUltAbsorber || !enemy.sprite?.active) continue;
-
-            // Move aura and mark with enemy
-            if (enemy._ultAbsorberAura) {
-                enemy._ultAbsorberAura.x = enemy.sprite.x;
-                enemy._ultAbsorberAura.y = enemy.sprite.y;
-            }
-            if (enemy._ultAbsorberMark) {
-                enemy._ultAbsorberMark.x = enemy.sprite.x;
-                enemy._ultAbsorberMark.y = enemy.sprite.y - 16;
-            }
-
-            const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const dist = Math.hypot(enemy.x - this.playerX, enemy.y - this.playerY);
-            const _gems = this.ultGems ? Object.values(this.ultGems).reduce((a, b) => a + b, 0) : this.ultCharge;
-            const inRange = dist <= ABSORB_RADIUS && _gems > 0;
-
-            // ── Red drain beam from enemy to player ─────────────────────
-            if (inRange) {
-                if (!enemy._drainBeam) {
-                    enemy._drainBeam = this.add.graphics().setDepth(4);
-                }
-                const beam = enemy._drainBeam;
-                beam.clear();
-                const ex = enemy.sprite.x, ey = enemy.sprite.y;
-                // Animated beam — bright core + soft glow, flickering alpha
-                const flicker = 0.75 + Math.sin(time * 0.012) * 0.25;
-                beam.lineStyle(3, 0xff2200, flicker);
-                beam.beginPath(); beam.moveTo(ex, ey); beam.lineTo(playerPx, playerPy); beam.strokePath();
-                beam.lineStyle(7, 0xff4400, flicker * 0.28);
-                beam.beginPath(); beam.moveTo(ex, ey); beam.lineTo(playerPx, playerPy); beam.strokePath();
-                // Arrowhead at player end pointing toward player
-                const ang = Math.atan2(playerPy - ey, playerPx - ex);
-                beam.fillStyle(0xff2200, flicker);
-                beam.beginPath();
-                beam.moveTo(playerPx, playerPy);
-                beam.lineTo(playerPx - Math.cos(ang - 0.45) * 8, playerPy - Math.sin(ang - 0.45) * 8);
-                beam.lineTo(playerPx - Math.cos(ang + 0.45) * 8, playerPy - Math.sin(ang + 0.45) * 8);
-                beam.closePath(); beam.fillPath();
-                // Small pulse sparks along beam every 500ms
-                if (!enemy._lastBeamSpark || time - enemy._lastBeamSpark > 180) {
-                    enemy._lastBeamSpark = time;
-                    const t = Math.random();
-                    const sx = ex + (playerPx - ex) * t, sy = ey + (playerPy - ey) * t;
-                    const spark = this.add.graphics().setDepth(4.5).setPosition(sx, sy);
-                    spark.fillStyle(0xff6600, 0.90); spark.fillCircle(0, 0, 2.5);
-                    this.tweens.add({ targets: spark, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 220, onComplete: () => spark.destroy() });
-                }
-            } else {
-                // Out of range — hide beam
-                if (enemy._drainBeam) { enemy._drainBeam.clear(); }
-            }
-
-            // Leaving range resets the clock. It used to keep the old timestamp, so stepping back
-            // in drained everything since you last left in one frame.
-            if (!inRange) { enemy._lastAbsorbTime = null; continue; }
-
-            // ── Drain ult charge ─────────────────────────────────────────
-            if (!enemy._lastAbsorbTime) enemy._lastAbsorbTime = time;
-            const elapsed = (time - enemy._lastAbsorbTime) / 1000;
-            enemy._lastAbsorbTime = time;
-            // The gems share the old bar's drain rate, fullest first (so the fullest ones level
-            // down together): an absorber eats one ult's worth exactly as fast as it used to, and
-            // heals its neighbours no faster. Draining every gem at the full rate would have
-            // quadrupled both against a player holding four.
-            let drain = 0;
-            if (this.ultGems) {
-                let budget = DRAIN_PER_SEC * elapsed;
-                while (budget > 1e-6) {
-                    const vals = Object.values(this.ultGems);
-                    const top = Math.max(...vals);
-                    if (top <= 0) break;
-                    const tops = Object.keys(this.ultGems).filter(k => this.ultGems[k] >= top - 1e-9);
-                    const next = Math.max(0, ...vals.filter(v => v < top - 1e-9));
-                    const take = Math.min(budget / tops.length, top - next);
-                    for (const k of tops) this.ultGems[k] = Math.max(0, this.ultGems[k] - take);
-                    budget -= take * tops.length; drain += take * tops.length;
-                }
-                this.ultCharge = this.ultGems[this.currentElement] || 0;
-            } else {
-                drain = Math.min(this.ultCharge, DRAIN_PER_SEC * elapsed);
-                this.ultCharge = Math.max(0, this.ultCharge - drain);
-            }
-            if (drain <= 0) continue;
-            this.updateHUD();
-
-            // Status text every ~0.4s to avoid spam
-            if (!enemy._lastDrainText || time - enemy._lastDrainText > 400) {
-                enemy._lastDrainText = time;
-                this.showStatusText(this.player.x, this.player.y - 22, `ULT ABSORBED`, '#ff4400');
-            }
-
-            // ── Healing pool — ripple on floor centered on absorber ───────
-            if (!enemy._lastHealPool || time - enemy._lastHealPool > 600) {
-                enemy._lastHealPool = time;
-                const ex = enemy.sprite.x, ey = enemy.sprite.y;
-                const poolR = HEAL_RADIUS * this.TILE_SIZE;
-                // Soft glow base
-                const pool = this.add.graphics().setDepth(0.8);
-                pool.fillStyle(0xcc44ff, 0.10);
-                pool.fillCircle(ex, ey, poolR);
-                pool.lineStyle(2, 0xdd66ff, 0.35);
-                pool.strokeCircle(ex, ey, poolR);
-                this.tweens.add({ targets: pool, alpha: 0, duration: 600, ease: 'Quad.easeIn', onComplete: () => pool.destroy() });
-                // Expanding ripple ring
-                const ripple = this.add.graphics().setDepth(0.9).setPosition(ex, ey);
-                ripple.lineStyle(2.5, 0xee88ff, 0.70);
-                ripple.strokeCircle(0, 0, poolR * 0.3);
-                this.tweens.add({
-                    targets: ripple,
-                    scaleX: 1 / 0.3, scaleY: 1 / 0.3,
-                    alpha: 0, duration: 600, ease: 'Quad.easeOut',
-                    onComplete: () => ripple.destroy()
-                });
-                // Small rising heal particles from pool floor
-                for (let pi = 0; pi < 4; pi++) {
-                    const pa = Math.random() * Math.PI * 2;
-                    const pr = Math.random() * poolR * 0.75;
-                    const pg = this.add.graphics().setDepth(1.0).setAlpha(0);
-                    pg.x = ex + Math.cos(pa) * pr; pg.y = ey + Math.sin(pa) * pr;
-                    pg.fillStyle(0xee88ff, 0.85); pg.fillCircle(0, 0, 2 + Math.random() * 2);
-                    this.tweens.add({ targets: pg, alpha: 0.9, duration: 120, delay: pi * 80 });
-                    this.tweens.add({ targets: pg, y: pg.y - 14, alpha: 0, duration: 500, delay: pi * 80 + 120, ease: 'Quad.easeOut', onComplete: () => pg.destroy() });
-                }
-            }
-
-            // ── Heal + buff nearby enemies proportional to amount drained ─
-            // heal% of max health = drain * HEAL_PER_DRAIN_SCALE
-            // the heal is its own rate, for as long as it's drinking (it used to scale with the drain)
-            for (const ally of this.enemies) {
-                if (!ally.sprite?.active || ally.health <= 0) continue;
-                if (Math.hypot(ally.x - enemy.x, ally.y - enemy.y) > HEAL_RADIUS) continue;
-
-                // Heal
-                const healAmt = ally.maxHealth * HEAL_PER_SEC * elapsed;
-                if (healAmt > 0 && ally.health < ally.maxHealth) {
-                    ally.health = Math.min(ally.maxHealth, ally.health + healAmt);
-                    this.updateEnemyHealthBar(ally);
-                    // Green plus sign + aura ring — matches healer totem visual language
-                    if (!ally._lastHealPuff || time - ally._lastHealPuff > 300) {
-                        ally._lastHealPuff = time;
-                        // Aura ring flash around enemy
-                        const auraFlash = this.add.graphics().setDepth(3.0).setPosition(ally.sprite.x, ally.sprite.y);
-                        auraFlash.lineStyle(2, 0x44ff88, 0.85);
-                        auraFlash.strokeCircle(0, 0, 12);
-                        auraFlash.fillStyle(0x44ff88, 0.18);
-                        auraFlash.fillCircle(0, 0, 12);
-                        this.tweens.add({ targets: auraFlash, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => auraFlash.destroy() });
-                        // Small green plus sign rising above head
-                        const plus = this.add.graphics().setDepth(3.5);
-                        plus.fillStyle(0x44ff88, 0.95);
-                        plus.fillRect(-2, -5, 4, 10);
-                        plus.fillRect(-5, -2, 10, 4);
-                        plus.x = ally.sprite.x; plus.y = ally.sprite.y - 14;
-                        this.tweens.add({ targets: plus, y: plus.y - 10, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => plus.destroy() });
-                    }
-                }
-
-                // (no toughness any more: 2026-10-20 it only heals, harder)
-            }
+        const HEAL_BURST     = 0.12; // of their max health, each throw
+        // the burn its meteors leave on you: a stack is 1 damage a second
+        if (this._pBurnUntil) {
+            if (time >= this._pBurnUntil || this._deathScreenActive) { this._pBurnUntil = 0; this._pBurn = 0; }
+            else if (time - this._pBurnAt >= 1000) { this._pBurnAt = time; this._hitBy = null; this.takeDamage(this._pBurn * (this.enemyDamageScale || 1)); }
         }
 
-        // ── Expire toughness buffs ───────────────────────────────────────
-        for (const ally of this.enemies) {
-            if (!ally._absorberBuffUntil || ally._absorberBuffUntil >= time) {
-                // Keep aura and shield mark in sync with enemy position
-                if (ally._absorberBuffAura)    { ally._absorberBuffAura.x    = ally.sprite.x; ally._absorberBuffAura.y    = ally.sprite.y; }
-                if (ally._toughnessShieldMark) { ally._toughnessShieldMark.x = ally.sprite.x; ally._toughnessShieldMark.y = ally.sprite.y - 28; }
-                continue;
+        const COLS = this._ultCfg().COLORS, T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
+        for (const enemy of this.enemies) {
+            if (!enemy.isUltAbsorber || !enemy.sprite?.active) continue;
+            const dist = Math.hypot(enemy.x - this.playerX, enemy.y - this.playerY);
+            const _gems = this.ultGems ? Object.values(this.ultGems).reduce((a, b) => a + b, 0) : this.ultCharge;
+            const inRange = dist <= ABSORB_RADIUS && _gems > 0 && this.player?.active;
+            const el = Object.keys(this.ultGems || {}).reduce((a, b) => (this.ultGems[b] > this.ultGems[a] ? b : a), this.currentElement);
+            const col = COLS[el] || 0xb47cff;
+
+            // ── the siphon: a thin stream curving from you into it, motes of your fullest gem's colour flowing along it,
+            // fuller and brighter toward its next steal; its body glows that colour as it gets close ──
+            const g = enemy._drainBeam ||= this.add.graphics().setDepth(4.4).setBlendMode(ADD);
+            g.clear();
+            const glow = enemy._absGlow ||= this.add.image(0, 0, 'vfx_glow').setBlendMode(ADD).setDepth((enemy.sprite.depth ?? 3) - 0.01).setAlpha(0);
+            if (!inRange) { enemy._absWasIn = false; glow.setAlpha(Math.max(0, glow.alpha - 0.05)).setPosition(enemy.sprite.x, enemy.sprite.y); continue; }
+            // out of range its clock keeps running, so stepping out and back in doesn't dodge the steal
+            if (!enemy._absWasIn) { enemy._absWasIn = true; enemy._absNext = Math.max(enemy._absNext || 0, time + FIRST_MS); enemy._absFrom = time; }
+            const f = Phaser.Math.Clamp(1 - (enemy._absNext - time) / Math.min(STEAL_CD, enemy._absNext - (enemy._absFrom || 0) || STEAL_CD), 0, 1);
+            const ax = this.player.x, ay = this.player.y - 4, bx = enemy.sprite.x, by = enemy.sprite.y - 6;
+            const L = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / L, ny = (bx - ax) / L, sway = Math.sin(time * 0.003) * L * 0.18;
+            const cx = (ax + bx) / 2 + nx * sway, cy = (ay + by) / 2 + ny * sway;
+            const at = u => [(1 - u) * (1 - u) * ax + 2 * (1 - u) * u * cx + u * u * bx, (1 - u) * (1 - u) * ay + 2 * (1 - u) * u * cy + u * u * by];
+            for (const [w, a] of [[5, 0.06 + 0.1 * f], [1.5, 0.18 + 0.4 * f]]) {
+                g.lineStyle(w, col, a).beginPath(); g.moveTo(ax, ay);
+                for (let k = 1; k <= 14; k++) { const [x, y] = at(k / 14); g.lineTo(x, y); }
+                g.strokePath();
             }
-            // Buff expired — destroy mark and aura
-            ally._absorberBuffUntil = 0;
-            ally._absorberToughnessMult = 1;
-            if (ally._absorberBuffAura) { this.tweens.killTweensOf(ally._absorberBuffAura); ally._absorberBuffAura.destroy(); ally._absorberBuffAura = null; }
-            if (ally._toughnessShieldMark) { this.tweens.killTweensOf(ally._toughnessShieldMark); ally._toughnessShieldMark.destroy(); ally._toughnessShieldMark = null; }
-            if (ally.sprite?.active && !ally.isFrozen && !ally.isBurning) ally.sprite.clearTint();
+            for (let k = 0; k < 7; k++) {
+                const u = (time / (900 - 400 * f) + k / 7) % 1, [x, y] = at(u), r = (1.2 + 1.8 * f) * Math.sin(u * Math.PI) + 0.6;
+                g.fillStyle(col, 0.5 + 0.5 * f).fillCircle(x, y, r); g.fillStyle(0xffffff, 0.7 * f).fillCircle(x, y, r * 0.45);
+            }
+            glow.setTint(col).setPosition(bx, by + 6).setScale(0.5 + 0.5 * f).setAlpha(0.15 + 0.5 * f * f);
+            if (time < enemy._absNext || enemy.isStunned || enemy.isFrozen) continue;
+            enemy._absNext = time + STEAL_CD; enemy._absFrom = time;
+
+            // ── the steal: a shard of the gem torn out of you, flying down the stream into it ──
+            if (this.ultGems) { this.ultGems[el] = Math.max(0, this.ultGems[el] - STEAL); this.ultCharge = this.ultGems[this.currentElement] || 0; }
+            else this.ultCharge = Math.max(0, this.ultCharge - STEAL);
+            this.updateHUD();
+            this.showStatusText(this.player.x, this.player.y - 26, 'ULT STOLEN', UIKit._hex(col));
+            this._vfxFlash?.(ax, ay, 34, col, 220, 0.7);
+            Sfx.play(this, 'whoosh');
+            const shard = this.add.graphics().setDepth(4.6).setBlendMode(ADD);
+            shard.fillStyle(col, 1).fillPoints([{ x: 0, y: -7 }, { x: 5, y: 0 }, { x: 0, y: 7 }, { x: -5, y: 0 }], true).fillStyle(0xffffff, 0.9).fillPoints([{ x: 0, y: -4 }, { x: 2.5, y: 0 }, { x: 0, y: 4 }, { x: -2.5, y: 0 }], true);
+            const o = { u: 0 };
+            this.tweens.add({ targets: o, u: 1, duration: 380, ease: 'Quad.easeIn', onUpdate: () => {
+                const [x, y] = at(o.u); shard.setPosition(x, y).setRotation(o.u * 9);
+                const m = this.add.circle(x, y, 2.5, col).setBlendMode(ADD).setDepth(4.55); this.tweens.add({ targets: m, scale: 0.2, alpha: 0, duration: 260, onComplete: () => m.destroy() });
+            }, onComplete: () => {
+                shard.destroy();
+                if (!enemy.sprite?.active || enemy.health <= 0) return;
+                // it takes the ult in: a flash of the element, its armour half on, the ring of its heal, then it throws the ult back
+                const s = enemy.sprite;
+                this._vfxFlash?.(s.x, s.y, 46, col, 260, 0.8);
+                if (typeof CreatureFX !== 'undefined') CreatureFX.ultArmor(this, el, 4000, s);
+                VisualFX.ripple(this, s.x, s.y + 6, 8, HEAL_RADIUS * T, col, { depth: 0.9, duration: 700, alpha: 0.55 });
+                for (const ally of this.enemies) {
+                    if (!ally.sprite?.active || ally.health <= 0 || ally.health >= ally.maxHealth || Math.hypot(ally.x - enemy.x, ally.y - enemy.y) > HEAL_RADIUS) continue;
+                    ally.health = Math.min(ally.maxHealth, ally.health + ally.maxHealth * HEAL_BURST);
+                    this.updateEnemyHealthBar(ally);
+                    this._vfxFlash?.(ally.sprite.x, ally.sprite.y, 22, 0x7dff9a, 300, 0.45);
+                    for (let k = 0; k < 4; k++) { const m = this.add.rectangle(ally.sprite.x + (Math.random() - 0.5) * 18, ally.sprite.y + 4, 2, 2, 0x9dffb4).setBlendMode(ADD).setDepth(4.5); this.tweens.add({ targets: m, y: m.y - 18 - Math.random() * 10, alpha: 0, duration: 520, delay: k * 60, onComplete: () => m.destroy() }); }
+                }
+                this._absorberCast(enemy, el);
+            } });
+        }
+    }
+
+    // An Ult Absorber's throw: a small copy of the ult it just stole from you, drawn with that ult's own art.
+    // Each one gives you a moment to step out of it or dash through.
+    //   fire: three of the fire ult's meteors where you stand, each a daze and a stack of burn
+    //   ice: the tsunami's water rolling out of it (no pull); caught, you're frozen in the ice ult's shell, which shatters a second later
+    //   lightning: it turns to a ball of lightning, as the Fork does, and strikes your tile; caught, you're shorted out, no dash for a while
+    //   cosmic: the black hole's bomb, flung at your tile; caught in its burst you're Hexed, +50% damage taken from everything
+    _absorberCast(enemy, el) {
+        const T = this.TILE_SIZE, S = this.enemyDamageScale || 1, ADD = Phaser.BlendModes.ADD, src = enemy.sprite;
+        const px = tx => tx * T + T / 2;
+        const safe = () => !this.player?.active || this._deathScreenActive || this.time.now < (this._dashInvulnUntil || 0);
+        const hurt = d => { this._hitBy = null; this.takeDamage(d * S); };
+        const near = (tx, ty, r) => Math.hypot(this.playerX - tx, this.playerY - ty) <= r;
+        const mark = (x, y, r, col, ms) => {   // where it lands: a soft ring on the floor closing in, its glow filling
+            const ring = this.add.ellipse(x, y + 2, r * 2, r * 1.1).setStrokeStyle(2, col, 0.9).setBlendMode(ADD).setDepth(0.95).setScale(1.5).setAlpha(0);
+            const fill = this.add.image(x, y + 2, 'vfx_glow').setTint(col).setBlendMode(ADD).setDepth(0.94).setDisplaySize(r * 2.4, r * 1.3).setAlpha(0);
+            this.tweens.add({ targets: ring, scale: 1, alpha: 1, duration: ms, ease: 'Cubic.easeOut' });
+            this.tweens.add({ targets: fill, alpha: 0.55, duration: ms, ease: 'Quad.easeIn', onComplete: () => this.tweens.add({ targets: [ring, fill], alpha: 0, duration: 200, onComplete: () => { ring.destroy(); fill.destroy(); } }) });
+        };
+        if (el === 'fire') {
+            for (let i = 0; i < 3; i++) this.time.delayedCall(i * 380, () => {
+                if (!this.player?.active) return;
+                let tx = this.playerX, ty = this.playerY;
+                if (i) for (let k = 0; k < 8; k++) { const x = this.playerX + Math.round((Math.random() - 0.5) * 3), y = this.playerY + Math.round((Math.random() - 0.5) * 3); if (this.world?.[x]?.[y] === this.FLOOR) { tx = x; ty = y; break; } }
+                mark(px(tx), px(ty), T * 1.2, 0xff6a2a, 560);
+                this.time.delayedCall(80, () => this._scorchMeteor({ tx, ty }, { SIZE: 0.7, R: 1.2, hostile: (x, y, R) => {
+                    if (safe() || !near(x, y, R)) return;
+                    hurt(3);
+                    if (this._ccGate(400)) this._staggerUntil = Math.max(this._staggerUntil || 0, this.time.now + 400);
+                    if (!(this._pBurnUntil > this.time.now)) { this._pBurn = 0; this._pBurnAt = this.time.now; }
+                    this._pBurn = Math.min(5, this._pBurn + 1); this._pBurnUntil = this.time.now + 3000;
+                    this.showStatusText(this.player.x, this.player.y - 30, 'BURNING', '#ff8a30');
+                } }));
+            });
+        } else if (el === 'ice') {
+            // the tsunami, small: rings of its water out from the absorber to RMAX, fast then slowing, then drawn back in
+            const ox = enemy.x, oy = enemy.y, RMAX = 4, OUT = 700, TELL = 450, tiles = [], seen = new Set();
+            VisualFX.ripple(this, src.x, src.y + 6, RMAX * T, 6, 0x9ad8ff, { depth: 0.95, duration: TELL, alpha: 0.8 });   // the water drawn in first
+            Sfx.play(this, 'shatter');
+            let caught = false;
+            for (let r = 1; r <= RMAX; r++) this.time.delayedCall(TELL + OUT * Math.pow(r / RMAX, 2.5), () => {
+                for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+                    const d = Math.hypot(dx, dy), tx = ox + dx, ty = oy + dy, k = tx + ',' + ty;
+                    if (d < r - 0.8 || d > r + 0.1 || seen.has(k) || this.world?.[tx]?.[ty] !== this.FLOOR) continue;
+                    seen.add(k);
+                    const w = this._vfxWaterImg ? this._vfxWaterImg(px(tx), px(ty), false).setAlpha(0.72) : this.add.rectangle(px(tx), px(ty), T, T, 0x0066cc, 0.55).setDepth(0.5);
+                    const sh = this._vfxWaterImg ? this._vfxWaterImg(px(tx), px(ty), true) : this.add.rectangle(px(tx), px(ty), T - 4, T - 4, 0x44aaff, 0.3).setDepth(0.5);
+                    this.tweens.add({ targets: sh, alpha: 0.6, duration: 150 + Math.random() * 100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                    tiles.push({ w, sh, r });
+                }
+                if (caught || safe() || Math.hypot(this.playerX - ox, this.playerY - oy) > r + 0.5) return;
+                caught = true;
+                hurt(2);
+                const held = this._ccGate(1000);
+                if (held) this._staggerUntil = Math.max(this._staggerUntil || 0, this.time.now + 1000);
+                this.showStatusText(this.player.x, this.player.y - 34, held ? 'FROZEN' : 'CHILLED', '#88eeff');
+                // the ice ult's own shell, your shape in thick ice; it shatters a second later
+                const p = this.player, shell = this.add.image(p.x, p.y, this._iceShellTex(p)).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setDepth(p.depth + 0.02).setAlpha(0);
+                shell.setDisplayOrigin(p.displayOriginX + 6, p.displayOriginY + 6);
+                this.tweens.add({ targets: shell, alpha: 0.92, duration: 160 });
+                Sfx.play(this, 'freeze');
+                this.time.delayedCall(1000, () => {
+                    const x = shell.x, y = shell.y; shell.destroy();
+                    Sfx.play(this, 'shatter'); this.cameras.main.shake(90, 0.004);
+                    this._vfxFlash?.(x, y, 40, 0xd8f4ff, 260, 0.6);
+                    const glit = this.add.particles(x, y - 6, 'vfx_dot', { lifespan: { min: 400, max: 800 }, speedX: { min: -50, max: 50 }, speedY: { min: -80, max: -10 }, gravityY: 180, scale: { start: 0.5, end: 0 },
+                        alpha: { start: 1, end: 0 }, tint: [0xffffff, 0xcff4ff, 0x8ad8ff], blendMode: 'ADD', emitting: false }).setDepth(4.7);
+                    glit.explode(16); this.time.delayedCall(900, () => glit.destroy());
+                    if (this.player?.active && !this._deathScreenActive) { hurt(5); this.showStatusText(this.player.x, this.player.y - 34, 'SHATTER', '#dff6ff'); }
+                });
+            });
+            for (let r = RMAX; r >= 1; r--) this.time.delayedCall(TELL + OUT + 250 + 450 * Math.pow((RMAX - r) / RMAX, 0.4), () => {
+                for (const t of tiles.filter(q => q.r === r)) { this.tweens.killTweensOf(t.sh); this.tweens.add({ targets: [t.w, t.sh], alpha: 0, duration: 120, onComplete: () => { t.w.destroy(); t.sh.destroy(); } }); }
+            });
+        } else if (el === 'lightning') {
+            // the Fork, small: it goes white-hot, becomes a ball of lightning and strikes where you stood, the bolt left crackling behind
+            const tx = this.playerX, ty = this.playerY, to = { x: px(tx), y: px(ty) }, TELL = 650;
+            mark(to.x, to.y, T * 1.5, 0xffe14a, TELL);
+            src.setTintFill?.(0xfff6a0); this.time.delayedCall(TELL, () => src.active && src.clearTint?.());
+            Sfx.play(this, 'e_thunder');
+            this.time.delayedCall(TELL, () => {
+                if (!src.active) return;
+                const from = { x: src.x, y: src.y - 6 }, web = this.add.graphics().setDepth(4.6).setBlendMode(ADD);
+                const head = this.add.image(from.x, from.y, 'vfx_glow').setTint(0xfff6a0).setBlendMode(ADD).setDepth(4.7).setScale(0.6);
+                const o = { k: 0 };
+                this.tweens.add({ targets: o, k: 1, duration: 160, ease: 'Quad.easeIn', onUpdate: () => {
+                    const at = { x: from.x + (to.x - from.x) * o.k, y: from.y + (to.y - from.y) * o.k };
+                    head.setPosition(at.x, at.y).setScale(0.55 + Math.random() * 0.2);
+                    web.clear(); this._forkBolt(web, from, at, 1.2, false);
+                }, onComplete: () => {
+                    head.destroy();
+                    Sfx.play(this, 'zap'); this.cameras.main.shake(70, 0.003);
+                    this._vfxFlash?.(to.x, to.y, T * 1.8, 0xfff27a, 200, 0.7);
+                    const forks = Array.from({ length: 3 }, () => { const a = Math.random() * Math.PI * 2, d = T * (1 + Math.random() * 0.6); return { x: to.x + Math.cos(a) * d, y: to.y + Math.sin(a) * d * 0.6 }; });
+                    const f = { k: 0 };
+                    this.tweens.add({ targets: f, k: 1, duration: 520, onUpdate: () => { web.clear(); const th = 2.2 - f.k * 1.6; this._forkBolt(web, from, to, th, true); for (const q of forks) this._forkBolt(web, to, q, th * 0.6, false); web.setAlpha(1 - f.k); }, onComplete: () => web.destroy() });
+                    if (safe() || !near(tx, ty, 1.5)) return;
+                    hurt(4);
+                    this._dashReadyAt = Math.max(this._dashReadyAt || 0, this.time.now + 2500);
+                    this.showStatusText(this.player.x, this.player.y - 34, 'SHORTED: NO DASH', '#ffe24a');
+                } });
+            });
+        } else {
+            // the black hole's bomb, flung at your tile; its burst opens a small vortex there
+            const tx = this.playerX, ty = this.playerY, x = px(tx), y = px(ty), FLY = 750;
+            mark(x, y, T * 1.5, 0xb47cff, FLY);
+            const { container, armTimer, trailTimer } = this._voidBombFx(src.x, src.y - 6);
+            container.setScale(0.7);
+            this.tweens.add({ targets: container, x, y, duration: FLY, ease: 'Sine.easeIn', onComplete: () => {
+                armTimer.remove(); trailTimer.remove();
+                this._voidBurstFx(x, y);
+                this.tweens.add({ targets: container, scale: 1.8, angle: -200, alpha: 0, duration: 650, ease: 'Cubic.easeOut', onComplete: () => container.destroy() });   // the vortex, turning out and gone
+                Sfx.play(this, 'csplace');
+                if (safe() || !near(tx, ty, 1.5)) return;
+                this._absHexUntil = this.time.now + 4000;
+                this.showStatusText(this.player.x, this.player.y - 34, 'HEXED', '#c48aff');
+            } });
         }
     }
 

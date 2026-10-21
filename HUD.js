@@ -323,15 +323,18 @@ class HUD {
         this._runClock.setVisible(!this._pauseMenuOpen).setText(`⧗ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
     }
 
-    // The level is yours: the clock, the kills, the haul, then which elements did the work
-    // (damage dealt) and which you fought in (combat time), as bars filling one after another,
-    // and the element that carried the run. A click or Enter goes back to the map.
+    // The level is yours. The rewards first: a card for each (glorps, fragments, every achievement
+    // earned in the level) popping in turn, its number counting up, then its glorps and fragments
+    // flying up into the purse in the corner, which ticks up as each one lands. Under them, which
+    // elements did the work (damage dealt) and which you fought in (combat time), with the weapon
+    // each was, and the element that carried the run. A click or Enter goes back to the map.
     _showWinScreen() {
         const R = this._runStats || { dmg: {}, elTime: {}, t0: this.time.now, kills: 0 };
         const W = this.scale.width, H = this.scale.height, D = 600, P = UIKit.PALETTE, objs = [];
         const keep = o => { objs.push(o); o.setScrollFactor?.(0); return o; };
         const COL = { ...this._ultCfg().COLORS, other: 0xc8c0b0 }, NAME = { fire: 'FIRE', ice: 'ICE', lightning: 'LIGHTNING', cosmic: 'COSMIC', other: 'OTHER' };
         const fmt = ms => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+        const num = n => Math.round(n).toLocaleString('en-US');
         this._runClock?.setVisible(false);
         keep(this.add.rectangle(W / 2, H / 2, W, H, 0x05040a, 1).setDepth(D));
         // embers in the colours of what you fought with
@@ -341,57 +344,132 @@ class HUD {
             scale: { start: 1.5, end: 0 }, alpha: { start: 0.7, end: 0 }, tint: used.length ? used.map(k => COL[k]) : [P.accentGold],
             blendMode: 'ADD', frequency: 50 }).setDepth(D + 1));
         const T = (x, y, s, o = {}) => keep(this.add.text(x, y, s, Object.assign({ fontSize: '14px', fontFamily: 'monospace', color: UIKit.CSS.textMid }, o)).setDepth(D + 4));
-        const title = T(W / 2, 54, 'L E V E L   C L E A R E D', { fontSize: '40px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffe08a', stroke: '#000', strokeThickness: 6, padding: { x: 24, y: 24 } }).setOrigin(0.5).setAlpha(0).setScale(1.3);
+        const title = T(W / 2, 46, 'L E V E L   C L E A R E D', { fontSize: '38px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffe08a', stroke: '#000', strokeThickness: 6, padding: { x: 24, y: 24 } }).setOrigin(0.5).setAlpha(0).setScale(1.3);
         title.setShadow(0, 0, '#f0b84a', 16, true, true);
-        this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 420, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 420, ease: 'Back.easeOut', onStart: () => Sfx.play(this, 'fanfare') });
         const NAMES = { 0: 'Tutorial', 1: 'Tutorial', 2: 'The Gauntlet', 3: 'The Void Rift', 4: 'The Fracture', 5: 'The Cistern' };
-        T(W / 2, 96, (NAMES[this.currentLevelIndex] || 'The Dungeon').toUpperCase(), { fontSize: '14px', fontStyle: 'bold', color: UIKit.CSS.textMid }).setOrigin(0.5);
+        T(W / 2, 84, `${(NAMES[this.currentLevelIndex] || 'The Dungeon').toUpperCase()}   ·   ${fmt((R.tEnd || this.time.now) - R.t0)}   ·   ${R.kills || 0} SLAIN`, { fontSize: '13px', fontStyle: 'bold', color: UIKit.CSS.textMid }).setOrigin(0.5);
 
-        // the four tiles
+        // ── what you take home ──
+        const lvl = Progress.BY_LEVEL_INDEX[this.currentLevelIndex], achs = this._achThisLevel || [];
         const earned = Math.max(0, (this.totalGlorps || 0) - (R.glorps0 ?? (this.totalGlorps || 0)));
-        const tiles = [['TIME', fmt((R.tEnd || this.time.now) - R.t0)], ['SLAIN', String(R.kills || 0)], ['GLORPS', `+${earned}`], ['FRAGMENTS', `+${this._fragsThisLevel || 0}`]];
-        const tw = 200, tg = 18, tx0 = W / 2 - (tiles.length * tw + (tiles.length - 1) * tg) / 2;
-        tiles.forEach(([k, v], i) => {
-            const x = tx0 + i * (tw + tg);
-            objs.push(...UIKit.panel(this, { x, y: 128, w: tw, h: 78, accent: P.accentGold, depth: D + 2 }).objs);
-            T(x + tw / 2, 146, k, { fontSize: '11px', fontStyle: 'bold', color: UIKit.CSS.textLo }).setOrigin(0.5, 0);
-            const val = T(x + tw / 2, 166, v, { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit.CSS.textHi }).setOrigin(0.5, 0).setAlpha(0);
-            this.tweens.add({ targets: val, alpha: 1, y: 162, duration: 260, delay: 300 + i * 90 });
+        const firstGl = this._firstClear ? (Progress.FIRST_CLEAR_GLORPS[lvl] || 0) : 0;
+        const achGl = achs.reduce((a, x) => a + (x.reward?.glorps || 0), 0);
+        const frags = this._fragsThisLevel || 0;
+        // the purse, top right: what you had, rising to what you have as the pieces land
+        const purse = {}, PY = 22;
+        [['glorp', Math.max(0, (this.totalGlorps || 0) - earned), P.accentGold], ['fragment', Math.max(0, Progress.fragments() - frags), 0x6cb4f0]].forEach(([k, start, col], i) => {
+            const y = PY + i * 34, ic = UIKit.currencyIcon(this, k);
+            const t = T(W - 24, y, num(start), { fontSize: '18px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(col), stroke: '#000', strokeThickness: 4 }).setOrigin(1, 0.5);
+            const icon = ic ? keep(this.add.image(0, y, ic[0], ic[1]).setScale(ic[2]).setDepth(D + 4)) : null;
+            const place = () => icon?.setX(t.x - t.width - 16);
+            place();
+            purse[k] = { v: start, t, icon, place, x: W - 40, y };
         });
+        const addPurse = (k, n) => {
+            const p = purse[k]; p.v += n; p.t.setText(num(p.v)); p.place();
+            this.tweens.killTweensOf(p.t); p.t.setScale(1.25); this.tweens.add({ targets: p.t, scale: 1, duration: 160, ease: 'Quad.easeOut' });
+            if (p.icon) { this.tweens.killTweensOf(p.icon); const s = UIKit.currencyIcon(this, k)[2]; p.icon.setScale(s * 1.4); this.tweens.add({ targets: p.icon, scale: s, duration: 160 }); }
+        };
+        // the cards: glorps, fragments, then each achievement (dust and books written on its card)
+        const cards = [];
+        if (earned > 0) cards.push({ k: 'glorp', label: 'GLORPS', v: earned, col: P.accentGold,
+            notes: [earned - firstGl - achGl > 0 && `drops  +${num(earned - firstGl - achGl)}`, firstGl && `first clear  +${num(firstGl)}`, achGl && `achievements  +${num(achGl)}`].filter(Boolean), ribbon: firstGl ? 'FIRST CLEAR' : null });
+        if (frags > 0) cards.push({ k: 'fragment', label: 'FRAGMENTS', v: frags, col: 0x6cb4f0, notes: ['spent on ult stages'] });
+        for (const a of achs.slice(0, 3)) cards.push({ k: 'ach', label: 'ACHIEVEMENT', name: a.name, col: Achievements.TIER_COL[a.tier] || P.accentGold, notes: [Achievements.rewardText(a)] });
+        if (achs.length > 3) cards[cards.length - 1].notes.push(`and ${achs.length - 3} more`);
+        if (!cards.length) cards.push({ k: 'none', label: 'NO REWARDS', col: 0x6e6758, notes: ['this one was for the glory'] });
+        const cw = 196, ch = 176, cg = 18, GAP = 760, cx0 = W / 2 - (cards.length * cw + (cards.length - 1) * cg) / 2, cy = 112;
+        cards.forEach((c, i) => {
+            const x = cx0 + i * (cw + cg), at = 450 + i * GAP, mid = x + cw / 2;
+            const box = keep(this.add.container(mid, cy + ch / 2).setDepth(D + 3).setScale(0.5).setAlpha(0));
+            const g = this.add.graphics();
+            g.fillStyle(0x000000, 0.45).fillRoundedRect(-cw / 2 + 2, -ch / 2 + 3, cw, ch, 10);
+            g.fillStyle(0x0d0a14, 0.96).fillRoundedRect(-cw / 2, -ch / 2, cw, ch, 10);
+            g.fillStyle(c.col, 0.12).fillRoundedRect(-cw / 2, -ch / 2, cw, 30, { tl: 10, tr: 10, bl: 0, br: 0 });
+            g.lineStyle(2, c.col, 0.9).strokeRoundedRect(-cw / 2, -ch / 2, cw, ch, 10);
+            const glow = this.add.image(0, -14, 'vfx_glow').setTint(c.col).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.35).setScale(1.3);
+            const lab = this.add.text(0, -ch / 2 + 15, c.label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(c.col) }).setOrigin(0.5);
+            const parts = [g, glow, lab];
+            const ic = c.k === 'glorp' || c.k === 'fragment' ? UIKit.currencyIcon(this, c.k) : null;
+            let icon = null, val = null;
+            if (ic) icon = this.add.image(0, -18, ic[0], ic[1]).setScale(ic[2] * 1.6);
+            else icon = this.add.text(0, -18, c.k === 'ach' ? '★' : '-', { fontSize: '30px', color: UIKit._hex(c.col) }).setOrigin(0.5);
+            parts.push(icon);
+            if (c.v != null) { val = this.add.text(0, 18, '+0', { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f8f0dc', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5); parts.push(val); }
+            else if (c.name) parts.push(this.add.text(0, 16, c.name.toUpperCase(), { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f8f0dc', align: 'center', wordWrap: { width: cw - 20 } }).setOrigin(0.5));
+            (c.notes || []).forEach((n, j) => parts.push(this.add.text(0, 42 + j * 14, n, { fontSize: '10px', fontFamily: 'monospace', color: c.k === 'ach' ? '#9be08a' : '#a89c84', align: 'center', wordWrap: { width: cw - 16 } }).setOrigin(0.5, 0)));
+            box.add(parts);
+            if (c.ribbon) {   // a ribbon across the corner
+                const rb = this.add.text(cw / 2 - 8, -ch / 2 - 6, c.ribbon, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: '#1a120c', backgroundColor: '#ffd34a', padding: { x: 6, y: 3 } }).setOrigin(1, 0.5).setAngle(4);
+                box.add(rb);
+            }
+            this.tweens.add({ targets: box, scale: 1, alpha: 1, duration: 340, delay: at, ease: 'Back.easeOut', onStart: () => Sfx.play(this, 'pop') });
+            this.tweens.add({ targets: icon, y: icon.y - 6, duration: 520, delay: at + 340, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            this.tweens.add({ targets: glow, alpha: 0.6, scale: 1.6, duration: 900, delay: at, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            if (c.k === 'ach') { this.time.delayedCall(at, () => { if (box.active) VisualFX.ripple?.(this, mid, cy + ch / 2, 20, cw * 0.7, c.col, { depth: D + 2, duration: 600, alpha: 0.6 }); }); return; }
+            if (!val) return;
+            // the count, then the flight: pieces from the card to the purse, each adding its share on landing
+            const cnt = { n: 0 }, cdur = Math.min(1000, 350 + c.v * 1.5);
+            this.tweens.add({ targets: cnt, n: c.v, duration: cdur, delay: at + 260, ease: 'Cubic.easeOut',
+                onUpdate: () => { const s = '+' + num(cnt.n); if (val.text !== s) { val.setText(s); if (this.time.now - (this._winTickAt || 0) > 45) { this._winTickAt = this.time.now; Sfx.play(this, 'e_tick'); } } },
+                onComplete: () => { val.setText('+' + num(c.v)); val.setScale(1.3); this.tweens.add({ targets: val, scale: 1, duration: 200, ease: 'Back.easeOut' }); } });
+            const pieces = Math.max(1, Math.min(16, Math.ceil(c.v / (c.k === 'glorp' ? 25 : 1)))), share = c.v / pieces, p = purse[c.k];
+            let given = 0, landed = 0;
+            for (let q = 0; q < pieces; q++) this.time.delayedCall(at + 260 + cdur + 120 + q * 45, () => {
+                if (!p.t.active) return;
+                const sp = keep(this.add.image(mid + (Math.random() - 0.5) * 50, cy + ch / 2 - 18 + (Math.random() - 0.5) * 30, ic[0], ic[1]).setScale(ic[2] * 1.2).setDepth(D + 6));
+                const o = { t: 0 }, x0 = sp.x, y0 = sp.y, bend = (Math.random() - 0.3) * 220;
+                this.tweens.add({ targets: o, t: 1, duration: 520 + Math.random() * 160, ease: 'Cubic.easeIn',
+                    onUpdate: () => { const u = o.t; sp.setPosition(x0 + (p.x - x0) * u + Math.sin(u * Math.PI) * bend * 0.4, y0 + (p.y - y0) * u - Math.sin(u * Math.PI) * 60); sp.setScale(ic[2] * (1.2 - 0.5 * u)); },
+                    onComplete: () => {
+                        sp.destroy();
+                        const n = ++landed === pieces ? c.v - given : Math.round(share * landed) - given;   // by landing order: they don't arrive in the order they left
+                        given += n; addPurse(c.k, n);
+                        Sfx.play(this, 'pickup');
+                        const fl = keep(this.add.image(p.x, p.y, 'vfx_glow').setTint(c.col).setBlendMode(Phaser.BlendModes.ADD).setDepth(D + 5).setScale(0.6).setAlpha(0.8));
+                        this.tweens.add({ targets: fl, scale: 1.4, alpha: 0, duration: 260, onComplete: () => fl.destroy() });
+                    } });
+            });
+        });
+        const rewardsDone = 450 + cards.length * GAP + 900;
+        const nRows = Math.max(1, ...[R.dmg, R.elTime].map(d => Math.min(5, Object.values(d).filter(v => v > 0).length))), chH = 62 + nRows * 34;
 
-        // the two charts: rows sorted biggest first, a bar each, filling in turn
+        // ── the two charts: rows sorted biggest first, a bar each (and the weapon that was), filling in turn ──
         const chart = (x, title, data, valueOf, delay0) => {
-            const w = 470, h = 250, y = 232;
-            objs.push(...UIKit.panel(this, { x, y, w, h, accent: P.accentBlue, depth: D + 2, title, titleSize: '15px' }).objs);
+            const w = 470, h = chH, y = cy + ch + 26;
+            objs.push(...UIKit.panel(this, { x, y, w, h, accent: P.accentBlue, depth: D + 2, title, titleSize: '14px' }).objs);
             const total = Object.values(data).reduce((a, b) => a + b, 0);
             const rows = Object.entries(data).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
             if (!rows.length) { T(x + w / 2, y + h / 2, 'nothing recorded', { color: UIKit.CSS.textLo }).setOrigin(0.5); return; }
             const top = rows[0][1], g = keep(this.add.graphics().setDepth(D + 3));
-            rows.forEach(([k, v], i) => {
-                const ry = y + 62 + i * 38, bx = x + 128, bw = w - 250;
-                const dot = keep(this.add.circle(x + 26, ry, 6, COL[k]).setDepth(D + 4));
-                T(x + 40, ry, NAME[k], { fontSize: '12px', fontStyle: 'bold', color: UIKit._hex(COL[k]) }).setOrigin(0, 0.5);
+            rows.slice(0, 5).forEach(([k, v], i) => {
+                const ry = y + 56 + i * 34, bx = x + 150, bw = w - 270;
+                const key = k !== 'other' && MenuArt.iconSheet(this, this.equippedWeapons?.[k]);
+                const dot = key ? keep(this.add.image(x + 26, ry, key, '0').setScale(1.2).setDepth(D + 4)) : keep(this.add.circle(x + 26, ry, 6, COL[k]).setDepth(D + 4));
+                T(x + 46, ry, NAME[k], { fontSize: '12px', fontStyle: 'bold', color: UIKit._hex(COL[k]) }).setOrigin(0, 0.5);
                 g.fillStyle(0x141826, 1).fillRect(bx, ry - 7, bw, 14);
                 const bar = keep(this.add.rectangle(bx, ry, bw * v / top, 14, COL[k], 1).setOrigin(0, 0.5).setDepth(D + 4).setScale(0, 1));
                 this.tweens.add({ targets: bar, scaleX: 1, duration: 520, delay: delay0 + i * 140, ease: 'Cubic.easeOut', onStart: () => Sfx.play(this, 'hover') });
                 T(x + w - 20, ry, `${valueOf(v)}  ${Math.round(v / total * 100)}%`, { fontSize: '12px', fontStyle: 'bold', color: UIKit.CSS.textHi }).setOrigin(1, 0.5);
-                dot.setScale(0); this.tweens.add({ targets: dot, scale: 1, duration: 200, delay: delay0 + i * 140 });
+                const s = dot.scale; dot.setScale(0); this.tweens.add({ targets: dot, scale: s, duration: 200, delay: delay0 + i * 140 });
             });
         };
         const dmg = Object.fromEntries(Object.entries(R.dmg).map(([k, v]) => [k, Math.round(v)]));
-        chart(W / 2 - 490, 'DAMAGE BY ELEMENT', dmg, v => v.toLocaleString(), 700);
-        chart(W / 2 + 20, 'TIME IN COMBAT', R.elTime, fmt, 1100);
+        chart(W / 2 - 490, 'DAMAGE BY ELEMENT', dmg, v => v.toLocaleString(), rewardsDone - 400);
+        chart(W / 2 + 20, 'TIME IN COMBAT', R.elTime, fmt, rewardsDone);
 
-        // the element that carried it
+        // the element that carried it, and the weapon it was
         const best = Object.entries(R.dmg).filter(([k]) => k !== 'other').sort((a, b) => b[1] - a[1])[0];
         if (best && best[1] > 0) {
-            const b = T(W / 2, 520, `${NAME[best[0]]} CARRIED THIS RUN`, { fontSize: '22px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(COL[best[0]]), stroke: '#000', strokeThickness: 5, padding: { x: 20, y: 20 } })
+            const wn = (typeof ShopScene !== 'undefined' && ShopScene.CATALOGUE.find(x => x.id === this.equippedWeapons?.[best[0]])?.name) || '';
+            const b = T(W / 2, cy + ch + 26 + chH + 34, `${NAME[best[0]]} CARRIED THIS RUN${wn ? '  ·  ' + wn.toUpperCase() : ''}`, { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(COL[best[0]]), stroke: '#000', strokeThickness: 5, padding: { x: 20, y: 20 } })
                 .setOrigin(0.5).setAlpha(0).setScale(0.6);
             b.setShadow(0, 0, UIKit._hex(COL[best[0]]), 14, true, true);
-            this.tweens.add({ targets: b, alpha: 1, scale: 1, duration: 360, delay: 1800, ease: 'Back.easeOut', onStart: () => Sfx.play(this, 'fanfare') });
+            this.tweens.add({ targets: b, alpha: 1, scale: 1, duration: 360, delay: rewardsDone + 700, ease: 'Back.easeOut', onStart: () => Sfx.play(this, 'fanfare') });
         }
-        const cont = T(W / 2, H - 40, 'click or press Enter to continue', { fontSize: '13px', color: UIKit.CSS.textLo }).setOrigin(0.5).setAlpha(0);
-        this.tweens.add({ targets: cont, alpha: 1, duration: 400, delay: 2100, onComplete: () => this.tweens.add({ targets: cont, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 }) });
+        const cont = T(W / 2, H - 24, 'click or press Enter to continue', { fontSize: '13px', color: UIKit.CSS.textLo }).setOrigin(0.5).setAlpha(0);
+        this.tweens.add({ targets: cont, alpha: 1, duration: 400, delay: rewardsDone + 900, onComplete: () => this.tweens.add({ targets: cont, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 }) });
 
         let done = false;
         const go = () => {

@@ -442,6 +442,7 @@ class ElementSystem {
             if (Math.random() < 0.15) { const sm = this.add.circle(x + (Math.random() - 0.5) * T, y - 6, 3 + 2 * size, 0x2a2420, 0.4).setDepth(5.4); this.tweens.add({ targets: sm, y: sm.y - 30, x: sm.x + 6, scale: 2.4, alpha: 0, duration: 1000, onComplete: () => sm.destroy() }); }
         }, onComplete: () => this.tweens.add({ targets: [rock, glow, cr, crk], alpha: 0, duration: 400, onComplete: () => [rock, glow, cr, crk].forEach(o => o.destroy()) }) });
         // the hit: damage, Dazed for 2s, a Super Burn stack (stage 2: the supernova fuse too)
+        if (B?.hostile) { B.hostile(tx, ty, R); return; }   // an Ult Absorber's stolen meteor: it lands on you, not them
         const stage2 = parseInt(localStorage.getItem('ultStage_fire') || '1') >= 2;
         if (B) {   // a Meteor Strike meteor: everything in reach hit and dazed a moment; the enemy with the most HP it hit Super Burned
             const hit = [...this.enemies].filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - tx, e.y - ty) <= R);
@@ -4198,9 +4199,45 @@ class ElementSystem {
         const vx = (dx / dist) * speed;
         const vy = (dy / dist) * speed;
 
+        const { container, armTimer, trailTimer } = this._voidBombFx(playerPixelX, playerPixelY);
+
+        container.setData('vx', vx);
+        container.setData('vy', vy);
+        container.setData('launchX', playerPixelX);
+        container.setData('launchY', playerPixelY);
+        container.setData('maxRange', 12 * this.TILE_SIZE); // 12 tiles max
+        container.setData('armTimer', armTimer);
+        container.setData('trailTimer', trailTimer);
+
+        if (this.cosmicBlackHoleProjectile) {
+            const old = this.cosmicBlackHoleProjectile;
+            if (old.getData('armTimer')) old.getData('armTimer').remove();
+            if (old.getData('trailTimer')) old.getData('trailTimer').remove();
+            this.tweens.killTweensOf(old);
+            old.destroy();
+        }
+        this.cosmicBlackHoleProjectile = container;
+
+        // Range ring at launch point — shows max travel distance
+        const rangeRing = this.add.circle(playerPixelX, playerPixelY, 12 * this.TILE_SIZE, 0x9966ff, 0).setDepth(4);
+        rangeRing.setStrokeStyle(1, 0x9966ff, 0.3);
+        this.tweens.add({ targets: rangeRing, alpha: 0, duration: 1200, onComplete: () => rangeRing.destroy() });
+
+        // HUD hint
+        // E only detonates while you hold cosmic; from any other element it's the cosmic gem's key
+        const detKey = this.currentElement === 'cosmic' ? 'E' : (this._ultCfg?.().KEYS?.cosmic || 'E');
+        const hint = this.add.text(this.scale.width / 2, 80, `${detKey}  TO DETONATE`, {
+            fontSize: '14px', fontFamily: 'monospace', color: '#cc88ff',
+            stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+        this.tweens.add({ targets: hint, y: 60, alpha: 0, duration: 2000, onComplete: () => hint.destroy() });
+    }
+
+    // The black hole's bomb: rings round a dark core, arms turning, a void trail behind it (the ult's, and an Ult Absorber's stolen one)
+    _voidBombFx(x, y) {
         // ── VOID BOMB VISUAL ─────────────────────────────────────────
         // Layered concentric circles + rotating arms + crackling outline
-        const container = this.add.container(playerPixelX, playerPixelY).setDepth(6);
+        const container = this.add.container(x, y).setDepth(6);
 
         // Outer distortion ring
         const outerRing = this.add.circle(0, 0, 22, 0x000000, 0);
@@ -4265,36 +4302,19 @@ class ElementSystem {
             loop: true
         });
 
-        container.setData('vx', vx);
-        container.setData('vy', vy);
-        container.setData('launchX', playerPixelX);
-        container.setData('launchY', playerPixelY);
-        container.setData('maxRange', 12 * this.TILE_SIZE); // 12 tiles max
-        container.setData('armTimer', armTimer);
-        container.setData('trailTimer', trailTimer);
-
-        if (this.cosmicBlackHoleProjectile) {
-            const old = this.cosmicBlackHoleProjectile;
-            if (old.getData('armTimer')) old.getData('armTimer').remove();
-            if (old.getData('trailTimer')) old.getData('trailTimer').remove();
-            this.tweens.killTweensOf(old);
-            old.destroy();
+        return { container, armTimer, trailTimer };
+    }
+    // ...and its burst as it goes off
+    _voidBurstFx(x, y) {
+        // Detonation flash burst before deploying
+        const flash = this.add.circle(x, y, 8, 0xffffff, 1).setDepth(7);
+        this.tweens.add({ targets: flash, radius: 40, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 / 8) * i;
+            const shard = this.add.circle(x, y, 3, 0xcc88ff, 1).setDepth(7);
+            this.tweens.add({ targets: shard, x: x + Math.cos(angle) * 30, y: y + Math.sin(angle) * 30, alpha: 0, duration: 300, onComplete: () => shard.destroy() });
         }
-        this.cosmicBlackHoleProjectile = container;
 
-        // Range ring at launch point — shows max travel distance
-        const rangeRing = this.add.circle(playerPixelX, playerPixelY, 12 * this.TILE_SIZE, 0x9966ff, 0).setDepth(4);
-        rangeRing.setStrokeStyle(1, 0x9966ff, 0.3);
-        this.tweens.add({ targets: rangeRing, alpha: 0, duration: 1200, onComplete: () => rangeRing.destroy() });
-
-        // HUD hint
-        // E only detonates while you hold cosmic; from any other element it's the cosmic gem's key
-        const detKey = this.currentElement === 'cosmic' ? 'E' : (this._ultCfg?.().KEYS?.cosmic || 'E');
-        const hint = this.add.text(this.scale.width / 2, 80, `${detKey}  TO DETONATE`, {
-            fontSize: '14px', fontFamily: 'monospace', color: '#cc88ff',
-            stroke: '#000000', strokeThickness: 3
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
-        this.tweens.add({ targets: hint, y: 60, alpha: 0, duration: 2000, onComplete: () => hint.destroy() });
     }
 
     detonateCosmicBomb() {
@@ -4308,14 +4328,7 @@ class ElementSystem {
         if (proj.getData('trailTimer')) proj.getData('trailTimer').remove();
         this.tweens.killTweensOf(proj);
 
-        // Detonation flash burst before deploying
-        const flash = this.add.circle(deployX, deployY, 8, 0xffffff, 1).setDepth(7);
-        this.tweens.add({ targets: flash, radius: 40, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
-        for (let i = 0; i < 8; i++) {
-            const angle = (Math.PI * 2 / 8) * i;
-            const shard = this.add.circle(deployX, deployY, 3, 0xcc88ff, 1).setDepth(7);
-            this.tweens.add({ targets: shard, x: deployX + Math.cos(angle) * 30, y: deployY + Math.sin(angle) * 30, alpha: 0, duration: 300, onComplete: () => shard.destroy() });
-        }
+        this._voidBurstFx(deployX, deployY);
 
         proj.destroy();
         this.cosmicBlackHoleProjectile = null;

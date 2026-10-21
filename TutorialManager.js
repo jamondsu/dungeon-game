@@ -1171,14 +1171,15 @@ class TutorialManager {
     // pixel mark over the head (an ult gem struck through, or being drained). Follows the enemy each frame, gone when it is.
     // (It was a thin 3-tile circle and a red dot, and the check was a diamond that didn't match the circle.)
     static ULT_BLOCK_R = 5;
+    static ABSORB_R = 3;   // the absorbers' zone, smaller (5 till 2026-10-21)
     _ultBlockerFx(enemy, absorb) {
-        const R = TutorialManager.ULT_BLOCK_R, T = this.TILE_SIZE, col = absorb ? 0xb05cff : 0xff3a2a, hi = absorb ? 0xe0b0ff : 0xffa080;
+        const R = absorb ? TutorialManager.ABSORB_R : TutorialManager.ULT_BLOCK_R, T = this.TILE_SIZE, col = absorb ? 0xb05cff : 0xff3a2a, hi = absorb ? 0xe0b0ff : 0xffa080;
         if (absorb) enemy.isUltAbsorber = true; else enemy.ultInhibitor = true;
         enemy.ultInhibitRadius = R;
         // soft, like the other enemies' fields (the Mortar's, the Anchor's): a glow over the zone, a soft rim, a ripple now and then
         const r = R * T, x0 = enemy.sprite.x, y0 = enemy.sprite.y;
-        const field = VisualFX.aura(this, x0, y0, r, col, { style: 'field', depth: 0.8, alpha: 0.45 });
-        const rim = VisualFX.aura(this, x0, y0, r, hi, { style: 'ring', depth: 0.81, alpha: 0.6 });
+        const field = VisualFX.aura(this, x0, y0, r, col, { style: 'field', depth: 0.8, alpha: absorb ? 0.2 : 0.45 });
+        const rim = VisualFX.aura(this, x0, y0, r, hi, { style: 'ring', depth: 0.81, alpha: absorb ? 0.35 : 0.6 });
         const pulse = this.time.addEvent({ delay: 2600, loop: true, callback: () => { if (enemy.sprite?.active) VisualFX.ripple(this, enemy.sprite.x, enemy.sprite.y, r * 0.3, r, col, { depth: 0.82, duration: 1400, alpha: 0.5 }); } });
         const ring = field;   // (what the rest of the game moves and destroys as _inhibitRing; the rim and the ripples go with it)
         field.once('destroy', () => { if (rim.active) rim.destroy(); pulse.remove(); });
@@ -1193,6 +1194,12 @@ class TutorialManager {
             if (!enemy.sprite?.active || enemy.health <= 0 || !ring.active) { this.events.off('update', follow); for (const o of [ring, mark]) if (o.active) { this.tweens.killTweensOf(o); o.destroy(); } return; }
             for (const o of [field, rim]) { if (o.x !== enemy.sprite.x || o.y !== enemy.sprite.y) { o.setPosition(enemy.sprite.x, enemy.sprite.y); VisualFX.clipAura(this, o); } }
             mark.setPosition(enemy.sprite.x, enemy.sprite.y - 24);
+            if (absorb && this.time.now - (enemy._absMoteAt || 0) > 110) {   // an absorber's zone pulls: motes drift in from its edge and vanish into it
+                enemy._absMoteAt = this.time.now;
+                const a = Math.random() * Math.PI * 2, sx = enemy.sprite.x, sy = enemy.sprite.y;
+                const m = this.add.rectangle(sx + Math.cos(a) * r * 0.95, sy + Math.sin(a) * r * 0.95, 2, 2, Math.random() < 0.3 ? 0xffffff : hi).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.85).setAlpha(0);
+                this.tweens.add({ targets: m, x: sx + Math.cos(a + 0.6) * 6, y: sy + Math.sin(a + 0.6) * 6, duration: 1400, ease: 'Quad.easeIn', onUpdate: tw => m.setAlpha(Math.sin(tw.progress * Math.PI) * 0.8), onComplete: () => m.destroy() });
+            }
         };
         this.events.on('update', follow); this.events.once('shutdown', () => this.events.off('update', follow));
     }
