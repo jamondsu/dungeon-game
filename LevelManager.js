@@ -4277,13 +4277,13 @@ class LevelManager {
     // counting tiles let it wind up faster the faster it got); every time
     // it attacks, pounce or touch, its rage halves. Within POUNCE_R tiles (more, wound up) it
     // marks the ground round you, leaps and vanishes into it, then slashes it for FLURRY_MS, more
-    // slashes in that time the angrier it is (SLASHES); the outer tiles cut deepest (RING_MULT). The marked ground grows with it too, from the
+    // slashes in that time the angrier it is (SLASHES), sharing FLURRY_DMG between them; the outer tiles cut deepest (RING_MULT). The marked ground grows with it too, from the
     // 3x3 round you to a 5x5 squircle in a frenzy (AREA_R): out of reach only if you dodge out
     // during the tell or keep running. Each slash that finds you hurts and makes you BLEED for BLEED_MS:
     // every tile you move while bleeding costs BLEED_STEP. Wound all the way up it FRENZIES: blood-red, red-eyed, leaving
     // afterimages.
     _hunterCfg() { return { HP: 140, SLOW: 2.4, FAST: 0.55, RAMP_TILES: 16, RAMP_MS: 12000, MELEE0: 2, MELEE1: 6, CHASE_R: 14,
-        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 12], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], SLASH_DMG: 6, SLASH_RAMP: 0.6,
+        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 18], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], FLURRY_DMG: 12, SLASH_RAMP: 1.31,
         BLEED_MS: 6000, BLEED_STEP: 2, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
     createHunterSlime(x, y, ri) {
         const H = this._hunterCfg();
@@ -4387,7 +4387,7 @@ class LevelManager {
                 const dx = this.playerX - tx, dy = this.playerY - ty;
                 if (inArea(dx, dy)) {
                     const before = this.health;
-                    this._hitBy = e; this.takeDamage(H.SLASH_DMG * H.RING_MULT[ring(dx, dy)] * (1 + H.SLASH_RAMP * k) * (this.enemyDamageScale || 1)); this._hitBy = null;
+                    this._hitBy = e; this.takeDamage(H.FLURRY_DMG / n * H.RING_MULT[ring(dx, dy)] * (1 + H.SLASH_RAMP * k) * (this.enemyDamageScale || 1)); this._hitBy = null;
                     if (this.health < before) this._bleedStart(H.BLEED_MS);
                 }
             });
