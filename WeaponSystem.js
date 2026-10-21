@@ -7553,7 +7553,7 @@ class WeaponSystem {
                             if (this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), undefined, 'ice')) this._shardBossSig(s);
                             const _hsTX = Math.floor(ex / this.TILE_SIZE), _hsTY = Math.floor(ey / this.TILE_SIZE);
                             const _hsP = this.getPortalAt(_hsTX, _hsTY);
-                            if (_hsP) this.damagePortal(_hsP, s.damage, { chill: true });
+                            if (_hsP) this.damagePortal(_hsP, s.damage, { chill: true, src: s });
                             this.destroyIceShard(s); this.iceShards.splice(i, 1); destroyed = true; break;
                         } else {
                             // Normal cannon shard — _onHit handles immunity + damage + chill + shatter

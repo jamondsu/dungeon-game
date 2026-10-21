@@ -592,9 +592,44 @@ void main() {
                 const w = Math.abs(o.displayWidth || 0), h = Math.abs(o.displayHeight || 0);
                 x0 = o.x - (o.originX ?? 0.5) * w; x1 = x0 + w; y0 = o.y - (o.originY ?? 0.5) * h; y1 = y0 + h;
             }
-            const out = x1 < l || x0 > r || y1 < t || y0 > b;
+            const out = x1 < l || x0 > r || y1 < t || y0 > b || this._fogHides((x0 + x1) / 2, (y0 + y1) / 2);   // off screen, or in a room still under fog
             if (out !== !!o._vfxCulled) { o._vfxCulled = out; if (out) o.cameraFilter |= bit; else o.cameraFilter &= ~bit; }
         }
+    }
+    // ROOM FOG: in a level of rooms, a room you haven't reached yet lies under dark fog, what's in it unseen (and not drawn:
+    // _vfxCull). Coming within FOG_NEAR tiles of it lifts its fog for good. Not the Tower or the Training Ground: one room.
+    _fogUpdate(time) {
+        if (this.towerRun || this.trainingRun || !this.rooms?.length || !this.player) return;
+        const T = this.TILE_SIZE, NEAR = 2;
+        if (!this._fog) {
+            this._fog = this.rooms.map((r, i) => {
+                const x0 = (r.x - 0.5) * T, y0 = (r.y - 2) * T, x1 = (r.x + r.w + 0.5) * T, y1 = (r.y + r.h + 0.5) * T;   // (up over its wall's face too)
+                const g = this.add.graphics().setDepth(4.95);
+                g.fillStyle(0x05060a, 0.97).fillRect(x0, y0, x1 - x0, y1 - y0);
+                for (let k = 0; k < Math.max(2, Math.round(r.w * r.h / 40)); k++) {   // slow drifts of mist in it
+                    const mx = x0 + Math.random() * (x1 - x0), my = y0 + Math.random() * (y1 - y0);
+                    g.fillStyle(0x2a3040, 0.08).fillEllipse(mx, my, T * (3 + Math.random() * 4), T * (1.5 + Math.random() * 2));
+                }
+                this._vfxSort?.(g);
+                return { r, g, x0, y0, x1, y1, lifted: false };
+            });
+        }
+        const px = this.playerX, py = this.playerY;
+        for (const f of this._fog) {
+            if (f.lifted) continue;
+            const r = f.r;
+            if (px >= r.x - NEAR && px < r.x + r.w + NEAR && py >= r.y - NEAR && py < r.y + r.h + NEAR) {   // close enough: it lifts
+                f.lifted = true;
+                this.tweens.add({ targets: f.g, alpha: 0, duration: 600, ease: 'Quad.easeOut', onComplete: () => f.g.destroy() });
+            }
+        }
+    }
+    // Is (x, y) inside a room still under fog?
+    _fogHides(x, y) {
+        const F = this._fog;
+        if (!F) return false;
+        for (const f of F) if (!f.lifted && x >= f.x0 && x < f.x1 && y >= f.y0 && y < f.y1) return true;
+        return false;
     }
     _vfxUnsort(o) {
         if (o && o.parentContainer && o._vfxCam) { o.cameraFilter = 0; o._vfxCam = null; }
@@ -625,6 +660,7 @@ void main() {
         }
         this._vfxUpdateLight(time);
         this._vfxPerfWatch(time, delta);
+        this._fogUpdate(time);
         this._vfxCull();
         this._vfxUpdateShadows();
         this._vfxUpdateTorches(time);

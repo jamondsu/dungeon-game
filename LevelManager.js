@@ -3811,6 +3811,11 @@ class LevelManager {
             this.tweens.add({ targets: st, scale: 0.7, alpha: 0, duration: 420, yoyo: false, onComplete: () => st.destroy() });
         }
         if (e._stoleEl) { this._leechFlee(e, time); return; }   // it has what it came for
+        if (e.tutorialRoomIndex !== undefined && this.rooms?.[e.tutorialRoomIndex] && e.tutorialRoomIndex !== this.getCurrentPlayerRoom()) {   // not in its room: it waits
+            e._leechAt = time + this._leechCfg().SETTLE;
+            e._leechRing?.clear(); e._leechIcon?.destroy(); e._leechIcon = null;
+            return;
+        }
         const L = this._leechCfg(), col = L.COLS[e._leechEl], g = e._leechRing;
         const left = Math.max(0, (e._leechAt - time) / L.SETTLE), warn = e._leechAt - time <= L.WARN;
         const sees = (e.tutorialRoomIndex === undefined || !this._roomGated?.() || e.tutorialRoomIndex === this.getCurrentPlayerRoom()) && this._clearShot(e.x, e.y, this.playerX, this.playerY);
@@ -3928,10 +3933,11 @@ class LevelManager {
     _leechPort(e, time) {
         // anywhere open PORT_DIST-ish away (a ring 3 to PORT_DIST + 2 round it), the furthest from you: backed into a corner
         // it still slips out sideways or past you
-        const L = this._leechCfg(), T = this.TILE_SIZE, R = L.PORT_DIST + 2;
+        const L = this._leechCfg(), T = this.TILE_SIZE, R = L.PORT_DIST + 2, room = e.tutorialRoomIndex !== undefined ? this.rooms?.[e.tutorialRoomIndex] : null;
         let best = null, bestD = -1;
         for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
             const r = Math.hypot(dx, dy), x = e.x + dx, y = e.y + dy;
+            if (room && (x <= room.x || y <= room.y || x >= room.x + room.w - 1 || y >= room.y + room.h - 1)) continue;   // never out of its own room (past a gate)
             if (r < 3 || r > R || this.world[x]?.[y] !== this.FLOOR || this.isInLockedRoom?.(x, y) || (x === this.playerX && y === this.playerY)
                 || this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) continue;
             const d = Math.hypot(x - this.playerX, y - this.playerY) + Math.random() * 0.5;
@@ -7164,6 +7170,15 @@ class LevelManager {
 
     spawnPortal(tileX, tileY, tutorialRoomIndex, portalId) {
         if (!this.portals) this.portals = [];
+        const open = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (this.world?.[x + dx]?.[y + dy] !== this.FLOOR) return false; return true; };
+        if (this.world && !open(tileX, tileY)) {   // never in a wall (a room's dressing can stand stone where she was set): the nearest open spot
+            let best = null;
+            for (let r = 1; r <= 8 && !best; r++) for (let dy = -r; dy <= r && !best; dy++) for (let dx = -r; dx <= r; dx++) {
+                if (Math.max(Math.abs(dx), Math.abs(dy)) !== r || !open(tileX + dx, tileY + dy)) continue;
+                best = [tileX + dx, tileY + dy]; break;
+            }
+            if (best) [tileX, tileY] = best;
+        }
         const px = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
 
@@ -7456,6 +7471,7 @@ class LevelManager {
         if (!portal.active) return;
         // opts.src (a projectile): it lands once on this queen, not every frame it overlaps her
         if (opts.src) { const hit = portal._hitBy ||= new WeakSet(); if (hit.has(opts.src)) return; hit.add(opts.src); }
+        if (opts.src?.volleyId) damage *= this._volleyMult(portal, opts.src.volleyId);   // a cone of shots on one queen: each after the first counts for less, as on a boss
         const time = this.time.now;
 
         // ── PORTALS USE BRITTLE, NOT FREEZE ──────────────────────────────────

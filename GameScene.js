@@ -740,7 +740,7 @@ class GameScene extends Phaser.Scene {
         // hold mouse to shoot fireballs continuously
         this.isPointerDown = false;
         this._jetLit = false; this._fuel = 1; this._fuelDryUntil = 0;
-        this._cinemaUntil = 0; this._condRKey = null; this._condWires = []; this._condMisses = []; this._condPulses = []; this._condPairs = []; this._condMode = 'live'; this._condWeb = 0; this._condG = null; this._condGL = null; this._condBar = null; this._condPool = []; this._condSparks = null; this._condLights = [];   // the Conductor's
+        this._cinemaUntil = 0; this._fog = null; this._condRKey = null; this._condWires = []; this._condMisses = []; this._condPulses = []; this._condPairs = []; this._condMode = 'live'; this._condWeb = 0; this._condG = null; this._condGL = null; this._condBar = null; this._condPool = []; this._condSparks = null; this._condLights = [];   // the Conductor's
         this._fracCharge = 0; this._fracMode = null; this._fracMarked = new Set(); this._fracBar = null; this._fracOrbs = null; this._fracSpin = false;   // Fractal Shard's R   // Ignition's flamethrower starts each run out, on a full tank
         this.pointerX = 0;
         this.pointerY = 0;
@@ -2601,6 +2601,8 @@ class GameScene extends Phaser.Scene {
     _vfxLights(...a) { return VisualFX.prototype._vfxLights.call(this, ...a); }
     _waterFlush(...a) { return LevelManager.prototype._waterFlush.call(this, ...a); }
     _texPatchUpload(...a) { return LevelManager.prototype._texPatchUpload.call(this, ...a); }
+    _fogUpdate(...a) { return VisualFX.prototype._fogUpdate.call(this, ...a); }
+    _fogHides(...a) { return VisualFX.prototype._fogHides.call(this, ...a); }
     _vfxCull(...a) { return VisualFX.prototype._vfxCull.call(this, ...a); }
     _vfxPerfWatch(...a) { return VisualFX.prototype._vfxPerfWatch.call(this, ...a); }
     _vfxUpdateLight(...a) { return VisualFX.prototype._vfxUpdateLight.call(this, ...a); }
