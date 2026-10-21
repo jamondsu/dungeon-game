@@ -281,6 +281,7 @@ class EnemyManager {
                     if (bdist <= 3 && currentTime - (enemy._berserkerLastSwing || 0) >= (enemy._berserkerCooldown || 3200)) {
                         enemy._berserkerState = 'charging';
                         enemy._berserkerChargeStart = currentTime;
+                        Sfx.play(this, 'tell', { ms: enemy._berserkerChargeDur || 600 });
                         this.tweens.add({ targets: enemy._berserkerMark, alpha: 1, duration: 80 });
                         this.tweens.add({ targets: enemy._berserkerMark, scaleX: 1.3, scaleY: 1.3, duration: 150, yoyo: true, repeat: 4, ease: 'Sine.easeInOut' });
                         enemy.sprite.setTint(0xff0000);
@@ -312,6 +313,7 @@ class EnemyManager {
                     if (inRange && currentTime - (enemy._singLastAtk || 0) >= (enemy._singCooldown || 2800)) {
                         enemy._singState = 'charging';
                         enemy._singChargeStart = currentTime;
+                        Sfx.play(this, 'tell', { ms: enemy._singChargeDur || 700 });
                         // Show purple ! mark with pulse
                         this.tweens.add({ targets: enemy._singMark, alpha: 1, duration: 80 });
                         this.tweens.add({ targets: enemy._singMark, scaleX: 1.3, scaleY: 1.3, duration: 180, yoyo: true, repeat: 3, ease: 'Sine.easeInOut' });
@@ -333,6 +335,7 @@ class EnemyManager {
                     if (currentTime - enemy._singChargeStart >= (enemy._singChargeDur || 700)) {
                         enemy._singState = 'cooldown';
                         enemy._singLastAtk = currentTime;
+                        Sfx.play(this, 'slam', { small: true });
                         this.tweens.killTweensOf(enemy._singMark);
                         this.tweens.add({ targets: enemy._singMark, alpha: 0, duration: 120 });
                         enemy.sprite.setTint(0x440088);
@@ -697,6 +700,7 @@ class EnemyManager {
                 if (!enemy.isFrozen && currentTime - enemy._anchorLastPulse >= enemy._anchorPulseInterval) {
                     enemy._anchorLastPulse = currentTime;
                     if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
+                    Sfx.play(this, 'pulse');
                     // Speed buff nearby enemies
                     for (const ally of this.enemies) {
                         if (!ally.sprite?.active || ally === enemy || ally.isMortar || ally.isHealerTotem || ally.isAnchor) continue;
@@ -1019,6 +1023,7 @@ class EnemyManager {
     enemyAttackAnimation(enemy, targetX, targetY) {
         if (!enemy.sprite || !enemy.sprite.active) return;
         if (enemy._attackAnimPlaying) return; // prevent stacking animations
+        Sfx.play(this, 'swing', { soft: true });
 
         // Snapshot home position at the moment of attack — not recalculated mid-tween
         const homeX = enemy.sprite.x;
@@ -1123,6 +1128,7 @@ class EnemyManager {
     }
 
     _berserkerSwing(enemy) {
+        Sfx.play(this, 'swing');
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         const facingAngle = Math.atan2(this.player.y - ey, this.player.x - ex);
         const halfSpread  = Math.PI * (60 / 180); // ±60° = 120° arc
@@ -1369,6 +1375,7 @@ class EnemyManager {
 
     _spawnPrefireBeam(enemy) {
         this._destroyPrefireBeam(enemy); // safety clear
+        Sfx.play(this, 'laser_charge');
         enemy._prefireBeam = this.add.graphics().setDepth(1.5);
         // Pulsing exclamation above head
         enemy._prefireWarning = this.add.text(
@@ -2020,6 +2027,7 @@ class EnemyManager {
     // ── Level 4: Mortar arc shot — flies over walls, lands on player tile ──
     _fireMortarShot(enemy) {
         const TS = this.TILE_SIZE;
+        Sfx.play(this, 'lob');
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         // Target: TD can override to pick the nearest tower/base; else lock to player tile.
         const ov = this._mortarTargetOverride ? this._mortarTargetOverride(enemy) : null;
@@ -2080,6 +2088,7 @@ class EnemyManager {
                     if (_mk) { _mk.done(); BossFX.blast(this, targetPX, targetPY, SPLASH_R * TS, 'shell'); }
                     // IMPACT
                     this.cameras.main.shake(80, 0.006);
+                    Sfx.play(this, 'slam', { small: true });
                     const impactGfx = this.add.graphics().setDepth(5);
                     impactGfx.x = targetPX; impactGfx.y = targetPY;
                     if (_mk) impactGfx.setVisible(false);
@@ -2155,6 +2164,7 @@ class EnemyManager {
 
     _rooterGroundThump(enemy) {
         const TS = this.TILE_SIZE;
+        Sfx.play(this, 'slam', { small: true });
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         const THUMP_R = enemy._thumpRange || 3;
         const ROOT_DUR = 500;
@@ -2205,6 +2215,7 @@ class EnemyManager {
     _triggerSplitterDeath(enemy) {
         const tier = enemy._splitterTier ?? 0;
         if (tier >= 2) return; // small splitters don't split further
+        Sfx.play(this, 'split');
 
         const ex = enemy.x, ey = enemy.y;
         const TS = this.TILE_SIZE;
@@ -2439,6 +2450,7 @@ class EnemyManager {
     _poisonPlayer(dmg, every, ms) {
         if (!(this._poisonUntil > this.time.now)) {
             this.showStatusText(this.player.x, this.player.y - 30, 'POISONED', '#9ae04a');
+            Sfx.play(this, 'status', { kind: 'poison' });
             this._poisonTickAt = this.time.now;
             this._poisonHp = this.health;
         }

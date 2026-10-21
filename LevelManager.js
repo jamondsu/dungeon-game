@@ -1337,6 +1337,7 @@ class LevelManager {
         // Warning. Bosses.js lights the very tiles the slam hits (Manhattan 2 from its tile, the
         // test below) and plants it on the floor; without it, a ring (3 tiles wide: it hits 2).
         const _slam = this._bfxSlamWarn?.(boss, 700);
+        Sfx.play(this, 'tell', { ms: 700, big: true });
         if (!_slam) {
             const warn = this.add.circle(bpx, bpy, 8, 0xffff44, 0).setDepth(2.5);
             warn.setStrokeStyle(3, 0xffff44, 0.9);
@@ -1351,6 +1352,7 @@ class LevelManager {
             if (!boss.active) { if (onDone) onDone(); return; }
             this.tweens.killTweensOf(boss.body);
             this.tweens.add({ targets:boss.body, scaleX:4.5, scaleY:4.5, duration:100, ease:'Bounce.easeOut' });
+            Sfx.play(this, 'slam');
             this.cameras.main.shake(120, 0.009);
 
             // AoE damage in 2-tile radius — reduced from 3 tiles for melee viability
@@ -1382,6 +1384,7 @@ class LevelManager {
             if (!boss.active) return;
             this.cameras.main.shake(35, 0.003);
             boss.body.setTint(0xffff44);
+            Sfx.play(this, 'blburst');
             this.time.delayedCall(60, () => { if (boss.body?.active) (boss._bfx ? boss.body.clearTint() : boss.body.setTint(0x88ffff)); });
             for (let i = 0; i < SHOTS; i++) {
                 const angle = (Math.PI * 2 / SHOTS) * i + offset;
@@ -1404,6 +1407,7 @@ class LevelManager {
         let fired = 0;
         const fireOne = () => {
             if (!boss.active) return;
+            Sfx.play(this, 'zap');
             const g = this._bfxVoltShot?.('homing', 0, 0) || this.add.graphics().setDepth(3);   // Bosses.js
             g.x = boss.container.x; g.y = boss.container.y;
             boss.homingProjectiles.push({ g, vx:0, vy:0, speed:50, createdAt:this.time.now, damage:20 });   // 25, twice a frame
@@ -1431,6 +1435,7 @@ class LevelManager {
             const wpx = rx * this.TILE_SIZE + this.TILE_SIZE / 2;
             const wpy = ry * this.TILE_SIZE + this.TILE_SIZE / 2;
             const flash = this.add.circle(wpx, wpy, 10, 0x44ffff, 0.8).setDepth(4);
+            Sfx.play(this, 'portal');
             this.tweens.add({ targets:flash, radius:20, alpha:0, duration:300, onComplete:()=>flash.destroy() });
             this.time.delayedCall(300, () => {
                 if (!boss.active) return;
@@ -1438,6 +1443,7 @@ class LevelManager {
                     const e = this.createEnemy(rx, ry, 30);
                     e.tutorialRoomIndex = 6;
                     e.isElectrical = true;
+                    Sfx.play(this, 'spawn');
                     e.sprite.setTint(0x44ffff);
 
                     // Forking lightning aura that pulses every 600ms
@@ -1491,6 +1497,7 @@ class LevelManager {
                 const angle = STEP * shot;
                 const g = this._bfxVoltShot?.('volt', 0, 0) || this.add.graphics().setDepth(3);   // Bosses.js
                 g.x = boss.container.x; g.y = boss.container.y;
+                Sfx.play(this, 'zap', { soft: true });
                 boss.projectiles.push({ g, vx:Math.cos(angle)*SPEED, vy:Math.sin(angle)*SPEED, startX:g.x, startY:g.y, createdAt:this.time.now });
                 shot++;
                 if (shot >= TOTAL) this.time.delayedCall(800, () => this._voltslimeNextPhase());
@@ -1508,6 +1515,7 @@ class LevelManager {
         boss.body.setTint(0xff44ff);
         this.time.delayedCall(60, () => { if (boss.body?.active) (boss._bfx ? boss.body.clearTint() : boss.body.setTint(0x88ffff)); });
         this.cameras.main.shake(50, 0.005);
+        Sfx.play(this, 'blburst');
 
         for (let i = 0; i < SHOTS; i++) {
             const angle = (Math.PI * 2 / SHOTS) * i + Math.random() * 0.3;
@@ -3653,6 +3661,7 @@ class LevelManager {
         return this.enemies.find(s => s._isShade && s !== e && s.sprite?.active && s.health > 0 && Math.hypot(s.x - e.x, s.y - e.y) <= R) || null;
     }
     _shadeAbsorb(sh, e, d, el) {
+        Sfx.play(this, 'block');
         const dd = this._shadeTake(sh, d, el);
         sh.health -= dd;
         this.updateEnemyHealthBar?.(sh);
@@ -4032,6 +4041,7 @@ class LevelManager {
         const els = Object.keys(G.COLS).filter(el => this.unlockedElements?.has(el));   // only what you can hold
         const el = els[Math.floor(Math.random() * els.length)] || 'fire', col = G.COLS[el];
         e._gemDrop = true;
+        Sfx.play(this, 'tell', { ms: 1200, big: true });
         e._gemGlow?.setTint(col);   // its glow takes the colour of what's coming
         // the safe circles: open floor in your room, apart from each other
         const room = (this.rooms || []).find(r => this.playerX >= r.x && this.playerX < r.x + r.w && this.playerY >= r.y && this.playerY < r.y + r.h);
@@ -4471,7 +4481,7 @@ class LevelManager {
     }
     // BLEED: moving hurts. Every tile you go while it lasts (a dash, every tile it covers) costs BLEED_STEP.
     _bleedStart(ms) {
-        if (!(this._bleedUntil > this.time.now)) { this._bleedAt = [this.playerX, this.playerY]; }
+        if (!(this._bleedUntil > this.time.now)) { this._bleedAt = [this.playerX, this.playerY]; Sfx.play(this, 'status', { kind: 'bleed' }); }
         this._bleedUntil = this.time.now + ms;
         this.showStatusText(this.player.x, this.player.y - 34, 'BLEEDING', '#ff4a4a');
     }
@@ -6860,6 +6870,7 @@ class LevelManager {
             if (this.world[x]?.[y] === this.FLOOR) { core.rifts.add(x + ',' + y); line.push([x, y]); }
         }
         core.riftLines.push(line);
+        Sfx.play(this, 'fissure');
         for (const [x, y] of line) if (Math.random() < 0.3) this._bfxDust?.(x * this.TILE_SIZE + this.TILE_SIZE / 2, y * this.TILE_SIZE + this.TILE_SIZE / 2);
     }
     // An Encased Slime's stone broke (LevelManager._encCleanup): near the Geode, it smashes the closest plate
@@ -6885,6 +6896,7 @@ class LevelManager {
             if (this.world[x]?.[y] !== this.FLOOR || Math.hypot(x - this.playerX, y - this.playerY) < 5 || this.getEnemyAt?.(x, y)) continue;
             const e = this.createEncasedSlime(x, y, 6);
             if (e) { e._fcAdd = true; if (!this.enemies.includes(e)) this.enemies.push(e); }
+            if (e) Sfx.play(this, 'spawn');
             return;
         }
     }
@@ -6892,6 +6904,7 @@ class LevelManager {
     _geodeHop() {
         const core = this.fractureCore, C = this._geodeCfg(), R = this._debrisBossRoom, T = this.TILE_SIZE;
         core.state = 'dive'; core.stateAt = this.time.now; core._isInvulnerable = true;
+        Sfx.play(this, 'portal', { close: true });
         this.tweens.add({ targets: core.container, scale: 0.2, alpha: 0, duration: C.DIVE_MS, ease: 'Quad.easeIn', onComplete: () => {
             if (!core.active) return;
             let tx = core.tileX, ty = core.tileY;
@@ -6903,6 +6916,7 @@ class LevelManager {
             core.container.setPosition(tx * T + T / 2, ty * T + T / 2);
             this.tweens.add({ targets: core.container, scale: 1, alpha: 1, duration: C.RISE_MS, ease: 'Back.easeOut', onComplete: () => { if (core.active) { core.state = 'armored'; core.stateAt = this.time.now; core._isInvulnerable = false; } } });
             BossFX.blast(this, core.container.x, core.container.y, 46, 'shell'); this.cameras.main.shake(140, 0.006);
+            Sfx.play(this, 'slam');
         } });
     }
     // Every frame: plates cooling, the window, its attacks, rifts burning you, and the drawing
@@ -7061,6 +7075,7 @@ class LevelManager {
         // Bosses.js: a rift in the floor. It idles half open while the sniper waits in it, opens
         // when it is about to come out (its eyes show in the dark for the last moments), bursts as
         // it does, and swallows the light when it goes back in.
+        Sfx.play(this, 'portal');
         if (this._bfxOn && this._bfxSniperRift?.(enemy, wx, wy)) return;
         // Close any existing portal first
         if (enemy._portalGfx?.active) {
@@ -7091,6 +7106,7 @@ class LevelManager {
     }
 
     _closeSniperPortal(enemy) {
+        Sfx.play(this, 'portal', { close: true });
         if (this._bfxOn) this._bfxSniperRiftClose?.(enemy);   // Bosses.js
         if (!enemy._portalGfx?.active) return;
         if (enemy._portalSpinTween) { enemy._portalSpinTween.stop(); enemy._portalSpinTween = null; }
@@ -7338,6 +7354,7 @@ class LevelManager {
 
                         queen.ammo--;
                         queen._spawning = true;   // pacing is _spawning + the 800ms tell,
+                        Sfx.play(this, 'portal');
                                                   // NOT the regen clock (see above)
 
                         const wpx = sx * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -7377,6 +7394,7 @@ class LevelManager {
                             e._queenBrood = true; e._noUlt = true;   // endless: no ult charge off them
                             e.sprite.setTint(0xff8888);
                             queen.spawnedEnemies.push(e);
+                            Sfx.play(this, 'spawn');
 
                             const bs = queen._baseScale || 3.2;
                             this.tweens.killTweensOf(queen.sprite);
@@ -7439,6 +7457,7 @@ class LevelManager {
         const _qm = this._bfxOn ? this._bfxQueenPulse?.(queen, px, py, R, TELL_MS) : null;
         if (_qm) ring.setVisible(false);
         this.showStatusText(px, py - 96, '◎ ROYAL PULSE', '#ff6688');
+        Sfx.play(this, 'tell', { ms: TELL_MS, big: true });
 
         this.tweens.add({
             targets: ring, scaleX: 1, scaleY: 1,
@@ -7459,6 +7478,7 @@ class LevelManager {
                     this.takeDamage(DMG * (this.enemyDamageScale || 1));
                 }
                 this.cameras.main.shake(90, 0.005);
+                Sfx.play(this, 'pulse');
             }
         });
     }
@@ -7536,6 +7556,7 @@ class LevelManager {
 
     _destroyPortal(portal) {
         portal.active = false;
+        Sfx.play(this, 'bossdie');
         // Drop the pending thaw. It is guarded by `if (portal.active)` so it was harmless,
         // but leaving a live 8s timer holding a reference to a dead queen is how the
         // between-run leaks in this codebase start.
@@ -7789,6 +7810,7 @@ class LevelManager {
         exp.lineStyle(3, 0xcc44ff, 0.90); exp.strokeCircle(0, 0, radiusPx);
         this.tweens.add({ targets:exp, scaleX:1.8, scaleY:1.8, alpha:0, duration:400, ease:'Quad.easeOut', onComplete:()=>exp.destroy() });
         this.cameras.main.shake(50, 0.005);
+        Sfx.play(this, 'boom');
 
         if (Math.sqrt(dx*dx + dy*dy) <= radiusPx) {
             this.takeDamage(10 * this.enemyDamageScale);
@@ -7818,6 +7840,7 @@ class LevelManager {
     _rootPlayer(duration, time) {
         if (!this._ccGate(duration)) return;
         this._playerRooted = true;
+        Sfx.play(this, 'status', { kind: 'root' });
         this._playerRootUntil = (time || this.time.now) + duration;
         // Bosses.js: tendrils come up round you: thorned roots from a rooter, void from the Sovereign
         this._bfxRootT0 = this.time.now; this._bfxRootKind = this._bfxRootNext || 'void'; this._bfxRootNext = null;
@@ -7880,6 +7903,7 @@ class LevelManager {
     _vsAttackVoidMines() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '☠ VOID MINES', '#cc44ff');
+        Sfx.play(this, 'tell', { ms: 600, big: true });
         this.cameras.main.shake(30, 0.003);
         const bossRoomBounds = this.rooms[6];
 
@@ -7914,6 +7938,7 @@ class LevelManager {
                 const mineGfx = this.add.graphics().setDepth(2);
                 mineGfx.x = mpx; mineGfx.y = mpy;
                 boss._voidMines.push({ gfx: mineGfx, spawnTime: this.time.now, duration: mineDuration, radius: 2.5 });
+                Sfx.play(this, 'mine');
 
                 const flash = this.add.circle(mpx, mpy, 8, 0x9922cc, 0.8).setDepth(4);
                 this.tweens.add({ targets: flash, radius: 20, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
@@ -7937,6 +7962,7 @@ class LevelManager {
     _vsAttackSingularitySlimes() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '☄ SINGULARITY SLIMES', '#cc44ff');
+        Sfx.play(this, 'tell', { ms: 600, big: true });
         this.cameras.main.shake(30, 0.003);
 
         const bossRoom = this.rooms[6];
@@ -7959,7 +7985,7 @@ class LevelManager {
                 this.tweens.add({ targets: flash, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 280, onComplete: () => flash.destroy() });
 
                 const slime = this.createSingularitySlime(tx, ty, 6);
-                slime._singWaveId = waveId;   // tag with this wave
+                slime._singWaveId = waveId; Sfx.play(this, 'spawn');   // tag with this wave
             });
         }
 
@@ -8008,6 +8034,7 @@ class LevelManager {
     _vsAttackLaserCross() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '▦ LASER GRID', '#ff44ff');
+        Sfx.play(this, 'laser_charge', { ms: 900 });
         this.cameras.main.shake(30, 0.004);
 
         const bossRoom = this.rooms[6];
@@ -8096,7 +8123,7 @@ class LevelManager {
             this.time.delayedCall(WARN_DUR, () => {
                 if (!boss.active) { ft.remove(); return; }
                 ft.remove(); drawSegs(gfx, segs, col, 0.92);
-                this.cameras.main.shake(25, 0.003); cb();
+                this.cameras.main.shake(25, 0.003); Sfx.play(this, 'laser_fire'); cb();
             });
         };
 
@@ -8183,6 +8210,7 @@ class LevelManager {
                     if (fn > 5) ft.delay = 55;
                 }});
                 this.cameras.main.shake(18 + layer * 8, 0.003);
+                Sfx.play(this, 'laser_charge', { ms: 800 });
 
                 this.time.delayedCall(800, () => {
                     if (!boss.active) { ft.remove(); flashGfx.destroy(); dmgTimer.remove(); onDone(); return; }
@@ -8190,6 +8218,7 @@ class LevelManager {
                     allSegs = [...allSegs, ...newSegs];
                     drawSegs(gfx, allSegs, 0xff22ff, 0.92);
                     this.cameras.main.shake(28, 0.004);
+                    Sfx.play(this, 'laser_fire');
 
                     if (layer < LAYERS - 1) {
                         this.time.delayedCall(LAYER_HOLD, addLayer);
@@ -8258,6 +8287,7 @@ class LevelManager {
         const boss = this.voidSovereignBoss;
         boss._isInvulnerable = true;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '◈ DARK MATTER FRAGMENTS', '#9922cc');
+        Sfx.play(this, 'tell', { ms: 600, big: true });
         boss.container.setVisible(false);
 
         const bossRoom = this.rooms[6];
@@ -8409,6 +8439,7 @@ class LevelManager {
                 // Vulnerable window — 4s of 2× damage
                 boss._vulnerableUntil = this.time.now + 4000;
                 (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '💥 VULNERABLE! 2× DAMAGE', '#ff4444');
+                Sfx.play(this, 'ready');
                 const vFlash = this.add.circle(boss.container.x, boss.container.y, 8, 0xff4444, 0.5).setDepth(5);
                 this.tweens.add({ targets:vFlash, radius:60, alpha:0, duration:400, onComplete:()=>vFlash.destroy() });
                 this.time.delayedCall(4500, () => this._voidSovereignNextAttack());
@@ -8443,6 +8474,7 @@ class LevelManager {
     _vsAttackStomp() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '⬆ STOMP INCOMING', '#ff4444');
+        Sfx.play(this, 'swing');
 
         // Pause the idle bob tween so it doesn't fight over container.y during the stomp sequence
         if (boss._idleBobTween) boss._idleBobTween.pause();
@@ -8501,6 +8533,7 @@ class LevelManager {
                     boss.container.y = finalY + (this.SLIME_Y_OFFSET || -10);
                     boss.container.scaleY = 0.1; boss.container.alpha = 1;
                     this.tweens.add({ targets:boss.container, scaleY:1, duration:220, ease:'Bounce.easeOut' });
+                    Sfx.play(this, 'slam');
                     this.cameras.main.shake(180, 0.018);
 
                     this._bfxStompLand?.(finalX, finalY, 2.5 * this.TILE_SIZE, _stompTiles);   // Bosses.js: the tiles flash, cracks
@@ -8541,6 +8574,7 @@ class LevelManager {
     _vsAttackVoidMaw() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '◉ VOID MAW OPENING', '#cc44ff');
+        Sfx.play(this, 'portal');
         if (boss._idleBobTween) boss._idleBobTween.pause();
         this._voidMawHop(boss, 0, boss.container.x, boss.container.y);
     }
@@ -8598,6 +8632,7 @@ class LevelManager {
             if (!boss.active) { portalSpinTimer.remove(); portalGfx.destroy(); return; }
             boss.container.setVisible(false);
             if (_rift) this._bfxRiftClose?.(_rift, 400);
+            Sfx.play(this, 'portal', { close: true });
 
             this.tweens.add({
                 targets: portalGfx, scaleX: 0.05, scaleY: 0.05, alpha: 0, duration: 400, ease: 'Quad.easeIn',
@@ -8665,6 +8700,7 @@ class LevelManager {
                     boss.container.setVisible(true);
                     boss.container.scaleX = 0.1; boss.container.scaleY = 0.1; boss.container.alpha = 1;
                     this.tweens.add({ targets: boss.container, scaleX: 1, scaleY: 1, duration: 300, ease: 'Back.easeOut' });
+                    Sfx.play(this, 'portal'); Sfx.play(this, 'slam', { small: true });
                     this.cameras.main.shake(100, 0.010);
 
                     if (_rift2) this._bfxRiftClose?.(_rift2, 350, true);
@@ -8750,6 +8786,7 @@ class LevelManager {
         boss._isInvulnerable = true;
         const _bossOrigDepth = boss.container.depth;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '◉ SINGULARITY COLLAPSE', '#220044');
+        Sfx.play(this, 'tell', { ms: 1200, big: true });
         this.cameras.main.shake(40, 0.004);
 
         const bossRoom = this.rooms[6];
@@ -8871,6 +8908,7 @@ class LevelManager {
         this.time.delayedCall(Math.round(COLLAPSE_DURATION * 0.75), () => {
             if (!boss.active) return;
             this.showStatusText(cx, cy - 80, '◉ COLLAPSE IMMINENT', '#9922cc');
+            Sfx.play(this, 'tell', { ms: 900, big: true });
             this.cameras.main.shake(80, 0.008);
         });
 
@@ -8881,6 +8919,7 @@ class LevelManager {
             particleInterval.remove();
 
             this.cameras.main.shake(300, 0.025);
+            Sfx.play(this, 'collapse'); Sfx.play(this, 'slam');
 
             // Suck all enemies to center and kill them
             for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -8944,6 +8983,7 @@ class LevelManager {
         boss._isInvulnerable = true;
         boss._eventHorizonActive = true;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '🌑 EVENT HORIZON', '#110022');
+        Sfx.play(this, 'tell', { ms: 600, big: true });
         this.cameras.main.shake(40, 0.005);
 
         const startTime = this.time.now;
@@ -8992,6 +9032,7 @@ class LevelManager {
             const PULSE_DUR = 550;
             const pulseStart = this.time.now;
             this.cameras.main.shake(20, 0.003);
+            Sfx.play(this, 'pulse');
             const pulseTimer = this.time.addEvent({
                 delay: 16, loop: true,
                 callback: () => {
@@ -9070,6 +9111,7 @@ class LevelManager {
     _voidSovereignPhase2Transition() {
         const boss = this.voidSovereignBoss;
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '⚠ PHASE 2', '#ff4400');
+        Sfx.play(this, 'roar'); Sfx.play(this, 'slam');
         this.cameras.main.shake(200, 0.015);
 
         // Destroy corner pillars. These were the Voltslime arena's coordinates (level 2's room 6):

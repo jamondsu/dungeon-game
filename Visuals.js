@@ -1635,6 +1635,7 @@ void main() {
         const s = enemy?.sprite;
         if (!s?.active || !this._vfxBursts || !this._uiCam) return;
         const col = this._vfxUnitColor(s);
+        Sfx.play(this, 'spawn');
         const ring = this.add.image(s.x, s.y + 4, 'vfx_ring').setBlendMode(Phaser.BlendModes.ADD).setTint(col)
             .setDepth(0.96).setScale(0.6, 0.3).setAlpha(0.9);
         this.tweens.add({ targets: ring, scaleX: 0.15, scaleY: 0.08, alpha: 0, duration: 420, ease: 'Cubic.easeIn', onComplete: () => ring.destroy() });

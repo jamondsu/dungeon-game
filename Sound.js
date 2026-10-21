@@ -17,7 +17,8 @@
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
            w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
-           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30, bosshit: 70 },
+           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 30, bosshit: 70,
+           tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200 },
     _last: {},
     _noiseBuf: null,
     _master: null,
@@ -325,6 +326,70 @@ const Sfx = {
             else if (o.el === 'lightning') this._tone(ctx, t, { type: 'square', f0: 1400 * j, f1: 300, dur: 0.06, vol: 0.06 });
             else if (o.el === 'cosmic') this._tone(ctx, t, { type: 'sine', f0: 700 * j, f1: 260, dur: 0.12, vol: 0.12 });
             else this._tone(ctx, t, { type: 'triangle', f0: 220 * j, f1: 120, dur: 0.06, vol: 0.14 });
+        },
+        // ── TELLS AND ATTACKS: what bosses and enemies do to you, so you hear it coming ──
+        tell(ctx, t, o, j) {               // a wind-up: a low whum swelling and rising (o.ms its length, o.big for a boss)
+            const d = (o.ms || 500) / 1000, v = o.big ? 1 : 0.65;
+            this._tone(ctx, t, { type: 'triangle', f0: 90 * j, f1: 220 * j, dur: d, vol: 0.2 * v, attack: d * 0.85 });
+            this._noise(ctx, t, { filter: 'bandpass', f0: 250, f1: 900, q: 1.5, dur: d, vol: 0.3 * v, attack: d * 0.85 });
+        },
+        swing(ctx, t, o, j) {              // a heavy swing through the air (o.soft: a slime's lunge)
+            const v = o.soft ? 0.45 : 1;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 300 * j, f1: 1300 * j, q: 1.4, dur: 0.18, vol: 0.3 * v, attack: 0.06 });
+            this._tone(ctx, t + 0.05, { type: 'sine', f0: 160 * j, f1: 80, dur: 0.12, vol: 0.08 * v });
+        },
+        slam(ctx, t, o, j) {               // something heavy hitting the floor: a deep thud and debris (o.small: lighter)
+            const v = o.small ? 0.5 : 1;
+            this._tone(ctx, t, { type: 'sine', f0: 85 * j, f1: 30, dur: 0.4, vol: 0.32 * v });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 1600, f1: 120, dur: 0.35, vol: 0.24 * v });
+            this._crackle(ctx, t + 0.03, { n: o.small ? 4 : 9, spread: 0.25, f: 700, vol: 0.1 * v, q: 1.2 });
+        },
+        laser_charge(ctx, t, o, j) {       // a beam locking on: a tone climbing (o.ms its length)
+            const d = (o.ms || 600) / 1000;
+            this._tone(ctx, t, { type: 'sawtooth', f0: 180 * j, f1: 900 * j, dur: d, vol: 0.085, attack: d * 0.9 });
+            this._tone(ctx, t, { type: 'sine', f0: 360 * j, f1: 1800 * j, dur: d, vol: 0.07, attack: d * 0.9 });
+        },
+        laser_fire(ctx, t, o, j) {         // the beam going off: a hard buzz falling away
+            this._tone(ctx, t, { type: 'sawtooth', f0: 700 * j, f1: 140, dur: 0.35, vol: 0.08 });
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1200, f1: 400, q: 1.2, dur: 0.3, vol: 0.18 });
+        },
+        portal(ctx, t, o, j) {             // a rift opening: a wavering whoosh and a hollow note (o.close: shutting, falling)
+            const up = !o.close;
+            this._noise(ctx, t, { filter: 'bandpass', f0: up ? 250 : 1100, f1: up ? 1100 : 250, q: 3, dur: 0.4, vol: 0.32, attack: 0.1 });
+            this._tone(ctx, t, { type: 'sine', f0: (up ? 180 : 420) * j, f1: (up ? 420 : 160) * j, dur: 0.35, vol: 0.08 });
+        },
+        lob(ctx, t, o, j) {                // a mortar lobbing a shell: a hollow thoomp
+            this._tone(ctx, t, { type: 'sine', f0: 210 * j, f1: 80, dur: 0.14, vol: 0.16 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 200, dur: 0.12, vol: 0.1 });
+        },
+        pulse(ctx, t, o, j) {              // a wave going out from something: a deep swelling wub (o.heal: bright and rising instead)
+            if (o.heal) {
+                this._tone(ctx, t, { type: 'sine', f0: 440 * j, f1: 880 * j, dur: 0.35, vol: 0.06, attack: 0.05 });
+                this._tone(ctx, t + 0.08, { type: 'sine', f0: 660 * j, f1: 1320 * j, dur: 0.3, vol: 0.04 });
+                return;
+            }
+            this._tone(ctx, t, { type: 'sine', f0: 150 * j, f1: 60, dur: 0.45, vol: 0.18, attack: 0.04 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 600, f1: 180, dur: 0.4, vol: 0.11, attack: 0.05 });
+        },
+        mine(ctx, t, o, j) {               // a void mine set down: a dark soft ping
+            this._tone(ctx, t, { type: 'sine', f0: 230 * j, f1: 220 * j, dur: 0.4, vol: 0.08 });
+            this._tone(ctx, t, { type: 'sine', f0: 345 * j, f1: 330 * j, dur: 0.3, vol: 0.04 });
+        },
+        spawn(ctx, t, o, j) {              // something appearing: a soft swirl and a pop
+            this._noise(ctx, t, { filter: 'bandpass', f0: 400, f1: 1200, q: 2, dur: 0.18, vol: 0.12, attack: 0.08 });
+            this._tone(ctx, t + 0.12, { type: 'sine', f0: 300 * j, f1: 600 * j, dur: 0.06, vol: 0.1 });
+        },
+        split(ctx, t, o, j) {              // a splitter coming apart: a wet tearing pop, two little ones after
+            this._tone(ctx, t, { type: 'sine', f0: 380 * j, f1: 90, dur: 0.14, vol: 0.2 });
+            this._bubbles(ctx, t + 0.05, { n: 2, spread: 0.08, f: 260, vol: 0.08 });
+        },
+        status(ctx, t, o, j) {             // a status catching you (o.kind root, poison, bleed, slow; anything else a daze wobble)
+            const k = o.kind;
+            if (k === 'root') { this._tone(ctx, t, { type: 'triangle', f0: 140, f1: 70, dur: 0.18, vol: 0.18 }); this._crackle(ctx, t + 0.04, { n: 5, spread: 0.2, f: 500, vol: 0.1 }); }
+            else if (k === 'poison') { this._bubbles(ctx, t, { n: 4, spread: 0.2, f: 200, vol: 0.07 }); this._tone(ctx, t, { type: 'sawtooth', f0: 180, f1: 120, dur: 0.25, vol: 0.04 }); }
+            else if (k === 'bleed') { this._noise(ctx, t, { filter: 'bandpass', f0: 900, f1: 400, q: 1.5, dur: 0.12, vol: 0.2 }); this._tone(ctx, t, { type: 'sine', f0: 200, f1: 90, dur: 0.15, vol: 0.12 }); }
+            else if (k === 'slow') this._tone(ctx, t, { type: 'sine', f0: 600, f1: 200, dur: 0.35, vol: 0.07 });
+            else { this._tone(ctx, t, { type: 'triangle', f0: 500, f1: 480, dur: 0.08, vol: 0.06 }); this._tone(ctx, t + 0.09, { type: 'triangle', f0: 420, f1: 400, dur: 0.08, vol: 0.05 }); }
         },
         // A hit on a boss: the element's hit with weight under it, the dull thud of a big body.
         bosshit(ctx, t, o, j) {
