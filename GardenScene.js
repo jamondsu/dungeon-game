@@ -43,7 +43,7 @@ class GardenScene extends Phaser.Scene {
         const reg = (key, i, ...o) => { (this._reg[key + (i ?? '')] ||= []).push(...o); return o[0]; };
         MenuArt.basics(this);
         Music.play(this, 'isle');
-        this._panelObjs = null; this._busy = false; this._ticks = []; this._fish = null; this._leaving = false; this._rest = null; this._area = null; this._hudObjs = null;
+        this._panelObjs = null; this._busy = false; this._ticks = []; this._fish = null; this._leaving = false; this._rest = null; this._area = null; this._hudObjs = null; this._bookCam = null;
         this.glorps = parseInt(localStorage.getItem('glorps') || '0', 10) || 0;
         const T = this.T = Math.max(32, Math.floor(Math.min(W / 27, H / 16)));
         const base = Math.ceil(H / T) + 1, rows = this.rows = base + GardenScene.SOUTH, cols = this.cols = 80;   // a screen tall, plus SOUTH rows to roam below it
@@ -834,6 +834,7 @@ class GardenScene extends Phaser.Scene {
             stars.emitting = dark > 0.5;
             const next = night ? n1 : p < n0 ? n0 : 1 + n0, mins = Math.ceil((next - p) * Garden.DAY_MS / 60000);
             clock.setText(`${night ? '☾ NIGHT' : '☀ DAY'}  ·  ${night ? 'dawn' : 'nightfall'} in ${mins}m`).setColor(night ? '#c8d8ff' : '#fff0c0');
+            clock.setVisible(!this._logOpen);   // (put away with the HUD while the diary's open)
             if (was !== null && was !== night) { this._float(this.fx, this.fy - this.T * 1.6, night ? 'night falls: the night fish are out' : 'the sun is up', night ? '#c8d8ff' : '#fff0c0'); this._drawCrops(); }
             was = night;
         });
@@ -2575,6 +2576,7 @@ class GardenScene extends Phaser.Scene {
         this._hot = { x: W / 2 + 66, y: by - hs / 2, sz: hs, keep, D };
         this._hotSel();
         keep(this.add.text(W / 2, this.scale.height - 6, this.scene.key === 'Garden' ? 'WASD walk  ·  E tend, fish, rest (hold E to reel)  ·  1 / 2 hands  ·  I backpack  ·  B build  ·  L log  ·  Esc leave  ·  the Grove is west, the Lagoon east' : 'WASD walk  ·  E fish (hold E to reel)  ·  1 / 2 hands  ·  I backpack  ·  L log  ·  ' + (this._cfg?.().hint || 'Esc to leave'), { fontSize: '11px', fontFamily: 'monospace', color: '#c8d8c8', backgroundColor: '#0a0618aa', padding: { x: 6, y: 2 } }).setOrigin(0.5, 1).setDepth(D));
+        if (this._logOpen) for (const o of objs) o.setVisible?.(false);   // (rebuilt with the diary open: it stays put away)
     }
 
     // ── PANELS ────────────────────────────────────────────────────────────────
@@ -2588,7 +2590,27 @@ class GardenScene extends Phaser.Scene {
         UIKit.button(this, { x: x + w - 30, y: y + 26, w: 34, h: 28, label: 'X', accent: UIKit.PALETTE.line, depth: D + 3, fontSize: '12px', fireOn: 'down', onClick: () => this._closePanel() }).objs.forEach(keep);
         return { keep, x, y, w, h, D };
     }
-    _closePanel(quiet) { this._logOpen = false; this._pack = null; this._packPick = null; this._diaryTurning = false; for (const o of (this._panelObjs || [])) { this.tweens.killTweensOf(o); o.destroy?.(); } this._panelObjs = null; if (!quiet) { this._drawCrops(); this._hud(); if (this.scene.key === 'Garden') this._tanksSetup(); } }
+    // The diary's camera (big screens): everything of the book (depth 8000 and up) is drawn by it, zoomed, and nothing else; the rest
+    // stays on the main camera. Text in the book renders at twice its density so the zoom keeps it sharp. Gone once the book is.
+    _bookCamSync() {
+        const bc = this._bookCam;
+        if (!bc) return;
+        const M = this.cameras.main.id, B = bc.id, D = 8000;
+        const route = (o, book) => { o.cameraFilter = book ? (o.cameraFilter & ~B) | M : o.cameraFilter | B; if (o.list) for (const c of o.list) route(c, book); };
+        if (!this._logOpen) {   // closed (or another panel took over): back to one camera
+            const back = o => { o.cameraFilter &= ~B; if (o._bookRoute) o.cameraFilter &= ~M; o._bookRoute = undefined; if (o.list) for (const c of o.list) back(c); };
+            for (const o of this.children.list) back(o);
+            this.cameras.remove(bc); this._bookCam = null; this.events.off('prerender', this._bookCamSync, this);
+            return;
+        }
+        for (const o of this.children.list) {
+            const book = o.depth >= D;
+            if (o._bookRoute === book) continue;
+            o._bookRoute = book; route(o, book);
+            if (book && o.type === 'Text' && (o.style?.resolution || 1) < 2) o.setResolution(2);
+        }
+    }
+    _closePanel(quiet) { if (!quiet) for (const o of this._hudObjs || []) o.setVisible?.(true); this._logOpen = false; this._pack = null; this._packPick = null; this._diaryTurning = false; for (const o of (this._panelObjs || [])) { this.tweens.killTweensOf(o); o.destroy?.(); } this._panelObjs = null; if (!quiet) { this._drawCrops(); this._hud(); if (this.scene.key === 'Garden') this._tanksSetup(); } }
 
     // ── PLANTING ──────────────────────────────────────────────────────────────
     // Sprinkling by hand: E on a field with room picks up the basket. A tray of your seeds along the bottom (click one, or
@@ -2896,6 +2918,13 @@ class GardenScene extends Phaser.Scene {
         const s = Garden.state(), bw = Math.min(W - 40, 1000), bh = Math.min(H - 110, 620), bx = W / 2 - bw / 2, by = H / 2 - bh / 2 + 26, INK = '#3b2716', FADE = '#8a7254';
         keep(this.add.rectangle(0, 0, W, H, 0x05030a, 0.65).setOrigin(0).setDepth(D).setInteractive());   // holds the clicks behind the book (it closes from its own button, L or Esc, not a stray click)
         this._logOpen = true;
+        for (const o of this._hudObjs || []) o.setVisible?.(false);   // the Garden's own HUD poked out round the book (and under its ribbons): put away while it's open
+        // a big screen: the book is laid out at its own size and drawn through a camera of its own, zoomed to fill more of the screen
+        const zoom = Math.min((W - 40) / 1040, (H - 30) / 740);
+        if (zoom > 1.05 && !this._bookCam) {
+            this._bookCam = this.cameras.add(0, 0, W, H).setZoom(zoom);
+            this.events.off('prerender', this._bookCamSync, this); this.events.on('prerender', this._bookCamSync, this);
+        }
         const g = keep(this.add.graphics().setDepth(D + 1.5));
         // an old diary: tooled leather, brass corners, a stitched spine, yellowed pages ruled in faded ink
         const pw = (bw - 60) / 2, ph = bh - 44, lx = bx + 24, rx = bx + 36 + pw, py = by + 22;
@@ -4066,7 +4095,7 @@ class UnderwellScene extends GardenScene {
         const W = this.scale.width, H = this.scale.height, C = this._cfg();
         MenuArt.basics(this);
         Music.play(this, C.music);
-        this._panelObjs = null; this._busy = false; this._ticks = []; this._fish = null; this._leaving = false; this._rest = null; this._hudObjs = null; this._build = null; this._reg = {};
+        this._panelObjs = null; this._busy = false; this._ticks = []; this._fish = null; this._leaving = false; this._rest = null; this._hudObjs = null; this._bookCam = null; this._build = null; this._reg = {};
         this._area = C.area;
         this._waterPal = C.water; this._foam = C.foam; this._waveCol = C.wave; this._bridges = []; this._lotus = C.lotus;
         this.glorps = parseInt(localStorage.getItem('glorps') || '0', 10) || 0;
