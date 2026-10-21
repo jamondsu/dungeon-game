@@ -542,6 +542,36 @@ class WorldGen {
         }
         this.rooms = [];
 
+        // Laid out fresh each time like the Gauntlet (LevelLayouts), the fixed map below if it can't fit them
+        const laid = typeof LevelLayouts !== 'undefined' && LevelLayouts.generate(this, world, LevelLayouts.RECIPES.voidrift, Math.random);
+        if (laid) this.rooms = laid;
+        else this._voidRiftFixed(world);
+        this.addWalls(world);
+
+        this.isTutorial          = false;
+        this.isIceTutorial       = false;
+        this.isLightningTutorial = false;
+        this.isLevel2            = false;
+        this.isLevel3            = true;
+        this.currentTutorialRoom = -1;
+        this.tutorialWeaponLocked = false;
+
+        this.tutorialRoomCleared = this.rooms.map(() => false);
+        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
+            if (i === 0) return false;
+            if (r.isChestRoom) return false;
+            return true;
+        });
+        this.tutorialRoomCleared[0] = true;
+
+        // the Sovereign's and the Queens' rooms left clear, at the fixed map's spots moved with their rooms
+        const keep = [[6, 16, 10], [1, 2, 12], [5, 5, 5], [5, 19, 5]].map(([ri, x, y]) => [this.rooms[ri].x + x, this.rooms[ri].y + y]);
+        this._dressRooms(world, 'voidrift', [], keep);
+        return world;
+    }
+
+    // The Void Rift as it was first built: the map when the laid-out one can't fit
+    _voidRiftFixed(world) {
         // ── ROOM 0: Spawn (14×10) — safe hub ────────────────────────────────
         const r0 = { x: 43, y: 28, w: 14, h: 10, doorPositions: [] };
         this.carveRoom(world, r0);
@@ -647,27 +677,6 @@ class WorldGen {
             for (let dx = -1; dx <= 1; dx++) world[78 + dx][y] = this.FLOOR;
         this.carveRoom(world, c2);
         this.rooms.push(c2);
-
-        this.addWalls(world);
-
-        this.isTutorial          = false;
-        this.isIceTutorial       = false;
-        this.isLightningTutorial = false;
-        this.isLevel2            = false;
-        this.isLevel3            = true;
-        this.currentTutorialRoom = -1;
-        this.tutorialWeaponLocked = false;
-
-        this.tutorialRoomCleared = this.rooms.map(() => false);
-        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
-            if (i === 0) return false;
-            if (r.isChestRoom) return false;
-            return true;
-        });
-        this.tutorialRoomCleared[0] = true;
-
-        this._dressRooms(world, 'voidrift', [], [[50, 88], [20, 34], [42, 66], [56, 66]]);   // the Sovereign's and the Queens' rooms left clear
-        return world;
     }
 
     canPlaceRoom(world, room) {

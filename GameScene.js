@@ -1486,6 +1486,7 @@ class GameScene extends Phaser.Scene {
     generateLevel4(...a) { return WorldGen.prototype.generateLevel4.call(this, ...a); }
     generateLevel6(...a) { return WorldGen.prototype.generateLevel6.call(this, ...a); }
     _gauntletFixed(...a) { return WorldGen.prototype._gauntletFixed.call(this, ...a); }
+    _voidRiftFixed(...a) { return WorldGen.prototype._voidRiftFixed.call(this, ...a); }
     canPlaceRoom(...a) { return WorldGen.prototype.canPlaceRoom.call(this, ...a); }
     carveRoom(...a) { return WorldGen.prototype.carveRoom.call(this, ...a); }
     connectRoomsMST(...a) { return WorldGen.prototype.connectRoomsMST.call(this, ...a); }

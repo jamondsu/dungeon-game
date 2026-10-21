@@ -2346,12 +2346,14 @@ class LevelManager {
     }
 
     _spawnBossDoor() {
-        // Portcullis in the corridor between R5 (y:61-73) and R6 (y:78)
-        // Corridor is at x:49-51, y:73-77 — place door at y:73 (south edge of R5)
-        const DOOR_Y   = 73;
-        const DOOR_X   = 49; // left edge
+        // Portcullis across the corridor from R5 to R6, at its mouth in R5. The fixed map's corridor is x:49-51 at y:73;
+        // a laid-out map's boss corridor always runs north or south (LevelLayouts.RECIPES.voidrift)
+        const entry    = this.rooms[6]?.entryTiles;
+        const DOOR_Y   = entry ? entry[0].y : 73;
+        const DOOR_X   = entry ? Math.min(...entry.map(t => t.x)) : 49; // left edge
         const DOOR_W   = 3;  // tiles wide
         const T        = this.TILE_SIZE;
+        const UP       = this.rooms[6]?.entryDir === 'north' ? T : 0;   // drawn two tiles tall into the corridor, not into R5
 
         if (!this._bossDoor) {
             const g = this.add.graphics().setDepth(1.5);
@@ -2361,7 +2363,7 @@ class LevelManager {
                 g.clear();
                 for (let dx = 0; dx < DOOR_W; dx++) {
                     const wx = (DOOR_X + dx) * T;
-                    const wy = DOOR_Y * T;
+                    const wy = DOOR_Y * T - UP;
                     // Dark stone frame
                     g.fillStyle(0x1a1a2e, 0.95); g.fillRect(wx, wy, T, T * 2);
                     // Metal bars — 3 vertical bars per tile
@@ -2378,7 +2380,7 @@ class LevelManager {
                 }
                 // Lock symbol in center
                 const cx = (DOOR_X + DOOR_W / 2) * T;
-                const cy = DOOR_Y * T + T;
+                const cy = DOOR_Y * T + T - UP;
                 g.fillStyle(0xcc44ff, 0.90); g.fillCircle(cx, cy, 6);
                 g.fillStyle(0x000000, 1);    g.fillCircle(cx, cy, 3.5);
                 g.fillStyle(0xcc44ff, 0.80); g.fillRect(cx - 2, cy, 4, 5);
@@ -2471,65 +2473,61 @@ class LevelManager {
     // ─── LEVEL 3 ENEMY SPAWNING ───────────────────────────────────────────
 
     spawnLevel3Enemies() {
-        // ── Hub layout coords (see WorldGen.generateLevel3) ─────────────────
-        // R0: x:43,y:28,w:14,h:10 — Spawn, SAFE — no enemies
+        // Positions as the fixed map placed them (WorldGen._voidRiftFixed), each moved with its room (the map is laid out fresh: LevelLayouts).
+        // O is where each story room stood on the fixed map. R0, the spawn, is safe.
+        const O = [[43, 28], [18, 22], [44, 10], [63, 23], [40, 44], [37, 61], [34, 78]];
+        const at = (ri, x, y) => [this.rooms[ri].x + x - O[ri][0], this.rooms[ri].y + y - O[ri][1]];
+        const mob = (ri, x, y, hp) => { const e = this.createEnemy(...at(ri, x, y), hp); e.tutorialRoomIndex = ri; return e; };
 
-        // R1: x:18,y:22,w:20,h:14 — Elemental Crucible (WEST)
-        { const e = this.createEnemy(22, 25, 80); e.tutorialRoomIndex = 1; this._tagResist(e, 'fire'); }
-        { const e = this.createEnemy(34, 25, 80); e.tutorialRoomIndex = 1; this._tagResist(e, 'ice'); }
-        this.createLightningElemental(22, 33, 1);
-        this.createBerserker(29, 29, 1);
-        [{ x:28,y:28 },{ x:34,y:34 }].forEach(p => { const e = this.createEnemy(p.x, p.y, 65); e.tutorialRoomIndex = 1; });
-        this.createQueenSlimePortal(20, 34, 1, 1);
-        this.createRangedEnemy(35, 27, 1);
-        this.createRangedEnemy(35, 33, 1);
+        // R1: Elemental Crucible
+        this._tagResist(mob(1, 22, 25, 80), 'fire');
+        this._tagResist(mob(1, 34, 25, 80), 'ice');
+        this.createLightningElemental(...at(1, 22, 33), 1);
+        this.createBerserker(...at(1, 29, 29), 1);
+        for (const [x, y] of [[28, 28], [34, 34]]) mob(1, x, y, 65);
+        this.createQueenSlimePortal(...at(1, 20, 34), 1, 1);
+        this.createRangedEnemy(...at(1, 35, 27), 1);
+        this.createRangedEnemy(...at(1, 35, 33), 1);
 
-        // R2: x:44,y:10,w:12,h:10 — Cosmic Observatory (NORTH): the Gem watching from the far wall, a Wraith and a Leech
-        [{ x:47,y:17 },{ x:53,y:17 }].forEach(p => { const e = this.createEnemy(p.x, p.y, 40); e.tutorialRoomIndex = 2; });
-        this.createGem(50, 11, 2);
-        this.createWraith(47, 13, 2);
-        this.createLeech(53, 14, 2);
+        // R2: Cosmic Observatory: the Gem watching from the far wall, a Wraith and a Leech
+        for (const [x, y] of [[47, 17], [53, 17]]) mob(2, x, y, 40);
+        this.createGem(...at(2, 50, 11), 2);
+        this.createWraith(...at(2, 47, 13), 2);
+        this.createLeech(...at(2, 53, 14), 2);
 
-        // R3: x:63,y:23,w:22,h:14 — Ult Gauntlet (EAST)
-        const r3abs = [{ x:66,y:26 },{ x:80,y:26 },{ x:66,y:34 },{ x:80,y:34 }];
-        for (const p of r3abs) { const e = this.createEnemy(p.x, p.y, 90); e.tutorialRoomIndex = 3; e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
-        [{ x:70,y:29 },{ x:75,y:29 },{ x:70,y:33 },{ x:75,y:33 },{ x:73,y:31 }].forEach(p => {
-            const e = this.createEnemy(p.x, p.y, 70); e.tutorialRoomIndex = 3;
-        });
-        this.createVoidSniper(83, 26, 3);
+        // R3: Ult Gauntlet
+        for (const [x, y] of [[66, 26], [80, 26], [66, 34], [80, 34]]) { const e = mob(3, x, y, 90); e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); }
+        for (const [x, y] of [[70, 29], [75, 29], [70, 33], [75, 33], [73, 31]]) mob(3, x, y, 70);
+        this.createVoidSniper(...at(3, 83, 26), 3);
         // On a Berserker rather than a plain slime: from here resistance rides enemies that are
         // already dangerous, so it modifies a threat instead of being a stat block.
-        this._tagResist(this.createBerserker(82, 33, 3), 'ice');
-        this._tagResist(this.createRangedEnemy(68, 27, 3), 'fire');
-        this.createRangedEnemy(68, 34, 3);
-        this.createRangedEnemy(78, 27, 3);
+        this._tagResist(this.createBerserker(...at(3, 82, 33), 3), 'ice');
+        this._tagResist(this.createRangedEnemy(...at(3, 68, 27), 3), 'fire');
+        this.createRangedEnemy(...at(3, 68, 34), 3);
+        this.createRangedEnemy(...at(3, 78, 27), 3);
 
-        // R4: x:40,y:44,w:20,h:12 — Sniper Hall
-        const r4snipers = [{ x:42,y:46 },{ x:42,y:53 },{ x:50,y:46 },{ x:50,y:53 },{ x:57,y:46 },{ x:57,y:53 }];
-        const r4ranged  = [{ x:44,y:49 },{ x:44,y:55 },{ x:51,y:49 },{ x:51,y:55 },{ x:58,y:49 },{ x:58,y:55 }];
-        for (const p of r4snipers) this.createVoidSniper(p.x, p.y, 4);
-        for (const p of r4ranged)  this.createRangedEnemy(p.x, p.y, 4);
-        this.createHunterSlime(50, 50, 4);   // the ambush: it stalks you while the snipers keep you moving
+        // R4: Sniper Hall
+        for (const [x, y] of [[42, 46], [42, 53], [50, 46], [50, 53], [57, 46], [57, 53]]) this.createVoidSniper(...at(4, x, y), 4);
+        for (const [x, y] of [[44, 49], [44, 55], [51, 49], [51, 55], [58, 49], [58, 55]]) this.createRangedEnemy(...at(4, x, y), 4);
+        this.createHunterSlime(...at(4, 50, 50), 4);   // the ambush: it stalks you while the snipers keep you moving
 
-        // R5: x:37,y:61,w:26,h:12 — Queen Slime Chamber
-        this.createQueenSlimePortal(42, 66, 5, 2);
-        this.createQueenSlimePortal(56, 66, 5, 3);
-        { const e = this.createEnemy(43, 63, 75); e.tutorialRoomIndex = 5; this._tagResist(e, 'ice'); }
-        this.createLightningElemental(56, 63, 5);
-        this.createBerserker(50, 69, 5);
-        this._tagResist(this.createRangedEnemy(40, 65, 5), 'lightning');
-        this.createRangedEnemy(58, 65, 5);
+        // R5: Queen Slime Chamber
+        this.createQueenSlimePortal(...at(5, 42, 66), 5, 2);
+        this.createQueenSlimePortal(...at(5, 56, 66), 5, 3);
+        this._tagResist(mob(5, 43, 63, 75), 'ice');
+        this.createLightningElemental(...at(5, 56, 63), 5);
+        this.createBerserker(...at(5, 50, 69), 5);
+        this._tagResist(this.createRangedEnemy(...at(5, 40, 65), 5), 'lightning');
+        this.createRangedEnemy(...at(5, 58, 65), 5);
 
-        // R6: x:34,y:102,w:32,h:26 — Boss Arena
-        [{ x:37,y:81 },{ x:62,y:81 },{ x:37,y:95 },{ x:62,y:95 }].forEach(p => {
-            const e = this.createEnemy(p.x, p.y, 80); e.tutorialRoomIndex = 6;
-        });
-        this.createLightningElemental(50, 79, 6);
-        this._tagResist(this.createBerserker(37, 88, 6), 'fire');
-        this.createBerserker(62, 88, 6);
+        // R6: Boss Arena
+        for (const [x, y] of [[37, 81], [62, 81], [37, 95], [62, 95]]) mob(6, x, y, 80);
+        this.createLightningElemental(...at(6, 50, 79), 6);
+        this._tagResist(this.createBerserker(...at(6, 37, 88), 6), 'fire');
+        this.createBerserker(...at(6, 62, 88), 6);
 
-        this.spawnVoidSovereignBoss(50, 88);
-        this.spawnFinalLevelChest(50, 79, 'cosmic');
+        this.spawnVoidSovereignBoss(...at(6, 50, 88));
+        this.spawnFinalLevelChest(...at(6, 50, 79), 'cosmic');
         this._spawnLevel3ChestRooms();
 
         // Key system — spawn boss door and show HUD

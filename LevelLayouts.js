@@ -24,16 +24,28 @@ const LevelLayouts = {
         g_ambush:  { w: 22, h: 16, walls: [[3, 2], [3, 9], [14, 2], [14, 9], [8, 5]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]) },
         g_boss:    { w: 24, h: 22, walls: [...[[2, 2], [20, 2], [2, 17], [20, 17]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
                                            [11, 2], [12, 2], [11, 18], [12, 18], [2, 10], [2, 11], [21, 10], [21, 11]] },
+        // ── the Void Rift's rooms ──
+        v_spawn:   { w: 14, h: 10, walls: [[1, 1], [12, 1], [1, 8], [12, 8]].flatMap(([x, y]) => [[x, y], [x + 1, y]]) },
+        v_crucible: { w: 20, h: 14, walls: [...Array.from({ length: 11 }, (_, y) => y).filter(y => y !== 8 && y !== 9).map(y => [12, y]), [2, 2], [17, 2], [2, 11], [17, 11]] },
+        v_observatory: { w: 12, h: 10 },
+        v_gauntlet: { w: 22, h: 14, walls: [[2, 2], [17, 2], [2, 10], [17, 10], [9, 2], [9, 10]].flatMap(([x, y]) => [[x, y], [x + 1, y]]) },
+        v_hall:    { w: 20, h: 12, walls: [...[[1, 2], [17, 2], [1, 8], [17, 8]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]), [9, 6], [10, 6]] },
+        v_queens:  { w: 26, h: 12, walls: Array.from({ length: 12 }, (_, y) => y).filter(y => ![4, 5, 9, 10].includes(y)).map(y => [13, y]) },
+        v_boss:    { w: 32, h: 20, walls: [...[[2, 2], [26, 2], [2, 16], [26, 16]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
+                                           [15, 2], [16, 2], [15, 18], [16, 18], [1, 10], [1, 11], [29, 10], [29, 11]] },
         // ── side rooms ──
         chest:     { w: 12, h: 9, chest: true, name: 'Chest Room' },
         chest_s:   { w: 10, h: 8, chest: true, name: 'Chest Room' },
         elite:     { w: 14, h: 11, elite: true, name: 'Elite Den', walls: [[4, 3], [9, 3], [4, 7], [9, 7]] },
     },
     RECIPES: {
+        // the spawn is a hub: four rooms off it, then the hall leads on to the queens and the boss (its boss door wants a north or south corridor)
+        voidrift: { path: ['v_spawn', ['v_crucible', 0], ['v_observatory', 0], ['v_gauntlet', 0], ['v_hall', 0], 'v_queens', ['v_boss', 5, ['north', 'south']]], side: [['chest_s', 2]] },
         gauntlet: { path: ['g_start', 'g_pillars', 'g_brawl', 'g_choke', 'g_lanes', 'g_ambush', 'g_boss'], side: [['chest', 1], ['chest_s', 1], ['elite', 1]], loop: 0.5 },
     },
-    DIRS: { E: [1, 0], W: [-1, 0], N: [0, -1], S: [0, 1] },
-    OPP: { E: 'W', W: 'E', N: 'S', S: 'N' },
+    // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'
+    DIRS: { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] },
+    OPP: { east: 'west', west: 'east', north: 'south', south: 'north' },
 
     generate(gen, world, recipe, R = Math.random) {
         for (let tries = 0; tries < 40; tries++) {
@@ -76,7 +88,8 @@ const LevelLayouts = {
                 for (const [cx, cy] of tiles) world[cx][cy] = gen.FLOOR;
                 if (!from.doorPositions.some(p => p.direction === d)) from.doorPositions.push({ direction: d });
                 room.doorPositions.push({ direction: LevelLayouts.OPP[d] });
-                room._entrance = tiles.filter(([, , s]) => s === 1).map(([cx, cy]) => ({ x: cx, y: cy }));   // the corridor's mouth at `from`
+                room.entryTiles = tiles.filter(([, , s]) => s === 1).map(([cx, cy]) => ({ x: cx, y: cy }));   // the corridor's mouth at `from`
+                room.entryDir = d;   // which way the corridor leaves `from`
                 room._from = from;
                 return room;
             }
@@ -85,9 +98,11 @@ const LevelLayouts = {
         // the story rooms: the start somewhere toward a corner, then each off the last, never doubling straight back
         let last = put(recipe.path[0], 6 + Math.floor(R() * (W * 0.35)), 6 + Math.floor(R() * (H * 0.35)));
         let back = null;
-        for (const t of recipe.path.slice(1)) {
-            const dirs = Object.keys(LevelLayouts.DIRS).filter(d => d !== back);
-            const r = attach(last, t, dirs);
+        // a path entry is a template, or [template, the story room it hangs off, the sides it may go] for a hub
+        for (const p of recipe.path.slice(1)) {
+            const [t, pi, only] = Array.isArray(p) ? p : [p];
+            const dirs = only || Object.keys(LevelLayouts.DIRS).filter(d => pi !== undefined || d !== back);
+            const r = attach(pi === undefined ? last : rooms[pi], t, dirs);
             if (!r) return null;
             back = r.doorPositions[0].direction;   // the way back to `last`: the next room won't go there
             last = r;
@@ -99,7 +114,7 @@ const LevelLayouts = {
             for (const pi of order) {
                 const r = attach(rooms[pi], t, Object.keys(LevelLayouts.DIRS), T.chest ? { isChestRoom: true, parentTag: 'r' + pi } : {});
                 if (!r) continue;
-                if (T.chest) r.entranceTiles = r._entrance;
+                if (T.chest) r.entranceTiles = r.entryTiles;
                 break;
             }
         }
@@ -114,13 +129,13 @@ const LevelLayouts = {
                 if (s._looped) break;
             }
         }
-        for (const r of rooms) { delete r._entrance; delete r._from; }
+        for (const r of rooms) delete r._from;
         return rooms;
     },
 
     // A straight corridor between two rooms that face each other with 3+ tiles of overlap and 3-10 of clear gap
     _join(gen, world, a, b) {
-        for (const d of ['E', 'W', 'N', 'S']) {
+        for (const d of Object.keys(LevelLayouts.DIRS)) {
             const [dx, dy] = LevelLayouts.DIRS[d];
             const gap = dx ? (dx > 0 ? b.x - (a.x + a.w) : a.x - (b.x + b.w)) : (dy > 0 ? b.y - (a.y + a.h) : a.y - (b.y + b.h));
             const lo = dx ? Math.max(a.y, b.y) : Math.max(a.x, b.x), hi = dx ? Math.min(a.y + a.h, b.y + b.h) : Math.min(a.x + a.w, b.x + b.w);
