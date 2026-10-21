@@ -33,6 +33,15 @@ const LevelLayouts = {
         v_queens:  { w: 26, h: 12, walls: Array.from({ length: 12 }, (_, y) => y).filter(y => ![4, 5, 9, 10].includes(y)).map(y => [13, y]) },
         v_boss:    { w: 32, h: 20, walls: [...[[2, 2], [26, 2], [2, 16], [26, 16]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
                                            [15, 2], [16, 2], [15, 18], [16, 18], [1, 10], [1, 11], [29, 10], [29, 11]] },
+        // ── the Fracture's rooms ──
+        f_spawn:   { w: 14, h: 10, walls: [[1, 1], [12, 1], [1, 8], [12, 8]].flatMap(([x, y]) => [[x, y], [x + 1, y]]) },
+        f_crater:  { w: 16, h: 14, walls: [[2, 2], [12, 2], [2, 10], [12, 10]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1]]) },
+        f_sinkhole: { w: 14, h: 14, walls: [3, 4, 5, 7, 8, 9].map(y => [7, y]) },
+        f_chain:   { w: 22, h: 14, walls: [[2, 2], [17, 2], [2, 10], [17, 10]].flatMap(([x, y]) => [[x, y], [x + 1, y]]) },
+        f_splitter: { w: 22, h: 16, walls: [[2, 2], [3, 2], [18, 2], [19, 2]] },
+        f_traps:   { w: 26, h: 14, walls: [[2, 2], [22, 2], [2, 10], [22, 10], [12, 6]].flatMap(([x, y]) => [[x, y], [x + 1, y]]) },
+        f_core:    { w: 36, h: 26, walls: [...[[2, 4], [31, 4], [2, 20], [31, 20]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
+                                           [16, 8], [21, 8], [16, 16], [21, 16]] },
         // ── side rooms ──
         chest:     { w: 12, h: 9, chest: true, name: 'Chest Room' },
         chest_s:   { w: 10, h: 8, chest: true, name: 'Chest Room' },
@@ -41,6 +50,8 @@ const LevelLayouts = {
     RECIPES: {
         // the spawn is a hub: four rooms off it, then the hall leads on to the queens and the boss (its boss door wants a north or south corridor)
         voidrift: { path: ['v_spawn', ['v_crucible', 0], ['v_observatory', 0], ['v_gauntlet', 0], ['v_hall', 0], 'v_queens', ['v_boss', 5, ['north', 'south']]], side: [['chest_s', 2]] },
+        // the spawn a hub again: the crater and the sinkhole beyond it, the chain gang and the splitter farm beyond it, the trap gauntlet on to the Core
+        fracture: { path: ['f_spawn', ['f_crater', 0], ['f_sinkhole', 1], ['f_chain', 0], ['f_splitter', 3], ['f_traps', 0], ['f_core', 5]], side: [['chest_s', 2]] },
         gauntlet: { path: ['g_start', 'g_pillars', 'g_brawl', 'g_choke', 'g_lanes', 'g_ambush', 'g_boss'], side: [['chest', 1], ['chest_s', 1], ['elite', 1]], loop: 0.5 },
     },
     // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'

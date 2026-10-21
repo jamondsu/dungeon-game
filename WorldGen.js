@@ -1239,6 +1239,39 @@ class WorldGen {
         }
         this.rooms = [];
 
+        // Laid out fresh each time like the Gauntlet (LevelLayouts), the fixed map below if it can't fit them
+        const laid = typeof LevelLayouts !== 'undefined' && LevelLayouts.generate(this, world, LevelLayouts.RECIPES.fracture, Math.random);
+        if (laid) this.rooms = laid;
+        else this._fractureFixed(world);
+        this.addWalls(world);
+
+        this.isTutorial          = false;
+        this.isIceTutorial       = false;
+        this.isLightningTutorial = false;
+        this.isLevel2            = false;
+        this.isLevel3            = false;
+        this.isLevel4            = true;
+        this.currentTutorialRoom = -1;
+        this.tutorialWeaponLocked = false;
+
+        this.tutorialRoomCleared = this.rooms.map(() => false);
+        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
+            if (i === 0) return false;
+            if (r.isChestRoom) return false;
+            return true;
+        });
+
+        const spawnRoom = this.rooms[0];
+        const spawnCX = Math.floor(spawnRoom.x + spawnRoom.w / 2);
+        const spawnCY = Math.floor(spawnRoom.y + spawnRoom.h / 2);
+        this.playerX = spawnCX; this.playerY = spawnCY;
+
+        this._dressRooms(world, 'fracture', [6]);   // the Fracture Core's room left clear
+        return world;
+    }
+
+    // The Fracture as it was first built: the map when the laid-out one can't fit
+    _fractureFixed(world) {
         // ── R0: Spawn hub (14×10) ────────────────────────────────────────────
         const r0 = { x: 43, y: 28, w: 14, h: 10, doorPositions: [] };
         this.carveRoom(world, r0);
@@ -1339,32 +1372,6 @@ class WorldGen {
             for (let dx = -1; dx <= 1; dx++) world[103+dx][y] = this.FLOOR;
         this.carveRoom(world, c2);
         this.rooms.push(c2); // rooms[8]
-
-        this.addWalls(world);
-
-        this.isTutorial          = false;
-        this.isIceTutorial       = false;
-        this.isLightningTutorial = false;
-        this.isLevel2            = false;
-        this.isLevel3            = false;
-        this.isLevel4            = true;
-        this.currentTutorialRoom = -1;
-        this.tutorialWeaponLocked = false;
-
-        this.tutorialRoomCleared = this.rooms.map(() => false);
-        this.tutorialDoorsLocked = this.rooms.map((r, i) => {
-            if (i === 0) return false;
-            if (r.isChestRoom) return false;
-            return true;
-        });
-
-        const spawnRoom = this.rooms[0];
-        const spawnCX = Math.floor(spawnRoom.x + spawnRoom.w / 2);
-        const spawnCY = Math.floor(spawnRoom.y + spawnRoom.h / 2);
-        this.playerX = spawnCX; this.playerY = spawnCY;
-
-        this._dressRooms(world, 'fracture', [6]);   // the Fracture Core's room left clear
-        return world;
     }
 
 }

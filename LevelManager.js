@@ -5938,29 +5938,32 @@ class LevelManager {
     }
 
     spawnLevel4Enemies() {
-        // R0: spawn — safe, no enemies
+        // Positions as the fixed map placed them (WorldGen._fractureFixed), each moved with its room (the map is laid out fresh: LevelLayouts).
+        // O is where each story room stood on the fixed map. R0, the spawn, is safe.
+        const O = [[43, 28], [22, 22], [4, 22], [63, 23], [92, 23], [37, 44], [31, 64]];
+        const at = (ri, x, y) => [this.rooms[ri].x + x - O[ri][0], this.rooms[ri].y + y - O[ri][1]];
+        const fb = (ri, x, y) => { const [ax, ay] = at(ri, x, y); return { x: ax, y: ay }; };
 
         // Mark crumble tile clusters — scattered in R2 (Sinkhole) and R5 (Trap Gauntlet)
         // These are pre-designated tiles that crumble on first step
         this._crumbleZones = new Set([
             // R2: Sinkhole — 8 tiles
-            '6,24','7,25','8,24','9,26','6,30','8,31','13,25','13,30',
+            ...[[6, 24], [7, 25], [8, 24], [9, 26], [6, 30], [8, 31], [13, 25], [13, 30]].map(([x, y]) => at(2, x, y)),
             // R5: Trap Gauntlet — 12 tiles spread across corridors
-            '40,47','42,48','44,50','46,52','48,54','50,53',
-            '53,47','55,48','57,50','59,52','61,54','58,53',
+            ...[[40, 47], [42, 48], [44, 50], [46, 52], [48, 54], [50, 53], [53, 47], [55, 48], [57, 50], [59, 52], [61, 54], [58, 53]].map(([x, y]) => at(5, x, y)),
             // R1 and R4: a few scattered tiles
-            '24,26','30,27','96,26','106,27',
-        ]);
+            at(1, 24, 26), at(1, 30, 27), at(4, 96, 26), at(4, 106, 27),
+        ].map(([x, y]) => x + ',' + y));
 
         // R1: Entry Crater — two knots instead of one enemy per corner. A rooter inside a pack
         // is a real problem (rooted next to three slimes); a rooter alone in a corner is a
         // formality you walk up to and kill.
-        this.spawnCluster(25, 27, [
+        this.spawnCluster(...at(1, 25, 27), [
             (x, y) => this.createRooter(x, y, 1),
             (x, y) => this.createEnemy(x, y, 50),
             (x, y) => this.createEnemy(x, y, 50),
         ], { roomIndex: 1 });
-        this.spawnCluster(32, 30, [
+        this.spawnCluster(...at(1, 32, 30), [
             (x, y) => this.createRooter(x, y, 1),
             (x, y) => this.createEnemy(x, y, 50),
             (x, y) => this.createEnemy(x, y, 50),
@@ -5968,36 +5971,35 @@ class LevelManager {
         // The Anchor Slime's whole contribution is a speed aura, so it belongs at the centre of
         // whichever knot ended up densest, not parked between them buffing nothing.
         this._placeSupportInCluster(1, (x, y) => this.createAnchorSlime(x, y, 1),
-                                    { fallback: { x: 27, y: 29 } });
+                                    { fallback: fb(1, 27, 29) });
 
         // R2: Sinkhole — two knots of slow elementals. Bunched, their slowness becomes a wall
         // you have to go around rather than four separate speed bumps.
-        this.spawnCluster(7, 25, [
+        this.spawnCluster(...at(2, 7, 25), [
             (x, y) => this.createEnemy(x, y, 60),
             (x, y) => this.createEncasedSlime(x, y, 2),
         ], { roomIndex: 2 });
-        this.spawnCluster(14, 31, [
+        this.spawnCluster(...at(2, 14, 31), [
             (x, y) => this.createEnemy(x, y, 60),
             (x, y) => this.createEnemy(x, y, 60),
         ], { roomIndex: 2 });
-        this.createMortar(12, 26, 2); // behind internal wall — mortars want the far side
+        this.createMortar(...at(2, 12, 26), 2); // behind internal wall — mortars want the far side
         // Fire-resistant healer: at 16 HP/s it out-heals chip damage, so making fire the wrong
         // answer pushes the player toward ice burst. The resistance is teaching a tactic here,
         // not just adding effective HP.
         this._tagResist(
             this._placeSupportInCluster(2, (x, y) => this.createHealerTotem(x, y, 2),
-                                        { fallback: { x: 8, y: 29 } }),
+                                        { fallback: fb(2, 8, 29) }),
             'fire');
-        this.spawnTutorialChest && this.rooms[7] && (()=>{ /* chest handled by room clear */ })();
 
         // R3: Chain Gang — the tethered pairs stay paired, but each pair gets bodies around it so
         // the tether crosses something worth crossing.
-        this.spawnCluster(66, 26, [
+        this.spawnCluster(...at(3, 66, 26), [
             (x, y) => this.createRooter(x, y, 3),
             (x, y) => this.createRooter(x, y, 3),
             (x, y) => this.createEnemy(x, y, 60),
         ], { roomIndex: 3 });
-        this.spawnCluster(81, 32, [
+        this.spawnCluster(...at(3, 81, 32), [
             (x, y) => this.createRooter(x, y, 3),
             (x, y) => this.createRooter(x, y, 3),
             (x, y) => this.createEncasedSlime(x, y, 3),
@@ -6005,29 +6007,29 @@ class LevelManager {
         // The Upgraded Sniper has no identity of its own -- it is a Void Sniper with +15 HP.
         // A trait on one of the pair is the cheapest way to give it one, and leaving its twin
         // untagged makes the difference legible side by side.
-        this._tagResist(this.createUpgradedSniper(72, 28, 3), 'ice'); this.createUpgradedSniper(72, 32, 3);
+        this._tagResist(this.createUpgradedSniper(...at(3, 72, 28), 3), 'ice'); this.createUpgradedSniper(...at(3, 72, 32), 3);
         this._placeSupportInCluster(3, (x, y) => this.createAnchorSlime(x, y, 3),
-                                    { fallback: { x: 74, y: 30 } });
+                                    { fallback: fb(3, 74, 30) });
 
         // R4: Splitter Farm — three splitters together, so their children interleave into one
         // mass. Spread out they were three tidy independent problems.
-        const _r4 = this.spawnCluster(101, 29, [
+        const _r4 = this.spawnCluster(...at(4, 101, 29), [
             (x, y) => this.createSplitter(x, y, 4, 0),
             (x, y) => this.createSplitter(x, y, 4, 0),
             (x, y) => this.createSplitter(x, y, 4, 0),
         ], { roomIndex: 4, spread: 3 });
         if (_r4[2]) this._tagResist(_r4[2], 'lightning');
-        this.createMortar(113, 31, 4); // far corner mortar
+        this.createMortar(...at(4, 113, 31), 4); // far corner mortar
 
         // R5: Trap Gauntlet — three knots of 4, spread across the room rather than eight
         // enemies at eight coordinates. Both supports then go wherever it actually got thickest.
-        this.spawnCluster(41, 48, [
+        this.spawnCluster(...at(5, 41, 48), [
             (x, y) => this.createRooter(x, y, 5),
             (x, y) => this.createRooter(x, y, 5),
             (x, y) => this.createEnemy(x, y, 50),
             (x, y) => this.createEnemy(x, y, 50),
         ], { roomIndex: 5, spread: 3 });
-        this.spawnCluster(58, 53, [
+        this.spawnCluster(...at(5, 58, 53), [
             (x, y) => this.createRooter(x, y, 5),
             (x, y) => this.createRooter(x, y, 5),
             (x, y) => this.createEncasedSlime(x, y, 5),
@@ -6035,22 +6037,22 @@ class LevelManager {
         ], { roomIndex: 5, spread: 3 });
         this._tagResist(
             this._placeSupportInCluster(5, (x, y) => this.createAnchorSlime(x, y, 5),
-                                        { fallback: { x: 50, y: 51 } }),
+                                        { fallback: fb(5, 50, 51) }),
             'fire');
         // Second-densest: pass a radius that ignores the knot the anchor just joined, so the two
         // supports do not end up on top of each other covering one pack twice.
         this._placeSupportInCluster(5, (x, y) => this.createHealerTotem(x, y, 5),
-                                    { fallback: { x: 45, y: 47 }, radius: 2 });
+                                    { fallback: fb(5, 45, 47), radius: 2 });
 
         // R6: Boss Arena — Fracture Core + guards
         // its guards: two plain, two Encased (the stone-throwers belong to the Fracture)
-        for (const p of [{x:34,y:67},{x:64,y:84}]) { const e = this.createEnemy(p.x, p.y, 80); e.tutorialRoomIndex = 6; }
-        for (const p of [{x:64,y:67},{x:34,y:84}]) this.createEncasedSlime(p.x, p.y, 6);
+        for (const [x, y] of [[34, 67], [64, 84]]) { const e = this.createEnemy(...at(6, x, y), 80); e.tutorialRoomIndex = 6; }
+        for (const [x, y] of [[64, 67], [34, 84]]) this.createEncasedSlime(...at(6, x, y), 6);
         // FIRST MULTI-RESISTANCE in the game: one enemy, final room of level 4. Two of four
         // elements refused, so there is always an answer -- multi-resistance should make you
         // switch, never leave you stuck.
-        this._tagResist(this.createRooter(40, 75, 6), ['fire', 'ice']); this.createRooter(58, 75, 6);
-        this._tagResist(this.createMortar(48, 66, 6), 'lightning'); // mortar at entrance
+        this._tagResist(this.createRooter(...at(6, 40, 75), 6), ['fire', 'ice']); this.createRooter(...at(6, 58, 75), 6);
+        this._tagResist(this.createMortar(...at(6, 48, 66), 6), 'lightning'); // mortar at entrance
         this.spawnFractureCoreStub();
 
         this._spawnLevel4ChestRooms();
