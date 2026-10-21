@@ -1769,15 +1769,17 @@ class WeaponSystem {
                 this.gainUltCharge(this.ultChargePerLightningHit * 0.1 * Math.min(6, landed), 'lightning');
             }
         }
-        // held R keeps the currents coming, one each time it's ready (the key press itself fires the first: GameScene)
-        if (wield && !this._pauseMenuOpen) {
-            const rk = this._condRKey ||= this.input.keyboard.addKey(Settings.key('surge'), false);   // (cleared each level start: GameScene)
-            if (rk?.isDown && time - (rk.timeDown || 0) > 250) this._conductorOverload(true);
+        // R toggled on: the currents keep coming, one each time it's ready; off by itself once no live wire is left (or the weapon's put away)
+        if (this._condAuto) {
+            const live = (this._condWires || []).some(w => w.on && w.e.sprite?.active && w.e.health > 0);
+            if (!wield || !live) { this._condAuto = false; if (wield && this.player?.active) this.showStatusText(this.player.x, this.player.y - 28, 'CURRENT OFF', '#c8b060'); }
+            else if (!this._pauseMenuOpen) this._conductorOverload(true);
         }
         // the meter over you
         if (!wield) { this._condBar?.destroy(); this._condBar = null; return; }
         const bar = (this._condBar?.active ? this._condBar : (this._condBar = this.add.graphics().setDepth(6))).clear();
         UIKit.rBar(bar, this.player.x - 18, this.player.y - 17, 40, Math.min(1, (time - (this._condPulseAt || 0)) / C.PULSE_CD), { col: C.COL, hot: C.HOT, dark: 0x14100a, time });   // R: the current, filling back
+        if (this._condAuto) bar.lineStyle(1, C.HOT, 0.6 + 0.4 * Math.sin(time * 0.012)).strokeRect(this.player.x - 20, this.player.y - 19, 44, 8);   // lit while it's on
         const ix = this.player.x + 31, iy = this.player.y - 14, mode = this._condMode || 'live', mc = C.MCOL[mode];   // what the next clamp is
         bar.fillStyle(0x14100a, 0.85).fillRect(ix - 7, iy - 6, 14, 12);
         bar.lineStyle(1, mc, 1).strokeRect(ix - 7, iy - 6, 14, 12);
@@ -1785,6 +1787,13 @@ class WeaponSystem {
         if (mode === 'live') bar.strokePoints([{ x: ix + 2, y: iy - 5 }, { x: ix - 2, y: iy }, { x: ix + 2, y: iy }, { x: ix - 2, y: iy + 5 }], false);   // a bolt
         else if (mode === 'ins') for (let k = 0; k < 3; k++) bar.strokeEllipse(ix, iy - 3 + k * 3, 9 - k * 2, 2.5);   // a stack of insulator discs
         else { bar.lineBetween(ix - 2, iy - 4, ix - 2, iy + 4); bar.lineBetween(ix + 2, iy - 4, ix + 2, iy + 4); bar.lineBetween(ix - 6, iy, ix - 2, iy); bar.lineBetween(ix + 2, iy, ix + 6, iy); }   // capacitor plates
+    }
+    // R: on (a current at once, then one each time it's ready: _conductorTick) or off. It won't go on with no wire out.
+    _conductorToggle() {
+        if (this._condAuto) { this._condAuto = false; Sfx.play(this, 'click'); return; }
+        if (!(this._condWires || []).some(w => w.on && w.e.sprite?.active && w.e.health > 0)) { this._conductorOverload(); return; }   // (says NO WIRES OUT)
+        this._condAuto = true; Sfx.play(this, 'click');
+        this._conductorOverload(true);
     }
     // R: a current down the wire nearest your cursor's direction (ready every PULSE_CD)
     _conductorOverload(quiet = false) {

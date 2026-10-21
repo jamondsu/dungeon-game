@@ -742,7 +742,7 @@ class GameScene extends Phaser.Scene {
         // hold mouse to shoot fireballs continuously
         this.isPointerDown = false;
         this._jetLit = false; this._fuel = 1; this._fuelDryUntil = 0;
-        this._cinemaUntil = 0; this._fog = null; this._condRKey = null; this._condWires = []; this._condMisses = []; this._condPulses = []; this._condPairs = []; this._condMode = 'live'; this._condWeb = 0; this._condG = null; this._condGL = null; this._condBar = null; this._condPool = []; this._condSparks = null; this._condLights = [];   // the Conductor's
+        this._cinemaUntil = 0; this._fog = null; this._condAuto = false; this._condWires = []; this._condMisses = []; this._condPulses = []; this._condPairs = []; this._condMode = 'live'; this._condWeb = 0; this._condG = null; this._condGL = null; this._condBar = null; this._condPool = []; this._condSparks = null; this._condLights = [];   // the Conductor's
         this._fracCharge = 0; this._fracMode = null; this._fracMarked = new Set(); this._fracBar = null; this._fracOrbs = null; this._fracSpin = false;   // Fractal Shard's R   // Ignition's flamethrower starts each run out, on a full tank
         this.pointerX = 0;
         this.pointerY = 0;
@@ -952,7 +952,8 @@ class GameScene extends Phaser.Scene {
                 return;
             }
             // The Circuit Breaker: a current down a wire
-            if (this.currentElement === 'lightning' && this.equippedWeapons?.lightning === 'conductor') { this._conductorOverload(); return; }
+            // R toggles it (no key to hold, as Ignition's click): on, the currents keep coming, one each time it's ready, until R again or no live wire is left
+            if (this.currentElement === 'lightning' && this.equippedWeapons?.lightning === 'conductor') { this._conductorToggle(); return; }
             // Fractal Shard: the gamble (WeaponSystem._fractalGamble), charged by fan shards on the spikes' marks
             if (this.currentElement === 'ice' && this.equippedWeapons?.ice === 'fractal_shard') { this._fractalGamble(); return; }
             // Icicle Cannon: a full charge raises the Frost Shield (CombatSystem._frostShieldHit)
@@ -1916,6 +1917,7 @@ class GameScene extends Phaser.Scene {
     _condCurve(...a) { return WeaponSystem.prototype._condCurve.call(this, ...a); }
     _conductorTick(...a) { return WeaponSystem.prototype._conductorTick.call(this, ...a); }
     _conductorOverload(...a) { return WeaponSystem.prototype._conductorOverload.call(this, ...a); }
+    _conductorToggle(...a) { return WeaponSystem.prototype._conductorToggle.call(this, ...a); }
     _shotX(...a) { return WeaponSystem.prototype._shotX.call(this, ...a); }
     _shotY(...a) { return WeaponSystem.prototype._shotY.call(this, ...a); }
     flameSwordAttack(...a) { return WeaponSystem.prototype.flameSwordAttack.call(this, ...a); }

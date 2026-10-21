@@ -1942,7 +1942,7 @@ ShopScene.CATALOGUE = [
     { id: 'ball_lightning', name: 'Ball Lightning', element: 'lightning', cost: 400,
       desc: 'Slow orb. Forks chain enemy to enemy, and further through water. Embeds on contact, applying *Amped* to its host, then bursts into seekers.' },
     { id: 'conductor', name: 'Circuit Breaker', element: 'lightning', cost: 700,
-      desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. Press R to send a *current* down the wire nearest your aim. G picks the next clamp: *live wire*, *insulator* or *capacitor*. Lines shock what they touch, and wired enemies close together close a *circuit* for double. Wires stay on when you switch element.' },
+      desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. R turns on the *current*: down the wire nearest your aim, again each time it\'s ready, until you press R again or no wire is left. G picks the next clamp: *live wire*, *insulator* or *capacitor*. Lines shock what they touch, and wired enemies close together close a *circuit* for double. Wires stay on when you switch element.' },
     { id: 'cosmic_fists', name: 'Void Fists', element: 'cosmic', cost: 0, defaultWeapon: true,
       desc: 'Punch and dash to build *Momentum* (max 3).' },
     { id: 'barrier_staff', name: 'Barrier Staff', element: 'cosmic', cost: 150,
