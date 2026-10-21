@@ -170,7 +170,7 @@ class ElementSystem {
                 icicle_cannon:     0.1475,   // raw 15.07/s
                 fractal_shard:     0.0278,   // raw 79.9/s
                 lightning_fists:   0.1599,   // raw 13.9/s
-                orb_emitter:       0.131,    // raw 16.96/s (was 5.9: its forks superconduct now)
+                orb_emitter:       0.131,    // raw 16.96/s (was 5.9: its forks amp now)
                 ball_lightning:    0.074,    // raw 30.03/s
                 conductor:         0.09,     // (first guess, unmeasured)
                 // The cosmic gem fills with time (Cosmic.js), never from hits, so these are moot.
@@ -2037,7 +2037,7 @@ class ElementSystem {
         enemy.superConductVisual = { container, g };
         if (typeof enemy.sprite?.setTint === 'function') enemy.sprite.setTint(0xffffaa);
 
-        this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'CONDUCTOR', '#ffff44');
+        this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'AMPED', '#ffff44');
     }
 
     clearSuperConduct(enemy) {
@@ -2620,7 +2620,7 @@ class ElementSystem {
     }
 
 
-    // Per-frame tower combat — target acquisition (with superconductor extended
+    // Per-frame tower combat — target acquisition (with amped extended
     // range, same pattern as lightning nodes) and firing per type.
     updateEngineerTowers(time) {
         if (!this.engineerTowers?.length) return;
@@ -2658,7 +2658,7 @@ class ElementSystem {
             if (time - (tower.lastFireTime || 0) < def.fireInterval) continue;
 
             // Acquire targets in range — base range for all enemies, extended
-            // range additionally for superconducted enemies (same rule as nodes).
+            // range additionally for amped enemies (same rule as nodes).
             // Room-gated: only targets enemies in the same room as the tower —
             // prevents sniper towers from shooting through walls into other rooms.
             const towerRoom = this._roomGated()

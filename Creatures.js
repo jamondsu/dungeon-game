@@ -1161,7 +1161,7 @@ class CreatureFX {
             });
         } else drop('stars');
 
-        // ── superconductor: sparks crackling over it ──
+        // ── amped: sparks crackling over it ──
         if (e.isSuperConducted && shown) {
             if (!fx.arcAt || now - fx.arcAt > C.ARC.EVERY) { fx.arcAt = now; fx.arcSeed = Math.random() * 1000; }
             this._cfxSparks(B, fx.arcSeed);
@@ -1460,7 +1460,7 @@ class CreatureFX {
     }
 
     // ── LIGHT ────────────────────────────────────────────────────────────────
-    // From _vfxLights: burning enemies glow orange and flicker, superconductors yellow, frozen
+    // From _vfxLights: burning enemies glow orange and flicker, amped ones yellow, frozen
     // ones a little cyan. A handful at most, so they never crowd out the rest.
     _cfxLights(time) {
         const out = [];

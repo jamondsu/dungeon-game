@@ -319,7 +319,7 @@ class CombatSystem {
         } else if (enemy?.sprite && !this._critBusy && Math.random() < Enchants.proc(w) + (this._mods?.proc || 0)) {
             this.time.delayedCall(0, () => this._critEffect(enemy, el));   // Kindred: the element's touch, without the crit
         }
-        // relics (Relics.js): Ember Heart's first hits after switching; Storm Lens on a superconducted enemy
+        // relics (Relics.js): Ember Heart's first hits after switching; Storm Lens on a amped enemy
         const M = this._mods, hel = el || this.currentElement;
         if (M?.reactDmg && M.reactDmg !== 1 && this._lastUltHit?.reaction === 'full' && this._lastUltHit.t === this.time.now) m *= M.reactDmg;   // Catalyst Coil: a reaction hits harder
         if (M?.burst && !this._critBusy && this.time.now - (this._burstAt || 0) >= M.burst) {   // Focus Lens: a charged hit every few seconds
@@ -1243,7 +1243,7 @@ class CombatSystem {
     // to `element`, then to the held element, for charges with no hit behind them.
     //
     // REACTIONS: a hit on an enemy carrying ANOTHER element's status (burning, chilled or
-    // cubed, superconducted, cosmic-marked) charges REACTION_MULT times as much. That is the
+    // cubed, amped, cosmic-marked) charges REACTION_MULT times as much. That is the
     // whole "use every element" incentive: camping one charges at 1x, rotating so that most
     // hits land on someone else's status charges at ~2x, and it can't be faked by tapping
     // number keys, because the status has to be on the enemy first.

@@ -323,7 +323,7 @@ const Relics = {
             vsWet: v => `+${pct(v)}% damage to enemies in water`, vsHex: v => `+${pct(v)}% damage to enemies with Hex`,
             chillOther: v => `enemies with Chill or Brittle take +${pct(v)}% from non-ice hits`,
             swapBy: v => Object.entries(v).map(([e, o]) => `your first ${o.hits} hits after switching to ${e} deal +${Math.round(o.bonus * 100)}%`).join(', '),
-            stormLens: () => 'lightning hits on enemies with Superconducted also apply a Burn stack and Chill',
+            stormLens: () => 'lightning hits on Amped enemies also apply a Burn stack and Chill',
             ultHeal: v => `casting an ult heals ${Math.round(v * 100)}% of your max HP`,
             critArc: v => `a lightning crit arcs to the nearest other enemy for ${Math.round(v * 100)}% of its damage`,
             burnLeech: v => `every burn tick heals you ${v} HP`,

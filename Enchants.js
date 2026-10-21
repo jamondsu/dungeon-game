@@ -89,7 +89,7 @@ const Enchants = {
         { id: 'slipstream',  name: 'Slipstream',     r: 3, max: 2, b: 'SPEED',   v: 40,  text: x => `After a dash, its next 3 hits deal +${x}%.` },
         { id: 'chain_reaction', name: 'Chain Reaction', r: 3, max: 2, b: 'REACT', v: 10, text: x => `Its reactions burst on everything close for ${x}.` },
         { id: 'sanguine',    name: 'Sanguine',       r: 3, max: 2, b: 'SUSTAIN', v: 1.5, text: x => `Heals ${x}% of its hit damage, bosses too (at most 6% of your max HP a second).` },
-        { id: 'arc_lord',    name: 'Arc Lord',       r: 3, max: 2, b: 'STORM',   v: 20,  fit: 'lightning', text: x => `+${x}% damage to enemies with Superconducted.` },
+        { id: 'arc_lord',    name: 'Arc Lord',       r: 3, max: 2, b: 'STORM',   v: 20,  fit: 'lightning', text: x => `+${x}% damage to Amped enemies.` },
         { id: 'loaded',      name: 'Loaded',         r: 3, max: 2, b: 'LUCK',    v: 6,   text: x => `+1 Luck a crit, up to ${Math.round(x)}. All of it goes when you're hit.` },
         // ...and bridges: each half weaker than a pure book, and only good if you run both builds
         { id: 'iron_edge',   name: 'Iron Edge',      r: 3, max: 2, b: 'TANK',  b2: 'CRIT',    v: 50, fit: 'any', text: x => `Your thorns crit twice as often, with +${x}% crit damage.` },

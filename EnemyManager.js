@@ -68,7 +68,7 @@ class EnemyManager {
             lastBurnTick: 0,
             burnVisual: null,
 
-            // LIGHTNING: superconductor
+            // LIGHTNING: amped
             isSuperConducted: false,
             superConductUntil: 0,
             superConductVisual: null,

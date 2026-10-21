@@ -157,7 +157,7 @@ class WeaponSystem {
             }
         }, 8);
     }
-    // The superconduct mark the orb leaves: a little bolt in a ring.
+    // The amp mark the orb leaves: a little bolt in a ring.
     static superconductKey(scene) {
         const key = 'wpn_superconduct';
         if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
@@ -1383,7 +1383,7 @@ class WeaponSystem {
     //   LIVE       current runs through it: it takes WIRE_DMG a TICK
     //   INSULATOR  it takes only INS_TAKE of that, and the whole web (every clamp, line, burst and current) does
     //              INS_NERF as much per insulator, but every daze lasts INS_DAZE longer: control for damage
-    //   (Superconducted: live and insulated clamps while their circuit is closed, and wherever a current runs; never a capacitor)
+    //   (Amped: live and insulated clamps while their circuit is closed, and wherever a current runs; never a capacitor)
     //   CAPACITOR  it takes nothing; the current it would have taken is stored, and every CAP_MS it bursts: CAP_BASE
     //              plus CAP_X times what it stored, forked out and shared between everything within CAP_R (+CAP_SPREAD
     //              of the total for each enemy past the first), so it spreads damage where a live wire focuses it
@@ -1605,7 +1605,7 @@ class WeaponSystem {
             if (Math.hypot(a.x - b.x, a.y - b.y) > C.ARC_R * T || !this._condClear(a.x, a.y, b.x, b.y)) continue;
             pairs.push([on[i], on[j]]); on[i].closed = on[j].closed = true;
         }
-        // Superconducted is earned through the circuit: a live or insulated clamp holds it while its loop is closed (an insulator
+        // Amped is earned through the circuit: a live or insulated clamp holds it while its loop is closed (an insulator
         // keeps it for INS_SC after), a capacitor never does, so reactions for your other elements come from building the loop
         for (const w of on) if (w.closed && w.mode !== 'cap' && w.e.health > 0) this._condSC(w.e, w.mode === 'ins' ? C.INS_SC : 700);
         if (on.some(w => w.closed && !w.was)) {   // a loop just closed
@@ -2132,7 +2132,7 @@ class WeaponSystem {
             return;
         }
         this._drawBallGfx(orb, C);
-        this._superconduct(host, 1000);   // embedded, it superconducts its host for as long as it's lodged there (and a second after)
+        this._superconduct(host, 1000);   // embedded, it amps its host for as long as it's lodged there (and a second after)
 
         // ── PERSISTENT DPS ON THE HOST ───────────────────────────────────────
         // It is burning a hole in whatever it is lodged in for the whole duration, so carrying
@@ -2711,11 +2711,11 @@ class WeaponSystem {
         gfx.strokeCircle(0, 0, 11);
     }
 
-    // Superconduct an enemy (lightning carries further from it): the Orb Emitter's hits, and
+    // Amp an enemy (lightning carries further from it): the Orb Emitter's hits, and
     // Ball Lightning while it's embedded in one. Refreshes the mark if it's already on.
     _superconduct(enemy, ms = this.superConductDuration || 5000) {
         if (!enemy?.sprite?.active || this._phasedOut(enemy)) return;
-        if (enemy._immuneFx === 'lightning') { if (enemy.sprite?.active && this.time.now - (enemy._fxNoAt || 0) > 900) { enemy._fxNoAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 30, "CAN'T CONDUCT", '#fff080'); } return; }   // an Adaptive Shade in its lightning form
+        if (enemy._immuneFx === 'lightning') { if (enemy.sprite?.active && this.time.now - (enemy._fxNoAt || 0) > 900) { enemy._fxNoAt = this.time.now; this.showStatusText(enemy.sprite.x, enemy.sprite.y - 30, "CAN'T AMP", '#fff080'); } return; }   // an Adaptive Shade in its lightning form
         enemy.isSuperConducted = true;
         enemy.superConductUntil = Math.max(enemy.superConductUntil || 0, this.time.now + ms);
         if (enemy.superConductVisual?.container?.active) return;
@@ -2772,7 +2772,7 @@ class WeaponSystem {
         this.damageEnemy(enemy, hitDamage, 'lightning');
         if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit, 'lightning');
 
-        // Fork lightning to ALL nearby enemies regardless of superconductor (35% of impact damage)
+        // Fork lightning to ALL nearby enemies regardless of amped (35% of impact damage)
         // CONDUCTION. An orb that pops on a soaked target dumps its charge into the whole
         // connected pool. The fork below is capped at FORK_R tiles; conduction is not, so
         // on wet ground the orb's reach is the shape of the water rather than a radius.
@@ -2789,8 +2789,8 @@ class WeaponSystem {
         for (const forkTarget of forkCandidates) {
             this.drawLightningBolt({ sprite: { x: ex, y: ey } }, forkTarget);
             this.damageEnemy(forkTarget, FORK_DMG, 'lightning');
-            // Forks superconduct what they hit, so the orb can bounce on into the crowd (the bounce
-            // goes only to superconducted enemies, and only a direct hit used to make one).
+            // Forks amp what they hit, so the orb can bounce on into the crowd (the bounce
+            // goes only to amped enemies, and only a direct hit used to make one).
             if (this._dmgLanded && forkTarget.health > 0 && forkTarget._immuneFx !== 'lightning') {
                 forkTarget.isSuperConducted = true;
                 forkTarget.superConductUntil = Math.max(forkTarget.superConductUntil || 0, this.time.now + (this.superConductDuration || 5000));
@@ -2799,7 +2799,7 @@ class WeaponSystem {
         // Fork to boss too
         this.damageBossAtTile(enemy.x, enemy.y, FORK_DMG, undefined, 'lightning');
 
-        // Bounce — ONLY to superconducted enemies within range
+        // Bounce — ONLY to amped enemies within range
         if (orb.bouncesLeft > 0) {
             orb.hitEnemies.add(enemy);
             const bounceTarget = this._orbBounceTarget(orb, enemy.x, enemy.y);
@@ -2821,11 +2821,11 @@ class WeaponSystem {
                 return; // keep orb alive, heading to bounce target
             }
         }
-        // No valid superconducted bounce target — destroy
+        // No valid amped bounce target — destroy
         orb._done = true;
     }
 
-    // The next superconducted enemy for a bounce, nearest first: not one already hit, not one that won't live till it
+    // The next amped enemy for a bounce, nearest first: not one already hit, not one that won't live till it
     // arrives (a sliver of health that's burning, or already at nothing)
     _orbBounceTarget(orb, x, y) {
         const doomed = e => e.health <= 0 || (e.health <= orb.damage * 0.25 && ((e.burnStacks || 0) > 0 || e.isBurning));

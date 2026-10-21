@@ -3632,7 +3632,7 @@ class LevelManager {
     _shadeForm(e, form, quiet) {
         const F = this._shadeCfg().FORMS[form];
         e._form = form;
-        e._immuneFx = form === 'void' ? null : form;   // its element's own effect can't take hold (burn, chill, superconduct)
+        e._immuneFx = form === 'void' ? null : form;   // its element's own effect can't take hold (burn, chill, amp)
         if (form === 'fire') { e.burnStacks = 0; e.blueBurn = 0; this._burnDecay(e, this.time.now); }
         if (form === 'ice') e.chillStacks = 0;
         if (form === 'lightning') { e.isSuperConducted = false; e.superConductUntil = 0; }

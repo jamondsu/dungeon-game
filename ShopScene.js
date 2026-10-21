@@ -1952,9 +1952,9 @@ ShopScene.CATALOGUE = [
     { id: 'lightning_fists', name: 'Storm Fists', element: 'lightning', cost: 0, defaultWeapon: true,
       desc: '1-tile punch that chains lightning to nearby enemies. Default weapon.' },
     { id: 'orb_emitter', name: 'Orb Emitter', element: 'lightning', cost: 150,
-      desc: 'Fires a bouncing electric orb that chains to every nearby enemy. Its forks apply *Superconducted* to what they hit.' },
+      desc: 'Fires a bouncing electric orb that chains to every nearby enemy. Its forks apply *Amped* to what they hit.' },
     { id: 'ball_lightning', name: 'Ball Lightning', element: 'lightning', cost: 400,
-      desc: 'Slow orb. Forks chain enemy to enemy, and further through water. Embeds on contact, applying *Superconducted* to its host, then bursts into seekers.' },
+      desc: 'Slow orb. Forks chain enemy to enemy, and further through water. Embeds on contact, applying *Amped* to its host, then bursts into seekers.' },
     { id: 'conductor', name: 'Circuit Breaker', element: 'lightning', cost: 700,
       desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. Press R to send a *current* down the wire nearest your aim. G picks the next clamp: *live wire*, *insulator* or *capacitor*. Lines shock what they touch, and wired enemies close together close a *circuit* for double. Wires stay on when you switch element.' },
     { id: 'cosmic_fists', name: 'Void Fists', element: 'cosmic', cost: 0, defaultWeapon: true,
@@ -1991,7 +1991,7 @@ ShopScene.TIER = {
 // first: fire hits one thing hard and crowds poorly (the Magma Staff is
 // fire's tier-3 exception, and measures as the best crowd weapon there is); lightning is
 // weak on one target and strong on crowds, sometimes with real utility (the Orb Emitter's
-// superconduction); ice is the utility element (chill, cubes, marks, the cannon's heal).
+// amping); ice is the utility element (chill, cubes, marks, the cannon's heal).
 // Cosmic weapons are buffs and aren't rated. Judgement, not measurement: keep it in step with
 // ShopScene.DPS below when a weapon changes.
 // What kind of weapon each is, three ways: its reach (close or ranged), what it's for (one target or crowds), and
@@ -2022,12 +2022,12 @@ ShopScene.DPS = {   // re-measured 2026-10-20 (Ignition as the flamethrower: lit
 // What the *keywords* in the shop's descriptions mean (ShopScene._richText's popouts).
 ShopScene.KEYWORDS = {
     // (the guide's words: LevelSelectScene's guide pages use them too)
-    circuit: ['Circuit', 'With the Circuit Breaker: when two of your wired enemies arc to each other, the loop through you closes and glows white. Its wires and arc do double, and its live and insulated clamps are *Superconducted* while it stays closed.'],
-    'live wire': ['Live Wire', 'The Circuit Breaker\'s plain clamp (yellow): current runs through the enemy and hurts it every 0.3s. Superconducted while its circuit is closed.'],
-    insulator: ['Insulator (G)', 'A Circuit Breaker clamp (blue): its enemy takes only 30% of the current, and the whole web (lines, clamps, bursts and currents) does 35% less for each insulator on it, but every daze the web gives lasts 60% longer, and its enemy stays Superconducted longest. Control for damage.'],
-    current: ['Current (R)', 'Press R: a big blob of current runs down the wire nearest your aim, on through the arcs, and back to you along the last wire. Every enemy it passes is dazed, takes a small hit, and is Superconducted for a few seconds (capacitors aside).'],
-    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). A capacitor is never Superconducted: it is all damage, no reactions.'],
-    reaction: ['Reaction', 'A hit on an enemy carrying another element\'s status (burning, chilled or cubed, superconducted, hexed). It charges your ult three times as much as a plain hit.'],
+    circuit: ['Circuit', 'With the Circuit Breaker: when two of your wired enemies arc to each other, the loop through you closes and glows white. Its wires and arc do double, and its live and insulated clamps are *Amped* while it stays closed.'],
+    'live wire': ['Live Wire', 'The Circuit Breaker\'s plain clamp (yellow): current runs through the enemy and hurts it every 0.3s. Amped while its circuit is closed.'],
+    insulator: ['Insulator (G)', 'A Circuit Breaker clamp (blue): its enemy takes only 30% of the current, and the whole web (lines, clamps, bursts and currents) does 35% less for each insulator on it, but every daze the web gives lasts 60% longer, and its enemy stays Amped longest. Control for damage.'],
+    current: ['Current (R)', 'Press R: a big blob of current runs down the wire nearest your aim, on through the arcs, and back to you along the last wire. Every enemy it passes is dazed, takes a small hit, and is Amped for a few seconds (capacitors aside).'],
+    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). A capacitor is never Amped: it is all damage, no reactions.'],
+    reaction: ['Reaction', 'A hit on an enemy carrying another element\'s status (burning, chilled or cubed, amped, hexed). It charges your ult three times as much as a plain hit.'],
     residue: ['Residue', 'A hit on an enemy another element hit in the last 1.5s, with no status of it left: ult charge x1.75.'],
     resist: ['Resistance', 'A ring under an enemy in an element\'s colour: that element\'s hits land at 40%. A ring split in two or three resists two or three elements. Nothing resists cosmic.'],
     cube: ['Ice cube', 'A full chill bar freezes an enemy into a cube: it can barely move, and it shatters by itself after a few seconds. While it holds it is *Brittle*.'],
@@ -2065,7 +2065,7 @@ ShopScene.KEYWORDS = {
     'deadly accuracy': ['Deadly Accuracy (R)', 'One side of the Fractal Shard\'s gamble: for 6s five shards circle you. Click and they line up a tile apart, converge on that point and fly on past it, half again as hard, and every hit a crit.'],
     'shard storm': ['Shard Storm (R)', 'The other side of the Fractal Shard\'s gamble, the ult charger: it heals 10% of your max HP when it lands, and for 6s ice ult charge is doubled and every shot is a wide fan of seven chip shards, about three a second.'],
     'frost shield': ['Frost Shield (R)', '5s of 35% less damage taken, and it applies *Chill* to whoever hits you.'],
-    superconduct: ['Superconducted', 'Lightning carries further from this enemy: forks and chains reach past it.'],
+    amp: ['Amped', 'Lightning carries further from this enemy: forks and chains reach past it.'],
     momentum: ['Momentum', 'Stacks from punching and dashing: +7% damage and +8% speed each. Fades if you stop.'],
     ward: ['Wards', 'Orbiting shields. Each one eats one projectile, then shoves nearby enemies back.'],
     mark: ['Mark', 'An astral mark, a gold ring left by the Astrolabe\'s stars. Hitting the enemy pops it for ult charge.'],

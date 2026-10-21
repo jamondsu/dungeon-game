@@ -477,7 +477,7 @@ class GameScene extends Phaser.Scene {
         this.nodeChannelDuration = 3000;
         this.nodeChannelVisual = null;
 
-        // Superconductor mechanic
+        // Amped mechanic
         this.superConductDuration = 5000;   // the orb's tuned 5s (this 10s was read only by unused code)
 
         this.stormCloud = null;
