@@ -622,13 +622,16 @@ void main() {
     }
     // ROOM FOG: in a level of rooms, a room you haven't reached yet lies under smoke, what's in it unseen (and not drawn:
     // _vfxCull). Coming within FOG_NEAR tiles of it lifts its fog for good. Not the Tower or the Training Ground: one room.
-    // Each room's fog: a dark core, its edge a ring of soft smoke puffs spilling past the room and breathing slowly, pale wisps
-    // drifting over it; lifting, the puffs roll outward and thin away. (One container a room: too many children for _vfxCull.)
+    // Each room's fog: a dark core, its edge two rings of soft smoke puffs spilling past the room, pale wisps drifting over it.
+    // The puffs are painted once into the room's own texture (they were most of what a level drew: ~190 a room, 570 sprites
+    // a frame in the Cistern's first view), which breathes slowly as a whole; lifting, they're made for real for the moment
+    // and roll outward, thinning away, and the texture goes.
     _fogUpdate(time) {
         if (this.towerRun || this.trainingRun || !this.rooms?.length || !this.player) return;
         const T = this.TILE_SIZE, NEAR = 2, DARK = 0x05060a;
         if (!this._fog) {
-            const key = VisualFX.smokeKey(this);
+            const key = VisualFX.smokeKey(this), stamp = this._fogStamp = (this._fogStamp || 0) + 1;
+            const brush = this.make.image({ x: 0, y: 0, key }, false).setTint(DARK);   // (each puff painted with it into its room's texture; never on the scene itself)
             this._fog = this.rooms.map((r, i) => {
                 const x0 = (r.x - 0.5) * T, y0 = (r.y - 2) * T, x1 = (r.x + r.w + 0.5) * T, y1 = (r.y + r.h + 0.5) * T;   // (up over its wall's face too)
                 const c = this.add.container(0, 0).setDepth(4.95), puffs = [];
@@ -642,10 +645,8 @@ void main() {
                     let d = (k + Math.random() * 0.6) / n * per, x, y;
                     if (d < BW) { x = bx0 + d; y = by0; } else if ((d -= BW) < BH) { x = bx1; y = by0 + d; } else if ((d -= BH) < BW) { x = bx1 - d; y = by1; } else { d -= BW; x = bx0; y = by1 - d; }
                     const ox = (x0 + x1) / 2 - x, oy = (y0 + y1) / 2 - y, ol = Math.hypot(ox, oy) || 1, j = (Math.random() - 0.5) * T * 1.1;
-                    const s = (size * (0.75 + Math.random() * 0.5)) * T / 64;
-                    const p = this.add.image(x + ox / ol * j, y + oy / ol * j, key).setTint(DARK).setAlpha(1).setScale(s * (0.9 + Math.random() * 0.25), s).setRotation(Math.random() * 6.28);
-                    p._s = p.scaleX; p._sy = p.scaleY; p._ph = Math.random() * 6.28; p._ox = -ox / ol; p._oy = -oy / ol;
-                    puffs.push(p);
+                    const sc = (size * (0.75 + Math.random() * 0.5)) * T / 64;
+                    puffs.push({ x: x + ox / ol * j, y: y + oy / ol * j, sx: sc * (0.9 + Math.random() * 0.25), sy: sc, rot: Math.random() * 6.28, ox: -ox / ol, oy: -oy / ol });
                 }
                 }
                 // a puff that would billow into another room shrinks to stop at its edge, or goes if it sits in it: fog is its own room's
@@ -654,23 +655,39 @@ void main() {
                     const p = puffs[k];
                     let room = Infinity;
                     for (const o of others) room = Math.min(room, Math.hypot(Math.max(o.x * T - p.x, 0, p.x - (o.x + o.w) * T), Math.max(o.y * T - p.y, 0, p.y - (o.y + o.h) * T)));
-                    const reach = p.displayWidth * 0.48;   // how far its smoke shows from its middle (and it breathes 8% bigger)
+                    const reach = 64 * p.sx * 0.48;   // how far its smoke shows from its middle
                     if (room >= reach) continue;
-                    if (room < reach * 0.3) { p.destroy(); puffs.splice(k, 1); continue; }
-                    p.setScale(p.scaleX * room / reach, p.scaleY * room / reach); p._s = p.scaleX; p._sy = p.scaleY;
+                    if (room < reach * 0.3) { puffs.splice(k, 1); continue; }
+                    p.sx *= room / reach; p.sy *= room / reach;
                 }
-                c.add(puffs);
-                const wisps = [];
+                // painted into the room's texture (with room round the edge for the breathing)
+                let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+                for (const p of puffs) { const hw = 32 * Math.max(p.sx, p.sy) * 1.45; bx0 = Math.min(bx0, p.x - hw); by0 = Math.min(by0, p.y - hw); bx1 = Math.max(bx1, p.x + hw); by1 = Math.max(by1, p.y + hw); }
+                let img = null, tkey = null;
+                if (puffs.length) {
+                    bx0 = Math.floor(bx0); by0 = Math.floor(by0);
+                    tkey = `fog_${stamp}_${i}`;
+                    const dt = this.textures.addDynamicTexture(tkey, Math.ceil(bx1 - bx0), Math.ceil(by1 - by0));
+                    dt.beginDraw();
+                    for (const p of puffs) dt.batchDraw(brush.setScale(p.sx, p.sy).setRotation(p.rot), p.x - bx0, p.y - by0);
+                    dt.endDraw();
+                    img = this.add.image((bx0 + bx1) / 2, (by0 + by1) / 2, tkey);
+                    c.add(img);
+                }
+                const wisps = [], wt = [];
                 for (let k = 0; k < Math.max(2, Math.round(r.w * r.h / 30)); k++) {   // pale wisps drifting over it
                     const w = this.add.image(x0 + T + Math.random() * (W - 2 * T), y0 + T + Math.random() * (H - 2 * T), key).setTint(0x30323a).setAlpha(0.1 + Math.random() * 0.08)
                         .setScale((3 + Math.random() * 3) * T / 64, (1.6 + Math.random() * 1.4) * T / 64).setRotation((Math.random() - 0.5) * 0.4);
-                    this.tweens.add({ targets: w, x: w.x + (Math.random() < 0.5 ? -1 : 1) * T * (1 + Math.random() * 1.5), rotation: w.rotation + (Math.random() - 0.5) * 0.5, duration: 5000 + Math.random() * 4000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                    wt.push(this.tweens.add({ targets: w, x: w.x + (Math.random() < 0.5 ? -1 : 1) * T * (1 + Math.random() * 1.5), rotation: w.rotation + (Math.random() - 0.5) * 0.5, duration: 5000 + Math.random() * 4000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }));
                     wisps.push(w);
                 }
                 c.add(wisps);
                 this._vfxSort?.(c);
-                return { r, c, core, puffs, wisps, x0, y0, x1, y1, lifted: false };
+                return { r, c, core, img, tkey, puffs, wisps, wt, ph: Math.random() * 6.28, x0, y0, x1, y1, lifted: false };
             });
+            brush.destroy();
+            const fogs = this._fog;
+            this.events.once('shutdown', () => { for (const f of fogs) if (f.tkey && this.textures.exists(f.tkey)) this.textures.remove(f.tkey); });   // (textures outlive a scene)
         }
         const px = this.playerX, py = this.playerY, v = this.cameras.main.worldView;
         for (const f of this._fog) {
@@ -680,15 +697,22 @@ void main() {
                 f.lifted = true;
                 this.tweens.killTweensOf(f.wisps);
                 this.tweens.add({ targets: [f.core, ...f.wisps], alpha: 0, duration: 700, ease: 'Quad.easeOut' });
-                for (const p of f.puffs) this.tweens.add({ targets: p, x: p.x + p._ox * T * (1 + Math.random() * 1.5), y: p.y + p._oy * T * (1 + Math.random() * 1.5), scaleX: p._s * 1.6, scaleY: p._sy * 1.6, alpha: 0, rotation: p.rotation + (Math.random() - 0.5),
-                    duration: 900 + Math.random() * 500, delay: Math.random() * 200, ease: 'Quad.easeOut' });
-                this.time.delayedCall(1700, () => f.c.destroy());
+                const key = VisualFX.smokeKey(this);   // its puffs, made for real now, take over from the texture and roll out
+                f.img?.setVisible(false);
+                for (const p of f.puffs) {
+                    const o = this.add.image(p.x, p.y, key).setTint(DARK).setScale(p.sx, p.sy).setRotation(p.rot);
+                    f.c.add(o);
+                    this.tweens.add({ targets: o, x: p.x + p.ox * T * (1 + Math.random() * 1.5), y: p.y + p.oy * T * (1 + Math.random() * 1.5), scaleX: p.sx * 1.6, scaleY: p.sy * 1.6, alpha: 0, rotation: p.rot + (Math.random() - 0.5),
+                        duration: 900 + Math.random() * 500, delay: Math.random() * 200, ease: 'Quad.easeOut' });
+                }
+                if (!f.c.visible) f.c.setVisible(true);
+                this.time.delayedCall(1700, () => { f.c.destroy(); if (f.tkey && this.textures.exists(f.tkey)) this.textures.remove(f.tkey); });
                 continue;
             }
             const off = f.x1 < v.x - T * 3 || f.x0 > v.right + T * 3 || f.y1 < v.y - T * 3 || f.y0 > v.bottom + T * 3;   // (puffs spill ~2.2 tiles past the room)
-            if (f.c.visible === off) f.c.setVisible(!off);   // off screen it isn't drawn: hundreds of puffs a room, and _vfxCull skips big containers
+            if (f.c.visible === off) { f.c.setVisible(!off); for (const t of f.wt) off ? t.pause() : t.resume(); }   // off screen it isn't drawn (_vfxCull skips big containers), its wisps still
             if (off) continue;
-            for (const p of f.puffs) { const b = 1 + 0.08 * Math.sin(time * 0.0012 + p._ph); p.setScale(p._s * b, p._sy * b); }   // on screen: its edge breathes
+            f.img?.setScale(1 + 0.012 * Math.sin(time * 0.0012 + f.ph));   // on screen: the whole of it breathes
         }
     }
     // Is (x, y) inside a room still under fog?
