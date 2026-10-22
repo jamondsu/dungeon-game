@@ -211,13 +211,13 @@ class CreatureFX {
     //   cfx_ice   the ice block, whole and cracked
     static sheets(scene) {
         const tm = scene?.textures;
-        if (!tm || tm.exists('cfx_face')) return !!tm;
         const A = CreatureFX.art();
         if (!A.hats.ears1) for (let n = 0; n <= 4; n++) {   // the Hunter's ears filling with blood, bottom up, as its rage builds (LevelManager._updateHunters)
             const ears = A.hats.ears;
             A.hats['ears' + n] = { ...ears, pal: { ...ears.pal, b: '#a0101e', B: '#ff3a3a' }, rows: ears.rows.map((row, j) => j >= 1 && j <= 4 && j >= 5 - n ? row.replace(/E/g, 'b').replace(/e/g, 'B') : row) };
             A.sets['hunter' + n] = ['ears' + n, 'fangs'];
         }
+        if (!tm || tm.exists('cfx_face')) return !!tm;   // (the sheet from its file: the ears above still have to be in the art)
         const cells = [];
         for (const mood of Object.keys(A.eyes)) {
             const E = A.eyes[mood];

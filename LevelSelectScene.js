@@ -269,7 +269,8 @@ class LevelSelectScene extends Phaser.Scene {
     // frames, drawn 2x.
     static vignette(scene, kind) {
         const key = 'map_vig_' + kind, W = 56, H = 48, F = 4;
-        if (scene.textures.exists(key)) return key;
+        const anim = () => { if (!scene.anims.exists(key)) scene.anims.create({ key, frames: [0, 1, 2, 3].map(f => ({ key, frame: String(f) })), frameRate: 5, repeat: -1 }); };
+        if (scene.textures.exists(key)) { anim(); return key; }   // (from its file: the animation still has to be made)
         const mix = MenuArt.mix, bay = MenuArt.bayer, INK = 0x2a1a10;
         const P = new MenuArt.Px(W * F, H);
         for (let f = 0; f < F; f++) {
@@ -407,7 +408,7 @@ class LevelSelectScene extends Phaser.Scene {
         }
         const t = P.toTexture(scene, key, false);
         for (let f = 0; f < F; f++) t.add(String(f), 0, f * W, 0, W, H);
-        scene.anims.create({ key, frames: [0, 1, 2, 3].map(f => ({ key, frame: String(f) })), frameRate: 5, repeat: -1 });
+        anim();
         return key;
     }
 

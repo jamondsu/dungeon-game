@@ -16,9 +16,21 @@ class BootScene extends Phaser.Scene {
         // left on screen while a big level builds)
         this.load.spritesheet('tiles', 'assets/roguelikeDungeon_transparent.png', { frameWidth: 17, frameHeight: 17 });
         this.load.spritesheet('cloud_storm', 'assets/cloud_storm.png', { frameWidth: 280, frameHeight: 70 });
+        // the art the code used to paint, kept as files (assets/art) so it can be redrawn by hand: manifest.json lists them
+        // (an atlas where a texture has named frames). The code that painted each one still paints it if its file is missing
+        // (it only paints a texture that isn't there).
+        this.load.json('art_manifest', 'assets/art/manifest.json');
+        this.load.once('filecomplete-json-art_manifest', (key, type, M) => {
+            for (const f of M?.files || []) {
+                if (f.atlas) this.load.atlas(f.key, `assets/art/${f.key}.png`, `assets/art/${f.key}.json`);
+                else this.load.image(f.key, `assets/art/${f.key}.png`);
+            }
+        });
     }
 
     create() {
+        // the glows and gradients were drawn smooth; a loaded file is pixel-sharp unless told otherwise
+        for (const f of this.cache.json.get('art_manifest')?.files || []) if (f.linear && this.textures.exists(f.key)) this.textures.get(f.key).setFilter(Phaser.Textures.FilterMode.LINEAR);
         Music.play(this, 'menu');
         const W = this.scale.width;
         const H = this.scale.height;
