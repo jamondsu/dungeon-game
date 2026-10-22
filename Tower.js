@@ -20,7 +20,7 @@
 class TowerFloors {
 
     static CFG = {
-        BASE_HP: 1.75, BASE_DMG: 1.41,   // floor 1 = where the Cistern leaves you (story ×1.15 / ×1.09, four steps)
+        BASE_HP: 2.2, BASE_DMG: 1.41,    // floor 1 = where the Cistern leaves you (story ×1.15 / ×1.09, four steps); HP 1.75 till 2026-10-22: mid gear reached floor 13-15, not ~10
         HP_STEP: 1.08, DMG_STEP: 1.07,   // HP 1.12 till 2026-10-20: a wall by floor ~40
         CROWD0: 8, CROWD_EVERY: 4, CROWD_CAP: 24, WAVES: 3,
         PAY0: 10, PAY_GROWTH: 1.12, BOSS_PAY: 5, BOSS_EVERY: 10,
