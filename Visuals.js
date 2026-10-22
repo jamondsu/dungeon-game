@@ -604,9 +604,10 @@ void main() {
         for (const o of this.children.list) {
             if (o._vfxCam !== 'world' || o.scrollFactorX !== 1) continue;
             const ty = o.type;
-            if (ty !== 'Sprite' && ty !== 'Image' && ty !== 'Container' && ty !== 'Text' && ty !== 'Rectangle' && ty !== 'Ellipse' && ty !== 'Arc') continue;
+            if (ty !== 'Sprite' && ty !== 'Image' && ty !== 'Container' && ty !== 'Text' && ty !== 'Rectangle' && ty !== 'Ellipse' && ty !== 'Arc' && !o._vfxBox) continue;
             let x0, x1, y0, y1;
-            if (ty === 'Container') {   // only small ones gathered round their own spot (a wide one at 0,0 is never culled)
+            if (o._vfxBox) [x0, y0, x1, y1] = o._vfxBox;   // a chunk of the floor (blitChunks): it spans rooms, so fog doesn't hide it
+            else if (ty === 'Container') {   // only small ones gathered round their own spot (a wide one at 0,0 is never culled)
                 if (o.list.length > 8) continue;
                 let m = 0; for (const c of o.list) m = Math.max(m, Math.abs(c.x) + Math.abs(c.displayWidth || 0), Math.abs(c.y) + Math.abs(c.displayHeight || 0));
                 if (m > 200) continue;
@@ -616,7 +617,7 @@ void main() {
                 const w = Math.abs(o.displayWidth || 0), h = Math.abs(o.displayHeight || 0);
                 x0 = o.x - (o.originX ?? 0.5) * w; x1 = x0 + w; y0 = o.y - (o.originY ?? 0.5) * h; y1 = y0 + h;
             }
-            const out = x1 < l || x0 > r || y1 < t || y0 > b || this._fogHides((x0 + x1) / 2, (y0 + y1) / 2);   // off screen, or in a room still under fog
+            const out = x1 < l || x0 > r || y1 < t || y0 > b || (!o._vfxBox && this._fogHides((x0 + x1) / 2, (y0 + y1) / 2));   // off screen, or in a room still under fog
             if (out !== !!o._vfxCulled) { o._vfxCulled = out; if (out) o.cameraFilter |= bit; else o.cameraFilter &= ~bit; }
         }
     }
@@ -922,10 +923,10 @@ void main() {
         const fl = (x, y) => at(x, y) === FL;
         const C = this._vfxCfg(), TH = this._vfxTheme();
         const torchSpots = [], decalList = [];
-        // Every tile is a Bob in one Blitter: thousands of plain quads from one texture cost far
+        // Every tile is a Bob in a Blitter: thousands of plain quads from one texture cost far
         // less to draw than an Image each, and none of them ever moves.
         this._vfxAtlas();   // the Blitter takes its texture now: it has to exist first
-        const layer = this.add.blitter(0, 0, 'vfx_atlas');
+        const bob = VisualFX.blitChunks(this, b => b);
         const lift = [];
         // mostly pebbles and bones; a skull is rarer (it catches the eye)
         const DECAL_PICK = ['dc_pebbles', 'dc_pebbles', 'dc_pebbles', 'dc_bones', 'dc_bones', 'dc_pebbles', 'dc_bones', 'dc_skull'];
@@ -946,9 +947,8 @@ void main() {
                 if (fr.kind === 'face' && at(x - 1, y) === WL && at(x + 1, y) === WL && fl(x - 1, y + 1) && fl(x + 1, y + 1) && fl(x, y + 2)
                     && (h >>> 7) % C.TORCH_EVERY === 0) torchSpots.push([x, y, h]);
                 if (fr.lift) lift.push([x, y, fr.lift]);
-                const bob = layer.create(x * T, y * T, fr.frame);
                 const tint = fr.kind === 'floor' ? TH.floor : TH.wall;
-                if (tint !== 0xffffff) bob.setTint(tint);
+                if (tint !== 0xffffff) bob(x, y, fr.frame).setTint(tint); else bob(x, y, fr.frame);
             }
         }
         this._vfxWallLift?.(lift, TH.wall);
@@ -1177,11 +1177,23 @@ void main() {
     _vfxWallLift(list, tint) {
         const P = this._vfxCfg().WALL, T = this.TILE_SIZE;
         if (!list?.length || !(P.LIFT > 0)) return;
-        const layer = this.add.blitter(0, 0, 'vfx_atlas').setDepth(P.LIFT_DEPTH).setAlpha(P.LIFT);
+        const bob = VisualFX.blitChunks(this, b => b.setDepth(P.LIFT_DEPTH).setAlpha(P.LIFT));
         for (const [x, y, f] of list) {
-            const b = layer.create(x * T, y * T, f);
+            const b = bob(x, y, f);
             if (tint !== 0xffffff) b.setTint(tint);
         }
+    }
+    // A Blitter draws every one of its bobs every frame, on screen or not (7,500 a frame in the Cistern from one for the
+    // whole level), so the tiles go in a Blitter for each CHUNK x CHUNK tiles and _vfxCull hides the ones out of view.
+    // Returns bob(tx, ty, frame); setup(blitter) dresses each new one.
+    static blitChunks(scene, setup) {
+        const T = scene.TILE_SIZE, N = 8, P = N * T, chunks = new Map();
+        return (x, y, frame) => {
+            const cx = Math.floor(x / N), cy = Math.floor(y / N), k = cx * 4096 + cy;
+            let b = chunks.get(k);
+            if (!b) { chunks.set(k, b = setup(scene.add.blitter(0, 0, 'vfx_atlas'))); b._vfxBox = [cx * P, cy * P, cx * P + P, cy * P + P]; }
+            return b.create(x * T, y * T, frame);
+        };
     }
 
     // ── DRESSING ─────────────────────────────────────────────────────────────
