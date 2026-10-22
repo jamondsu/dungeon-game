@@ -1134,7 +1134,7 @@ class RhythmTrial {
         // the flight of steps: glowing ice-blue slabs, each its key's letter on it, popping up one after another with a sparkle
         st.gl.steps = Array.from({ length: n }, (_, i) => {
             const f = (i + 1) / (n + 1), x = fx + (sx - fx) * f, y = fy + (sy - fy) * f;
-            const glow = S.add.image(0, T * 0.15, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0x7fe8ff).setScale(0.55, 0.4).setAlpha(0.35);
+            const glow = S.add.image(0, T * 0.2, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0x7fe8ff).setScale(0.32, 0.18).setAlpha(0.25);
             const top = S.add.image(0, 0, 'fx_rt_top').setDisplaySize(T * 0.62, T * 0.62).setTint(0xd8fbff), face = S.add.image(0, T * 0.31, 'fx_rt_face').setOrigin(0.5, 0).setDisplaySize(T * 0.62, T * 0.62).setTint(0x8fcfe8);
             const key = S.add.text(0, -T * 0.05, keys[i][1], { fontSize: '9px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#1a3a4a' }).setOrigin(0.5);
             const b = S.add.container(x, y - off + T * 0.9, [glow, face, top, key]).setDepth(0.9 + (y / T) * 1e-4).setAlpha(0);
@@ -1164,8 +1164,8 @@ class RhythmTrial {
             const ghost = S.add.image(S.player.x, S.player.y, S.player.texture.key, S.player.frame.name).setScale(S.player.scaleX, S.player.scaleY).setTintFill(0x7fe8ff).setAlpha(0.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(S.player.depth - 0.01);
             S.tweens.add({ targets: ghost, alpha: 0, duration: 260, onComplete: () => ghost.destroy() });
             S.tweens.killTweensOf(S.player); S.tweens.add({ targets: S.player, x: step.x, y: step.y, duration: 80, ease: 'Sine.easeOut' });
-            step.top.setTint(0x7fe8ff); step.glow.setAlpha(0.9).setScale(0.75, 0.5);
-            RhythmTrial.noteFly(S, step.x, step.y - (S.SLIME_Y_OFFSET || 0), 2, true);
+            step.top.setTint(0x7fe8ff); step.glow.setAlpha(0.5).setScale(0.38, 0.22);   // (lit, not blown out: the bloom doubles every glow)
+            RhythmTrial.noteFly(S, step.x, step.y - (S.SLIME_Y_OFFSET || 0), 2, false);
         }
         S.tweens.add({ targets: [cap.img, cap.txt], y: '+=4', duration: 60, yoyo: true });
         Sfx.play(S, 'rt_hit', { n: gl.hit.size * 2, perfect: true });   // a run of notes up the slide
