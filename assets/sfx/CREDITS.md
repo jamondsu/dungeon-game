@@ -9,7 +9,8 @@ Trimmed, levelled and resampled for the game. All free to use; none require cred
 | roar.wav | freesound.org/s/132874 "Monster Short Roar" | ecfike | CC0 |
 | roar_big.wav | freesound.org/s/489901 "Scary Monster Roar #2" | NicknameLarry | CC0 |
 | bossdie.wav | freesound.org/s/276577 "Dragons Dying Breath" | MickBoere | CC0 |
-| lava_loop.wav, lava_pop1.wav, lava_pop2.wav | freesound.org/s/474850 "Lava Loop 2" | Fission9 | CC0 |
+| lava_loop.wav | recorded for the game | a friend of Jiamen's | ours |
+| lava_pop1.wav, lava_pop2.wav | freesound.org/s/474850 "Lava Loop 2" | Fission9 | CC0 |
 | sear.wav | freesound.org/s/239639 "BACON FRYING SIZZLE POP" | applauseav | CC0 |
 | crackle.wav | freesound.org/s/181563 "Fire Crackling 01" | kingsrow | CC0 |
 | ice_crack.wav | freesound.org/s/262635 "Ice Crack 1" | j_p_higgins | CC0 |

@@ -220,9 +220,14 @@ const Sfx = {
         lava(ctx, t) {
             const out = ctx.createGain(), nodes = []; out.gain.value = 0.0001; out.connect(this._master);
             const rec = this._buf.lava_loop;
-            if (rec) {   // the recording (a seamless 4s loop)
+            if (rec) {   // the recording (a seamless 6s loop: a deep bubbling boil). It's nearly all bass, which small speakers can't play:
+                         // a distorted copy kept to the low mids gives it overtones they can, and ears hear the deep boil through them
                 const s = ctx.createBufferSource(); s.buffer = rec; s.loop = true; s.connect(out); s.start(t, Math.random() * rec.duration); nodes.push(s);
-                return { out, vol: 0.3, nodes };
+                const ws = ctx.createWaveShaper(), bp = ctx.createBiquadFilter(), gg = ctx.createGain(), c = new Float32Array(1024);
+                for (let i = 0; i < c.length; i++) c[i] = Math.tanh((i / (c.length - 1) * 2 - 1) * 5);
+                ws.curve = c; bp.type = 'bandpass'; bp.frequency.value = 450; bp.Q.value = 0.6; gg.gain.value = 0.6;
+                s.connect(ws); ws.connect(bp); bp.connect(gg); gg.connect(out);
+                return { out, vol: 0.6, nodes };
             }
             const sear = this._band(ctx, t, out, nodes, 'bandpass', 1100, 1.2, 0.25);
             const mid = this._band(ctx, t, out, nodes, 'bandpass', 380, 2.5, 0.7);
@@ -465,6 +470,12 @@ const Sfx = {
                 return;
             }
             this._noise(ctx, t, { filter: 'bandpass', f0: 500 * j, f1: 2400 * j, q: 1.2, dur: 0.17, vol: 0.32, attack: 0.02 });
+        },
+        // A boss's bar filling at its entrance: a rising whine over a swelling rumble.
+        bossbar(ctx, t, o, j) {
+            this._tone(ctx, t, { type: 'sawtooth', f0: 110, f1: 440, dur: 1.2, vol: 0.045, attack: 0.3 });
+            this._tone(ctx, t, { type: 'triangle', f0: 220, f1: 880, dur: 1.2, vol: 0.07, attack: 0.3 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 300, f1: 1500, dur: 1.2, vol: 0.08, attack: 0.5 });
         },
         // The Frost Shield going up: an icy cast, crystal ringing round you.
         frost_shield(ctx, t, o, j) {

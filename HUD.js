@@ -498,7 +498,7 @@ class HUD {
         const want = tf ? (tf.full ? 'ascendant' : 'rift') : boss ? 'boss' : (LEVEL[this.currentLevelIndex] || 'gauntlet');
         Telemetry.boss(this, !!boss);
         if (want !== Music._cur) {
-            if (want === 'boss') Sfx.play(this, 'roar', { big: true });
+            if (want === 'boss' && Date.now() - (this._introRoarAt || 0) > 6000) Sfx.play(this, 'roar', { big: true });   // (not again straight after its intro's)
             Music.play(this, want);
         }
     }
@@ -713,6 +713,9 @@ class HUD {
         this._pauseMenuOpen = true;
         this._freezeClock(true);
         this.input.keyboard.enabled = true; // keep ESC working
+        // a speech box (depth 1000) would sit over the menu: hidden till it closes
+        this._pauseHid = (this._dialogueObjects || []).filter(o => o?.active && o.visible);
+        this._pauseHid.forEach(o => o.setVisible(false));
 
         const P = UIKit.PALETTE;
         const W = this.scale.width, H = this.scale.height;
@@ -822,6 +825,8 @@ class HUD {
         if (!this._pauseMenuOpen) return;
         this._pauseMenuOpen = false;
         this._freezeClock(false);
+        (this._pauseHid || []).forEach(o => o?.active && o.setVisible(true));
+        this._pauseHid = null;
         if (this._pauseObjs) {
             this._pauseObjs.forEach(o => { if (o && o.active) { this.tweens.killTweensOf(o); o.destroy(); } });
             this._pauseObjs = null;
@@ -1240,6 +1245,77 @@ class HUD {
             const objs = [B.g, B.title, B.sub].filter(o => o?.active);
             this.tweens.add({ targets: objs, alpha: 0, duration: 600, delay: 300, onComplete: () => objs.forEach(o => o.destroy()) });
         }
+    }
+
+    // ── BOSS INTRO ───────────────────────────────────────────────────────────
+    // The first time each boss comes into reach (Bosses._bfxBossBar): the fight holds (the pause's freeze, bodies still
+    // breathing), black bars slide in, the camera glides to it, its name slams in over its title, it roars, its bar fills
+    // from nothing with a rising whine and a flash, and the camera comes home. A click, Enter or Esc skips it.
+    // Queens: only the first of a run. Returns whether it began.
+    _bossIntro(key, name, col, bx, by) {
+        const base = key.replace(/\d+$/, ''), seen = this._bossIntroSeen ||= {};
+        if (seen[base] || this._bossIntroState) return false;
+        seen[base] = true;
+        const TITLES = { volt: 'the storm that walks', sovereign: 'ruler of the dark between stars', core: 'the stone that remembers fire', queen: 'mother of the brood' };
+        const cam = this.cameras.main, W = this.scale.width, H = this.scale.height, css = '#' + col.toString(16).padStart(6, '0');
+        this._bossIntroOn = true; this._pauseMenuOpen = true; this._freezeClock(true); this.anims.resumeAll();
+        const hid = (this._dialogueObjects || []).filter(o => o?.active && o.visible); hid.forEach(o => o.setVisible(false));   // a speech box would sit over it
+        const objs = [], tw = [];
+        const add = o => { objs.push(o); return o.setScrollFactor(0); };
+        const top = add(this.add.rectangle(0, -70, W, 70, 0x000000, 1).setOrigin(0).setDepth(60));
+        const btm = add(this.add.rectangle(0, H, W, 70, 0x000000, 1).setOrigin(0).setDepth(60));
+        tw.push(this.tweens.add({ targets: top, y: 0, duration: 320, ease: 'Quad.easeOut' }), this.tweens.add({ targets: btm, y: H - 70, duration: 320, ease: 'Quad.easeOut' }));
+        const z0 = cam.zoom;
+        cam.stopFollow(); cam.pan(bx, by, 700, 'Sine.easeInOut', true); cam.zoomTo(z0 * 1.25, 700, 'Sine.easeInOut', true);
+        const title = add(this.add.text(W / 2, H - 150, name, { fontSize: '44px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffffff', stroke: css, strokeThickness: 6,
+            padding: { x: 20, y: 20 } }).setOrigin(0.5).setDepth(61).setAlpha(0).setScale(1.8));
+        title.setShadow(0, 0, css, 18, true, true);
+        const line = add(this.add.rectangle(W / 2, H - 118, 420, 2, col, 0.9).setDepth(61).setAlpha(0).setScale(0, 1));
+        const sub = add(this.add.text(W / 2, H - 110, TITLES[base] || '', { fontSize: '16px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: css, stroke: '#05060a', strokeThickness: 4 })
+            .setOrigin(0.5, 0).setDepth(61).setAlpha(0));
+        const at = (ms, fn) => tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: ms, onComplete: fn }));
+        at(720, () => {   // there it is
+            Sfx.play(this, 'roar', { big: true }); this._introRoarAt = Date.now();
+            cam.shake(320, 0.006); this._vfxFlash?.(bx, by, 120, col, 300, 0.8);
+            tw.push(this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 260, ease: 'Back.easeOut' }),
+                this.tweens.add({ targets: [sub, line], alpha: 1, duration: 300, delay: 160 }),
+                this.tweens.add({ targets: line, scaleX: 1, duration: 380, delay: 160, ease: 'Quad.easeOut' }));
+        });
+        at(1000, () => {   // its bar fills from nothing
+            Sfx.play(this, 'bossbar');
+            tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 1200, ease: 'Quad.easeIn', onUpdate: c => this._bossBar(c.getValue(), name, col, '', key, 0.6),   // (a little low: its name clear of the black bar; it slides up after)
+                onComplete: () => {
+                    Sfx.play(this, 'ready');
+                    const B = this._bossBarUIs?.[key], BW = Math.round(Math.min(620, W * 0.46));
+                    if (B) { const fl = add(this.add.rectangle(W / 2, B.y + 6, BW + 14, 24, 0xffffff, 0.9).setDepth(42)); tw.push(this.tweens.add({ targets: fl, alpha: 0, scaleY: 1.6, duration: 320 })); }
+                } }));
+        });
+        at(2800, () => this._bossIntroEnd());
+        const skip = () => this._bossIntroEnd();
+        this.input.once('pointerdown', skip); this.input.keyboard?.once('keydown-ENTER', skip);
+        this._bossIntroState = { objs, tw, z0, key, name, col, skip, hid };
+        return true;
+    }
+    // Its end (or a skip): the bars and words go, the camera glides home, and the fight runs once it's there
+    _bossIntroEnd() {
+        const S = this._bossIntroState;
+        if (!S || S.ending) return;
+        S.ending = true;
+        S.tw.forEach(t => { if (t?.isPlaying?.()) t.stop(); });   // (finished ones are gone already: stopping them throws)
+        this.input.off('pointerdown', S.skip); this.input.keyboard?.off('keydown-ENTER', S.skip);
+        this._bossBar(1, S.name, S.col, '', S.key, 0.6);   // full: the fight's own reading takes it from here
+        const cam = this.cameras.main, H = this.scale.height, [top, btm, ...rest] = S.objs;
+        this.tweens.add({ targets: rest, alpha: 0, duration: 250 });
+        this.tweens.add({ targets: top, y: -70, duration: 300, ease: 'Quad.easeIn' });
+        this.tweens.add({ targets: btm, y: H, duration: 300, ease: 'Quad.easeIn' });
+        if (this.player) cam.pan(this.player.x, this.player.y, 450, 'Sine.easeInOut', true);
+        cam.zoomTo(S.z0, 450, 'Sine.easeInOut', true);
+        this.tweens.addCounter({ from: 0, to: 1, duration: 470, onComplete: () => {
+            S.objs.forEach(o => o?.active && o.destroy());
+            S.hid.forEach(o => o?.active && o.setVisible(true));
+            if (this.player) cam.startFollow(this.player, true, 0.1, 0.1);
+            this._bossIntroState = null; this._bossIntroOn = false; this._pauseMenuOpen = false; this._freezeClock(false);
+        } });
     }
 
     showRoomName(name) {

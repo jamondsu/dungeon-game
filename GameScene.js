@@ -67,6 +67,7 @@ class GameScene extends Phaser.Scene {
         // shot, the run clock still) until Esc paused and unpaused it. Thaw it first.
         if (this.time?._heldNow != null) { this._frozenTweens = null; this._freezeClock?.(false); }   // (its frozen tweens died with the old level)
         this._pauseMenuOpen     = false;
+        this._bossIntroOn = false; this._bossIntroState = null; this._bossIntroSeen = {};   // every boss makes its entrance again on a new run
         this._bannerActive = false; this._bannerClosing = null; this._encounterQueue = [];   // nor a first-encounter card left open
         // Poison and roots end on timers that a restart throws away: a run that ended poisoned
         // left traps unable to poison again, and one that ended rooted left you unable to walk
@@ -560,6 +561,7 @@ class GameScene extends Phaser.Scene {
         // ESC — open/close pause menu
         this.input.keyboard.on('keydown-ESC', () => {
             if (this._deathScreenActive) return;
+            if (this._bossIntroOn) return this._bossIntroEnd();   // skips a boss's entrance
             if (this._pauseMenuOpen) {
                 this.closePauseMenu();
             } else {
@@ -2673,6 +2675,8 @@ class GameScene extends Phaser.Scene {
     _bossBar(...a) { return HUD.prototype._bossBar.call(this, ...a); }
     _bossBarHide(...a) { return HUD.prototype._bossBarHide.call(this, ...a); }
     _bossBarsKeep(...a) { return HUD.prototype._bossBarsKeep.call(this, ...a); }
+    _bossIntro(...a) { return HUD.prototype._bossIntro.call(this, ...a); }
+    _bossIntroEnd(...a) { return HUD.prototype._bossIntroEnd.call(this, ...a); }
 
     _checkRoomNameDisplay() {
         const room = this.getCurrentPlayerRoom();
@@ -2744,6 +2748,27 @@ class GameScene extends Phaser.Scene {
     }
 
     // ── DEV PANEL ────────────────────────────────────────────────────────
+    // To the corridor two tiles outside the boss room (each story level's last room), on the side the story path comes in by
+    _devToBossDoor() {
+        const i = { 2: 6, 3: 6, 4: 6, 5: 14 }[this.currentLevelIndex], R = this.rooms?.[i], T = this.TILE_SIZE;
+        const say = (t, c = '#ff8866') => this.showStatusText(this.player.x, this.player.y - 20, t, c);
+        if (!R) return say('NO BOSS ROOM HERE');
+        const inR = (x, y) => x >= R.x && x < R.x + R.w && y >= R.y && y < R.y + R.h, F = (x, y) => this.world[x]?.[y] === this.FLOOR;
+        const mouths = [];   // floor just outside the room, touching its floor: its doorways (and which way is out)
+        for (let x = R.x - 1; x <= R.x + R.w; x++) for (let y = R.y - 1; y <= R.y + R.h; y++) {
+            if (inR(x, y) || !F(x, y)) continue;
+            const d = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dy]) => inR(x + dx, y + dy) && F(x + dx, y + dy));
+            if (d) mouths.push([x, y, -d[0], -d[1]]);
+        }
+        if (!mouths.length) return say('NO WAY IN FOUND');
+        const P = R._from || this.rooms[i - 1], pc = P ? [P.x + P.w / 2, P.y + P.h / 2] : [this.playerX, this.playerY];
+        let [tx, ty, ox, oy] = mouths.sort((a, b) => Math.hypot(a[0] - pc[0], a[1] - pc[1]) - Math.hypot(b[0] - pc[0], b[1] - pc[1]))[0];
+        if (F(tx + ox, ty + oy)) { tx += ox; ty += oy; }
+        this.playerX = tx; this.playerY = ty; this._glideUntil = 0;
+        this.player.setPosition(tx * T + T / 2, ty * T + T / 2 + (this.SLIME_Y_OFFSET || 0));
+        this.cameras.main.centerOn(this.player.x, this.player.y);
+        say('BOSS DOOR', '#44ff44');
+    }
     _createDevPanel() {
         const W = this.scale.width;
         const PANEL_W = 210, ROW_H = 32, PAD = 10;
@@ -2778,6 +2803,7 @@ class GameScene extends Phaser.Scene {
                   this.updateHUD();
                   this.showStatusText(this.player.x, this.player.y - 20, 'GADGETS LOCKED', '#ff8866');
               } },
+            { label: 'To Boss Door',   key: null,                desc: 'Warp to the boss room corridor', action: () => this._devToBossDoor() },
             { label: 'Teleport Mode',  key: '_devTeleportMode',  desc: 'Left-click to warp' },
         ];
 

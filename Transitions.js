@@ -84,7 +84,16 @@ const Transitions = {
     // ── ENTERING A LEVEL ─────────────────────────────────────────────────────
     // `from`: the screen point the iris closes onto (the level's medallion); the middle if
     // left out. Then the title card, then `onDone` (the caller's scene.start).
+    // Once a level is chosen nothing else on screen answers (a click on another button mid-transition took you there instead);
+    // input comes back as onDone hands over, since a scene can restart into itself
+    _commit(scene, onDone) {
+        const inp = scene.input, set = on => { if (inp) { inp.enabled = on; if (inp.keyboard) inp.keyboard.enabled = on; } };
+        set(false); scene._committed = true;
+        return (...a) => { set(true); scene._committed = false; return onDone?.(...a); };
+    },
     enterLevel(scene, index, onDone, from = null) {
+        if (scene._committed) return;   // already on the way somewhere
+        onDone = this._commit(scene, onDone);
         const info = this.infoFor(index);
         if (typeof Music !== 'undefined') Music.play(scene, null);   // the map's music fades; the level brings its own
         this._iris(scene, from, info.accent, () =>
@@ -707,6 +716,7 @@ const Transitions = {
     // A restart and the like: the title card without a painting. { title, tag, accent,
     // duration, onDone }.
     loader(scene, o) {
-        return this._card(scene, o);
+        if (scene._committed) return;
+        return this._card(scene, { ...o, onDone: this._commit(scene, o?.onDone) });
     }
 };

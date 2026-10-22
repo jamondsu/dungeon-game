@@ -24,6 +24,7 @@ class LevelSelectScene extends Phaser.Scene {
         Music.play(this, 'menu');
         this._tutLaunching = false;   // the scene object outlives a restart
         this._entering = false;       // a level is being entered: every other press is ignored
+        this.input.enabled = true; if (this.input.keyboard) this.input.keyboard.enabled = true;   // (leaving switched them off, and the scene object is reused)
         this._settingsOpen = false;
         Achievements.check(this);
         this.time.delayedCall(600, () => this._lossNudge());
@@ -517,7 +518,7 @@ class LevelSelectScene extends Phaser.Scene {
         plate.fillStyle(0xe2d0a8, 1); plate.fillRect(x - bw / 2, y + 22, bw, 38); plate.lineStyle(1, 0x9a7a34, 0.7); plate.strokeRect(x - bw / 2, y + 22, bw, 38);
         const go = () => {
             if (this._entering || this._settingsOpen) return;
-            this._entering = true; Sfx.play(this, 'click');
+            this._entering = true; Sfx.play(this, 'click'); this.input.enabled = false;   // nothing else answers on the way out
             this.cameras.main.fadeOut(350, 5, 3, 12);
             this.time.delayedCall(370, () => this.scene.start('Game', { levelIndex: 98, training: true }));
         };
@@ -560,7 +561,7 @@ class LevelSelectScene extends Phaser.Scene {
         plate.fillStyle(0xe2d0a8, 1); plate.fillRect(x - bw / 2, y + 28, bw, 38); plate.lineStyle(1, 0x6a3aa8, 0.6); plate.strokeRect(x - bw / 2, y + 28, bw, 38);
         const go = () => {
             if (this._entering || this._settingsOpen) return;
-            this._entering = true; Sfx.play(this, 'click');
+            this._entering = true; Sfx.play(this, 'click'); this.input.enabled = false;   // nothing else answers on the way out
             this.cameras.main.fadeOut(350, 5, 3, 12);
             this.time.delayedCall(370, () => this.scene.start('Enchant'));
         };
@@ -1314,9 +1315,9 @@ class LevelSelectScene extends Phaser.Scene {
             ['TOWER BEST +10', () => DevSave.towerBest(10)], ['TOWER BEST −10', () => DevSave.towerBest(-10)], ['ALL RELICS', () => DevSave.relics()], ['UNLOCK LEVELS', () => DevSave.unlockLevels()],
             ['GARDEN: EVERYTHING', () => DevSave.garden()], ['RIPEN ALL CROPS', () => DevSave.ripen()],
             ['GARDEN: WORMS', () => DevSave.worms()], ['GARDEN: DAY/NIGHT', () => DevSave.flipDay()], ['GARDEN +1 HOUR', () => DevSave.skip(1)], ['GARDEN +6 HOURS', () => DevSave.skip(6)], ['GARDEN +1 DAY', () => DevSave.skip(24)],
-            [DevSave.devMode() ? 'DEV MODE: ON' : 'DEV MODE: OFF', b => { DevSave.setDevMode(!DevSave.devMode()); b.setLabel?.(DevSave.devMode() ? 'DEV MODE: ON' : 'DEV MODE: OFF'); }],
+            [DevSave.devMode() ? 'DEV MODE: ON' : 'DEV MODE: OFF', b => { DevSave.setDevMode(!DevSave.devMode()); b.txt.setText(DevSave.devMode() ? 'DEV MODE: ON' : 'DEV MODE: OFF'); }],
         ];
-        GIVE.forEach(([label, fn], i) => btn(px + 30 + 88 + (i % 4) * 176, py + 116 + Math.floor(i / 4) * 40, 166, label, P.accentGreen, b => { fn(b); done(`Done: ${label.toLowerCase()}.`); }));
+        GIVE.forEach(([label, fn], i) => btn(px + 30 + 88 + (i % 4) * 176, py + 116 + Math.floor(i / 4) * 40, 166, label, P.accentGreen, b => { fn(b); done(`Done: ${b.txt.text.toLowerCase()}.`); }));
         // load a legal build for a story level (DevBuilds.js): pick the level and how much Tower was farmed, then LOAD
         // (again for the next sample)
         const by = py + 124 + Math.ceil(GIVE.length / 4) * 40, LV = ['gauntlet', 'voidrift', 'fracture', 'engdefense', 'cistern'], TI = ['story', 'some', 'farmed'];
@@ -1546,7 +1547,7 @@ class LevelSelectScene extends Phaser.Scene {
 
     launchTutorialStage(stageIndex) {
         if (this._tutLaunching) return;
-        this._tutLaunching = true;
+        this._tutLaunching = true; this.input.enabled = false;   // nothing else answers on the way out
         this.cameras.main.fadeOut(180, 0, 0, 0);
         this.time.delayedCall(180, () => {
             this.scene.start('Game', { levelIndex: 0, tutorialStage: stageIndex });

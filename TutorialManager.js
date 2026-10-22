@@ -878,6 +878,7 @@ class TutorialManager {
         } });
         this._dialogueTyper = typer;
         const advance = () => {
+            if (this._pauseMenuOpen) return;   // clicks and Enter are the pause menu's while it's open
             if (n < message.length) { n = message.length - 2; return; }   // first press: finish the line
             this.clearTutorialDialogue();
             if (onComplete) onComplete();

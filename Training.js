@@ -122,6 +122,21 @@ class Training {
         for (const d of S._pipeDrips || []) { S.tweens.killTweensOf(d); d.destroy(); }
         S._pipes = []; S._pipeDrips = [];
     }
+    // A spot a few tiles beside you, and a 3x3 patch of some ground round it to walk into (and hear): `put(tx, ty)` lays one tile
+    static spot(S) {
+        for (const [dx, dy] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) if (S.world[S.playerX + dx]?.[S.playerY + dy] === S.FLOOR) return [S.playerX + dx, S.playerY + dy];
+        return null;
+    }
+    static patch(S, put) {
+        const c = Training.spot(S);
+        if (c) for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) if (S.world[c[0] + ox]?.[c[1] + oy] === S.FLOOR) put(c[0] + ox, c[1] + oy);
+    }
+    static lava(S, superBurn) {
+        const T = S.TILE_SIZE;
+        Training.patch(S, (x, y) => S.spawnIgnitionTrail(x * T + T / 2, y * T + T / 2, 20000, superBurn ? { superBurn: true } : {}));
+    }
+    static fog(S) { Training.patch(S, (x, y) => { S.addWater(x, y, 0); S.evaporateWater(x, y, 1e9); }); }   // water dried by fire
+    static poison(S) { const c = Training.spot(S); if (c) S._poisonRing(c[0], c[1], 1); }   // a ring of pools round that spot
     // every pipe and drop of water gone
     static dry(S) {
         S.pipes = []; Training._pipesOff(S);
@@ -208,6 +223,10 @@ class Training {
         y += 26; head('TERRAIN');
         const tw = (PW - 32) / 3;
         all.push(button(x0 + 10, tw, 'Water', () => Training.pool(S)), button(x0 + 16 + tw, tw, 'Pipe', () => Training.pipe(S)), button(x0 + 22 + tw * 2, tw, 'Dry', () => Training.dry(S)));
+        y += 21;   // beside you, to walk into and hear
+        const qw = (PW - 38) / 4;
+        all.push(button(x0 + 10, qw, 'Lava', () => Training.lava(S, false)), button(x0 + 16 + qw, qw, 'Hot', () => Training.lava(S, true)),
+                 button(x0 + 22 + qw * 2, qw, 'Fog', () => Training.fog(S)), button(x0 + 28 + qw * 3, qw, 'Poison', () => Training.poison(S)));
         y += 28; head('YOUR DAMAGE');
         S._train.readout = text(x0 + 10, '', 11, '#7dff9a'); y += 62;
         all.push(button(x0 + 10, PW - 20, 'LEAVE', () => { S.cameras.main.fadeOut(300, 0, 0, 0); S.time.delayedCall(320, () => S.scene.start('LevelSelect')); }));
