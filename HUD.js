@@ -329,6 +329,7 @@ class HUD {
     // elements did the work (damage dealt) and which you fought in (combat time), with the weapon
     // each was, and the element that carried the run. A click or Enter goes back to the map.
     _showWinScreen() {
+        Sfx.hush(this);   // the fight's sounds end here
         const R = this._runStats || { dmg: {}, elTime: {}, t0: this.time.now, kills: 0 };
         const W = this.scale.width, H = this.scale.height, D = 600, P = UIKit.PALETTE, objs = [];
         const keep = o => { objs.push(o); o.setScrollFactor?.(0); return o; };
@@ -867,7 +868,7 @@ class HUD {
             clock._pauseShift += clock._rawNow - clock._pausedRaw;
             clock._heldNow = null;
             clock.paused = false;
-            (this._frozenTweens || []).forEach(t => t.resume?.());
+            (this._frozenTweens || []).forEach(t => { if (t?.paused && !t.isDestroyed?.() && !t.isPendingRemove?.()) t.resume(); });   // (one stopped meanwhile, a hop restarted, is gone: resuming it threw and stopped the game)
             this._frozenTweens = null;
             this.anims.resumeAll();
         }
@@ -901,6 +902,7 @@ class HUD {
             this._destroyPrefireBeam(enemy);
         }
 
+        Sfx.hush(this);   // the fight's sounds end here
         Sfx.play(this, 'death');
         Music.play(this, null);
         this.showDeathScreen();
@@ -1100,7 +1102,7 @@ class HUD {
             this.tweens.add({ targets: cube, alpha: 1, duration: 450, ease: 'Quad.easeOut' });
             at(300, () => slime.setTint(0x7fc8f0));
             at(1000, () => {
-                Sfx.play(this, 'kill');
+                Sfx.play(this, 'kill', { screen: true });
                 flash(0xd8f2ff, 0.5, 300);
                 slime.destroy(); cube.destroy();
                 for (let k = 0; k < 18; k++) {
@@ -1129,7 +1131,7 @@ class HUD {
                 }
                 this.tweens.add({ targets: g, alpha: 0, duration: 220, onComplete: () => g.destroy() });
                 flash(0xfff6b0, 0.35, 200);
-                Sfx.play(this, 'hit', { el: 'lightning' });
+                Sfx.play(this, 'hit', { screen: true, el: 'lightning' });
                 const sp = parts(cx, cy, { speed: { min: 120, max: 320 }, lifespan: 380, scale: { start: 1.6, end: 0 },
                                            tint: [0xfff6b0, 0xffe14a], blendMode: 'ADD', emitting: false });
                 sp.explode(24);
@@ -1140,7 +1142,7 @@ class HUD {
             const flick = this.time.addEvent({ delay: 60, repeat: 14, callback: () => { if (slime.active) slime.setTint(++n % 2 ? 0xffffff : 0x303040); } });
             at(950, () => {
                 flick.remove();
-                Sfx.play(this, 'kill');
+                Sfx.play(this, 'kill', { screen: true });
                 slime.setTint(0x1c1a1a);
                 this.tweens.add({ targets: slime, scaleY: 1.5, scaleX: 6, y: cy + 12, duration: 260, ease: 'Quad.easeIn' });
                 keep(ui(this.add.ellipse(cx, cy + 30, 170, 28, 0x0c0806, 1).setStrokeStyle(2, 0x3a2a10, 0.8).setDepth(D - 1)));
@@ -1163,7 +1165,7 @@ class HUD {
             this.tweens.add({ targets: vortex, angle: 720, duration: 2000 });
             this.tweens.add({ targets: slime, angle: 900, scale: 0, delay: 250, duration: 950, ease: 'Cubic.easeIn' });
             at(1250, () => {
-                Sfx.play(this, 'kill');
+                Sfx.play(this, 'kill', { screen: true });
                 this.tweens.add({ targets: vortex, scale: 0, duration: 180, ease: 'Back.easeIn', onComplete: () => vortex.destroy() });
                 flash(0xc99cff, 0.45, 320);
             });
@@ -1180,7 +1182,7 @@ class HUD {
             this.tweens.add({ targets: slime, scaleY: 1.7, scaleX: 6, y: cy + 12, delay: 300, duration: 900, ease: 'Quad.easeIn' });
             at(1200, () => {
                 fl.stop();
-                Sfx.play(this, 'kill');
+                Sfx.play(this, 'kill', { screen: true });
                 this.tweens.add({ targets: slime, alpha: 0, duration: 300, onComplete: () => slime.destroy() });
                 const ash = keep(ui(this.add.graphics().setDepth(D - 1)));
                 ash.fillStyle(0x2a2624, 1); ash.fillEllipse(cx, cy + 30, 120, 24);
@@ -1215,8 +1217,8 @@ class HUD {
         if (frac < (B.last ?? frac)) B.hitAt = now;
         B.last = frac;
         if (now - B.hitAt > 450) B.trail = Math.max(frac, B.trail - 0.0125);   // the trail catches up after a beat
-        const W = this.scale.width, BW = Math.round(Math.min(620, W * 0.46)), BH = 12, x = Math.round(W / 2 - BW / 2);
-        const want = 88 + slot * (sub ? 50 : 40);
+        const W = this.scale.width, BW = Math.round(Math.min(620, W * 0.46)), BH = 18, x = Math.round(W / 2 - BW / 2);
+        const want = 88 + slot * (sub ? 56 : 46);
         B.y = B.y == null ? want : B.y + (want - B.y) * 0.2;   // slides to its place when one above it goes
         const y = Math.round(B.y);
         const g = B.g; g.clear().setAlpha(B.a);
@@ -1248,10 +1250,11 @@ class HUD {
     }
 
     // ── BOSS INTRO ───────────────────────────────────────────────────────────
-    // The first time each boss comes into reach (Bosses._bfxBossBar): the fight holds (the pause's freeze, bodies still
-    // breathing), black bars slide in, the camera glides to it, its name slams in over its title, it roars, its bar fills
-    // from nothing with a rising whine and a flash, and the camera comes home. A click, Enter or Esc skips it.
-    // Queens: only the first of a run. Returns whether it began.
+    // The first time you're in a boss's room (Bosses._bfxBossBar): the fight holds (the pause's freeze, bodies still
+    // breathing), black bars slide in and the camera swoops in close on it. A sleeping Voltslime wakes first (_voltWake).
+    // It roars, its name slams in along the bottom, its bar fills slowly from nothing, then the camera swings, still close,
+    // to you, goggle-eyed with fright, and pulls back out. A click, Enter or Esc skips it. Queens: only the first of a run.
+    // Returns whether it began.
     _bossIntro(key, name, col, bx, by) {
         const base = key.replace(/\d+$/, ''), seen = this._bossIntroSeen ||= {};
         if (seen[base] || this._bossIntroState) return false;
@@ -1260,62 +1263,264 @@ class HUD {
         const cam = this.cameras.main, W = this.scale.width, H = this.scale.height, css = '#' + col.toString(16).padStart(6, '0');
         this._bossIntroOn = true; this._pauseMenuOpen = true; this._freezeClock(true); this.anims.resumeAll();
         const hid = (this._dialogueObjects || []).filter(o => o?.active && o.visible); hid.forEach(o => o.setVisible(false));   // a speech box would sit over it
-        const objs = [], tw = [];
+        const objs = [], tw = [], LB = 76;
         const add = o => { objs.push(o); return o.setScrollFactor(0); };
-        const top = add(this.add.rectangle(0, -70, W, 70, 0x000000, 1).setOrigin(0).setDepth(60));
-        const btm = add(this.add.rectangle(0, H, W, 70, 0x000000, 1).setOrigin(0).setDepth(60));
-        tw.push(this.tweens.add({ targets: top, y: 0, duration: 320, ease: 'Quad.easeOut' }), this.tweens.add({ targets: btm, y: H - 70, duration: 320, ease: 'Quad.easeOut' }));
+        const top = add(this.add.rectangle(0, -LB, W, LB, 0x000000, 1).setOrigin(0).setDepth(60));
+        const btm = add(this.add.rectangle(0, H, W, LB, 0x000000, 1).setOrigin(0).setDepth(60));
+        tw.push(this.tweens.add({ targets: top, y: 0, duration: 320, ease: 'Quad.easeOut' }), this.tweens.add({ targets: btm, y: H - LB, duration: 320, ease: 'Quad.easeOut' }));
         const z0 = cam.zoom;
-        cam.stopFollow(); cam.pan(bx, by, 700, 'Sine.easeInOut', true); cam.zoomTo(z0 * 1.25, 700, 'Sine.easeInOut', true);
-        const title = add(this.add.text(W / 2, H - 150, name, { fontSize: '44px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffffff', stroke: css, strokeThickness: 6,
-            padding: { x: 20, y: 20 } }).setOrigin(0.5).setDepth(61).setAlpha(0).setScale(1.8));
-        title.setShadow(0, 0, css, 18, true, true);
-        const line = add(this.add.rectangle(W / 2, H - 118, 420, 2, col, 0.9).setDepth(61).setAlpha(0).setScale(0, 1));
-        const sub = add(this.add.text(W / 2, H - 110, TITLES[base] || '', { fontSize: '16px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: css, stroke: '#05060a', strokeThickness: 4 })
-            .setOrigin(0.5, 0).setDepth(61).setAlpha(0));
+        cam.stopFollow(); cam.pan(bx, by, 900, 'Sine.easeInOut', true); cam.zoomTo(z0 * 1.6, 900, 'Cubic.easeInOut', true);
+        Sfx.play(this, 'cine_open'); if (typeof Music !== 'undefined') Music.play(this, null);   // the level's music drops away; the fight's comes in after
         const at = (ms, fn) => tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: ms, onComplete: fn }));
-        at(720, () => {   // there it is
+        const S = this._bossIntroState = { objs, tw, z0, key, name, col, hid, wake: null };
+        let t = 950;
+        const vb = this.voltslimeBoss;
+        if (base === 'volt' && vb?._asleep) t = this._voltWake(vb, t, at, S);
+        at(t, () => {   // its roar
             Sfx.play(this, 'roar', { big: true }); this._introRoarAt = Date.now();
-            cam.shake(320, 0.006); this._vfxFlash?.(bx, by, 120, col, 300, 0.8);
-            tw.push(this.tweens.add({ targets: title, alpha: 1, scale: 1, duration: 260, ease: 'Back.easeOut' }),
-                this.tweens.add({ targets: [sub, line], alpha: 1, duration: 300, delay: 160 }),
-                this.tweens.add({ targets: line, scaleX: 1, duration: 380, delay: 160, ease: 'Quad.easeOut' }));
+            cam.shake(380, 0.008); this._vfxFlash?.(bx, by, 140, col, 320, 0.85);
         });
-        at(1000, () => {   // its bar fills from nothing
-            Sfx.play(this, 'bossbar');
-            tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 1200, ease: 'Quad.easeIn', onUpdate: c => this._bossBar(c.getValue(), name, col, '', key, 0.6),   // (a little low: its name clear of the black bar; it slides up after)
+        t += 250;
+        at(t, () => {   // its name, slammed in big along the bottom (clear of it), the world tipping with the blow
+            const y0 = H - LB - 74;
+            const box = add(this.add.container(W / 2, y0).setDepth(61).setScale(3).setAngle(-14).setAlpha(0));
+            const tag = this.add.text(0, -50, 'B  O  S  S', { fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold', color: css, stroke: '#000', strokeThickness: 3 }).setOrigin(0.5);
+            const nm = this.add.text(0, -8, name, { fontSize: '58px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f3e3b8', stroke: '#07060a', strokeThickness: 11, padding: { x: 20, y: 20 } }).setOrigin(0.5);
+            nm.setShadow(0, 0, css, 18, true, true);
+            const ep = this.add.text(0, 40, TITLES[base] || '', { fontSize: '18px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: css, stroke: '#05060a', strokeThickness: 5 }).setOrigin(0.5);
+            box.add([tag, nm, ep]);
+            S.card = box;
+            tw.push(this.tweens.add({ targets: box, scale: 1, angle: -4, alpha: 1, duration: 210, ease: 'Back.easeOut', onComplete: () => { Sfx.play(this, 'stinger'); cam.shake(200, 0.008); } }));
+            tw.push(this.tweens.add({ targets: cam, rotation: -0.06, duration: 210, ease: 'Back.easeOut' }));   // (back level as it ends)
+        });
+        t += 500;
+        const FILL = 2600;
+        at(t, () => {   // its bar fills, slowly, a beat at every quarter
+            Sfx.play(this, 'bossbar', { ms: FILL });
+            let q = 0;
+            tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: FILL, ease: 'Sine.easeInOut',
+                onUpdate: c => {
+                    const v = c.getValue();
+                    this._bossBar(v, name, col, '', key, 0.6);   // (a little low: its name clear of the black bar; it slides up after)
+                    if (v >= (q + 1) / 4 && q < 3) { q++; Sfx.play(this, 'click'); cam.shake(70, 0.002); }
+                },
                 onComplete: () => {
-                    Sfx.play(this, 'ready');
+                    Sfx.play(this, 'stinger', { big: true });
                     const B = this._bossBarUIs?.[key], BW = Math.round(Math.min(620, W * 0.46));
-                    if (B) { const fl = add(this.add.rectangle(W / 2, B.y + 6, BW + 14, 24, 0xffffff, 0.9).setDepth(42)); tw.push(this.tweens.add({ targets: fl, alpha: 0, scaleY: 1.6, duration: 320 })); }
+                    if (B) { const fl = add(this.add.rectangle(W / 2, B.y + 9, BW + 14, 30, 0xffffff, 0.9).setDepth(42)); tw.push(this.tweens.add({ targets: fl, alpha: 0, scaleY: 1.6, duration: 360 })); }
                 } }));
         });
-        at(2800, () => this._bossIntroEnd());
-        const skip = () => this._bossIntroEnd();
-        this.input.once('pointerdown', skip); this.input.keyboard?.once('keydown-ENTER', skip);
-        this._bossIntroState = { objs, tw, z0, key, name, col, skip, hid };
+        t += FILL + 450;
+        at(t, () => {   // and you, still close up, scared stiff
+            if (S.card?.active) tw.push(this.tweens.add({ targets: S.card, alpha: 0, y: S.card.y + 30, duration: 300 }));
+            if (!this.player) return;
+            Sfx.play(this, 'whoosh');
+            cam.pan(this.player.x, this.player.y, 650, 'Sine.easeInOut', true);
+            at(650, () => {   // (relative: this one's set from inside a step)
+                Sfx.play(this, 'gulp'); Sfx.play(this, 'dundun');
+                this._scaredFace(this.player, 1300, true);
+            });
+        });
+        t += 650 + 1300;
+        at(t, () => this._bossIntroEnd());
+        S.skip = () => this._bossIntroEnd();
+        this.input.once('pointerdown', S.skip); this.input.keyboard?.once('keydown-ENTER', S.skip);
         return true;
     }
-    // Its end (or a skip): the bars and words go, the camera glides home, and the fight runs once it's there
+    // Its end (or a skip): a sleeping boss is awake whatever happened, the bars and words go, the camera pulls back out to
+    // you, and the fight runs once it's there
     _bossIntroEnd() {
         const S = this._bossIntroState;
         if (!S || S.ending) return;
         S.ending = true;
         S.tw.forEach(t => { if (t?.isPlaying?.()) t.stop(); });   // (finished ones are gone already: stopping them throws)
+        S.wake?.(true);
         this.input.off('pointerdown', S.skip); this.input.keyboard?.off('keydown-ENTER', S.skip);
         this._bossBar(1, S.name, S.col, '', S.key, 0.6);   // full: the fight's own reading takes it from here
         const cam = this.cameras.main, H = this.scale.height, [top, btm, ...rest] = S.objs;
         this.tweens.add({ targets: rest, alpha: 0, duration: 250 });
-        this.tweens.add({ targets: top, y: -70, duration: 300, ease: 'Quad.easeIn' });
-        this.tweens.add({ targets: btm, y: H, duration: 300, ease: 'Quad.easeIn' });
-        if (this.player) cam.pan(this.player.x, this.player.y, 450, 'Sine.easeInOut', true);
-        cam.zoomTo(S.z0, 450, 'Sine.easeInOut', true);
-        this.tweens.addCounter({ from: 0, to: 1, duration: 470, onComplete: () => {
+        this.tweens.add({ targets: top, y: -top.height, duration: 400, ease: 'Quad.easeIn' });
+        this.tweens.add({ targets: btm, y: H, duration: 400, ease: 'Quad.easeIn' });
+        if (this.player) cam.pan(this.player.x, this.player.y, 550, 'Sine.easeInOut', true);
+        cam.zoomTo(S.z0, 600, 'Cubic.easeInOut', true);
+        this.tweens.add({ targets: cam, rotation: 0, duration: 500, ease: 'Sine.easeInOut' });
+        this.tweens.addCounter({ from: 0, to: 1, duration: 620, onComplete: () => {
+            cam.setRotation(0);
             S.objs.forEach(o => o?.active && o.destroy());
             S.hid.forEach(o => o?.active && o.setVisible(true));
             if (this.player) cam.startFollow(this.player, true, 0.1, 0.1);
             this._bossIntroState = null; this._bossIntroOn = false; this._pauseMenuOpen = false; this._freezeClock(false);
+            this._introRoarAt = Date.now();   // (the fight's music comes in now: no second roar with it)
         } });
+    }
+    // The Voltslime asleep (grey, its crown on the floor beside it, its speedy brood dozing round it) gets woken, rudely, by
+    // three rocks: the first, "?!?", "?&", then "zzz", back to sleep; the second, crosser and a little red, "!#!?!", "!?$@", "zzz";
+    // the third, a confused "?!", then fury (!#@% in bubbles, the mark, red and steaming), and it stomps awake: its brood jumps up
+    // goggle-eyed, lightning strikes it from every side, it lights up and its crown hops back on. Scheduled from `t` on the
+    // intro's clock; returns when it's done. S.wake(true) finishes it at once.
+    _voltWake(b, t, at, S) {
+        const cam = this.cameras.main, c = b.container, s = b.body, u = s?._cfx, p = this.player, A = HUD.introArt(this);
+        const head = () => ({ x: c.x, y: c.y - 52 });
+        const keep = o => { S.objs.push(o); return o; };
+        const zzz = [], Z = () => zzz.push(this._bfxZzz?.(c.x + 16, c.y - 70, 22));
+        for (let k = 0; k < 3; k++) at(t - 900 + k * 320, Z);
+        at(t - 700, () => Sfx.play(this, 'snore'));
+        // a rock: the camera to you, pick it up, lob it, the camera chasing it over, BONK (bigger each time). Returns the bonk's time
+        const rock = (c0, n) => {
+            let r = null;
+            at(c0, () => { if (p) cam.pan(p.x, p.y, 450, 'Sine.easeInOut', true); });
+            at(c0 + 500, () => {
+                if (!p) return;
+                this._vfxHop?.(p, Math.abs(p.scaleY || 1.2), 200);
+                Sfx.play(this, 'pluck');
+                r = keep(this.add.image(p.x + 12, p.y + 10, A.rock).setDepth((p.depth ?? 1) + 0.02).setScale(1.6));
+                S.tw.push(this.tweens.add({ targets: r, x: p.x + 2, y: p.y - 26, duration: 260, ease: 'Quad.easeOut', delay: 80 }));
+            });
+            at(c0 + 950, () => {
+                if (!r?.active) return;
+                Sfx.play(this, 'swing'); Sfx.play(this, 'whistle', { ms: 550 });
+                this._vfxHop?.(p, Math.abs(p.scaleY || 1.2), 150);
+                const x0 = r.x, y0 = r.y, h = head(), peak = Math.min(y0, h.y) - 80;
+                S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 550, onUpdate: tw => {
+                    const v = tw.getValue(), q = 1 - v;
+                    r.setPosition(q * q * x0 + 2 * q * v * (x0 + h.x) / 2 + v * v * h.x, q * q * y0 + 2 * q * v * peak + v * v * h.y).setAngle(v * 720);
+                } }));
+                cam.pan(h.x, h.y + 30, 550, 'Sine.easeInOut', true);
+            });
+            at(c0 + 1500, () => {
+                const h = head(), big = 0.6 + n * 0.3;
+                Sfx.play(this, 'bonk', { n }); if (n >= 3) Sfx.play(this, 'block');
+                cam.shake(100 + n * 60, 0.003 + n * 0.002);
+                this._vfxHop?.(s, Math.abs(s?.scaleY || 4.5), 200);
+                if (u) u.expr = 'wince';
+                if (r?.active) S.tw.push(this.tweens.add({ targets: r, x: r.x - 40 - n * 6, y: r.y + 70, angle: r.angle - 300, duration: 520, ease: 'Quad.easeIn', onComplete: () => r.setAlpha(0.7) }));
+                const bonk = keep(this.add.text(h.x - 30, h.y - 14, n < 3 ? 'bonk' : 'BONK!!', { fontSize: Math.round(18 + n * 6) + 'px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffe14a', stroke: '#1a1008', strokeThickness: 5, resolution: 2 })
+                    .setOrigin(0.5).setDepth(7).setScale(0.3).setAngle(-12));
+                S.tw.push(this.tweens.add({ targets: bonk, scale: big + 0.25, duration: 140, ease: 'Back.easeOut', yoyo: true, hold: 120 }),
+                    this.tweens.add({ targets: bonk, y: bonk.y - 22, alpha: 0, duration: 450, delay: 600 }));
+                for (let k = 0; k < 3 + n * 2; k++) {   // stars round its head
+                    const a = k / (3 + n * 2) * Math.PI * 2, st = keep(this.add.image(h.x, h.y, A.star).setDepth(7).setScale(1.2));
+                    S.tw.push(this.tweens.add({ targets: st, x: h.x + Math.cos(a) * 30, y: h.y + Math.sin(a) * 16, angle: 180, alpha: 0, duration: 600, ease: 'Quad.easeOut' }));
+                }
+            });
+            return c0 + 1500;
+        };
+        const bubble = (txt, size, col, dx, dy, ms) => {   // on the screen layer (the world's glow washed a white bubble out), over its head
+            const h = head(), z = cam.zoom, wv = cam.worldView;
+            const box = keep(this.add.container((h.x + dx - wv.x) * z, (h.y + dy - wv.y) * z).setScrollFactor(0).setDepth(61).setScale(0));
+            const tx = this.add.text(0, 0, txt, { fontSize: size + 'px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#ffffff', strokeThickness: 3 }).setOrigin(0.5);
+            const w = tx.width + 36, hh = tx.height + 20, g = this.add.graphics();
+            g.fillStyle(0xfffdf6, 1).fillRoundedRect(-w / 2, -hh / 2, w, hh, 16).fillTriangle(-w / 4, hh / 2 - 3, -w / 4 + 26, hh / 2 - 3, -w / 4 - 12, hh / 2 + 26);
+            g.lineStyle(4, 0x1a1420, 1).strokeRoundedRect(-w / 2, -hh / 2, w, hh, 16);
+            g.lineBetween(-w / 4, hh / 2, -w / 4 - 12, hh / 2 + 26).lineBetween(-w / 4 + 26, hh / 2, -w / 4 - 12, hh / 2 + 26);
+            box.add([g, tx]);
+            S.tw.push(this.tweens.add({ targets: box, scale: 1, duration: 200, ease: 'Back.easeOut' }),
+                this.tweens.add({ targets: box, angle: { from: -4, to: 4 }, duration: 70, yoyo: true, repeat: Math.floor(ms / 140) }),
+                this.tweens.add({ targets: box, alpha: 0, scale: 0.8, duration: 160, delay: ms }));
+            for (let k = 0; k < 4; k++) S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 60 + k * 90, onComplete: () => Sfx.play(this, 'blip', { v: 'glerp' }) }));   // muttering
+        };
+        const doze = () => { if (u) u.expr = 'blink'; Z(); Sfx.play(this, 'snore'); };
+        // one: what?, a grumble, then (its own bubble) back to sleep
+        const b1 = rock(t + 250, 1);
+        at(b1 + 300, () => bubble('?!?', 34, '#1a1420', 36, -36, 450));
+        at(b1 + 850, () => bubble('?&', 34, '#1a1420', 40, -38, 450));
+        at(b1 + 1400, () => { doze(); bubble('zzz', 32, '#5a78b0', 34, -34, 500); });
+        // two: crosser, already a little red, a grumble, then back to sleep again
+        const b2 = rock(b1 + 2000, 2);
+        at(b2 + 300, () => { bubble('!#!?!', 40, '#1a1420', 40, -40, 450); LevelManager.redden(s, 0.4); S.tw.push(this.tweens.add({ targets: c, x: c.x + 2, duration: 40, yoyo: true, repeat: 5 })); });
+        at(b2 + 850, () => bubble('!?$@', 40, '#1a1420', 44, -42, 450));
+        at(b2 + 1400, () => { doze(); bubble('zzz', 32, '#5a78b0', 34, -34, 500); });
+        // three: what?! and then fury
+        const b3 = rock(b2 + 2000, 3);
+        at(b3 + 350, () => { if (u) u.expr = null; bubble('?!', 40, '#1a1420', 40, -40, 520); });
+        at(b3 + 1000, () => {
+            bubble('#@%&!', 48, '#d8202a', 50, -46, 700); Sfx.play(this, 'rage');
+            const h = head(), mark = keep(this.add.image(h.x + 34, h.y + 2, A.anger).setDepth(6).setScale(3));
+            S.mark = mark;
+            S.tw.push(this.tweens.add({ targets: mark, scale: 3.8, duration: 150, yoyo: true, repeat: 4 }));
+        });
+        at(b3 + 1800, () => {   // furious: red, steaming, the mark swelling
+            bubble('!!#@%*!!', 56, '#d8202a', 54, -50, 700);
+            LevelManager.redden(s);
+            if (S.mark?.active) S.tw.push(this.tweens.add({ targets: S.mark, scale: 5.2, duration: 120, yoyo: true, repeat: 4 }));
+            S.tw.push(this.tweens.add({ targets: c, x: c.x + 4, duration: 35, yoyo: true, repeat: 12 }));
+            for (let k = 0; k < 6; k++) S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 40 + k * 110, onComplete: () => {
+                const h = head(), puff = keep(this.add.image(h.x + (k % 2 ? 26 : -26), h.y + 6, 'vfx_glow').setTint(0xf4f4ff).setScale(0.08).setAlpha(0.9).setDepth(6));
+                S.tw.push(this.tweens.add({ targets: puff, y: puff.y - 30, scale: 0.22, alpha: 0, duration: 600 }));
+            } }));
+            Sfx.play(this, 'tell', { ms: 500 }); Sfx.play(this, 'steam'); Sfx.play(this, 'rage');
+        });
+        let woke = false;
+        const wake = (instant) => {   // awake for real: lit up, crowned, its brood up and scared
+            if (woke) return;
+            woke = true;
+            b._asleep = false;
+            LevelManager.grey(s, false);
+            if (s?.active) { s.clearTint(); if (!instant) { s.setTintFill(0xffffff); this.tweens.addCounter({ from: 0, to: 1, duration: 120, onComplete: () => s.active && s.clearTint() }); } }
+            if (u) u.expr = null;
+            if (b._bfx?.glow?.active) b._bfx.glow.setAlpha(0.6);
+            const cr = b._floorCrown; b._floorCrown = null;
+            const crownOn = () => { if (cr?.active) cr.destroy(); if (u) CreatureFX.dress(u, 'volt'); };
+            if (instant || !cr?.active) crownOn();
+            else { const h = head(); this.tweens.add({ targets: cr, x: h.x, y: h.y + 6, angle: 0, scale: cr.scale * 1.2, duration: 420, ease: 'Back.easeIn', onComplete: crownOn }); }
+            for (const e of b._sleepers || []) {
+                if (!e.sprite?.active) continue;
+                e._asleep = false; e._moveCdMult = e._sleepHold; if (e.sprite._cfx) e.sprite._cfx.expr = null;
+                LevelManager.grey(e.sprite, false); e.sprite.clearTint().setTint(0x44ffff);
+                if (!instant) {
+                    const y0 = e.sprite.y;
+                    this.tweens.add({ targets: e.sprite, y: y0 - 16, duration: 170, yoyo: true, ease: 'Quad.easeOut', delay: Math.random() * 120 });
+                    this._scaredFace(e.sprite, 1500);
+                }
+            }
+            b._sleepers = null;
+            for (const z of [...zzz, ...(this._zzzAll || [])]) if (z?.active) z.destroy();   // (the ones drifting when time stopped hung in the air)
+        };
+        S.wake = wake;
+        at(b3 + 2700, () => {   // it smashes the ground
+            this._vfxHop?.(s, Math.abs(s?.scaleY || 4.5), 300);
+            Sfx.play(this, 'slam'); Sfx.play(this, 'boom', { big: true }); cam.shake(420, 0.012);
+            BossFX.blast?.(this, c.x, c.y + 10, 90, 'volt');
+            if (S.mark?.active) S.tw.push(this.tweens.add({ targets: S.mark, alpha: 0, duration: 300 }));
+        });
+        for (let k = 0; k < 10; k++) at(b3 + 3000 + k * 55, () => {   // lightning from every side
+            const a = k / 10 * Math.PI * 2 + 0.3, h = head();
+            this.drawLightningBolt({ sprite: { x: h.x + Math.cos(a) * 190, y: h.y + 10 + Math.sin(a) * 150 } }, { sprite: { x: h.x, y: h.y + 14 } });
+        });
+        at(b3 + 3000, () => { wake(false); Sfx.play(this, 'e_thunder'); Sfx.play(this, 'surge'); });
+        return b3 + 3750;
+    }
+    // Goggle-eyed fright on a slime for `ms`: its own eyes hidden behind two wide white ones, pupils shivering, a bead of
+    // sweat (`shake`: it trembles too). Timed on tweens, so it plays while the game stands still.
+    _scaredFace(s, ms, shake = false) {
+        if (!s?.active) return;
+        const k = Math.abs(s.scaleY || 1.2), H = s.displayHeight || 32 * k, Wd = s.displayWidth || 32 * k;
+        const img = this.add.image(s.x, s.y, HUD.introArt(this).scared).setOrigin(8.5 / 16, 9.5 / 16).setScale(k * 7 / 6).setDepth((s.depth ?? 1) + 0.01);
+        if (s._cfx) s._cfx.hidden = true;
+        const x0 = s.x;
+        if (shake) this.tweens.add({ targets: s, x: x0 + 1.5, duration: 45, yoyo: true, repeat: Math.floor(ms / 90), onComplete: () => s.active && s.setX(x0) });
+        this.tweens.addCounter({ from: 0, to: 1, duration: ms,
+            onUpdate: () => { if (s.active) img.setPosition(s.x + (16.5 / 32 - (s.originX ?? 0.5)) * Wd + (Math.random() < 0.5 ? 0.6 : 0), s.y + (26 / 32 - (s.originY ?? 0.5)) * H); },   // on its face as it jumps, pupils shivering
+            onComplete: () => { img.destroy(); if (s._cfx) s._cfx.hidden = false; } });
+    }
+    // The intro's bits of art: wide frightened eyes (and a sweat drop), an anger mark, a rock to throw and a star to see
+    static introArt(scene) {
+        const scared = ShopScene.icon(scene, 'fx_scared_eyes', 16, { W: '#ffffff', p: '#1a1420', s: '#8fd8ff' }, m => {
+            m.disc(5.5, 9.5, 3.2, 'W'); m.disc(11.5, 9.5, 3.2, 'W');
+            m.set(5, 9, 'p'); m.set(11, 9, 'p');
+            m.set(14, 1, 's'); m.set(14, 2, 's'); m.rect(13, 3, 3, 2, 's');
+        });
+        const anger = ShopScene.icon(scene, 'fx_anger', 9, { r: '#ff3a3a', R: '#ff9a9a' }, m => {
+            for (const [x, y] of [[1, 2], [2, 1], [2, 3], [3, 2], [5, 2], [6, 1], [6, 3], [7, 2], [1, 6], [2, 5], [2, 7], [3, 6], [5, 6], [6, 5], [6, 7], [7, 6]]) m.set(x, y, 'r');
+            m.set(2, 2, 'R'); m.set(6, 6, 'R');
+        });
+        const rock = ShopScene.icon(scene, 'fx_rock', 9, { g: '#8a8478', G: '#b8b2a4', d: '#5a5448' }, m => {
+            m.disc(4.5, 4.8, 3.4, 'g'); m.set(3, 3, 'G'); m.set(4, 3, 'G'); m.set(3, 4, 'G'); m.set(6, 6, 'd'); m.set(5, 7, 'd');
+        });
+        const star = ShopScene.icon(scene, 'fx_bonk_star', 7, { y: '#ffe14a', W: '#ffffff' }, m => {
+            m.set(3, 1, 'y'); m.rect(2, 2, 3, 3, 'y'); m.set(1, 3, 'y'); m.set(5, 3, 'y'); m.set(3, 5, 'y'); m.set(3, 3, 'W');
+        });
+        return { scared, anger, rock, star };
     }
 
     showRoomName(name) {

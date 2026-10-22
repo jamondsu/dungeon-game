@@ -1388,14 +1388,17 @@ class WeaponSystem {
     //              plus CAP_X times what it stored, forked out and shared between everything within CAP_R (+CAP_SPREAD
     //              of the total for each enemy past the first), so it spreads damage where a live wire focuses it
     // Any other enemy touching a wire or an arc takes CROSS_DMG a tick. Wired enemies inside ARC_R of each other arc
-    // together and close a CIRCUIT through you: its wires and arc run CIRCUIT times hotter. So a lone live wire is
-    // weak; the damage is in building the circuit. A line snaps past SNAP tiles or behind a wall or gate; when a
+    // together, chained into a RING through you (oldest clamp first, each on to the nearest free one it arcs to): a
+    // circuit in series, out along the ring's first wire, through every enemy in turn, home along its last; the wires
+    // in between are taps that carry nothing. A ring runs CIRCUIT times hotter with two in it, RING_STEP more for each
+    // one past that. So a lone live wire is weak; the damage is in building the ring. A line snaps past SNAP tiles or behind a wall or gate; when a
     // wired enemy dies the clamp jumps to the nearest unwired enemy in JUMP_R.
     _conductorCfg() {
         const reach = WeaponLevels.perk('conductor', 'reach'), more = WeaponLevels.perk('conductor', 'wires');
         return { CD: 650, PULSE_CD: 420, PULSE_SPEED: 620, PULSE_DMG: 6, PULSE_DAZE: 450, LAND_DAZE: 400, INS_NERF: 0.65, INS_DAZE: 0.6, INS_SC: 2500, PULSE_SC: 3500, RANGE: 8 + reach, CURSOR_R: 2.5, SNAP: 18 + reach, FLY_MS: 150, SLING: 330, WIRES: 3 + more, ARC_R: 6, JUMP_R: 3, CROSS_R: 0.65,
             TICK: 300, LATCH_DMG: 3, WIRE_DMG: 4, CROSS_DMG: 5, INS_TAKE: 0.3,
-            CIRCUIT: 2, CAP_MS: 3000, CAP_R: 2.5, CAP_BASE: 3, CAP_X: 0.6, CAP_SPREAD: 0.3,
+            CIRCUIT: 2, RING_STEP: 0.5, CAP_MS: 3000, CAP_R: 2.5, CAP_BASE: 3, CAP_X: 1, CAP_SPREAD: 0.3,
+            HOVER_R: 1.3, RETYPE_CD: 350, CUT_HOLD: 400, SNIP_LIVE: 4, SNIP_LIVE_S: 3, SNIP_R: 2, SNIP_DAZE: 900,
             COL: 0xffe14a, HOT: 0xfff8c0, MODES: ['live', 'ins', 'cap'], MCOL: { live: 0xffe14a, ins: 0x7fd0ff, cap: 0xff9a3a } };
     }
     // Queens and bosses aren't in the enemy list: each gets a stand-in the wires can hold (the same one every frame,
@@ -1465,17 +1468,99 @@ class WeaponSystem {
         }
         return out;
     }
-    // A current down wire w: out to its enemy, on through the arcs to each wired enemy not yet reached (nearest-first
-    // chain), then home along the last one's wire, completing the circuit (back down w if it reached no one else)
-    _condPulse(w) {
-        const pairs = this._condPairs || [], route = [{ w }], seen = new Set([w]);
-        let cur = w;
-        for (;;) {
-            const next = pairs.map(([a, b]) => a === cur ? b : b === cur ? a : null).find(q => q && !seen.has(q) && q.on);
-            if (!next) break;
-            route.push({ a: cur.e, b: next.e }); seen.add(next); cur = next;
+    // A capacitor letting go of what it stored: one charge, forked out and split between everything within CAP_R of it
+    _condCapBurst(w) {
+        const C = this._conductorCfg(), e = w.e, x = e.sprite.x, y = e.sprite.y - 4;
+        w.charge = 0;
+        const hit = this._condTargets().filter(o => o.sprite?.active && o.health > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= C.CAP_R && (o === e || this._condClear(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y)));
+        const share = (C.CAP_BASE + C.CAP_X * w.store) * (1 + C.CAP_SPREAD * (hit.length - 1)) / Math.max(1, hit.length) * this.damageScaling;
+        this._condBurstFx(x, y, hit, e, w.store);
+        w.store = 0;
+        for (const o of hit) this._condHit(o, share);
+    }
+    // The wire your cursor is on (its enemy within HOVER_R tiles, or the cable itself), or null: a tap of G re-types it, holding G cuts it
+    _condHover() {
+        if (!this._condWielding()) return null;
+        const C = this._conductorCfg(), T = this.TILE_SIZE, cam = this.cameras.main, p = this.input.activePointer, ap = this._aim?.(p) || p;
+        const mx = ap.x + cam.scrollX, my = ap.y + cam.scrollY;
+        let best = null, bd = 1;
+        for (const w of this._condWires || []) {
+            if (!w.on || !w.e.sprite?.active || w.e.health <= 0) continue;
+            let d = Math.hypot(w.e.sprite.x - mx, w.e.sprite.y - 4 - my) / (C.HOVER_R * T);
+            const pts = w.pts || [];
+            for (let i = 1; i < pts.length; i++) {
+                const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dy = b.y - a.y, t = Phaser.Math.Clamp(((mx - a.x) * dx + (my - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+                d = Math.min(d, Math.hypot(a.x + dx * t - mx, a.y + dy * t - my) / (0.4 * T));
+            }
+            if (d < bd) { bd = d; best = w; }
         }
-        route.push({ w: cur, back: true });
+        return best;
+    }
+    // the hovered wire lit white, a ring on its clamp, and what you can do with it; G held at it fills the ring, and full, cuts it
+    _condHoverDraw(gl, on, time) {
+        const H = this._condHold, C = this._conductorCfg();
+        if (H && !H.cut) {
+            if (!H.w.on || !H.w.e.sprite?.active) this._condHold = null;
+            else {
+                const k = Math.min(1, (time - H.t0) / C.CUT_HOLD), x = H.w.e.sprite.x, y = H.w.e.sprite.y - 4;
+                gl.lineStyle(3, 0xff6a4a, 0.95); gl.beginPath(); gl.arc(x, y, 16, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2, false); gl.strokePath();
+                if (k >= 1) { H.cut = true; this._condCut(H.w); }
+            }
+        }
+        const w = this._condHover(), hint = this._condHint;
+        if (!w) { hint?.setVisible(false); return; }
+        if (w.pts) { gl.lineStyle(3, 0xffffff, 0.55 + 0.2 * Math.sin(time / 90)); gl.strokePoints(w.pts, false); }
+        const x = w.e.sprite.x, y = w.e.sprite.y - 4;
+        gl.lineStyle(1.5, 0xffffff, 0.9); gl.strokeCircle(x, y, 13 + Math.sin(time / 120));
+        const h = hint?.active ? hint : (this._condHint = this.add.text(0, 0, '', { fontSize: '9px', fontFamily: 'monospace', fontStyle: 'bold', color: '#fff8d8', stroke: '#05060a', strokeThickness: 3, resolution: 2 }).setOrigin(0.5, 0).setDepth(6));
+        const key = Settings.label(Settings.key('detonate'));
+        h.setText(`${key} change  ·  hold ${key} cut`).setPosition(x, y + 14).setVisible(true);
+    }
+    // G at a wire: it turns to the next kind (live, insulator, capacitor); a capacitor's store is lost when it stops being one
+    _condRetype(w) {
+        const C = this._conductorCfg(), now = this.time.now;
+        if (now - (this._condRetypeAt || 0) < C.RETYPE_CD) return;
+        this._condRetypeAt = now;
+        const next = C.MODES[(C.MODES.indexOf(w.mode) + 1) % C.MODES.length];
+        if (w.mode === 'cap') { w.store = 0; w.charge = 0; }
+        w.mode = next;
+        const x = w.e.sprite.x, y = w.e.sprite.y - 4, col = C.MCOL[next];
+        VisualFX.ripple(this, x, y, 4, 24, col, { duration: 220 });
+        this._condSpark(x, y, 8);
+        this.showStatusText(x, y - 26, { live: 'LIVE WIRE', ins: 'INSULATOR', cap: 'CAPACITOR' }[next], UIKit._hex(col));
+        Sfx.play(this, 'clink');
+    }
+    // Cut wire w (G held at it), with a parting shot for its kind: a live wire cracks its enemy (harder the longer it
+    // held), an insulator dazes everything near its enemy, a capacitor dumps what it's stored at once
+    _condCut(w) {
+        if (!w?.on) return;
+        const C = this._conductorCfg(), e = w.e, x = e.sprite.x, y = e.sprite.y - 4, on = (this._condWires || []).filter(q => q.on), web = this._condWebMul(on);
+        if (w.mode === 'live') {
+            const secs = Math.min(4, (this.time.now - (w.bite || this.time.now)) / 1000);
+            this._condHit(e, (C.SNIP_LIVE + C.SNIP_LIVE_S * secs) * (w.closed ? w.hot : 1) * web.dmg * this.damageScaling);
+            if (w.pts) { const g = this.add.graphics().setDepth(4.3).setBlendMode(Phaser.BlendModes.ADD); g.lineStyle(4, 0xffffff, 1).strokePoints(w.pts, false); this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() }); }
+            this._vfxFlash?.(e.sprite.x, e.sprite.y, 60, C.COL, 220, 0.9);
+            Sfx.play(this, 'zap'); Sfx.play(this, 'swing');
+        } else if (w.mode === 'ins') {
+            for (const o of this._condTargets()) if (o.sprite?.active && o.health > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= C.SNIP_R) this._condDaze(o, C.SNIP_DAZE * web.daze);
+            VisualFX.ripple(this, x, y, 6, C.SNIP_R * this.TILE_SIZE, C.MCOL.ins, { duration: 360 });
+            Sfx.play(this, 'block');
+        } else this._condCapBurst(w);
+        w.on = false;
+        this._condSnap(w);
+        this._condWires.splice(this._condWires.indexOf(w), 1);
+        this.cameras.main.shake(60, 0.002);
+    }
+    // A current round w's ring: out along the leg nearer w, through every enemy in the ring in turn, home along the other
+    // leg, each line once (a lone wire: out to its enemy and back down it)
+    _condPulse(w) {
+        const route = [], ring = w.ring?.every(q => q.on) ? w.ring : null;
+        if (ring) {
+            const seq = ring.indexOf(w) <= (ring.length - 1) / 2 ? ring : [...ring].reverse();
+            route.push({ w: seq[0] });
+            for (let i = 1; i < seq.length; i++) route.push({ a: seq[i - 1].e, b: seq[i].e });
+            route.push({ w: seq[seq.length - 1], back: true });
+        } else route.push({ w }, { w, back: true });
         (this._condPulses ||= []).push({ route, i: 0, d: 0, hit: new Set(), trail: [] });
         const { x, y } = this._condTip();
         this._condSpark(x, y, 10);
@@ -1500,41 +1585,94 @@ class WeaponSystem {
     }
     // a gold cable: a dark edge, two gold strands twisted round each other catching the light, and the current
     // riding it in the clamp's colour (a glow, a flickering thread, brighter with k). g draws the copper, gl (additive)
-    // the current; pass the same graphics for both when there's only one.
-    _condCable(g, gl, pts, time, seed, k = 1, col) {
+    // the current; pass the same graphics for both when there's only one. `fade` thins all of it out (a tap in a ring).
+    _condCable(g, gl, pts, time, seed, k = 1, col, fade = 1) {
         const C = this._conductorCfg(), c = col ?? C.COL, n = pts.length;
         const off = (s, amp, f, ph) => pts.map((p, i) => {
             if (!i || i === n - 1) return p;
             const q = pts[i + 1], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1, o = s * amp * Math.sin(i * f + ph);
             return { x: p.x - dy / L * o, y: p.y + dx / L * o };
         });
-        g.lineStyle(5, 0x2e2004, 1); g.strokePoints(pts, false);
-        g.lineStyle(3.4, 0xb08a1c, 1); g.strokePoints(pts, false);
-        g.lineStyle(1.3, 0x7a5a0e, 1); g.strokePoints(off(1, 1.1, 2.2, seed), false);   // the twist: a dark strand and a bright one
-        g.lineStyle(1.3, 0xffd84a, 1); g.strokePoints(off(-1, 1.1, 2.2, seed), false);
-        for (let i = 1; i < n - 1; i += 2) { const p = pts[i], q = pts[i + 1]; g.lineStyle(1, 0xfff4c0, 0.85); g.lineBetween(p.x, p.y - 1.2, (p.x + q.x) / 2, (p.y + q.y) / 2 - 1.2); }   // light along its top
-        gl.lineStyle(9, c, 0.12 * k); gl.strokePoints(pts, false);
+        g.lineStyle(5, 0x2e2004, fade); g.strokePoints(pts, false);
+        g.lineStyle(3.4, 0xb08a1c, fade); g.strokePoints(pts, false);
+        g.lineStyle(1.3, 0x7a5a0e, fade); g.strokePoints(off(1, 1.1, 2.2, seed), false);   // the twist: a dark strand and a bright one
+        g.lineStyle(1.3, 0xffd84a, fade); g.strokePoints(off(-1, 1.1, 2.2, seed), false);
+        for (let i = 1; i < n - 1; i += 2) { const p = pts[i], q = pts[i + 1]; g.lineStyle(1, 0xfff4c0, 0.85 * fade); g.lineBetween(p.x, p.y - 1.2, (p.x + q.x) / 2, (p.y + q.y) / 2 - 1.2); }   // light along its top
+        gl.lineStyle(9, c, 0.12 * k * fade); gl.strokePoints(pts, false);
         const thread = pts.map((p, i) => !i || i === n - 1 ? p : { x: p.x + (Math.random() - 0.5) * 4, y: p.y + (Math.random() - 0.5) * 4 });
-        gl.lineStyle(1.2, c, Math.min(1, 0.75 * k)); gl.strokePoints(thread, false);
+        gl.lineStyle(1.2, c, Math.min(1, 0.75 * k) * fade); gl.strokePoints(thread, false);
     }
-    // a capacitor clamp: two plates over its enemy, and a ring round it filling with its charge
-    _condCapDraw(gl, glow, w, x, y, time) {
-        const C = this._conductorCfg(), k = w.charge || 0, py = y - 20, col = C.MCOL.cap;
-        gl.lineStyle(2, col, 1);
-        gl.lineBetween(x - 3, py - 5, x - 3, py + 5); gl.lineBetween(x + 3, py - 5, x + 3, py + 5);
-        gl.lineBetween(x - 8, py, x - 3, py); gl.lineBetween(x + 3, py, x + 8, py);
-        if (k > 0) {
-            const pts = []; for (let i = 0; i <= 24; i++) { const a = -Math.PI / 2 + i / 24 * Math.PI * 2 * k; pts.push({ x: x + Math.cos(a) * 11, y: y + Math.sin(a) * 11 }); }
-            gl.lineStyle(4, col, 0.4); gl.strokePoints(pts, false); gl.lineStyle(1.5, 0xffffff, 0.95); gl.strokePoints(pts, false);
-            if (k > 0.8) glow(x, y, 0.2 + 0.3 * (k - 0.8) * 5, col, 0.7);
+    // The clamps' icons (pixel art, over the enemy's health bar and on the meter): a bolt for a live wire, a stack of
+    // ceramic discs for an insulator, a capacitor whose fill shows its charge (frames 0-4, empty to full)
+    static condArt(scene) {
+        const I = ShopScene.icon;
+        const live = I(scene, 'fx_cond_live', 11, { Y: '#ffe14a', y: '#d8a020', W: '#fffbe0' }, m => {
+            m.poly([[7, 0], [2, 6], [5, 6], [3, 11], [9, 4], [6, 4], [8, 0]], 'Y');
+            m.line(6, 1, 4, 5, 'W'); m.set(5, 6, 'y'); m.set(4, 8, 'y');
+        });
+        const ins = I(scene, 'fx_cond_ins', 11, { I: '#9fdcff', i: '#4a8ab8', W: '#e8f8ff', p: '#8a8478' }, m => {
+            m.rect(5, 0, 1, 11, 'p');
+            for (const [y, x0, w] of [[1, 1, 9], [4, 2, 7], [7, 3, 5]]) { m.rect(x0, y, w, 2, 'I'); m.rect(x0, y + 1, w, 1, 'i'); m.rect(x0 + 1, y, 2, 1, 'W'); }
+            m.rect(4, 10, 3, 1, 'p');
+        });
+        const cap = I(scene, 'fx_cond_cap', 11, { b: '#4a2008', o: '#ff9a3a', O: '#fff0c0', g: '#c8c8d0', s: '#ffd8a0' }, (m, f) => {
+            m.rect(4, 0, 1, 2, 'g'); m.rect(6, 0, 1, 2, 'g');   // its legs
+            m.rect(3, 2, 5, 8, 'b');
+            const n = Math.round(f / 4 * 6);   // the charge, rising inside it
+            if (n) { m.rect(4, 9 - n, 3, n, 'o'); m.rect(4, 9 - n, 3, 1, f === 4 ? 'O' : 's'); }
+            m.rect(7, 3, 1, 6, 's');   // its stripe
+        }, 5);
+        return { live, ins, cap };
+    }
+    // a live clamp: current crawling over its enemy, a warm glow on it
+    _condLiveDraw(gl, glow, x, y, time) {
+        const col = this._conductorCfg().MCOL.live;
+        glow(x, y + 2, 0.3, col, 0.28 + 0.08 * Math.sin(time / 45));
+        for (let q = 0; q < 2; q++) {   // little arcs jumping over its skin
+            const a = time / 90 + q * Math.PI + Math.random() * 0.6, b = a + 0.9 + Math.random() * 0.8;
+            const pts = this._arcPath(x + Math.cos(a) * 11, y + 2 + Math.sin(a) * 7, x + Math.cos(b) * 11, y + 2 + Math.sin(b) * 7, 5, 0.35);
+            this._strokeArc(gl, pts, 3, col, 0.35); this._strokeArc(gl, pts, 1.2, 0xffffff, 0.95);
         }
     }
-    // an insulator clamp: a stack of ceramic discs over its enemy, a cool shell of light round it
+    // a capacitor clamp: a ring round its enemy filling with its charge, current drawn in to it, brighter as it fills
+    _condCapDraw(gl, glow, w, x, y, time) {
+        const C = this._conductorCfg(), k = w.charge || 0, col = C.MCOL.cap;
+        glow(x, y + 2, 0.2 + 0.25 * k, col, 0.2 + 0.4 * k * (k > 0.8 ? 0.7 + 0.3 * Math.sin(time / 30) : 1));
+        if (k > 0) {
+            const pts = []; for (let i = 0; i <= 24; i++) { const a = -Math.PI / 2 + i / 24 * Math.PI * 2 * k; pts.push({ x: x + Math.cos(a) * 12, y: y + 2 + Math.sin(a) * 9 }); }
+            gl.lineStyle(4, col, 0.4); gl.strokePoints(pts, false); gl.lineStyle(1.5, 0xffffff, 0.95); gl.strokePoints(pts, false);
+        }
+        for (let q = 0; q < 2; q++) {   // charge streaming in from round it
+            const a = Math.random() * Math.PI * 2, r = 20 - ((time / 6 + q * 9) % 12);
+            gl.lineStyle(1.5, col, 0.5 + 0.4 * k).lineBetween(x + Math.cos(a) * r, y + 2 + Math.sin(a) * r * 0.7, x + Math.cos(a) * (r - 4), y + 2 + Math.sin(a) * (r - 4) * 0.7);
+        }
+    }
+    // an insulator clamp: a cool rubbery shell of light round its enemy, a sheen sliding over it
     _condInsDraw(gl, glow, x, y, time) {
-        const col = this._conductorCfg().MCOL.ins, py = y - 22;
-        for (let k = 0; k < 3; k++) { gl.lineStyle(2, col, 1); gl.strokeEllipse(x, py + k * 4, 12 - k * 2, 4); }
-        gl.lineStyle(1.5, col, 0.35 + 0.15 * Math.sin(time / 120)); gl.strokeEllipse(x, y + 4, 30, 14);
-        glow(x, y, 0.3, col, 0.35);
+        const col = this._conductorCfg().MCOL.ins;
+        glow(x, y + 2, 0.32, col, 0.3);
+        gl.lineStyle(3, col, 0.22); gl.strokeEllipse(x, y + 2, 32, 22);
+        gl.lineStyle(1.5, col, 0.55 + 0.2 * Math.sin(time / 120)); gl.strokeEllipse(x, y + 2, 32, 22);
+        const a = time / 400 % (Math.PI * 2), pts = []; for (let i = 0; i <= 6; i++) { const t = a + i * 0.12; pts.push({ x: x + Math.cos(t) * 15, y: y + 2 + Math.sin(t) * 10 }); }
+        gl.lineStyle(2, 0xffffff, 0.75); gl.strokePoints(pts, false);   // the sheen
+    }
+    // A capacitor letting go: a white-hot core, two rings, bolts flung out every way and on to what it hits, sparks,
+    // a shake as big as the charge was
+    _condBurstFx(x, y, hit, e, store) {
+        const C = this._conductorCfg(), T = this.TILE_SIZE, col = C.MCOL.cap, ADD = Phaser.BlendModes.ADD;
+        const g = this.add.graphics().setDepth(4.6).setBlendMode(ADD);
+        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + Math.random() * 0.4, r = C.CAP_R * T * (0.55 + Math.random() * 0.35); this._strokeFork(g, x, y, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.75, col, 0.95, 1); }
+        for (const o of hit) if (o !== e) { this._strokeFork(g, x, y, o.sprite.x, o.sprite.y - 4, 0xffffff, 1, 2); this._strokeFork(g, x, y, o.sprite.x, o.sprite.y - 4, col, 0.9, 1); }
+        this.tweens.add({ targets: g, alpha: 0, duration: 260, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
+        const core = this.add.image(x, y, 'vfx_glow').setTint(0xffffff).setBlendMode(ADD).setDepth(4.7).setScale(0.2);
+        this.tweens.add({ targets: core, scale: 1.1, alpha: 0, duration: 260, ease: 'Quad.easeOut', onComplete: () => core.destroy() });
+        VisualFX.ripple(this, x, y, 8, C.CAP_R * T, col, { duration: 340 });
+        VisualFX.ripple(this, x, y, 4, C.CAP_R * T * 0.7, 0xffffff, { duration: 220, alpha: 0.8 });
+        this._vfxFlash?.(x, y, 110, col, 320, 1);
+        this._condSpark(x, y, 30);
+        const big = Math.min(1, store / 30);
+        this.cameras.main.shake(90 + 60 * big + 15 * Math.min(4, hit.length), 0.003 + 0.004 * big);
+        Sfx.play(this, 'blburst'); Sfx.play(this, 'zap');
     }
     // a wire can't pass walls or a sealed room's laser gate
     _condClear(ax, ay, bx, by) {
@@ -1599,12 +1737,23 @@ class WeaponSystem {
             }
         }
         const on = wires.filter(w => w.on && w.e.sprite?.active && w.e.health > 0);
-        const pairs = this._condPairs = [];   // wired enemies close enough arc together, and each arc closes a circuit through you
-        for (const w of on) { w.was = w.closed; w.closed = false; }
-        for (let i = 0; i < on.length; i++) for (let j = i + 1; j < on.length; j++) {
-            const a = on[i].e.sprite, b = on[j].e.sprite;
-            if (Math.hypot(a.x - b.x, a.y - b.y) > C.ARC_R * T || !this._condClear(a.x, a.y, b.x, b.y)) continue;
-            pairs.push([on[i], on[j]]); on[i].closed = on[j].closed = true;
+        // the rings: oldest clamp first, each on to the nearest free one it arcs to; two or more make a circuit through you
+        const pairs = this._condPairs = [], rings = this._condRings = [], free = [...on].sort((a, b) => a.t0 - b.t0);
+        const arcs = (a, b) => { const p = a.e.sprite, q = b.e.sprite; return Math.hypot(p.x - q.x, p.y - q.y) <= C.ARC_R * T && this._condClear(p.x, p.y, q.x, q.y); };
+        for (const w of on) { w.was = w.closed; w.closed = false; w.ring = null; w.tap = false; w.hot = 1; }
+        while (free.length) {
+            const chain = [free.shift()];
+            for (;;) {
+                const last = chain[chain.length - 1].e.sprite;
+                let best = null, bd = Infinity;
+                for (const q of free) { const d = Math.hypot(q.e.sprite.x - last.x, q.e.sprite.y - last.y); if (d < bd && arcs(chain[chain.length - 1], q)) { bd = d; best = q; } }
+                if (!best) break;
+                chain.push(best); free.splice(free.indexOf(best), 1);
+            }
+            if (chain.length < 2) continue;
+            const hot = C.CIRCUIT + C.RING_STEP * (chain.length - 2);
+            rings.push(chain);
+            chain.forEach((w, i) => { w.closed = true; w.ring = chain; w.hot = hot; w.tap = i > 0 && i < chain.length - 1; if (i) pairs.push([chain[i - 1], w]); });
         }
         // Amped is earned through the circuit: a live or insulated clamp holds it while its loop is closed (an insulator
         // keeps it for INS_SC after), a capacitor never does, so reactions for your other elements come from building the loop
@@ -1613,6 +1762,9 @@ class WeaponSystem {
             for (const w of on) if (w.closed && !w.was) { this._condSpark(w.e.sprite.x, w.e.sprite.y - 4, 12); VisualFX.ripple(this, w.e.sprite.x, w.e.sprite.y - 4, 4, 22, 0xffffff, { duration: 220 }); }
             if (!on.some(w => w.was)) this.showStatusText(this.player.x, this.player.y - 30, 'CIRCUIT', '#fff08a');
         }
+        const big = Math.max(0, ...rings.map(r => r.length));   // a ring grown: say how big
+        if (big > 2 && big > (this._condRingMax || 0)) this.showStatusText(this.player.x, this.player.y - 30, `CIRCUIT x${big}`, '#fff08a');
+        this._condRingMax = big;
         // the lines that hurt what they cross: each wire, and arcs between wired enemies close enough
         const { x: sx, y: sy } = this._condTip(), segs = [];
         for (const w of wires) {
@@ -1629,11 +1781,11 @@ class WeaponSystem {
                 pts = this._condCurve(sx, sy, hx, hy, w.seed, time, C);
                 if (w.relax && surge < 1) { const t = 1 - (1 - surge) ** 3; pts = pts.map((p, i) => ({ x: w.relax[i].x + (p.x - w.relax[i].x) * t, y: w.relax[i].y + (p.y - w.relax[i].y) * t })); }   // it snaps taut
             }
-            this._condCable(g, gl, pts, time, w.seed, !w.on ? 0.5 : plucked ? 1.8 : w.closed ? 1.5 : 1, C.MCOL[w.mode]);
+            this._condCable(g, gl, pts, time, w.seed, !w.on ? 0.5 : plucked ? 1.8 : w.tap ? 0.25 : w.closed ? 1.5 : 1, C.MCOL[w.mode], w.tap ? 0.32 : 1);   // a tap: still connected, faded see-through (the ring's current runs through the arcs, not along it)
             w.pts = pts;   // (a current rides it: _condPulse)
-            if (w.closed) { gl.lineStyle(2, 0xffffff, 0.55 + 0.25 * Math.sin(time / 70)); gl.strokePoints(pts, false); }   // a closed loop runs white-hot
+            if (w.closed && !w.tap) { gl.lineStyle(2, 0xffffff, 0.55 + 0.25 * Math.sin(time / 70)); gl.strokePoints(pts, false); }   // a ring's legs run white-hot
             if (w.on) {
-                for (let q = 0; q < 2; q++) {   // current flowing out along it
+                if (!w.tap) for (let q = 0; q < 2; q++) {   // current flowing out along it
                     const t = ((time / 520) + q / 2 + w.seed) % 1, p = pts[Math.floor(t * (pts.length - 1))];
                     glow(p.x, p.y, 0.16, C.COL, 0.9); glow(p.x, p.y, 0.06, 0xffffff, 1);
                 }
@@ -1642,9 +1794,11 @@ class WeaponSystem {
                 glow(ex, ey, 0.28 + 0.05 * Math.sin(time / 60), C.COL, 0.55);
                 if (Math.random() < 0.12) this._condSpark(ex, ey, 1);
                 this._condLights.push({ x: ex, y: ey, r: 34, color: C.COL, a: 0.6, g: 0.25 }, { x: pts[8].x, y: pts[8].y, r: 26, color: C.COL, a: 0.35, g: 0.15 });
-                pts.hot = w.closed ? C.CIRCUIT : 1; segs.push(pts);
-                if (w.mode === 'cap') this._condCapDraw(gl, glow, w, ex, ey, time);
-                else if (w.mode === 'ins') this._condInsDraw(gl, glow, ex, ey, time);
+                if (!w.tap) { pts.hot = w.closed ? w.hot : 1; segs.push(pts); }
+                const bm = e._big ? ey : e.sprite.y + (0.72 - (e.sprite.originY ?? 0.5)) * (e.sprite.displayHeight || 38) - 2;   // its body's middle: a slime sits low in its frame
+                if (w.mode === 'cap') this._condCapDraw(gl, glow, w, ex, bm, time);
+                else if (w.mode === 'ins') this._condInsDraw(gl, glow, ex, bm, time);
+                else this._condLiveDraw(gl, glow, ex, bm, time);
                 if (surge < 1) {   // the bite: a white surge rushing down the line to the clamp
                     const p = pts[Math.floor(Math.min(1, surge * 1.6) * (pts.length - 1))];
                     gl.lineStyle(5, 0xffffff, 0.8 * (1 - surge)); gl.strokePoints(pts, false);
@@ -1660,6 +1814,15 @@ class WeaponSystem {
             }
         }
         if (on.length) glow(sx, sy, 0.2, C.COL, 0.7);
+        const icons = this._condIcons ||= new Map(), art = WeaponSystem.condArt(this);   // each clamp's icon, a badge at the left end of its enemy's health bar (above it, the current's damage numbers buried it)
+        for (const w of on) {
+            if (w.e._big) continue;
+            let ic = icons.get(w);
+            if (!ic?.active) icons.set(w, ic = this.add.image(0, 0, art[w.mode], 0).setDepth(4.5));
+            ic.setPosition(w.e.sprite.x - 20, w.e.sprite.y + (w.e._hpBarYOff || 0)).setVisible(w.e.sprite.visible);
+            if (w.mode === 'cap') ic.setFrame(Math.min(4, Math.floor((w.charge || 0) * 5)));
+        }
+        for (const [w, ic] of icons) if (!on.includes(w) || w.e._big) { ic.destroy(); icons.delete(w); }
         for (const m of [...(this._condMisses || [])]) {   // a missed throw: out, slack on the floor, reeled back
             const age = time - m.t0, fly = m.L / C.SLING * 1000, lie = 220, reel = 300;
             if (age > fly + lie + reel) { this._condMisses.splice(this._condMisses.indexOf(m), 1); continue; }
@@ -1713,7 +1876,7 @@ class WeaponSystem {
             const a = wa.e.sprite, b = wb.e.sprite, pts = this._arcPath(a.x, a.y - 4, b.x, b.y - 4, 9, 0.14);
             gl.lineStyle(10, C.COL, 0.2); gl.strokePoints(pts, false);
             this._strokeFork(gl, a.x, a.y - 4, b.x, b.y - 4, 0xffffff, 0.95, 2);
-            pts.hot = C.CIRCUIT; segs.push(pts);
+            pts.hot = wb.hot; segs.push(pts);
         }
         // who's touching a line (not a wired one)
         const wired = new Set(on.map(w => w.e)), touch = new Map();
@@ -1733,22 +1896,9 @@ class WeaponSystem {
         this._condTouch = touch;
         for (const w of on) if (w.mode === 'cap') {   // capacitors charge, then burst with what they stored
             w.charge = (w.charge || 0) + (delta || 16) / C.CAP_MS;
-            if (w.charge < 1) continue;
-            w.charge = 0;
-            const e = w.e, x = e.sprite.x, y = e.sprite.y - 4;
-            const hit = this._condTargets().filter(o => o.sprite?.active && o.health > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= C.CAP_R && (o === e || this._condClear(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y)));
-            const share = (C.CAP_BASE + C.CAP_X * w.store) * (1 + C.CAP_SPREAD * (hit.length - 1)) / Math.max(1, hit.length) * this.damageScaling;   // one charge, split between them
-            w.store = 0;
-            for (const o of hit) {
-                if (o !== e) { this._strokeFork(gl, x, y, o.sprite.x, o.sprite.y - 4, 0xffffff, 1, 2); this._strokeFork(gl, x, y, o.sprite.x, o.sprite.y - 4, C.MCOL.cap, 0.9, 1); }
-                this._condHit(o, share);
-            }
-            VisualFX.ripple(this, x, y, 8, C.CAP_R * T, C.MCOL.cap, { duration: 320 });
-            this._vfxFlash?.(x, y, 90, C.MCOL.cap, 300, 1);
-            this._condSpark(x, y, 18);
-            this.cameras.main.shake(70, 0.003);
-            Sfx.play(this, 'zap');
+            if (w.charge >= 1) this._condCapBurst(w);
         }
+        this._condHoverDraw(gl, on, time);
         // the bite
         if (on.length && time - (this._condTickAt || 0) >= C.TICK) {
             this._condTickAt = time;
@@ -1758,7 +1908,7 @@ class WeaponSystem {
             try {
                 for (const w of on) {
                     if (w.e.health <= 0) continue;
-                    const cur = C.WIRE_DMG * (w.closed ? C.CIRCUIT : 1);
+                    const cur = C.WIRE_DMG * (w.closed ? w.hot : 1);
                     if (w.mode === 'cap') { w.store += cur * this._condWebMul(on).dmg; continue; }   // banked, not taken
                     this._condHit(w.e, cur * web * (w.mode === 'ins' ? C.INS_TAKE : 1));
                     if (this._dmgLanded) landed++;
@@ -1776,17 +1926,15 @@ class WeaponSystem {
             else if (!this._pauseMenuOpen) this._conductorOverload(true);
         }
         // the meter over you
-        if (!wield) { this._condBar?.destroy(); this._condBar = null; return; }
+        if (!wield) { this._condBar?.destroy(); this._condBar = null; this._condModeIcon?.destroy(); this._condModeIcon = null; return; }
         const bar = (this._condBar?.active ? this._condBar : (this._condBar = this.add.graphics().setDepth(6))).clear();
         UIKit.rBar(bar, this.player.x - 18, this.player.y - 17, 40, Math.min(1, (time - (this._condPulseAt || 0)) / C.PULSE_CD), { col: C.COL, hot: C.HOT, dark: 0x14100a, time });   // R: the current, filling back
         if (this._condAuto) bar.lineStyle(1, C.HOT, 0.6 + 0.4 * Math.sin(time * 0.012)).strokeRect(this.player.x - 20, this.player.y - 19, 44, 8);   // lit while it's on
         const ix = this.player.x + 31, iy = this.player.y - 14, mode = this._condMode || 'live', mc = C.MCOL[mode];   // what the next clamp is
-        bar.fillStyle(0x14100a, 0.85).fillRect(ix - 7, iy - 6, 14, 12);
-        bar.lineStyle(1, mc, 1).strokeRect(ix - 7, iy - 6, 14, 12);
-        bar.lineStyle(1.5, mc, 1);
-        if (mode === 'live') bar.strokePoints([{ x: ix + 2, y: iy - 5 }, { x: ix - 2, y: iy }, { x: ix + 2, y: iy }, { x: ix - 2, y: iy + 5 }], false);   // a bolt
-        else if (mode === 'ins') for (let k = 0; k < 3; k++) bar.strokeEllipse(ix, iy - 3 + k * 3, 9 - k * 2, 2.5);   // a stack of insulator discs
-        else { bar.lineBetween(ix - 2, iy - 4, ix - 2, iy + 4); bar.lineBetween(ix + 2, iy - 4, ix + 2, iy + 4); bar.lineBetween(ix - 6, iy, ix - 2, iy); bar.lineBetween(ix + 2, iy, ix + 6, iy); }   // capacitor plates
+        bar.fillStyle(0x14100a, 0.85).fillRect(ix - 8, iy - 7, 16, 14);
+        bar.lineStyle(1, mc, 1).strokeRect(ix - 8, iy - 7, 16, 14);
+        const mi = this._condModeIcon?.active ? this._condModeIcon : (this._condModeIcon = this.add.image(0, 0, WeaponSystem.condArt(this).live).setDepth(6.1));   // its icon (the capacitor's shown full)
+        mi.setTexture(WeaponSystem.condArt(this)[mode], mode === 'cap' ? 4 : 0).setPosition(ix, iy);
     }
     // R: on (a current at once, then one each time it's ready: _conductorTick) or off. It won't go on with no wire out.
     _conductorToggle() {

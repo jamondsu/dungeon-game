@@ -1277,7 +1277,7 @@ class CreatureFX {
         };
         const vb = this.voltslimeBoss;
         if (vb?.body?.active && !vb.body._cfx) {
-            CreatureFX.face(this, vb.body, { mood: 'angry', hat: 'volt' });
+            CreatureFX.face(this, vb.body, { mood: 'angry', hat: vb._asleep ? null : 'volt' });   // asleep, its crown's on the floor (LevelManager._voltSleep)
             crown(vb.container, vb.body);
         }
         for (const b of [vb, this.voidSovereignBoss]) if (b?.active !== false) this._cfxGem(b?._shatterMarkVisual, !!b?._purpleMarked);

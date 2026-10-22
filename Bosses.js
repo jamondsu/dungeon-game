@@ -663,7 +663,7 @@ class BossFX {
         // a boss is yours to see when it's in the room you're in (on a level of rooms; a wall between you is not near),
         // or within 16 tiles where there are no rooms (the Tower's arena)
         const T = this.TILE_SIZE, ri = this.getCurrentPlayerRoom?.() ?? -1, R = this._roomGated?.() && ri >= 0 ? this.rooms?.[ri] : null;
-        const far = (x, y) => { const tx = Math.floor(x / T), ty = Math.floor(y / T); return R ? !(tx >= R.x && tx < R.x + R.w && ty >= R.y && ty < R.y + R.h) : Math.hypot(x / T - this.playerX, y / T - this.playerY) > 16; };
+        const far = (x, y) => { const tx = Math.floor(x / T), ty = Math.floor(y / T); return R ? !(tx >= R.x && tx < R.x + R.w && ty >= R.y && ty < R.y + R.h) : this._roomGated?.() || Math.hypot(x / T - this.playerX, y / T - this.playerY) > 16; };   // (in a corridor of a level of rooms: none)
         const vb = this.voltslimeBoss, vs = this.voidSovereignBoss, fc = this.fractureCore;
         const bars = [];   // every boss in reach gets its own bar, stacked: [key, frac, name, colour, line]
         if (fc?.active && fc.geode) bars.push(['core', fc.health / fc.maxHealth, 'THE GEODE', 0xffa63a, fc.state === 'vuln' ? 'its heart is exposed: hit it' : fc.state === 'armored' ? `${fc.plates.filter(p => !p.broken).length} plates  ·  fire, then ice, shatters one` : '', fc.container?.x ?? (fc.tileX + 0.5) * T, fc.container?.y ?? (fc.tileY + 0.5) * T]);
@@ -766,9 +766,29 @@ class BossFX {
         this._bfxCrisp(c);
     }
 
+    // A Z drifting up off something asleep, swaying, growing and fading
+    _bfxZzz(x, y, size) {
+        const z = this.add.text(x, y, Math.random() < 0.5 ? 'Z' : 'z', { fontSize: size + 'px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#d8e8ff', stroke: '#1a2030', strokeThickness: 3, resolution: 2 })
+            .setOrigin(0.5).setDepth(5).setAlpha(0).setScale(0.6);
+        this.tweens.add({ targets: z, y: y - 34, x: x + 14, scale: 1.2, duration: 1600, ease: 'Sine.easeOut' });
+        const all = this._zzzAll ||= new Set(); all.add(z);
+        this.tweens.add({ targets: z, alpha: { from: 0.95, to: 0 }, duration: 1600, ease: 'Quad.easeIn', onComplete: () => { all.delete(z); z.destroy(); } });
+        return z;
+    }
     _bfxVoltTick(b, now, dt) {
         const F = b._bfx, c = b.container, s = b.body, C = this._bfxCfg();
         this._bfxBossIce(b, 3.4, 9);
+        if (b._asleep) {   // dozing: dim, no arcs, eyes shut, its brood too, Zs drifting up
+            F.glow?.setAlpha(0.07); b.aura?.clear?.();
+            if (s?._cfx) s._cfx.expr = 'blink';
+            if (now - (F.zAt || 0) > 650) { F.zAt = now; this._bfxZzz(c.x + 16, c.y - 70, 22); }
+            for (const e of b._sleepers || []) {
+                if (!e.sprite?.active) continue;
+                if (e.sprite._cfx) e.sprite._cfx.expr = 'blink';
+                if (Math.random() < dt / 1400) this._bfxZzz(e.sprite.x + 6, e.sprite.y - 8, 11);
+            }
+            return;
+        }
         if (F.glow?.active) F.glow.setAlpha(0.26 + 0.1 * Math.sin(now * 0.011) + (F.slam && now < F.slam.end ? 0.25 : 0));
         if (!b.active || !s?.active) { b.aura?.clear?.(); return; }
         // sparks lifting off it now and then

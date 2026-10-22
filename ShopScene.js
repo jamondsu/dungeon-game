@@ -1942,7 +1942,7 @@ ShopScene.CATALOGUE = [
     { id: 'ball_lightning', name: 'Ball Lightning', element: 'lightning', cost: 400,
       desc: 'Slow orb. Forks chain enemy to enemy, and further through water. Embeds on contact, applying *Amped* to its host, then bursts into seekers.' },
     { id: 'conductor', name: 'Circuit Breaker', element: 'lightning', cost: 700,
-      desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. R turns on the *current*: down the wire nearest your aim, again each time it\'s ready, until you press R again or no wire is left. G picks the next clamp: *live wire*, *insulator* or *capacitor*. Lines shock what they touch, and wired enemies close together close a *circuit* for double. Wires stay on when you switch element.' },
+      desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. R turns on the *current*: down the wire nearest your aim, again each time it\'s ready, until you press R again or no wire is left. At a wire, tap G to change it between *live wire*, *insulator* and *capacitor*, or hold G to cut it: a live wire cracks its enemy, an insulator dazes what\'s near, a capacitor dumps its charge (G elsewhere picks your next clamp). Lines shock what they touch, and wired enemies close together chain into a *circuit*: double for two, more for each one you add. Wires stay on when you switch element.' },
     { id: 'cosmic_fists', name: 'Void Fists', element: 'cosmic', cost: 0, defaultWeapon: true,
       desc: 'Punch and dash to build *Momentum* (max 3).' },
     { id: 'barrier_staff', name: 'Barrier Staff', element: 'cosmic', cost: 150,
@@ -1996,11 +1996,11 @@ ShopScene.DPS = {   // re-measured 2026-10-20 (Ignition as the flamethrower: lit
 // What the *keywords* in the shop's descriptions mean (ShopScene._richText's popouts).
 ShopScene.KEYWORDS = {
     // (the guide's words: LevelSelectScene's guide pages use them too)
-    circuit: ['Circuit', 'With the Circuit Breaker: when two of your wired enemies arc to each other, the loop through you closes and glows white. Its wires and arc do double, and its live and insulated clamps are *Amped* while it stays closed.'],
+    circuit: ['Circuit', 'With the Circuit Breaker: wired enemies that arc to each other chain into a ring through you, out along your first wire, through each enemy in turn and home along the last (the wires to the ones in between go thin: the current runs through the arcs). A ring of two does double, and each enemy past that adds half again (three x2.5, four x3). Its live and insulated clamps are *Amped* while it stays closed.'],
     'live wire': ['Live Wire', 'The Circuit Breaker\'s plain clamp (yellow): current runs through the enemy and hurts it every 0.3s. Amped while its circuit is closed.'],
     insulator: ['Insulator (G)', 'A Circuit Breaker clamp (blue): its enemy takes only 30% of the current, and the whole web (lines, clamps, bursts and currents) does 35% less for each insulator on it, but every daze the web gives lasts 60% longer, and its enemy stays Amped longest. Control for damage.'],
     current: ['Current (R)', 'Press R: a big blob of current runs down the wire nearest your aim, on through the arcs, and back to you along the last wire. Every enemy it passes is dazed, takes a small hit, and is Amped for a few seconds (capacitors aside).'],
-    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). A capacitor is never Amped: it is all damage, no reactions.'],
+    capacitor: ['Capacitor (G)', 'A Circuit Breaker clamp (orange): the enemy takes no current; it stores it instead, and every 3s bursts, forking the stored charge out to every enemy within 2.5 tiles and sharing it between them (a little extra for each one it reaches). Cut its wire (hold G at it) to burst it at once. A capacitor is never Amped: it is all damage, no reactions.'],
     reaction: ['Reaction', 'A hit on an enemy carrying another element\'s status (burning, chilled or cubed, amped, hexed). It charges your ult three times as much as a plain hit.'],
     residue: ['Residue', 'A hit on an enemy another element hit in the last 1.5s, with no status of it left: ult charge x1.75.'],
     resist: ['Resistance', 'A ring under an enemy in an element\'s colour: that element\'s hits land at 40%. A ring split in two or three resists two or three elements. Nothing resists cosmic.'],

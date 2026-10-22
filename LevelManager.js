@@ -1307,6 +1307,44 @@ class LevelManager {
             projectiles:[], homingProjectiles:[],
             _lastAuraTime:0, _baseY:baseY, _activated:false,
         };
+        if (this.isLevel2 && !this.trainingRun && !this.towerRun) this._voltSleep(this.voltslimeBoss);
+    }
+    // The Gauntlet's Voltslime sleeps till you come in (HUD._bossIntro wakes it): grey, its crown on the floor beside it,
+    // a brood of speedy slimes dozing round it
+    _voltSleep(b) {
+        b._asleep = true;
+        LevelManager.grey(b.body, true);
+        const c = b.container;
+        b._floorCrown = this.add.image(c.x + 54, c.y + 6, LevelManager.voltCrownArt(this)).setDepth(2.9).setScale(3.6).setAngle(26);
+        b._sleepers = [];
+        for (const [dx, dy] of [[-3, -1], [3, -2], [-2, 3], [3, 2], [0, 4], [-4, 1]]) {
+            const x = b.tileX + dx, y = b.tileY + dy;
+            if (this.world[x]?.[y] !== this.FLOOR || this.getEnemyAt(x, y)) continue;
+            const e = this.createEnemy(x, y, 30);
+            e.tutorialRoomIndex = 6; e.isElectrical = true;
+            e._asleep = true; e._sleepHold = e._moveCdMult; e._moveCdMult = 999;
+            LevelManager.grey(e.sprite, true);
+            b._sleepers.push(e);
+        }
+    }
+    // Drained of colour (asleep), or back: a greyscale filter where there's WebGL (a tint only darkens a blue slime bluer)
+    static grey(sp, on) {
+        if (!sp?.active) return;
+        if (!sp.preFX) { if (on) sp.setTint(0x9a9aa4); else sp.clearTint(); return; }
+        if (on && !sp._grey) { sp._grey = sp.preFX.addColorMatrix(); sp._grey.grayscale(0.9); }
+        if (!on && sp._grey) { sp.preFX.remove(sp._grey); sp._grey = null; }
+    }
+    // Red with fury: the grey filter turned to a red one (it runs after any tint, so a tint alone came out grey)
+    static redden(sp, k = 1) {   // (k: how red, 0 grey to 1 furious)
+        if (!sp?.active) return;
+        if (!sp._grey) { sp.setTint(k < 1 ? 0xff9a90 : 0xff5a48); return; }
+        const L = [0.3, 0.59, 0.11], row = m => [m * L[0], m * L[1], m * L[2], 0, 0];
+        sp._grey.set([...row(1 + 0.7 * k), ...row(1 - 0.58 * k), ...row(1 - 0.64 * k), 0, 0, 0, 1, 0]);
+    }
+    // Its crown (the face sheet's 'crown' hat), on its own, to lie on the floor
+    static voltCrownArt(scene) {
+        const A = CreatureFX.art().hats.crown, pal = { k: '#2a1a10', ...A.pal };
+        return MenuArt.tex(scene, 'fx_volt_crown', A.rows[0].length, A.rows.length, P => A.rows.forEach((r, y) => [...r].forEach((ch, x) => { if (pal[ch]) P.put(x, y, parseInt(pal[ch].slice(1), 16)); })));
     }
 
     _voltslimeNextPhase() {

@@ -67,7 +67,8 @@ class GameScene extends Phaser.Scene {
         // shot, the run clock still) until Esc paused and unpaused it. Thaw it first.
         if (this.time?._heldNow != null) { this._frozenTweens = null; this._freezeClock?.(false); }   // (its frozen tweens died with the old level)
         this._pauseMenuOpen     = false;
-        this._bossIntroOn = false; this._bossIntroState = null; this._bossIntroSeen = {};   // every boss makes its entrance again on a new run
+        this._bossIntroOn = false; this._bossIntroState = null; this._bossIntroSeen = {}; this._zzzAll = null;
+        this._sfxHush = false;   // (a death or a win hushed the last run's sounds: Sfx.hush)   // every boss makes its entrance again on a new run
         this._bannerActive = false; this._bannerClosing = null; this._encounterQueue = [];   // nor a first-encounter card left open
         // Poison and roots end on timers that a restart throws away: a run that ended poisoned
         // left traps unable to poison again, and one that ended rooted left you unable to walk
@@ -744,7 +745,7 @@ class GameScene extends Phaser.Scene {
         // hold mouse to shoot fireballs continuously
         this.isPointerDown = false;
         this._jetLit = false; this._fuel = 1; this._fuelDryUntil = 0;
-        this._cinemaUntil = 0; this._fog = null; this._condAuto = false; this._condWires = []; this._condMisses = []; this._condPulses = []; this._condPairs = []; this._condMode = 'live'; this._condWeb = 0; this._condG = null; this._condGL = null; this._condBar = null; this._condPool = []; this._condSparks = null; this._condLights = [];   // the Conductor's
+        this._cinemaUntil = 0; this._fog = null; this._condAuto = false; this._condWires = []; this._condMisses = []; this._condPulses = []; this._condPairs = []; this._condRings = []; this._condRingMax = 0; this._condHold = null; this._condMode = 'live'; this._condWeb = 0; this._condG = null; this._condGL = null; this._condBar = null; this._condPool = []; this._condSparks = null; this._condLights = [];   // the Conductor's
         this._fracCharge = 0; this._fracMode = null; this._fracMarked = new Set(); this._fracBar = null; this._fracOrbs = null; this._fracSpin = false;   // Fractal Shard's R   // Ignition's flamethrower starts each run out, on a full tank
         this.pointerX = 0;
         this.pointerY = 0;
@@ -764,9 +765,11 @@ class GameScene extends Phaser.Scene {
         this._engineerBuildRing = null;
 
         // Q — the first gadget slot (F is the second)
-        this.input.keyboard.on('keydown-' + Settings.key('detonate'), () => {   // Ignition: every kindled mark goes off now
-            if (this._pauseMenuOpen || this._deathScreenActive || this._encased?.()) return;
-            if (this._condWielding?.()) {   // the Circuit Breaker
+        this.input.keyboard.on('keydown-' + Settings.key('detonate'), (ev) => {   // Ignition: every kindled mark goes off now
+            if (this._pauseMenuOpen || this._deathScreenActive || this._encased?.() || ev?.repeat) return;
+            if (this._condWielding?.()) {   // the Circuit Breaker: at a wire, a tap changes its kind and holding cuts it (_condHoverDraw); elsewhere, the next clamp's kind
+                const hv = this._condHover?.();
+                if (hv) { this._condHold = { w: hv, t0: this.time.now }; return; }
                 const M = ['live', 'ins', 'cap'], next = M[(M.indexOf(this._condMode || 'live') + 1) % 3];   // the next clamp: live, insulator, capacitor
                 this._condMode = next;
                 this.showStatusText(this.player.x, this.player.y - 30, { live: 'LIVE WIRE', ins: 'INSULATOR', cap: 'CAPACITOR' }[next], { live: '#fff08a', ins: '#9fdcff', cap: '#ffb070' }[next]);
@@ -774,6 +777,10 @@ class GameScene extends Phaser.Scene {
                 return;
             }
             this._kindleDetonateAll?.();
+        });
+        this.input.keyboard.on('keyup-' + Settings.key('detonate'), () => {   // let go before the hold cut it: a tap, so it changes kind
+            const H = this._condHold; this._condHold = null;
+            if (H && !H.cut && H.w.on) this._condRetype(H.w);
         });
         this.input.keyboard.on('keydown-' + Settings.key('gadget1'), () => {
             if (this._pauseMenuOpen || this._deathScreenActive) return;
@@ -1913,6 +1920,13 @@ class GameScene extends Phaser.Scene {
     _condClear(...a) { return WeaponSystem.prototype._condClear.call(this, ...a); }
     _condCapDraw(...a) { return WeaponSystem.prototype._condCapDraw.call(this, ...a); }
     _condInsDraw(...a) { return WeaponSystem.prototype._condInsDraw.call(this, ...a); }
+    _condCapBurst(...a) { return WeaponSystem.prototype._condCapBurst.call(this, ...a); }
+    _condHover(...a) { return WeaponSystem.prototype._condHover.call(this, ...a); }
+    _condHoverDraw(...a) { return WeaponSystem.prototype._condHoverDraw.call(this, ...a); }
+    _condRetype(...a) { return WeaponSystem.prototype._condRetype.call(this, ...a); }
+    _condCut(...a) { return WeaponSystem.prototype._condCut.call(this, ...a); }
+    _condLiveDraw(...a) { return WeaponSystem.prototype._condLiveDraw.call(this, ...a); }
+    _condBurstFx(...a) { return WeaponSystem.prototype._condBurstFx.call(this, ...a); }
     _condThrow(...a) { return WeaponSystem.prototype._condThrow.call(this, ...a); }
     _condResample(...a) { return WeaponSystem.prototype._condResample.call(this, ...a); }
     _condWebMul(...a) { return WeaponSystem.prototype._condWebMul.call(this, ...a); }
@@ -2677,6 +2691,10 @@ class GameScene extends Phaser.Scene {
     _bossBarsKeep(...a) { return HUD.prototype._bossBarsKeep.call(this, ...a); }
     _bossIntro(...a) { return HUD.prototype._bossIntro.call(this, ...a); }
     _bossIntroEnd(...a) { return HUD.prototype._bossIntroEnd.call(this, ...a); }
+    _voltWake(...a) { return HUD.prototype._voltWake.call(this, ...a); }
+    _scaredFace(...a) { return HUD.prototype._scaredFace.call(this, ...a); }
+    _voltSleep(...a) { return LevelManager.prototype._voltSleep.call(this, ...a); }
+    _bfxZzz(...a) { return BossFX.prototype._bfxZzz.call(this, ...a); }
 
     _checkRoomNameDisplay() {
         const room = this.getCurrentPlayerRoom();

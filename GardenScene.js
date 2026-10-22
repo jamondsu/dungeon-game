@@ -81,7 +81,7 @@ class GardenScene extends Phaser.Scene {
         const [bx0, by0] = GardenScene.BENCH;
         reg('BENCH', null, this.add.image(this._px(bx0), this._py(by0 + 1), MenuArt.tex(this, 'gd3_bench', 32, 22, P => this._paintBench(P))).setOrigin(0, 1).setScale(k).setDepth(this._py(by0 + 1)));
         const [cx0, cy0] = GardenScene.CHEST;
-        reg('CHEST', null, this.add.image(this._px(cx0) + T / 2, this._py(cy0 + 1), MenuArt.tex(this, 'gd3_chest', 16, 16, P => this._paintChest(P))).setOrigin(0.5, 1).setScale(k).setDepth(this._py(cy0 + 1)));
+        reg('CHEST', null, this.add.image(this._px(cx0) + T / 2, this._py(cy0 + 1) - 2 * k, MenuArt.tex(this, 'gd3_chest', 16, 16, P => this._paintChest(P))).setOrigin(0.5, 1).setScale(k).setDepth(this._py(cy0 + 1)));   // (up a little into its tile's empty top)
         const [dx0, dy0, dw, dh] = GardenScene.DOCK;
         this.add.image(this._px(dx0), this._py(dy0), MenuArt.tex(this, 'gd3_dock', dw * 16, dh * 16 + 6, P => this._paintDock(P, dw * 16, dh * 16 + 6))).setOrigin(0).setScale(k).setDepth(3);
         const dl = this.add.image(this._px(dx0 + dw) - 5 * k, this._py(dy0 + dh) - 32 * k, 'mn_glow').setTint(0xffc060).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(T * 2, T * 2).setAlpha(0.55).setDepth(this._py(dy0 + dh) + 1);
@@ -245,7 +245,8 @@ class GardenScene extends Phaser.Scene {
     // the slime's footprint (half a tile wide, a third deep) on open ground
     _free(x, y) {
         const hw = this.T * 0.25, hh = this.T * 0.14;
-        for (const [px, py] of [[x - hw, y - hh], [x + hw, y - hh], [x - hw, y + this.T * 0.26], [x + hw, y + this.T * 0.26]]) { const [tx, ty] = this._tile(px, py); if (!this._open(tx, ty)) return false; }
+        const lo = this.T * 0.1;   // (just under its feet: 0.26 stopped it a quarter tile short of anything below it, the chest most of all)
+        for (const [px, py] of [[x - hw, y - hh], [x + hw, y - hh], [x - hw, y + lo], [x + hw, y + lo]]) { const [tx, ty] = this._tile(px, py); if (!this._open(tx, ty)) return false; }
         return true;
     }
     // where the slime can stand

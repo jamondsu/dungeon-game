@@ -176,7 +176,7 @@ const Sfx = {
     // left alone it fades out and stops. LOOPS[name](ctx, t) builds it, started: { out (a gain at 0), vol, nodes }.
     _held: {},
     sustain(scene, name, ms = 300, level = 1) {
-        if (this.muted()) return;
+        if (this.muted() || scene?._sfxHush) return;
         const ctx = this._ctx(scene);
         if (!ctx || ctx.state !== 'running') return;
         const t = ctx.currentTime;
@@ -328,8 +328,21 @@ const Sfx = {
         };
     },
 
+    // Once you've died or won (HUD: gameOver, _showWinScreen) the fight goes quiet: only the end screens' own sounds play
+    // (these, or a call passing o.screen), and every held loop stops at once
+    HUSH_OK: new Set(['death', 'fanfare', 'hover', 'click', 'e_tick', 'pickup', 'pop', 'ready', 'deny', 'coin', 'whoosh']),
+    hush(scene) {
+        if (scene) scene._sfxHush = true;
+        for (const [k, h] of Object.entries(this._held)) {
+            h.dead = true; clearTimeout(h.timer);
+            for (const n of h.nodes || []) { try { n.stop(); } catch (e) {} }
+            try { h.out.disconnect(); } catch (e) {}
+            delete this._held[k];
+        }
+    },
     play(scene, name, o = {}) {
         if (this.muted()) return;
+        if (scene?._sfxHush && !o.screen && !this.HUSH_OK.has(name)) return;
         const ctx = this._ctx(scene);
         if (!ctx || ctx.state !== 'running') return;
         const now = ctx.currentTime * 1000, gap = this.GAP[name] ?? 0;
@@ -472,10 +485,76 @@ const Sfx = {
             this._noise(ctx, t, { filter: 'bandpass', f0: 500 * j, f1: 2400 * j, q: 1.2, dur: 0.17, vol: 0.32, attack: 0.02 });
         },
         // A boss's bar filling at its entrance: a rising whine over a swelling rumble.
-        bossbar(ctx, t, o, j) {
-            this._tone(ctx, t, { type: 'sawtooth', f0: 110, f1: 440, dur: 1.2, vol: 0.045, attack: 0.3 });
-            this._tone(ctx, t, { type: 'triangle', f0: 220, f1: 880, dur: 1.2, vol: 0.07, attack: 0.3 });
-            this._noise(ctx, t, { filter: 'lowpass', f0: 300, f1: 1500, dur: 1.2, vol: 0.08, attack: 0.5 });
+        bossbar(ctx, t, o, j) {   // (o.ms: how long it fills)
+            const d = (o.ms || 1200) / 1000;
+            this._tone(ctx, t, { type: 'sawtooth', f0: 110, f1: 440, dur: d, vol: 0.045, attack: d / 3 });
+            this._tone(ctx, t, { type: 'triangle', f0: 220, f1: 880, dur: d, vol: 0.07, attack: d / 3 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 300, f1: 1500, dur: d, vol: 0.08, attack: d / 2 });
+        },
+        // ── a boss's entrance (HUD._bossIntro) ──
+        // The black bars closing in: a deep boom, a rumble swelling under it, a dark chord hanging in the air
+        cine_open(ctx, t, o, j) {
+            this._tone(ctx, t, { type: 'sine', f0: 72, f1: 28, dur: 1.8, vol: 0.34, space: true });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 140, f1: 60, dur: 2.2, vol: 0.22, attack: 0.5 });
+            for (const f of [55, 65.4, 82.4]) this._tone(ctx, t + 0.05, { type: 'sawtooth', f0: f, f1: f * 0.99, dur: 2.2, vol: 0.022, attack: 0.6, space: true });
+        },
+        // A cartoon snore: a snorting draw in, a whistling breath out
+        snore(ctx, t, o, j) {
+            this._noise(ctx, t, { filter: 'bandpass', f0: 280 * j, f1: 560 * j, q: 2.5, dur: 0.6, vol: 0.36, attack: 0.35 });
+            this._tone(ctx, t + 0.1, { type: 'sawtooth', f0: 86 * j, f1: 104 * j, dur: 0.5, vol: 0.1, attack: 0.2 });
+            this._noise(ctx, t + 0.72, { filter: 'bandpass', f0: 520 * j, f1: 240 * j, q: 1.6, dur: 0.7, vol: 0.22, attack: 0.05 });
+            this._tone(ctx, t + 0.75, { type: 'sine', f0: 980 * j, f1: 720 * j, dur: 0.45, vol: 0.07 });
+        },
+        // Something thrown, whistling as it falls (o.ms: how long it flies)
+        whistle(ctx, t, o, j) {
+            this._tone(ctx, t, { type: 'sine', f0: 1500 * j, f1: 620 * j, dur: (o.ms || 550) / 1000, vol: 0.14, attack: 0.03 });
+        },
+        // A rock on a head: a hollow knock and a springy boing, heavier each time (o.n 1-3)
+        bonk(ctx, t, o, j) {
+            const n = o.n || 1, k = 1 - (n - 1) * 0.15;
+            this._tone(ctx, t, { type: 'triangle', f0: 880 * k * j, f1: 640 * k, dur: 0.07, vol: 0.2 + n * 0.04 });
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1100 * k, q: 3, dur: 0.05, vol: 0.18 });
+            this._tone(ctx, t + 0.03, { type: 'sine', f0: 170 * k * j, f1: 520 * k, dur: 0.18, vol: 0.12 });
+            this._tone(ctx, t + 0.2, { type: 'sine', f0: 520 * k * j, f1: 230 * k, dur: 0.3, vol: 0.1 });
+            if (n >= 3) this._tone(ctx, t, { type: 'sine', f0: 90, f1: 40, dur: 0.5, vol: 0.25, space: true });
+        },
+        // Fury building: a growl rising out of a swelling rumble
+        rage(ctx, t, o, j) {
+            this._tone(ctx, t, { type: 'sawtooth', f0: 58 * j, f1: 124 * j, dur: 1.3, vol: 0.15, attack: 0.7 });
+            this._tone(ctx, t, { type: 'square', f0: 29 * j, f1: 62 * j, dur: 1.3, vol: 0.08, attack: 0.7 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 180, f1: 900, dur: 1.3, vol: 0.28, attack: 0.9 });
+        },
+        // Steam puffing off a hot head
+        steam(ctx, t, o, j) {
+            for (let k = 0; k < 3; k++) this._noise(ctx, t + k * 0.22, { filter: 'bandpass', f0: 1500, f1: 900, q: 1.2, dur: 0.3, vol: 0.24, attack: 0.03 });
+        },
+        // Charged back to life: a surge climbing up through a crackle
+        surge(ctx, t, o, j) {
+            this._tone(ctx, t, { type: 'sawtooth', f0: 90 * j, f1: 720 * j, dur: 0.6, vol: 0.16, attack: 0.05 });
+            this._tone(ctx, t, { type: 'square', f0: 180 * j, f1: 1440 * j, dur: 0.6, vol: 0.07, attack: 0.05 });
+            this._noise(ctx, t + 0.1, { filter: 'bandpass', f0: 600, f1: 1800, q: 0.9, dur: 0.55, vol: 0.3, attack: 0.2 });
+        },
+        // An orchestral hit: a stacked brassy chord over a timpani boom (o.big: the bar filling's, bigger and brighter)
+        stinger(ctx, t, o, j) {
+            const up = o.big ? 1.5 : 1;
+            for (const f of [110, 130.8, 164.8, 220]) this._tone(ctx, t, { type: 'sawtooth', f0: f * up, f1: f * up * 0.995, dur: 1.4, vol: 0.045, space: true });
+            this._tone(ctx, t, { type: 'square', f0: 55 * up, dur: 1, vol: 0.05 });
+            this._tone(ctx, t, { type: 'sine', f0: 84, f1: 34, dur: 1, vol: 0.32, space: true });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 180, dur: 0.5, vol: 0.16 });
+        },
+        // Dun dun DUNNN
+        dundun(ctx, t, o, j) {
+            const hit = (at, f, dur) => {
+                this._tone(ctx, t + at, { type: 'sawtooth', f0: f, f1: f * 0.98, dur, vol: 0.07, space: true });
+                this._tone(ctx, t + at, { type: 'square', f0: f / 2, dur, vol: 0.04 });
+                this._tone(ctx, t + at, { type: 'sine', f0: f / 2, f1: f / 2.2, dur, vol: 0.16 });
+            };
+            hit(0, 146.8, 0.2); hit(0.26, 138.6, 0.2); hit(0.54, 110, 1.3);
+        },
+        // A nervous swallow: two little falling blips
+        gulp(ctx, t, o, j) {
+            this._tone(ctx, t, { type: 'sine', f0: 520 * j, f1: 260 * j, dur: 0.09, vol: 0.12 });
+            this._tone(ctx, t + 0.12, { type: 'sine', f0: 440 * j, f1: 200 * j, dur: 0.12, vol: 0.12 });
         },
         // The Frost Shield going up: an icy cast, crystal ringing round you.
         frost_shield(ctx, t, o, j) {
