@@ -76,6 +76,7 @@
     <script src="Bosses.js"></script>
     <script src="Tower.js"></script>
     <script src="Training.js"></script>
+    <script src="RhythmTrial.js"></script>
 
     <!-- Load scene files -->
     <script src="BootScene.js"></script>
@@ -92,7 +93,7 @@
         // No dependency guard here any more: UIKit, ElementResist and Transitions are
         // inlined above, so there is no external file of mine that can go missing. The
         // remaining <script src> tags are the project's own long-standing modules.
-        const RS = Settings.renderScale();   // Settings > GRAPHICS: low draws a big window at fewer pixels, stretched to fill it
+        const RS = Settings.renderScale();   // a big window drawn at fewer pixels (a little closer; fewer on low graphics), stretched to fill it
         const config = {
             type: Phaser.AUTO,
             width: Math.round(window.innerWidth * RS),

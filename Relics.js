@@ -107,14 +107,14 @@ const Relics = {
         { id: 'crimson_grail', name: 'Crimson Grail',     sh: 'blood', t: 3, col: 0xff2a4a, price: 2000, shape: 'chalice', m: { leech: 5, hp: -30 } },
         { id: 'undying_ember', name: 'Undying Ember',     sh: 'blood', t: 3, col: 0xff7a5a, price: 1900, shape: 'heart',   m: { heal: 0.4, hp: 40, dmg: 0.85 } },
         // ZEPHYR
-        { id: 'wind_charm',    name: 'Wind Charm',        sh: 'zephyr', t: 1, col: 0xa8e07a, price: 400,  m: { speed: 0.88, hp: -10 } },
-        { id: 'light_boots',   name: 'Light Boots',       sh: 'zephyr', t: 1, col: 0xc8a878, price: 180,  shape: 'boot',    m: { speed: 0.94 } },
-        { id: 'racing_heart',  name: 'Racing Heart',      sh: 'zephyr', t: 2, col: 0xff8a9a, price: 650,  shape: 'heart',   m: { momentum: 0.02, hp: -10 } },
-        { id: 'feather_cloak', name: 'Feather Cloak',     sh: 'zephyr', t: 2, col: 0xe0f0d0, price: 600,  shape: 'feather', m: { speed: 0.85, taken: 1.1 } },
+        { id: 'wind_charm',    name: 'Wind Charm',        sh: 'zephyr', t: 1, col: 0xa8e07a, price: 400,  m: { speed: 0.88, hp: -10, stamMax: 20 } },
+        { id: 'light_boots',   name: 'Light Boots',       sh: 'zephyr', t: 1, col: 0xc8a878, price: 180,  shape: 'boot',    m: { speed: 0.94, stamRegen: 1.15 } },
+        { id: 'racing_heart',  name: 'Racing Heart',      sh: 'zephyr', t: 2, col: 0xff8a9a, price: 650,  shape: 'heart',   m: { momentum: 0.02, hp: -10, stamRegen: 1.25 } },
+        { id: 'feather_cloak', name: 'Feather Cloak',     sh: 'zephyr', t: 2, col: 0xe0f0d0, price: 600,  shape: 'feather', m: { speed: 0.85, taken: 1.1, stamCost: 0.8 } },
         { id: 'quickdraw',     name: 'Quickdraw',         sh: 'zephyr', t: 2, col: 0xd0b060, price: 650,  shape: 'claw',    m: { opener: 1.3, speed: 0.95 } },
-        { id: 'trailblazer',   name: 'Trailblazer',       sh: 'zephyr', t: 3, col: 0x9af0c8, price: 2000, shape: 'boot',    m: { dashTrail: 1, taken: 1.1 } },
-        { id: 'stormrunner',   name: 'Stormrunner',       sh: 'zephyr', t: 3, col: 0x7af0b0, price: 1900, shape: 'boot',    m: { speed: 0.75, hp: -30, dmg: 1.1 } },
-        { id: 'phantom_step',  name: 'Phantom Step',      sh: 'zephyr', t: 3, col: 0xc0f0e0, price: 2000, shape: 'mirror',  m: { blink: 1, speed: 0.9, hp: -15 } },
+        { id: 'trailblazer',   name: 'Trailblazer',       sh: 'zephyr', t: 3, col: 0x9af0c8, price: 2000, shape: 'boot',    m: { dashTrail: 1, taken: 1.1, stamCost: 0.75 } },
+        { id: 'stormrunner',   name: 'Stormrunner',       sh: 'zephyr', t: 3, col: 0x7af0b0, price: 1900, shape: 'boot',    m: { speed: 0.75, hp: -30, dmg: 1.1, stamMax: 40 } },
+        { id: 'phantom_step',  name: 'Phantom Step',      sh: 'zephyr', t: 3, col: 0xc0f0e0, price: 2000, shape: 'mirror',  m: { blink: 1, speed: 0.9, hp: -15, stamRegen: 1.4 } },
         // FORTUNE
         { id: 'lucky_penny',   name: 'Lucky Penny',       sh: 'fortune', t: 1, col: 0xd8864a, price: 150,  shape: 'coin',    m: { pay: 1.1 } },
         { id: 'piggy_bank',    name: 'Piggy Bank',        sh: 'fortune', t: 1, col: 0xff9ab8, price: 250,  shape: 'chest',   m: { pay: 1.15, dmg: 0.95 } },
@@ -182,7 +182,7 @@ const Relics = {
     // a relic's upsides only, at SIPHON strength (on/off effects stay on: they're the costly half)
     _good(m) {
         const out = {}, k2 = this.SIPHON;
-        for (const k of this.MUL) if (m[k] != null) { const good = ['taken', 'speed', 'gadgetCd'].includes(k) ? m[k] < 1 : m[k] > 1; if (good) out[k] = 1 + (m[k] - 1) * k2; }
+        for (const k of this.MUL) if (m[k] != null) { const good = ['taken', 'speed', 'gadgetCd', 'stamCost'].includes(k) ? m[k] < 1 : m[k] > 1; if (good) out[k] = 1 + (m[k] - 1) * k2; }
         for (const k of this.ADD) if (m[k] > 0) out[k] = Math.round(m[k] * k2 * 1000) / 1000;
         for (const k of this.FLAG) if (m[k]) out[k] = 1;
         for (const e in (m.el || {})) if (m.el[e] > 1) (out.el ||= {})[e] = 1 + (m.el[e] - 1) * k2;
@@ -253,8 +253,8 @@ const Relics = {
     onShelf(sh, t) { return sh === 'corrupt' ? (t === 3 ? this.corrupted().map(c => this.def(c.id)).filter(Boolean) : []) : this.LIST.filter(r => r.sh === sh && r.t === t); },
 
     // ── EFFECTS ───────────────────────────────────────────────────────────────
-    MUL: ['dmg', 'taken', 'ult', 'ultDmg', 'react', 'speed', 'pay', 'boss', 'exec', 'opener', 'vsBurn', 'vsChill', 'vsWet', 'vsHex', 'chillOther', 'reactDmg', 'gadgetCd'],
-    ADD: ['hp', 'leech', 'thorns', 'heal', 'crit', 'critMult', 'proc', 'boom', 'switchNova', 'reactBoom', 'hpHit', 'thornsPct', 'armorDmg', 'momentum', 'drain', 'splash', 'luckBase', 'streak', 'jackpot', 'ultHeal', 'critArc', 'burnLeech', 'frostThorns'],   // (a key not listed here is DROPPED by combine: new relic effects go on a list)
+    MUL: ['dmg', 'taken', 'ult', 'ultDmg', 'react', 'speed', 'pay', 'boss', 'exec', 'opener', 'vsBurn', 'vsChill', 'vsWet', 'vsHex', 'chillOther', 'reactDmg', 'gadgetCd', 'stamCost', 'stamRegen'],
+    ADD: ['hp', 'leech', 'thorns', 'heal', 'crit', 'critMult', 'proc', 'boom', 'switchNova', 'reactBoom', 'hpHit', 'thornsPct', 'armorDmg', 'momentum', 'drain', 'splash', 'luckBase', 'streak', 'jackpot', 'ultHeal', 'critArc', 'burnLeech', 'frostThorns', 'stamMax'],   // (a key not listed here is DROPPED by combine: new relic effects go on a list)
     // on or off (worn or not), and the ones that carry their own settings
     FLAG: ['stormLens', 'hexReact', 'pierceRes', 'blink', 'dashTrail', 'luckGain', 'cursedDie', 'wheel', 'doubleCrit', 'coinFlip'],
     // Nothing: the identity every mods object starts from.
@@ -337,6 +337,8 @@ const Relics = {
             dashTrail: () => 'dashing leaves a trail of your element (lava, frost, sparks, cosmic fluid)',
             ultLong: v => `ults last ${pct(v)}% longer, but you can only cast one with all four gems full`,
             gadgetCd: v => v < 1 ? `gadgets recharge ${pct(v)}% faster` : `gadgets recharge ${pct(v)}% slower`,
+            stamMax: v => `${v > 0 ? '+' : '-'}${Math.abs(v)} max stamina`, stamCost: v => `dashes cost ${pct(v)}% ${v < 1 ? 'less' : 'more'} stamina`,
+            stamRegen: v => `stamina refills ${pct(v)}% ${v > 1 ? 'faster' : 'slower'}`,
             hpHit: v => `your hits add ${Math.round(v * 100)}% of your max HP`,
             thornsPct: v => `melee hits on you deal ${Math.round(v * 100)}% of the hit back`,
             armorDmg: v => `+${Math.round(v * 1000)}% damage per 10 armor (30% at most)`,

@@ -662,7 +662,7 @@ class CombatSystem {
     }
 
     killEnemy(enemy) {
-        if (enemy?._trainImmortal && enemy.sprite?.active) { enemy.health = enemy.maxHealth; this.updateEnemyHealthBar?.(enemy); return; }   // Training.js: a dummy fills back up instead
+        if (enemy?._trainImmortal && enemy.sprite?.active) { enemy.health = enemy.maxHealth; enemy._vfxHurt = true; this.updateEnemyHealthBar?.(enemy); return; }   // Training.js: a dummy fills back up instead (its bar shown: a one-shot refilled it before a frame saw it hurt)
         if (enemy?._isFrost && this._frostEncase?.(enemy)) return;   // LevelManager: a frost slime's first death is a statue
         if (enemy?._isEncased && this._encEncase?.(enemy)) return;   // LevelManager: an Encased Slime's first death is its stone
         if (enemy?._isEncased) this._encCleanup?.(enemy);   // its stone, its rubble: gone with it
@@ -670,7 +670,7 @@ class CombatSystem {
         if (enemy?._isLeech) this._leechDie(enemy);   // what it stole comes back
         if (enemy?._isCheer) this._cheerEnd(enemy, true);   // her stage folds away, and her cheer with it
         if (enemy && !enemy._achCounted) { enemy._achCounted = true; Achievements.onKill(this, enemy); }
-        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_leechRing', '_leechMark', '_diverTell', '_leechIcon', '_leechGlow', '_tideAura', '_tideFx', '_cheerFx', '_discFx', '_pomL', '_pomR', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
+        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_plateArmor', '_leechRing', '_leechMark', '_diverTell', '_leechIcon', '_leechGlow', '_tideAura', '_tideFx', '_cheerFx', '_discFx', '_pomL', '_pomR', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
         const _leech = this._mods?.leech;   // relics and Tower boons: kills heal
         const _con = Enchants.n(this.equippedWeapons?.[this.currentElement], 'contagion') / 100;   // Contagion: its burn and chill move on
         if (_con && enemy && !enemy._spread && ((enemy.burnStacks || 0) > 0 || (enemy.chillStacks || 0) > 0) && this.enemies) {
@@ -873,6 +873,7 @@ class CombatSystem {
         if (enemy.sprite) enemy.sprite.destroy();
         if (enemy.healthBarBg) enemy.healthBarBg.destroy();
         if (enemy.healthBarFill) enemy.healthBarFill.destroy();
+        enemy._hpBarY?.destroy(); enemy._hpBarG?.destroy();   // (an overheal's bars)
         this.clearBurnVisual(enemy);
 
         if (enemy.freezeVisuals) {
@@ -2732,7 +2733,7 @@ class CombatSystem {
         if (this.ignitionPierceTrails.length && time - (this._lavaSfxAt || 0) > 150) {
             this._lavaSfxAt = time;
             const n = this.ignitionPierceTrails.filter(t => Math.abs(t.tileX - this.playerX) <= 12 && Math.abs(t.tileY - this.playerY) <= 8).length;
-            if (n) { Sfx.sustain(this, 'lava', 320, Math.min(1, 0.35 + n / 12)); if (Math.random() < 0.25) Sfx.play(this, 'lava_pop'); }
+            if (n) { Sfx.sustain(this, 'lava', 320, Math.min(1, 0.35 + n / 12)); if (Math.random() < 0.25) Sfx.play(this, 'lava_pop'); else if (Math.random() < 0.1) Sfx.play(this, 'sear'); }
         }
         for (let i = this.ignitionPierceTrails.length - 1; i >= 0; i--) {
             const t = this.ignitionPierceTrails[i];

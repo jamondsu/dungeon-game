@@ -47,8 +47,9 @@ class GameScene extends Phaser.Scene {
         this._sceneData = data || {};
         this.tutorialStage = data?.tutorialStage ?? 0;
         // Water lives on the scene object, which outlives a restart: the Cistern's (or a flooded
-        // Tower floor's) tiles were still there, unseen, on the next level.
-        this.waterTiles = null; this.steamTiles = null;
+        // Tower floor's) tiles were still there, unseen, on the next level. Its pipes were too, still
+        // refilling their old tiles on the new map and flinging water from mouths out in the void.
+        this.waterTiles = null; this.steamTiles = null; this._pipes = null;
         // A Tower run (Tower.js): which floor, and what the run carries up from the last one
         this.towerRun = data?.tower ? { ...data.tower } : null;
         this.trainingRun = !!data?.training;   // Training.js: the Training Ground
@@ -68,7 +69,9 @@ class GameScene extends Phaser.Scene {
         if (this.time?._heldNow != null) { this._frozenTweens = null; this._freezeClock?.(false); }   // (its frozen tweens died with the old level)
         this._pauseMenuOpen     = false;
         this._bossIntroOn = false; this._bossIntroState = null; this._bossIntroSeen = {}; this._zzzAll = null;
-        this._sfxHush = false;   // (a death or a win hushed the last run's sounds: Sfx.hush)   // every boss makes its entrance again on a new run
+        this._sfxHush = false;   // (a death or a win hushed the last run's sounds: Sfx.hush)
+        this._rtrial = null;   // (a rhythm trial left running when the scene restarted)
+        if (typeof Music !== 'undefined') Music.unduckAll();   // (nor its music, if a time stop or a cutscene was cut short)   // every boss makes its entrance again on a new run
         this._bannerActive = false; this._bannerClosing = null; this._encounterQueue = [];   // nor a first-encounter card left open
         // Poison and roots end on timers that a restart throws away: a run that ended poisoned
         // left traps unable to poison again, and one that ended rooted left you unable to walk
@@ -551,8 +554,9 @@ class GameScene extends Phaser.Scene {
         this.DASH_TILES = 3;
         this.DASH_COOLDOWN = 1100;   // ms
         this.DASH_IFRAMES = 220;     // ms untouchable from the start of a dash
+        this.STAMINA = { MAX: 150, COST: 30, REGEN: 20, DELAY: 2000 };   // what a dash spends; refilled REGEN a second once you've not dashed for DELAY ms
         this.FIRE_DASH = { RUSH: 12, STAGGER: 300, OPEN_MS: 600, ERUPT: 16 };   // its hit going through, the stagger, the fissure's wait, each eruption's burst (x damageScaling)
-        this._dashReadyAt = 0; this._gluUntil = 0; this._gluFx = null; this._tutFalling = false;
+        this._dashReadyAt = 0; this._stam = null; this._stamAt = 0; this._stamDeniedAt = 0; this._gluUntil = 0; this._gluFx = null; this._tutFalling = false;
         this._dashInvulnUntil = 0;
         this._lastMoveDir = { x: 0, y: 1 };
 
@@ -672,7 +676,7 @@ class GameScene extends Phaser.Scene {
         // keys' direction there). Not polled with JustDown: a tap whose down and up land in the
         // same frame clears Key._justDown before update ever sees it, and the dash is lost.
         this.spaceKey = this.input.keyboard.addKey(Settings.key('dash'));
-        this.input.keyboard.on('keydown-' + Settings.key('dash'), () => { this._dashQueued = true; });
+        this.input.keyboard.on('keydown-' + Settings.key('dash'), () => { if (this._rtrial) RhythmTrial.jump(this); else this._dashQueued = true; });   // the rhythm trial: a jump (Shift still dashes)
 
         // Cosmic dash: Shift dashes toward the mouse (Space, holding cosmic, dashes the way you move)
         this.shiftKey = this.input.keyboard.addKey(Settings.key('cosmicDash'));
@@ -1029,9 +1033,34 @@ class GameScene extends Phaser.Scene {
         return 1 + 0.9 * f;
     }
 
+    // Stamina: every dash spends some (the cooldowns still pace them; this stops a run of them going on for ever), and it
+    // refills once you've stopped dashing a moment. Relics raise the most you hold (stamMax), cut a dash's cost (stamCost),
+    // quicken the refill (stamRegen). The bar sits under the health bar (Visuals._vfxDrawHud).
+    _stamMax() { return this.STAMINA.MAX + (this._mods?.stamMax || 0); }
+    _stamCost() { return this.STAMINA.COST * (this._mods?.stamCost ?? 1); }
+    _stamTick(delta) {
+        const max = this._stamMax();
+        if (this._stam == null) this._stam = max;
+        const up = this.time.now - this._stamAt >= this.STAMINA.DELAY ? this.STAMINA.REGEN * (this._mods?.stamRegen ?? 1) * (delta || 16) / 1000 : 0;
+        this._stam = Math.min(max, this._stam + up);
+    }
+    // a dash's worth spent, or false (and a nudge) when there isn't that much left
+    _stamSpend() {
+        if (this._rtrial) return true;   // the rhythm trial's dashes are on its beat
+        const cost = this._stamCost(), now = this.time.now;
+        if ((this._stam ?? this._stamMax()) < cost) {
+            if (now - this._stamDeniedAt > 500) { this.showStatusText(this.player.x, this.player.y - 30, 'OUT OF STAMINA', '#7fc8ff'); Sfx.play(this, 'deny'); }
+            this._stamDeniedAt = now;
+            return false;
+        }
+        this._stam = (this._stam ?? this._stamMax()) - cost; this._stamAt = now;
+        return true;
+    }
+
     _cosmicDashToward() {
         const now = this.time.now, HOP_GAP = 400;
         if (this._cosmicHops || now - (this.lastCosmicDashTime || 0) < this.cosmicDashCooldown) return;
+        if (!this._stamSpend()) return;
         this._cosmicHops = true;
         this._glideUntil = now + HOP_GAP + 150;   // the catch: you can't walk during it, from the first hop until just after the second
         this._cosmicHop();
@@ -1116,7 +1145,8 @@ class GameScene extends Phaser.Scene {
         const preUpdatePlayerX = this.playerX;
         const preUpdatePlayerY = this.playerY;
 
-        if (this.currentElement === 'cosmic' && this.shiftKey.isDown && !this.shiftWasDown && !this._csRooted?.() && !this._glued()) {   // (glued: falls to the queue below, which refuses it)
+        const shiftNow = this.shiftKey.isDown && !this.shiftWasDown && !(this._rtrial && !RhythmTrial.aimTile(this));   // (the rhythm trial: no dash due, no dash; it flew off toward the cursor)
+        if (this.currentElement === 'cosmic' && shiftNow && !this._csRooted?.() && !this._glued()) {   // (glued: falls to the queue below, which refuses it)
             // Use stored pointer + scroll for guaranteed world coords
             const mouseWorldX = this.pointerX + this.cameras.main.scrollX;
             const mouseWorldY = this.pointerY + this.cameras.main.scrollY;
@@ -1124,9 +1154,10 @@ class GameScene extends Phaser.Scene {
             const playerCenterY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
 
             this._cosmicDashToward();   // two hops toward the cursor, any angle
-        } else if (this.shiftKey.isDown && !this.shiftWasDown) this._dashQueued = true;   // any other element: Shift dashes like Space
+        } else if (shiftNow) this._dashQueued = true;   // any other element: Shift dashes like Space
         this.shiftWasDown = this.shiftKey.isDown;
 
+        this._stamTick(delta);
         this._updateGlide(this.time.now);   // a dash in progress (ElementSystem.js). The scene clock, as the dash set it: after a pause
         // the frame's `time` runs ahead of it by the pause, and the glide finished on its first frame
         // Dash: the way the movement keys point, or the way you last moved.
@@ -1138,19 +1169,23 @@ class GameScene extends Phaser.Scene {
         }
         if (this._dashQueued) {
             this._dashQueued = false;
+            // toward the cursor, to the nearest of the 4 directions (cosmic's hop alone goes any way); on a touch screen (or
+            // with the cursor right on you) the way the movement keys point, or the way you last moved
             let ddx = 0, ddy = 0;
-            if (this.keys.W.isDown) ddy = -1;
-            else if (this.keys.S.isDown) ddy = 1;
-            else if (this.keys.A.isDown) ddx = -1;
-            else if (this.keys.D.isDown) ddx = 1;
-            if (!ddx && !ddy) {
-                // standing still: toward the cursor (the way you last moved was often nowhere yet,
-                // so Space did nothing until you'd taken a step)
-                const ap = this._aim(this.input.activePointer), cam = this.cameras.main, T = this.TILE_SIZE;
-                const mx = ap.x + cam.scrollX - (this.playerX * T + T / 2), my = ap.y + cam.scrollY - (this.playerY * T + T / 2);
-                if (Math.abs(mx) + Math.abs(my) > 4) { if (Math.abs(mx) > Math.abs(my)) ddx = Math.sign(mx); else ddy = Math.sign(my); }
-                else { ddx = this._lastMoveDir.x; ddy = this._lastMoveDir.y; }
+            const ap = this._aim(this.input.activePointer), cam = this.cameras.main, T = this.TILE_SIZE;
+            const mx = ap.x + cam.scrollX - (this.playerX * T + T / 2), my = ap.y + cam.scrollY - (this.playerY * T + T / 2);
+            if (!this.isMobile && Math.abs(mx) + Math.abs(my) > 4) {
+                const a = Math.round(Math.atan2(my, mx) / (Math.PI / 2)) * (Math.PI / 2);
+                ddx = Math.round(Math.cos(a)); ddy = Math.round(Math.sin(a));
+            } else {
+                if (this.keys.W.isDown) ddy = -1;
+                else if (this.keys.S.isDown) ddy = 1;
+                else if (this.keys.A.isDown) ddx = -1;
+                else if (this.keys.D.isDown) ddx = 1;
+                if (!ddx && !ddy) { ddx = this._lastMoveDir.x; ddy = this._lastMoveDir.y; }
             }
+            const auto = this._rtrial && RhythmTrial.aim(this);   // the rhythm trial: a dash goes for the next slab, wherever the cursor is
+            if (auto) { ddx = auto[0]; ddy = auto[1]; }
             if (this.currentElement === 'cosmic') this._cosmicDashToward();
             else this.playerDash(ddx, ddy);
         }
@@ -1177,7 +1212,16 @@ class GameScene extends Phaser.Scene {
             const isCosmicCharging = this.currentElement === 'cosmic' && this.cosmicCharging;
 
             if (!isCosmicCharging && !this.thunderheadActive && !this._playerRooted && !this._csRooted?.()) {
-                if (this.keys.W.isDown) dy = -1;
+                if (this._rtrial) {   // the rhythm trial: a step per press (held, the quickened step stepped again, off the slab), a tap kept till the step's free
+                    const U = this._rtUsed ||= {};
+                    let pick = null;
+                    for (const [n, kx, ky] of [['W', 0, -1], ['S', 0, 1], ['A', -1, 0], ['D', 1, 0]]) {
+                        const k = this.keys[n];
+                        if (k.timeDown && k.timeDown !== U[n] && (!pick || k.timeDown > this.keys[pick[0]].timeDown)) pick = [n, kx, ky];
+                    }
+                    if (pick) { U[pick[0]] = this.keys[pick[0]].timeDown; dx = pick[1]; dy = pick[2]; }
+                }
+                else if (this.keys.W.isDown) dy = -1;
                 else if (this.keys.S.isDown) dy = 1;
                 else if (this.keys.A.isDown) dx = -1;
                 else if (this.keys.D.isDown) dx = 1;
@@ -1533,6 +1577,7 @@ class GameScene extends Phaser.Scene {
     updateLevel3(...a)           { return LevelManager.prototype.updateLevel3.call(this, ...a); }
     // Level 4 proxies
     updateLevel4(...a)           { return LevelManager.prototype.updateLevel4.call(this, ...a); }
+    _fractureEnemies(...a)       { return LevelManager.prototype._fractureEnemies.call(this, ...a); }
     spawnLevel4Enemies(...a)     { return LevelManager.prototype.spawnLevel4Enemies.call(this, ...a); }
     spawnLevel6Enemies(...a) { return LevelManager.prototype.spawnLevel6Enemies.call(this, ...a); }
     _spawnLevel4ChestRooms(...a) { return LevelManager.prototype._spawnLevel4ChestRooms.call(this, ...a); }
@@ -1755,9 +1800,8 @@ class GameScene extends Phaser.Scene {
     initPipes(...a)          { return LevelManager.prototype.initPipes.call(this, ...a); }
     _pipeTiles(...a)         { return LevelManager.prototype._pipeTiles.call(this, ...a); }
     _drawPipeMouths(...a)    { return LevelManager.prototype._drawPipeMouths.call(this, ...a); }
-    _startPipeDrips(...a)    { return LevelManager.prototype._startPipeDrips.call(this, ...a); }
     updatePipes(...a)        { return LevelManager.prototype.updatePipes.call(this, ...a); }
-    _pipeTrickle(...a)       { return LevelManager.prototype._pipeTrickle.call(this, ...a); }
+    _drawPipeWater(...a)     { return LevelManager.prototype._drawPipeWater.call(this, ...a); }
     _drownWeeds(...a)        { return LevelManager.prototype._drownWeeds.call(this, ...a); }
     _drownLockMark(...a)     { return LevelManager.prototype._drownLockMark.call(this, ...a); }
     _clearCisternGfx(...a)   { return LevelManager.prototype._clearCisternGfx.call(this, ...a); }
@@ -2972,6 +3016,7 @@ class GameScene extends Phaser.Scene {
             // dealt a flat 99999. Kept the behaviour, dropped the pretence of a choice.
             return CombatSystem.prototype.damageEnemy.call(this, enemy, 99999, element);
         }
+        if (enemy?._rhythmCore) damage *= RhythmTrial.coreMult(this);   // the rhythm trial's groove and breaks (RhythmTrial.js)
         return CombatSystem.prototype.damageEnemy.call(this, enemy, damage, element);
     }
 

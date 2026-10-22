@@ -668,14 +668,16 @@ class BossFX {
         const bars = [];   // every boss in reach gets its own bar, stacked: [key, frac, name, colour, line]
         if (fc?.active && fc.geode) bars.push(['core', fc.health / fc.maxHealth, 'THE GEODE', 0xffa63a, fc.state === 'vuln' ? 'its heart is exposed: hit it' : fc.state === 'armored' ? `${fc.plates.filter(p => !p.broken).length} plates  ·  fire, then ice, shatters one` : '', fc.container?.x ?? (fc.tileX + 0.5) * T, fc.container?.y ?? (fc.tileY + 0.5) * T]);
         else if (fc?.active) bars.push(['core', fc.health / fc.maxHealth, 'THE FRACTURE CORE', 0xffa63a, fc.state === 'vuln' ? 'exposed: hit it' : fc.state === 'rhythm' ? 'keep the rhythm' : `the floor is breaking  ·  ${this._fissures?.length || 0} cracks`, fc.container?.x ?? (fc.tileX + 0.5) * T, fc.container?.y ?? (fc.tileY + 0.5) * T]);
-        if (vb?.active && vb.container && !far(vb.container.x, vb.container.y)) bars.push(['volt', vb.hp / vb.maxHp, 'THE VOLTSLIME', 0x5ff0ff, '', vb.container.x, vb.container.y]);
-        if (vs?.active && vs.container && !far(vs.container.x, vs.container.y)) bars.push(['sovereign', vs.hp / vs.maxHp, 'THE VOID SOVEREIGN', 0xb45cff, '', vs.container.x, vs.container.y]);
+        // its ice on its bar: the chill building (full while it's cubed) and the health its cube's decay took (LevelManager._bossIceWatch)
+        const K = this._chillCfg?.(), ice = b => K ? { chill: b._iceCubeUntil ? 1 : Math.min(1, (b.chillStacks || 0) / K.MAX), cubed: !!b._iceCubeUntil, decay: (b._decayOwed || 0) / b.maxHp } : null;
+        if (vb?.active && vb.container && !far(vb.container.x, vb.container.y)) bars.push(['volt', vb.hp / vb.maxHp, 'THE VOLTSLIME', 0x5ff0ff, '', vb.container.x, vb.container.y, ice(vb)]);
+        if (vs?.active && vs.container && !far(vs.container.x, vs.container.y)) bars.push(['sovereign', vs.hp / vs.maxHp, 'THE VOID SOVEREIGN', 0xb45cff, '', vs.container.x, vs.container.y, ice(vs)]);
         const qs = (this.portals || []).filter(q => q.active && q.container && !far(q.container.x, q.container.y))
             .sort((a, b) => Math.hypot(a.tileX - this.playerX, a.tileY - this.playerY) - Math.hypot(b.tileX - this.playerX, b.tileY - this.playerY));
         for (const q of qs) bars.push(['queen' + this.portals.indexOf(q), q.hp / q.maxHp, 'THE QUEEN SLIME', 0xff3a4a, `brood ${q.ammo ?? 0} / ${q.ammoMax ?? 0}`, q.container.x, q.container.y]);
         const meet = !this.trainingRun && !this._bossIntroOn && !(R === null && this._roomGated?.()) && bars.find(b => !this._bossIntroSeen?.[b[0].replace(/\d+$/, '')]);   // one not met yet: its intro first (once you're in a room, not seen down a corridor)
         if (meet && this._bossIntro?.(meet[0], meet[2], meet[3], meet[5], meet[6])) return;
-        bars.slice(0, 4).forEach(([key, frac, name, col, line], i) => this._bossBar(frac, name, col, line, key, i));
+        bars.slice(0, 4).forEach(([key, frac, name, col, line, , , ice], i) => this._bossBar(frac, name, col, line, key, i, ice));
         this._bossBarsKeep(bars.slice(0, 4).map(b => b[0]));
     }
 

@@ -917,7 +917,7 @@ class MenuArt {
         // This runs during the level's create(), before Visuals.js sets the world camera's zoom,
         // so read the zoom it will have rather than the one it has now.
         const cam = scene.cameras.main;
-        const Z = (typeof VisualFX !== 'undefined' ? VisualFX.prototype._vfxCfg.call({}).ZOOM : 0) || cam.zoom || 1;
+        const Z = (typeof VisualFX !== 'undefined' ? VisualFX.worldZoom(scene) : 0) || cam.zoom || 1;
         // what the zoomed camera shows of a pinned object's coordinates
         const X0 = W / 2 - W / (2 * Z), X1 = W / 2 + W / (2 * Z), Y0 = H / 2 - H / (2 * Z), Y1 = H / 2 + H / (2 * Z);
         const VW = X1 - X0, VH = Y1 - Y0;

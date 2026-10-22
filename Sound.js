@@ -73,7 +73,7 @@ const Sfx = {
     // (CC0 from Freesound, Pixabay for the snap: see assets/sfx/CREDITS.md)
     SAMPLES: Object.fromEntries(['evil_laugh', 'snap', 'roar', 'roar_big', 'bossdie', 'lava_loop', 'lava_pop1', 'lava_pop2', 'sear', 'crackle',
         'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_dash', 'ice_dash', 'frost_shield', 'fire_burst', 'zap', 'magic_whoosh',
-        'splat1', 'splat2', 'splat_big', 'squelch', 'punch', 'sword', 'chest_open', 'potion', 'boom1', 'boom2', 'eshot', 'block', 'door', 'gust', 'wind',
+        'splat1', 'splat2', 'splat_big', 'squelch', 'punch', 'sword', 'potion', 'boom1', 'boom2', 'eshot', 'block', 'door', 'gust', 'wind',
         'lava_erupt', 'slam', 'thud', 'powerup', 'buzz', 'click'].map(k => [k, `assets/sfx/${k}.wav`])),
     _buf: {},
     _loadSamples(ctx) {
@@ -227,7 +227,9 @@ const Sfx = {
                 for (let i = 0; i < c.length; i++) c[i] = Math.tanh((i / (c.length - 1) * 2 - 1) * 5);
                 ws.curve = c; bp.type = 'bandpass'; bp.frequency.value = 450; bp.Q.value = 0.6; gg.gain.value = 0.6;
                 s.connect(ws); ws.connect(bp); bp.connect(gg); gg.connect(out);
-                return { out, vol: 0.6, nodes };
+                const hiss = this._band(ctx, t, out, nodes, 'bandpass', 2600, 1.4, 0.16);   // the sear over the boil: a sizzle, fluttering
+                this._lfo(ctx, t, nodes, 7, 0.1, hiss.g.gain);
+                return { out, vol: 0.38, nodes };
             }
             const sear = this._band(ctx, t, out, nodes, 'bandpass', 1100, 1.2, 0.25);
             const mid = this._band(ctx, t, out, nodes, 'bandpass', 380, 2.5, 0.7);
@@ -542,6 +544,15 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sine', f0: 84, f1: 34, dur: 1, vol: 0.32, space: true });
             this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 180, dur: 0.5, vol: 0.16 });
         },
+        // A sneaky giggle, "hehe": little bright notes bouncing up and down (o.n: how many, 1-3, cheekier each time)
+        giggle(ctx, t, o, j) {
+            const n = 2 + (o.n || 1);
+            for (let k = 0; k < n; k++) {
+                const f = (k % 2 ? 880 : 740) * (1 + 0.04 * k) * j;
+                this._tone(ctx, t + k * 0.09, { type: 'triangle', f0: f, f1: f * 0.86, dur: 0.07, vol: 0.09 });
+                this._tone(ctx, t + k * 0.09, { type: 'sine', f0: f * 2, f1: f * 1.7, dur: 0.05, vol: 0.03 });
+            }
+        },
         // Dun dun DUNNN
         dundun(ctx, t, o, j) {
             const hit = (at, f, dur) => {
@@ -755,6 +766,21 @@ const Sfx = {
             this._tone(ctx, t, { type: 'square', f0: 2400 * j, f1: 2000, dur: 0.05, vol: 0.03 });
             this._tone(ctx, t, { type: 'sine', f0: 3100 * j, dur: 0.09, vol: 0.03 });
         },
+        jump(ctx, t, o, j) {               // a springy hop off the ground (the rhythm trial's jump)
+            this._tone(ctx, t, { type: 'square', f0: 260 * j, f1: 720, dur: 0.12, vol: 0.04 });
+            this._tone(ctx, t, { type: 'sine', f0: 400 * j, f1: 1100, dur: 0.14, vol: 0.06 });
+        },
+        rt_hit(ctx, t, o, j) {             // a rhythm trial note landed: a bright pluck a step up a pentatonic scale (o.n climbs with the combo), a sparkle on a perfect
+            const P = [0, 2, 4, 7, 9], n = o.n || 0, f = 523.25 * Math.pow(2, (P[n % 5] + 12 * Math.floor(n / 5)) / 12);
+            this._tone(ctx, t, { type: 'triangle', f0: f, dur: 0.22, vol: 0.08 });
+            this._tone(ctx, t, { type: 'sine', f0: f * 2, dur: 0.12, vol: 0.035 });
+            if (o.perfect) this._tone(ctx, t + 0.02, { type: 'sine', f0: f * 3, dur: 0.18, vol: 0.025 });
+        },
+        quake(ctx, t, o, j) {              // the ground tearing open: a deep rumble under a hard crack, rubble scattering
+            this._tone(ctx, t, { type: 'sine', f0: 70 * j, f1: 30, dur: 0.5, vol: 0.3 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 80, dur: 0.55, vol: 0.26 });
+            this._crackle(ctx, t, { n: 8, spread: 0.22, f: 1800, vol: 0.12, q: 1.5 });
+        },
         boom(ctx, t, o, j) {               // an explosion: gadgets, collapses, bursts
             if (this._rec(ctx, t, { name: o.big ? 'boom2' : 'boom1', rate: 0.9 + Math.random() * 0.2, vol: o.big ? 0.4 : 0.32, lp: 4000 })) return;
             const big = o.big ? 1.6 : 1;
@@ -811,10 +837,15 @@ const Sfx = {
             this._tone(ctx, t, { type: 'square', f0: 140, dur: 0.08, vol: 0.06 });
             this._tone(ctx, t + 0.09, { type: 'square', f0: 110, dur: 0.1, vol: 0.06 });
         },
-        chest(ctx, t, o, j) {                    // a lid creaking open, then the sparkle
-            if (this._rec(ctx, t, { name: 'chest_open', vol: 0.5 })) { this._tone(ctx, t + 0.5, { type: 'sine', f0: 1320, dur: 0.3, vol: 0.04 }); this._tone(ctx, t + 0.58, { type: 'sine', f0: 1760, dur: 0.35, vol: 0.035 }); return; }   // (and a little sparkle)
-            this._noise(ctx, t, { filter: 'bandpass', f0: 300, f1: 700, q: 5, dur: 0.25, vol: 0.12, attack: 0.05 });
-            [784, 988, 1175, 1568].forEach((f, i) => this._tone(ctx, t + 0.22 + i * 0.07, { type: 'sine', f0: f, dur: 0.3, vol: 0.06 }));
+        chest(ctx, t, o, j) {                    // a chest popping open: the latch clacks, the lid thumps back, a bright chime climbs and
+                                                 // rings out, and coins jingle as they spill (the creaking recording sounded like a door)
+            this._noise(ctx, t, { filter: 'bandpass', f0: 2600, q: 4, dur: 0.03, vol: 0.12 });
+            this._tone(ctx, t, { type: 'square', f0: 1400, f1: 900, dur: 0.03, vol: 0.03 });
+            this._tone(ctx, t + 0.06, { type: 'sine', f0: 170, f1: 70, dur: 0.14, vol: 0.2 });
+            this._noise(ctx, t + 0.06, { filter: 'lowpass', f0: 900, f1: 200, dur: 0.1, vol: 0.1 });
+            [523, 659, 784, 1047, 1319].forEach((f, i) => this._tone(ctx, t + 0.12 + i * 0.045, { type: 'triangle', f0: f * j, dur: 0.28, vol: 0.06 }));
+            [1047, 1319, 1568, 2093].forEach(f => this._tone(ctx, t + 0.36, { type: 'sine', f0: f * j, dur: 0.7, vol: 0.03 }));
+            for (let k = 0; k < 8; k++) this._tone(ctx, t + 0.3 + k * 0.05 + Math.random() * 0.03, { type: 'square', f0: 2600 + Math.random() * 1600, dur: 0.035, vol: 0.016 });
         },
         clear(ctx, t, o, j) {                    // a room cleared: doors grinding open
             if (this._rec(ctx, t, { name: 'door', vol: 0.45, lp: 5000 })) return;
@@ -1117,7 +1148,10 @@ const Music = {
     setMuted(m) { try { localStorage.setItem('musicMuted', m ? 'true' : 'false'); } catch (e) {} this._applyVolume(); },
     _level() { return this.muted() || this._ducked ? 0 : this.volume() * 0.55; },
     // Cut the music out for a moment (a charge building) and bring it back after.
-    duck(on) { this._ducked = !!on; this._applyVolume(); },
+    // The music drops out while anything that wants silence holds it (a time stop, a cutscene): each holds by `why`,
+    // so one ending can't bring it back under another. unduckAll: a new level never starts silent.
+    duck(on, why = '_') { const w = this._duckWhy ||= new Set(); if (on) w.add(why); else w.delete(why); this._ducked = w.size > 0; this._applyVolume(); },
+    unduckAll() { this._duckWhy?.clear(); this._ducked = false; this._applyVolume(); },
     _applyVolume() {
         const b = this._bus;
         if (b) { const t = b.context.currentTime; b.gain.cancelScheduledValues(t); b.gain.setTargetAtTime(this._level(), t, 0.1); }

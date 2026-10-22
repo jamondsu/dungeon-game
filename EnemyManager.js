@@ -111,10 +111,7 @@ class EnemyManager {
 
         const healthPercent = enemy.health / enemy.maxHealth;
         const maxWidth = 24;
-        // overhealed (a healer totem): a full bar in gold, not one running off past its frame
-        const over = healthPercent > 1.001;
-        enemy.healthBarFill.width = maxWidth * Phaser.Math.Clamp(healthPercent || 0, 0, 1);
-        if (over !== !!enemy._hpOver && enemy._vfxBar) { enemy._hpOver = over; enemy.healthBarFill.setFillStyle?.(over ? 0xffd34a : 0xff4560, 1); }
+        enemy.healthBarFill.width = maxWidth * Phaser.Math.Clamp(healthPercent || 0, 0, 1);   // (overheal is drawn over it: Visuals' bars)
 
         const _byo = enemy._hpBarYOff || 0;
         enemy.healthBarBg.x = enemy.sprite.x;
@@ -623,6 +620,41 @@ class EnemyManager {
             // Hexed (Cosmic.js, Void Blade's Retribution): 40% slower
             if ((enemy._csHexUntil || 0) > currentTime) moveCooldown = Math.round(moveCooldown / 0.6);
 
+            // a healer slime's heal, on its own clock (a second), not its slow steps' (it only came on a step: every 1.3-1.8s)
+            if (enemy.isHealerTotem) {
+                if (!enemy.isFrozen && currentTime - enemy._healerLastTick >= enemy._healerTickInterval) {
+                    enemy._healerLastTick = currentTime;
+                    if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
+                    for (const ally of this.enemies) {
+                        if (!ally.sprite?.active || ally === enemy) continue;
+                        const adx = Math.abs(ally.x - enemy.x), ady = Math.abs(ally.y - enemy.y);
+                        if (adx + ady > enemy._healerRange) continue;
+                        // past full: up to three times its health (its bar: yellow over the red, green over the yellow; Visuals)
+                        ally.health = Math.min(ally.maxHealth * 3, ally.health + ally.maxHealth * enemy._healerHealFrac);
+                        this.updateEnemyHealthBar(ally);
+                        // Green aura flash on healed enemy + plus sign above head
+                        if (!ally._lastHealPuff4 || currentTime - ally._lastHealPuff4 > 500) {
+                            ally._lastHealPuff4 = currentTime;
+                            // Aura ring flash around enemy
+                            const auraFlash = this.add.graphics().setDepth(3.0);
+                            auraFlash.x = ally.sprite.x; auraFlash.y = ally.sprite.y;
+                            auraFlash.lineStyle(2, 0x44ff88, 0.85);
+                            auraFlash.strokeCircle(0, 0, 12);
+                            auraFlash.fillStyle(0x44ff88, 0.18);
+                            auraFlash.fillCircle(0, 0, 12);
+                            this.tweens.add({ targets: auraFlash, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => auraFlash.destroy() });
+                            // Small green plus sign rising above head
+                            const plus = this.add.graphics().setDepth(3.5);
+                            plus.fillStyle(0x44ff88, 0.95);
+                            plus.fillRect(-2, -5, 4, 10);
+                            plus.fillRect(-5, -2, 10, 4);
+                            plus.x = ally.sprite.x; plus.y = ally.sprite.y - 14;
+                            this.tweens.add({ targets: plus, y: plus.y - 10, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => plus.destroy() });
+                        }
+                    }
+                }
+            }
+
             if (currentTime - enemy.lastMoveTime < moveCooldown) {
                 continue;
             }
@@ -659,39 +691,6 @@ class EnemyManager {
                 if (enemy._healerAura?.active) { enemy._healerAura.x = enemy.sprite.x; enemy._healerAura.y = enemy.sprite.y; VisualFX.clipAura(this, enemy._healerAura); }
                 if (enemy._totemGfx?.active)   { enemy._totemGfx.x  = enemy.sprite.x; enemy._totemGfx.y  = enemy.sprite.y; }
                 if (enemy._orbGlow?.active)    { enemy._orbGlow.x   = enemy.sprite.x; enemy._orbGlow.y   = enemy.sprite.y - 17; }
-                if (!enemy.isFrozen && currentTime - enemy._healerLastTick >= enemy._healerTickInterval) {
-                    enemy._healerLastTick = currentTime;
-                    if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
-                    for (const ally of this.enemies) {
-                        if (!ally.sprite?.active || ally === enemy) continue;
-                        const adx = Math.abs(ally.x - enemy.x), ady = Math.abs(ally.y - enemy.y);
-                        if (adx + ady > enemy._healerRange) continue;
-                        ally.health += enemy._healerHealPerTick;
-                        // Overheal can stack very high (up to 10× base) — the gold bar is
-                        // log-scaled to show the range, and higher overheal decays faster.
-                        if (ally.health > ally.maxHealth * 10) ally.health = ally.maxHealth * 10;
-                        this.updateEnemyHealthBar(ally);
-                        // Green aura flash on healed enemy + plus sign above head
-                        if (!ally._lastHealPuff4 || currentTime - ally._lastHealPuff4 > 500) {
-                            ally._lastHealPuff4 = currentTime;
-                            // Aura ring flash around enemy
-                            const auraFlash = this.add.graphics().setDepth(3.0);
-                            auraFlash.x = ally.sprite.x; auraFlash.y = ally.sprite.y;
-                            auraFlash.lineStyle(2, 0x44ff88, 0.85);
-                            auraFlash.strokeCircle(0, 0, 12);
-                            auraFlash.fillStyle(0x44ff88, 0.18);
-                            auraFlash.fillCircle(0, 0, 12);
-                            this.tweens.add({ targets: auraFlash, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => auraFlash.destroy() });
-                            // Small green plus sign rising above head
-                            const plus = this.add.graphics().setDepth(3.5);
-                            plus.fillStyle(0x44ff88, 0.95);
-                            plus.fillRect(-2, -5, 4, 10);
-                            plus.fillRect(-5, -2, 10, 4);
-                            plus.x = ally.sprite.x; plus.y = ally.sprite.y - 14;
-                            this.tweens.add({ targets: plus, y: plus.y - 10, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => plus.destroy() });
-                        }
-                    }
-                }
                 if (!enemy._mobile) continue;   // a fixed totem stays put; the healer slime walks on
             }
 
@@ -2009,9 +2008,9 @@ class EnemyManager {
         e.isHealerTotem = true; e._mobile = true;
         e._moveCdMult = 1.8;
         e._healerRange = 6;
-        e._healerTickInterval = 500;
+        e._healerTickInterval = 1000;
         e._healerLastTick = 0;
-        e._healerHealPerTick = 8;
+        e._healerHealFrac = 0.2;   // of each ally's own max health, a tick (a second)
         const k = LevelManager.bodyKey(this, 'healer');   // mint
         if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
         e._healerAura = VisualFX.aura(this, e.sprite.x, e.sprite.y, e._healerRange * this.TILE_SIZE, 0x44ff88, { alpha: 0.9 });

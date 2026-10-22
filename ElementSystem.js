@@ -1354,6 +1354,7 @@ class ElementSystem {
         const first = list.reduce((a, b) => Math.hypot(a.sprite.x - p.x, a.sprite.y - p.y) <= Math.hypot(b.sprite.x - p.x, b.sprite.y - p.y) ? a : b);
         const rest = list.filter(e => e !== first).sort(() => Math.random() - 0.5), order = [first, ...rest].slice(0, C.MAX_HOPS);
         this._forkStop = true; this._freezeClock?.(true);   // time stops: the scene clock, its tweens and every animation
+        Music.duck(true, 'fork');   // and the music with it
         const W = this.scale.width, H = this.scale.height, ADD = Phaser.BlendModes.ADD, home = { x: p.x, y: p.y - 6 };
         const cam = this.cameras.main, z0 = cam.zoom, f0 = cam._follow, lx = cam.lerp.x, ly = cam.lerp.y;
         const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x0a0a24, 0).setScrollFactor(0).setDepth(19);
@@ -1367,7 +1368,7 @@ class ElementSystem {
         const restoreCam = () => { if (f0) cam.startFollow(f0, false, lx, ly); };
         const step = () => {
             const now = this.game.loop.time, e = now - t0;   // (real time: the scene clock is stopped)
-            if (!this.player?.active) { done(); combos.forEach(c => c.destroy()); restoreCam(); cam.setZoom(z0); this._forkStop = false; this._freezeClock?.(false); return; }
+            if (!this.player?.active) { done(); combos.forEach(c => c.destroy()); restoreCam(); cam.setZoom(z0); this._forkStop = false; this._freezeClock?.(false); Music.duck(false, 'fork'); return; }
             if (stage === 'stop') {   // a held beat of stillness after the snap, the world draining dark
                 dim.setAlpha(0.4 * Math.min(1, e / 120));
                 if (e >= C.STOP_MS) { stage = 'transform'; t0 = now; Sfx.play(this, 'e_thunder'); p.setTintFill?.(0xfff6a0); }
@@ -1402,7 +1403,7 @@ class ElementSystem {
                 drawWeb(1);
                 cam.setZoom(z0 * (1 + (C.ZOOM - 1) * (1 - Math.min(1, e / C.SNAP_MS))));
                 if (e >= C.SNAP_MS && !this._forkSnapped) { this._forkSnapped = true; this._forkSnapFx(home.x, home.y); restoreCam(); }
-                if (e >= C.SNAP_MS + C.BOOM_MS) { this._forkSnapped = false; cam.setZoom(z0); stage = 'boom'; t0 = now; this._forkStop = false; this._freezeClock?.(false); this._forkIgnite(order, segs, combos); }
+                if (e >= C.SNAP_MS + C.BOOM_MS) { this._forkSnapped = false; cam.setZoom(z0); stage = 'boom'; t0 = now; this._forkStop = false; this._freezeClock?.(false); Music.duck(false, 'fork'); this._forkIgnite(order, segs, combos); }
             } else if (stage === 'boom') {   // the web goes off: white-hot and thick, then fading
                 const k = e / 700; dim.setAlpha(Math.max(0, 0.4 - k));
                 drawWeb(2.4 - k * 1.6); web.setAlpha(Math.max(0, 1 - k));
@@ -4808,7 +4809,8 @@ class ElementSystem {
     // It leaves cosmic fluid on the tiles it crossed, afterimages along the way, and a moment untouchable.
     cosmicDashAim() {
         const T = this.TILE_SIZE, R = (this.cosmicDashDistance || 3) + 0.5, cam = this.cameras.main, ap = this._aim(this.input.activePointer);
-        const cx = (ap.x + cam.scrollX) / T - 0.5, cy = (ap.y + cam.scrollY) / T - 0.5, px = this.playerX, py = this.playerY, r = Math.ceil(R);
+        const tg = this._rtrial && RhythmTrial.aimTile(this, this._cosmicHops);   // the rhythm trial: the hop goes for the next slab, wherever the cursor is (the first jump, wide, for its turn)
+        const cx = tg ? tg.x : (ap.x + cam.scrollX) / T - 0.5, cy = tg ? tg.y : (ap.y + cam.scrollY) / T - 0.5, px = this.playerX, py = this.playerY, r = Math.ceil(R);
         const line = (dx, dy) => { const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) * 3)), out = []; for (let k = 1; k <= n; k++) { const x = Math.round(px + dx * k / n), y = Math.round(py + dy * k / n); if (!out.length || out[out.length - 1].x !== x || out[out.length - 1].y !== y) out.push({ x, y }); } return out; };
         let best = null, bd = Infinity;
         for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
@@ -4828,7 +4830,8 @@ class ElementSystem {
         this.tweens.killTweensOf(this.player); this._glide = null;
         this.playerX = best.x; this.playerY = best.y;
         const x1 = best.x * T + T / 2, y1 = best.y * T + T / 2 + this.SLIME_Y_OFFSET;
-        for (let k = 0; k < 4; k++) { const f = k / 4, g = this.add.sprite(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, this.player.texture.key, this.player.frame.name).setScale(this.player.scaleX, this.player.scaleY).setFlipX(this.player.flipX).setDepth(this.player.depth - 0.01).setTintFill(k % 2 ? 0xb47cff : 0xff7ae8).setAlpha(0.55 - k * 0.1).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: g, alpha: 0, scaleX: g.scaleX * 0.6, duration: 300, delay: k * 20, onComplete: () => g.destroy() }); }
+        const lift = this._rtrial ? Math.hypot(x1 - x0, y1 - y0) * 0.45 : 0, nG = this._rtrial ? 8 : 4;   // (the rhythm trial: afterimages up an arc, a jump)
+        for (let k = 0; k < nG; k++) { const f = k / nG, g = this.add.sprite(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f - lift * 4 * f * (1 - f), this.player.texture.key, this.player.frame.name).setScale(this.player.scaleX, this.player.scaleY).setFlipX(this.player.flipX).setDepth(this.player.depth - 0.01).setTintFill(k % 2 ? 0xb47cff : 0xff7ae8).setAlpha(0.55 - k * 0.4 / nG).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: g, alpha: 0, scaleX: g.scaleX * 0.6, duration: 300, delay: k * 20, onComplete: () => g.destroy() }); }
         this.player.setPosition(x1, y1);
         this._vfxHop?.(this.player);
         this.player.setTint(0xcc44ff); this.time.delayedCall(120, () => { if (this.player?.active) this.player.clearTint(); });
@@ -4913,7 +4916,7 @@ class ElementSystem {
         }
     }
     // what each element's dash looks like
-    _dashFx(el, x0, y0, x1, y1, col) {
+    _dashFx(el, x0, y0, x1, y1, col, ice = []) {
         const T = this.TILE_SIZE, D = 3.4, L = Math.hypot(x1 - x0, y1 - y0) || 1, nx = (x1 - x0) / L, ny = (y1 - y0) / L, p = this.player, ADD = Phaser.BlendModes.ADD;
         const along = (u, off = 0) => [x0 + (x1 - x0) * u - ny * off, y0 + (y1 - y0) * u + nx * off];
         const mote = (x, y, c, size, ms, vx = 0, vy = 0, add = true, d = D + 0.1) => {
@@ -4945,17 +4948,13 @@ class ElementSystem {
             // a frost glide: the tiles it crosses freeze over, frost dust and snowflakes trail it, rime creeps out where it stops
             // every tile it crosses freezes over in turn: a slab of ice the size of the tile, bevelled, cracked, with a glint,
             // that sets as the slime passes and thaws a second later
-            const n0 = Math.max(1, Math.round(L / T));
-            for (let k = 0; k <= n0; k++) {
-                const [cx, cy] = along(k / n0);
-                for (const w of [0, -1, 1]) {   // the path and a tile either side of it
-                const tx = Math.floor(cx / T) + Math.round(-ny * w), ty = Math.floor((cy + 4) / T) + Math.round(nx * w);
+            const far = Math.max(1, ...ice.map(c => c[2]));
+            for (const [tx, ty, a, off] of ice) {   // (the tiles playerDash froze: the path and a tile either side of it)
                 if (this.world?.[tx]?.[ty] !== this.FLOOR) continue;
                 const g = this.add.graphics().setDepth(0.25).setPosition(tx * T + T / 2, ty * T + T / 2).setScale(0.5).setAlpha(0);
                 VisualFX.iceTile?.(g, T, tx * 31 + ty * 17);
-                this.tweens.add({ targets: g, scale: 1, alpha: 1, duration: 120, delay: k * 600 / (n0 + 1) + Math.abs(w) * 40, ease: 'Back.easeOut' });
-                this.tweens.add({ targets: g, alpha: 0, scaleY: 0.92, delay: 1300 + k * 60, duration: 800, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
-                }
+                this.tweens.add({ targets: g, scale: 1, alpha: 1, duration: 120, delay: a / far * 540 + off * 40, ease: 'Back.easeOut' });
+                this.tweens.add({ targets: g, alpha: 0, scaleY: 0.92, delay: 1300 + a * 60, duration: 800, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
             }
             for (const u of [0.25, 0.5, 0.75]) ghost(u, 0xbfe8ff, 0.45, 420);
             for (let k = 0; k < 14; k++) { const [x, y] = along(Math.random(), (Math.random() - 0.5) * 14); mote(x, y, k % 3 ? 0xd8f4ff : 0xffffff, 1.5 + (k % 2), 600 + Math.random() * 400, (Math.random() - 0.5) * 14, -10 - Math.random() * 10, false); }   // frost dust
@@ -5052,14 +5051,25 @@ class ElementSystem {
         for (let i = 1; i <= K.n; i++) {
             const x = fromX + dirX * i, y = fromY + dirY * i;
             if (!this._dashCanEnter(x, y)) break;
+            if (dirX && dirY && !this._dashCanEnter(x - dirX, y) && !this._dashCanEnter(x, y - dirY)) break;   // (a diagonal doesn't squeeze between two walls meeting at a corner)
             path.push([x, y]);
             if (!this.getEnemyAt(x, y)) { landX = x; landY = y; }
         }
         if (landX === fromX && landY === fromY) return false;
-        // ice freezes a strip three tiles wide along its path; lightning's landing sends a daze out in a wave instead (_dashDazeFx)
-        const wide = el === 'ice' ? [0, 1, -1] : [0];
+        if (!this._stamSpend()) return false;
+        // ice freezes the floor within a tile of the line it travelled: a strip three wide, or on a diagonal its staircase and
+        // the tiles either side (no gaps between the steps); [x, y, tiles along, tiles off the line]. Lightning's landing sends
+        // a daze out in a wave instead (_dashDazeFx)
+        const ice = [];
+        if (el === 'ice') {
+            const [ex, ey] = path[path.length - 1], L = Math.hypot(ex - fromX, ey - fromY), ux = (ex - fromX) / L, uy = (ey - fromY) / L;
+            for (let x = Math.min(fromX, ex) - 1; x <= Math.max(fromX, ex) + 1; x++) for (let y = Math.min(fromY, ey) - 1; y <= Math.max(fromY, ey) + 1; y++) {
+                const rx = x - fromX, ry = y - fromY, a = rx * ux + ry * uy, off = Math.abs(rx * uy - ry * ux);
+                if (a > -0.01 && a < L + 0.01 && off < 1.01) ice.push([x, y, a, off]);
+            }
+        }
         const passed = el === 'lightning' ? [] : (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0
-            && path.some(([x, y]) => wide.some(w => e.x === x - dirY * w && e.y === y + dirX * w)));
+            && (el === 'ice' ? ice.some(([x, y, a]) => a >= 0.5 && e.x === x && e.y === y) : path.some(([x, y]) => e.x === x && e.y === y)));
         if (el === 'lightning') this._dashDazeFx(landX, landY, this.cosmicDashStunDuration);
         for (const e of passed) {
             if (el === 'ice') {   // one stack; if that fills its bar it's cubed there and then (applyChill). Once per enemy per 3s, so a pack can't be farmed
@@ -5146,7 +5156,7 @@ class ElementSystem {
             this._glide = { x0, y0, x1, y1, t0: now, dur: glide, ice: el === 'ice' };
             this._updateGlide(now + 16); }
         this._vfxHop?.(p);
-        this._dashFx(el, x0, y0 - this.SLIME_Y_OFFSET, x1, y1 - this.SLIME_Y_OFFSET, col);
+        this._dashFx(el, x0, y0 - this.SLIME_Y_OFFSET, x1, y1 - this.SLIME_Y_OFFSET, col, ice);
         Sfx.play(this, 'dash', { el });
         PlayerStats.onDash(this);   // Rolling Guard
 

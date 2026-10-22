@@ -1202,7 +1202,7 @@ class HUD {
     // one under the next: its name over it, a pale chunk that trails the fill down when it is hurt,
     // a line under it for what it is doing. `key` tells one from another; Bosses.js lists them every
     // frame and _bossBarsKeep(keys) lets the rest fade; _bossBarHide takes them all down.
-    _bossBar(frac, name, col, sub = '', key = 'boss', slot = 0) {
+    _bossBar(frac, name, col, sub = '', key = 'boss', slot = 0, ice = null) {
         const all = this._bossBarUIs ||= {};
         let B = all[key];
         if (!B?.g?.active) {
@@ -1226,13 +1226,21 @@ class HUD {
         g.fillStyle(0x1a1410, 1); g.fillRect(x, y, BW, BH);
         g.fillStyle(0xfff0d0, 0.8); g.fillRect(x, y, BW * B.trail, BH);
         g.fillStyle(col, 1); g.fillRect(x, y, BW * frac, BH);
+        if (ice?.decay > 0) { g.fillStyle(0x9ae8ff, 0.85); g.fillRect(x + BW * frac, y, Math.min(BW * (1 - frac), BW * ice.decay), BH); }   // the health its cube's decay took, growing back
         g.fillStyle(0xffffff, 0.22); g.fillRect(x, y, BW * frac, 3);                    // a lit top edge
         g.fillStyle(0x000000, 0.25); g.fillRect(x, y + BH - 3, BW * frac, 3);
         g.fillStyle(0x07060a, 0.7); for (const f of [0.25, 0.5, 0.75]) g.fillRect(x + BW * f - 1, y, 2, BH);   // quarter notches
         g.lineStyle(2, 0x8a7a5e, 1); g.strokeRect(x - 1, y - 1, BW + 2, BH + 2);
-        g.fillStyle(0xc9b48a, 1); for (const ex of [x - 4, x + BW + 4]) { g.fillTriangle(ex, y + BH / 2 - 6, ex + (ex < W / 2 ? -7 : 7), y + BH / 2, ex, y + BH / 2 + 6); }
+        const th = BH / 2 + 2, tw = Math.round(th * 0.9);   // the end points, as tall as the bar and its rim
+        g.fillStyle(0xc9b48a, 1); for (const ex of [x - 4, x + BW + 4]) { g.fillTriangle(ex, y + BH / 2 - th, ex + (ex < W / 2 ? -tw : tw), y + BH / 2, ex, y + BH / 2 + th); }
+        const chilled = ice?.chill > 0.005;
+        if (chilled) {   // its chill, a frost strip under the bar (white while it's cubed)
+            g.fillStyle(0x001222, 0.8); g.fillRect(x - 1, y + BH + 3, BW + 2, 6);
+            g.fillStyle(0x11334d, 1); g.fillRect(x, y + BH + 4, BW, 4);
+            g.fillStyle(ice.cubed ? 0xeafaff : 0x8ae8ff, 1); g.fillRect(x, y + BH + 4, BW * ice.chill, 4);
+        }
         B.title.setText(name).setPosition(W / 2, y - 6).setAlpha(B.a);
-        B.sub.setText(sub).setPosition(W / 2, y + BH + 6).setAlpha(B.a * 0.9);
+        B.sub.setText(sub).setPosition(W / 2, y + BH + (chilled ? 12 : 6)).setAlpha(B.a * 0.9);
     }
     // Every bar not in `keys` fades out
     _bossBarsKeep(keys) {
@@ -1273,6 +1281,8 @@ class HUD {
         Sfx.play(this, 'cine_open'); if (typeof Music !== 'undefined') Music.play(this, null);   // the level's music drops away; the fight's comes in after
         const at = (ms, fn) => tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: ms, onComplete: fn }));
         const S = this._bossIntroState = { objs, tw, z0, key, name, col, hid, wake: null };
+        S.lit = () => this._vfxUpdateLight?.(this.time.now);   // the room's lights keep up with the camera while the rest stands still (or a close-up sits in the dark)
+        this.events.on('postupdate', S.lit);
         let t = 950;
         const vb = this.voltslimeBoss;
         if (base === 'volt' && vb?._asleep) t = this._voltWake(vb, t, at, S);
@@ -1335,6 +1345,7 @@ class HUD {
         S.ending = true;
         S.tw.forEach(t => { if (t?.isPlaying?.()) t.stop(); });   // (finished ones are gone already: stopping them throws)
         S.wake?.(true);
+        this.events.off('postupdate', S.lit);
         this.input.off('pointerdown', S.skip); this.input.keyboard?.off('keydown-ENTER', S.skip);
         this._bossBar(1, S.name, S.col, '', S.key, 0.6);   // full: the fight's own reading takes it from here
         const cam = this.cameras.main, H = this.scale.height, [top, btm, ...rest] = S.objs;
@@ -1376,7 +1387,16 @@ class HUD {
                 r = keep(this.add.image(p.x + 12, p.y + 10, A.rock).setDepth((p.depth ?? 1) + 0.02).setScale(1.6));
                 S.tw.push(this.tweens.add({ targets: r, x: p.x + 2, y: p.y - 26, duration: 260, ease: 'Quad.easeOut', delay: 80 }));
             });
-            at(c0 + 950, () => {
+            at(c0 + 700, () => {   // up to no good: sly eyes, a giggle in notes, a bounce or two (cheekier each rock)
+                if (!p) return;
+                const u0 = p._cfx, mood = u0?.mood;
+                if (u0) u0.mood = 'sly';
+                bubble(['♪', '♪~♪', '♪~♪~♪'][n - 1], 30, '#7a3aa8', 26, -26, 430, () => ({ x: p.x, y: p.y - 12 }), true);
+                Sfx.play(this, 'giggle', { n });
+                for (let k = 0; k < n + 1; k++) S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 10 + k * 130, onComplete: () => this._vfxHop?.(p, Math.abs(p.scaleY || 1.2), 110) }));
+                S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 480, onComplete: () => { if (u0) u0.mood = mood; } }));
+            });
+            at(c0 + 1250, () => {
                 if (!r?.active) return;
                 Sfx.play(this, 'swing'); Sfx.play(this, 'whistle', { ms: 550 });
                 this._vfxHop?.(p, Math.abs(p.scaleY || 1.2), 150);
@@ -1387,7 +1407,7 @@ class HUD {
                 } }));
                 cam.pan(h.x, h.y + 30, 550, 'Sine.easeInOut', true);
             });
-            at(c0 + 1500, () => {
+            at(c0 + 1800, () => {
                 const h = head(), big = 0.6 + n * 0.3;
                 Sfx.play(this, 'bonk', { n }); if (n >= 3) Sfx.play(this, 'block');
                 cam.shake(100 + n * 60, 0.003 + n * 0.002);
@@ -1403,10 +1423,10 @@ class HUD {
                     S.tw.push(this.tweens.add({ targets: st, x: h.x + Math.cos(a) * 30, y: h.y + Math.sin(a) * 16, angle: 180, alpha: 0, duration: 600, ease: 'Quad.easeOut' }));
                 }
             });
-            return c0 + 1500;
+            return c0 + 1800;
         };
-        const bubble = (txt, size, col, dx, dy, ms) => {   // on the screen layer (the world's glow washed a white bubble out), over its head
-            const h = head(), z = cam.zoom, wv = cam.worldView;
+        const bubble = (txt, size, col, dx, dy, ms, over = head, quiet = false) => {   // on the screen layer (the world's glow washed a white bubble out), over its head (or `over`'s)
+            const h = over(), z = cam.zoom, wv = cam.worldView;
             const box = keep(this.add.container((h.x + dx - wv.x) * z, (h.y + dy - wv.y) * z).setScrollFactor(0).setDepth(61).setScale(0));
             const tx = this.add.text(0, 0, txt, { fontSize: size + 'px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#ffffff', strokeThickness: 3 }).setOrigin(0.5);
             const w = tx.width + 36, hh = tx.height + 20, g = this.add.graphics();
@@ -1417,7 +1437,7 @@ class HUD {
             S.tw.push(this.tweens.add({ targets: box, scale: 1, duration: 200, ease: 'Back.easeOut' }),
                 this.tweens.add({ targets: box, angle: { from: -4, to: 4 }, duration: 70, yoyo: true, repeat: Math.floor(ms / 140) }),
                 this.tweens.add({ targets: box, alpha: 0, scale: 0.8, duration: 160, delay: ms }));
-            for (let k = 0; k < 4; k++) S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 60 + k * 90, onComplete: () => Sfx.play(this, 'blip', { v: 'glerp' }) }));   // muttering
+            if (!quiet) for (let k = 0; k < 4; k++) S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 60 + k * 90, onComplete: () => Sfx.play(this, 'blip', { v: 'glerp' }) }));   // muttering
         };
         const doze = () => { if (u) u.expr = 'blink'; Z(); Sfx.play(this, 'snore'); };
         // one: what?, a grumble, then (its own bubble) back to sleep

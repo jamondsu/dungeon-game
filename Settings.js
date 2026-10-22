@@ -87,16 +87,19 @@ const Settings = {
     setGlow(v) { this._set('glow', String(v)); },
     // GRAPHICS: LOW is for weak machines: no bloom, the light drawn coarser and less often, no drifting dust, and on a big
     // window the game drawn at fewer pixels and stretched (never under 1280x720, so the menus still fit). AUTO starts on
-    // high and drops to low by itself if the first level runs slow (perf_low). The resolution part takes effect on the next launch.
+    // high and drops to low by itself if the first level runs slow (perf_low), all but the resolution: that's LOW chosen by
+    // hand only (AUTO's drop stretched the whole game, menus cramped, for good, after one slow moment). The resolution part
+    // takes effect on the next launch.
     QUALITY: [['AUTO', 'auto'], ['HIGH', 'high'], ['LOW', 'low']],
     quality() { const v = this._get('quality'); return v === 'high' || v === 'low' ? v : 'auto'; },
     setQuality(v) { this._set('quality', v); if (v !== 'auto') this._set('perf_low', '0'); },
     low() { const q = this.quality(); return q === 'low' || (q === 'auto' && this._get('perf_low') === '1'); },
-    // the share of the window's pixels the game draws at (1: all of them)
+    // the share of the window's pixels the game draws at (1: all of them): everything a little closer than the window's own
+    // pixels (UI_ZOOM; the text and art bigger and clearer), and LOW (chosen by hand) fewer still; never under 1280x720
+    UI_ZOOM: 1.15,
     renderScale() {
-        if (!this.low()) return 1;
         const w = window.innerWidth || 1280, h = window.innerHeight || 720;
-        return Math.min(1, Math.max(0.6, 1280 / w, 720 / h));
+        return Math.min(1, Math.max((this.quality() === 'low' ? 0.6 : 1) / this.UI_ZOOM, 1280 / w, 720 / h));
     },
     // a frame counter in the corner (fpsMeter): the frame rate, and the worst frame of the last second
     FPS: [['ON', 1], ['OFF', 0]],

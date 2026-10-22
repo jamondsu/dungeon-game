@@ -43,14 +43,13 @@ class LevelManager {
 
     initPipes() {
         this._pipes = [];
-        this._pipeGfx = this.add.graphics().setDepth(0.42);   // above water, below lava
         for (const def of (this.pipes || [])) {
             const tiles = this._pipeTiles(def);
             if (!tiles.length) continue;
             this._pipes.push({ ...def, tiles, next: 0, lastRefill: 0 });
         }
         this._drawPipeMouths();
-        this._startPipeDrips();
+        this._pipeFlow = this.add.graphics().setDepth(0.46);   // the pouring water: on the water's surface, under fog and lava
         // Prime them so the room starts as the pipes would have made it.
         for (const p of this._pipes) for (const t of p.tiles) {
             if (this.world?.[t.x]?.[t.y] === this.FLOOR) this.addWater(t.x, t.y, 0);
@@ -105,11 +104,10 @@ class LevelManager {
     }
 
     _drawPipeMouths() {
-        const TS = this.TILE_SIZE, g = this._pipeGfx;
-        if (!g?.active || !g.clear) return;   // (already baked)
-        const ACC = this._pipeCfg().ACCENT;
-        g.clear();
+        const TS = this.TILE_SIZE, ACC = this._pipeCfg().ACCENT;
+        this._pipeImgs = [];
         for (const p of this._pipes) {
+            const g = this.add.graphics().setDepth(0.42);   // above water, below lava
             const px = p.mx * TS + TS / 2, py = p.my * TS + TS / 2;
             // Local frame: `a` runs along the drain direction, `c` across it, both scaled to
             // the tile, so a mouth fills nearly the whole wall tile.
@@ -154,38 +152,56 @@ class LevelManager {
             const lip = pt(p.kind === 'line' ? 0.46 : 0.44, 0);
             g.fillStyle(0x9fe8ff, 0.8);
             g.fillCircle(lip.x, lip.y, 2.0);
-        }
-        if (this._pipes.length) {   // they never change: one image, not ~4000 commands tessellated every frame
-            const xs = this._pipes.map(p => p.mx), ys = this._pipes.map(p => p.my);
-            const x0 = (Math.min(...xs) - 1) * TS, y0 = (Math.min(...ys) - 1) * TS;
-            this._pipeGfx = UIKit.bake(this, g, x0, y0, (Math.max(...xs) + 2) * TS - x0, (Math.max(...ys) + 2) * TS - y0);
+            // They never change: an image each (one texture per kind and facing), not ~300 commands tessellated every frame.
+            // One image of them all was hidden, every pipe at once, while the room at its middle still lay under fog.
+            this._pipeImgs.push(UIKit.bake(this, g, (p.mx - 1) * TS, (p.my - 1) * TS, TS * 3, TS * 3, `pipe_${p.kind}_${p.dx}_${p.dy}`));
         }
     }
 
-    // A droplet falling out of every mouth on a loop, so a pipe reads as actively leaking
-    // even when all of its tiles are already wet and nothing is being refilled.
-    _startPipeDrips() {
-        const TS = this.TILE_SIZE;
-        this._pipeDrips = [];
+    // Water pouring out of every mouth, redrawn each frame (a pipe reads as running even when all its tiles are wet):
+    // a stream from the lip onto the floor with light sliding down it, foam where it lands, rings spreading over the
+    // water there, and down a main the current runs as far as its water reaches, so a refilled main flows back in.
+    _drawPipeWater(time) {
+        const g = this._pipeFlow, TS = this.TILE_SIZE, v = this.cameras.main.worldView;
+        if (!g?.active) return;
+        g.clear();
+        const fr = x => x - Math.floor(x), rnd = n => fr(Math.sin(n * 12.9898) * 43758.5453);
         for (const p of this._pipes) {
-            const from = { x: p.mx * TS + TS / 2 + p.dx * TS * 0.42,
-                           y: p.my * TS + TS / 2 + p.dy * TS * 0.42 };
-            const to   = { x: p.mx * TS + TS / 2 + p.dx * TS * 1.25,
-                           y: p.my * TS + TS / 2 + p.dy * TS * 1.25 };
-            const d = this.add.graphics().setDepth(0.43);
-            // mains run, valves seep: the stream drips faster and in a tighter bead
-            d.fillStyle(0x9fe8ff, 0.9); d.fillCircle(0, 0, p.kind === 'line' ? 1.7 : 2.2);
-            d.fillStyle(0xffffff, 0.6); d.fillCircle(-0.6, -0.6, 0.8);
-            d.x = from.x; d.y = from.y;
-            this.tweens.add({
-                targets: d, x: to.x, y: to.y, alpha: 0,
-                duration: p.kind === 'line' ? 460 : 700, delay: Math.random() * 1400,
-                repeat: -1,
-                repeatDelay: (p.kind === 'line' ? 260 : 900) + Math.random() * 700,
-                ease: 'Quad.easeIn',
-                onRepeat: () => { d.x = from.x; d.y = from.y; d.alpha = 0.9; }
-            });
-            this._pipeDrips.push(d);
+            const steel = p.kind === 'line', px = p.mx * TS + TS / 2, py = p.my * TS + TS / 2, R = (steel ? p.tiles.length + 1 : 3) * TS;
+            if (px + R < v.x || px - R > v.right || py + R < v.y || py - R > v.bottom) continue;
+            // the mouths' frame again: `a` along the drain direction, `c` across it, in tiles from the mouth's centre
+            const pt = (a, c) => ({ x: px + (p.dx * a - p.dy * c) * TS, y: py + (p.dy * a + p.dx * c) * TS });
+            const line = (a0, c0, a1, c1) => { const s = pt(a0, c0), e = pt(a1, c1); g.lineBetween(s.x, s.y, e.x, e.y); };
+            const W = steel ? 0.2 : 0.12, A0 = 0.44, L = 1.1, sw = Math.sin(time / 170 + p.mx * 3 + p.my) * 0.02;   // a main gushes, a valve pours
+
+            // the stream, narrowing as it falls, lit down one side
+            g.fillStyle(0x2d86bd, 0.9); g.fillPoints([pt(A0, -W), pt(L, -W * 0.8 + sw), pt(L, W * 0.8 + sw), pt(A0, W)], true);
+            g.fillStyle(0x7fd0f2, 0.75); g.fillPoints([pt(A0, -W * 0.65), pt(L, -W * 0.5 + sw), pt(L, -W * 0.05 + sw), pt(A0, -W * 0.1)], true);
+            const n = steel ? 4 : 3;
+            g.lineStyle(1, 0xeafcff, 0.9);
+            for (let k = 0; k < n; k++) { const a = A0 + fr(time / (steel ? 240 : 360) + k / n) * (L - A0 - 0.12), c = W * (rnd(k + p.mx) * 1.3 - 0.65); line(a, c, a + 0.12, c); }
+
+            // where it lands: rings out over the water (small on a main, to stay in its one-tile channel), and foam
+            const land = pt(L, sw), th = Math.atan2(p.dy, p.dx);
+            if (this.isWaterAt(p.mx + p.dx, p.my + p.dy)) for (let k = 0; k < 3; k++) {
+                const f = fr(time / 1100 + k / 3);
+                g.lineStyle(1, 0xbfefff, 0.55 * (1 - f));
+                g.beginPath(); g.arc(land.x, land.y, (0.15 + f * (steel ? 0.28 : 1.2)) * TS, th - 1.9, th + 1.9); g.strokePath();
+            }
+            const b = Math.floor(time / 90);   // the foam re-scatters every few frames
+            g.fillStyle(0xf2fdff, 0.85);
+            for (let k = 0; k < 5; k++) { const s = pt(L - 0.06 + rnd(b + k * 7.1) * 0.16, sw + (rnd(b * 3 + k) - 0.5) * W * 3); g.fillRect(s.x - 1, s.y - 1, 2, 2); }
+
+            // a main's current: streaks drifting down the channel, stopping where its water does
+            if (!steel) continue;
+            let run = 0;
+            while (run < p.tiles.length && this.isWaterAt(p.mx + p.dx * (run + 1), p.my + p.dy * (run + 1))) run++;
+            for (let i = 1; i <= run; i++) for (let k = 0; k < 2; k++) {
+                const a = i - 0.5 + fr(time / 520 + k / 2 + rnd(i)), c = (rnd(i * 2 + k) - 0.5) * 0.55;
+                if (a < L + 0.1) continue;   // (under the splash)
+                g.lineStyle(1, 0xcdf3ff, 0.55 - 0.3 * a / (run + 1));
+                line(a, c, Math.min(a + 0.28, run + 0.45), c);
+            }
         }
     }
 
@@ -201,22 +217,11 @@ class LevelManager {
                 if (this.isWaterAt(t.x, t.y)) continue;
                 const k = this._wKey(t.x, t.y);
                 if (this.steamTiles?.has(k)) continue;   // fog holds the water off, pipe or not (it washed steam out after 2s once: the Cistern never dried)
-                if (this.addWater(t.x, t.y, 0)) this._pipeTrickle(p, t);
+                this.addWater(t.x, t.y, 0);
                 break;                                     // one tile per tick: it flows
             }
         }
-    }
-
-    _pipeTrickle(p, t) {
-        const TS = this.TILE_SIZE;
-        const g = this.add.graphics().setDepth(2.1);
-        g.x = p.mx * TS + TS / 2; g.y = p.my * TS + TS / 2;
-        g.fillStyle(0x9fe8ff, 0.85); g.fillCircle(0, 0, 2.6);
-        this.tweens.add({
-            targets: g, x: t.x * TS + TS / 2, y: t.y * TS + TS / 2,
-            alpha: 0, duration: 260 + Math.hypot(t.x - p.mx, t.y - p.my) * 30,
-            ease: 'Quad.easeIn', onComplete: () => g.destroy()
-        });
+        this._drawPipeWater(time);
     }
 
     // ── RESISTANCE TRAITS ───────────────────────────────────────────────────
@@ -1960,13 +1965,13 @@ class LevelManager {
                 }
                 if (boss._decayOwed > 0 && boss.hpBar?.active) {   // the decayed chunk on its bar; growing back once the cube's gone
                     if (!boss._iceCubeUntil && now >= (boss._decayHoldUntil || 0)) { const h = Math.min(boss._decayOwed, boss.maxHp * this._iceCubeCfg().DECAY_BOSS * dt * 1000 / this._iceCubeCfg().DECAY_REGEN_MS); boss.hp = Math.min(boss.maxHp, boss.hp + h); boss._decayOwed -= h; boss.hpBar.width = 72 * Math.max(0, boss.hp / boss.maxHp); }
-                    const b = boss.hpBar.getBounds(); g.fillStyle(0x9ae8ff, 0.85).fillRect(b.right, b.y, 72 * boss._decayOwed / boss.maxHp, b.height);
+                    if (!boss._barHidden) { const b = boss.hpBar.getBounds(); g.fillStyle(0x9ae8ff, 0.85).fillRect(b.right, b.y, 72 * boss._decayOwed / boss.maxHp, b.height); }   // (with the boss bar up top, it's drawn there)
                 }
                 if (boss._iceCubeUntil) { boss._cubeImg?.setPosition(boss.container.x, boss.container.y); if (now >= boss._iceCubeUntil) this._bossCubeShatter(boss); continue; }
                 if (!(boss.chillStacks > 0)) continue;
                 if (now - (boss.lastChillTime || 0) > K.HOLD_MS) boss.chillStacks = Math.max(0, boss.chillStacks - K.DRAIN * dt);
                 const W = 60, x = boss.container.x - W / 2, y = boss.container.y - 118, f = Math.min(1, boss.chillStacks / K.MAX);
-                g.fillStyle(0x001222, 0.75).fillRect(x - 1, y - 1, W + 2, 7).fillStyle(0x11334d, 0.9).fillRect(x, y, W, 5).fillStyle(0x8ae8ff, 1).fillRect(x, y, W * f, 5);
+                if (!boss._barHidden) g.fillStyle(0x001222, 0.75).fillRect(x - 1, y - 1, W + 2, 7).fillStyle(0x11334d, 0.9).fillRect(x, y, W, 5).fillStyle(0x8ae8ff, 1).fillRect(x, y, W * f, 5);   // (with the boss bar up top: under it there)
             }
         };
         this.events.on('update', tick);
@@ -4526,10 +4531,23 @@ class LevelManager {
         if (e.sprite?.active) { this.showStatusText(e.sprite.x, e.sprite.y - 30, 'ARMOR BROKEN', '#c8d0dc'); Sfx.play(this, 'shatter'); }
         return over;
     }
-    // A grey bar over the health bar while the armour holds
+    // A grey bar over the health bar while the armour holds, and the armour on its body: riveted steel plates
+    // (fx_plate_armor, a frame for each of the slime sheet's) worn over its frame, so they hop and squash with it.
+    // Broken, the plates drop off.
     _plateDraw(e) {
-        const g = e._plateBar ||= this.add.graphics().setDepth(4.75);
-        if (!(e._plate > 0)) { g.destroy(); e._plateBar = null; return; }
+        if (!(e._plate > 0)) {
+            e._plateBar?.destroy(); e._plateBar = null;
+            const a = e._plateArmor; e._plateArmor = null;
+            if (a?.active) this.tweens.add({ targets: a, y: a.y + 12, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => a.destroy() });
+            return;
+        }
+        const g = e._plateBar ||= this.add.graphics().setDepth(4.75), s = e.sprite;
+        const a = e._plateArmor ||= this.textures.exists('fx_plate_armor') ? this.add.image(s.x, s.y, 'fx_plate_armor', '0') : null;
+        if (a) {
+            a.setFrame(a.texture.has(s.frame.name) ? s.frame.name : '0').setPosition(s.x, s.y).setOrigin(s.originX, s.originY).setScale(s.scaleX, s.scaleY)
+                .setFlipX(s.flipX).setDepth((s.depth ?? 1) + 0.0005).setAlpha(s.alpha).setVisible(s.visible);
+            if (s.isCropped && s._crop) a.setCrop(s._crop.x, s._crop.y, s._crop.width, s._crop.height); else if (a.isCropped) a.setCrop();   // (rising out of the floor as it spawns)
+        }
         const bx = e.healthBarBg?.x ?? e.sprite.x, by = (e.healthBarBg?.y ?? e.sprite.y - 20) - 5, w = 24;
         g.clear().fillStyle(0x000000, 0.8).fillRect(bx - w / 2, by - 2, w, 3);
         g.fillStyle(0xb8c4d4, 1).fillRect(bx - w / 2, by - 2, w * e._plate / e._plateMax, 3);
@@ -4952,6 +4970,7 @@ class LevelManager {
         const cam = this.cameras.main, now = this.time.now, IN = 260, HOLD = 420, AFTER = 650, OUT = 300;
         if (this._cinemaUntil > now || !cam) { hatch(); return; }   // one at a time: a second goes off as it would
         this._cinemaUntil = now + IN + HOLD + AFTER + OUT;
+        Music.duck(true, 'rebirth');   // the music holds its breath too
         const z0 = cam.zoom, W = this.scale.width, H = this.scale.height, bh = Math.round(H * 0.09);
         const bars = [0, 1].map(k => { const b = this.add.rectangle(W / 2, k ? H + bh / 2 : -bh / 2, W, bh, 0x000000, 1).setScrollFactor(0).setDepth(4900); this._vfxSort?.(b); return b; });
         bars.forEach((b, k) => this.tweens.add({ targets: b, y: k ? H - bh / 2 : bh / 2, duration: IN, ease: 'Cubic.easeOut' }));
@@ -4962,7 +4981,7 @@ class LevelManager {
             cam.zoomTo(z0, OUT, 'Cubic.easeInOut');
             if (this.player) cam.pan(this.player.x, this.player.y, OUT, 'Cubic.easeInOut');
             bars.forEach((b, k) => this.tweens.add({ targets: b, y: k ? H + bh / 2 : -bh / 2, duration: OUT, onComplete: () => b.destroy() }));
-            this.time.delayedCall(OUT, () => { if (this.player) cam.startFollow(this.player, true, 0.1, 0.1); this._cinemaUntil = 0; });
+            this.time.delayedCall(OUT, () => { if (this.player) cam.startFollow(this.player, true, 0.1, 0.1); this._cinemaUntil = 0; Music.duck(false, 'rebirth'); });
         });
     }
     _frostHatch(e) {
@@ -6115,7 +6134,7 @@ class LevelManager {
             anchor:       { name: 'Anchor Slime',     role: 'Support',   tint: 0x7f93b5,
                             desc: 'Slow and heavy, and it follows the fight. Pulses every three seconds: allies speed up, you slow down. Kill it first.' },
             healer:       { name: 'Healer Slime',     role: 'Support',   tint: 0x66ddaa,
-                            desc: 'Slow and tough, and it keeps up with its friends. Heals everything within six tiles, past full health. Kill it first.' },
+                            desc: 'Slow and tough, and it keeps up with its friends. Heals everything within six tiles by a fifth of its health every second, past full up to three times over. Kill it first.' },
             splitter:     { name: 'Splitter',         role: 'Swarm',     tint: 0xcc66cc,
                             desc: 'Bursts when it dies, hurting you if you are close, and splits into two smaller, faster copies, twice over. Kill it where you have room.' },
             mortar:       { name: 'Mortar',           role: 'Artillery', tint: 0x445566,
@@ -6492,10 +6511,10 @@ class LevelManager {
         this._fractureCoreReady = true;
     }
 
-    updateLevel4(time, delta) {
-        const playerRoom = this.getCurrentPlayerRoom();
-        if (playerRoom === -1) return;
-
+    // The Fracture's enemies' own business each frame: the Encased slime's attacks and its rebirth from stone, and the marks
+    // over rooters, splitters and healers. The Training Ground runs it too (Training.update): there they stood idle, never
+    // attacking, never reborn.
+    _fractureEnemies(time) {
         for (const enemy of this.enemies) {
             if (!enemy.sprite?.active) continue;
             if (enemy._isEncased) this._encUpdate(enemy, time);
@@ -6504,6 +6523,13 @@ class LevelManager {
             if (enemy._splitterMark?.active) enemy._splitterMark.setPosition(mx, my - 20);
             if (enemy._healerCross?.active)  enemy._healerCross.setPosition(mx, my - 22);
         }
+    }
+
+    updateLevel4(time, delta) {
+        const playerRoom = this.getCurrentPlayerRoom();
+        if (playerRoom === -1) return;
+
+        this._fractureEnemies(time);
 
         // Anchor slow expiry
         if (this._anchorSlowUntil && time > this._anchorSlowUntil) {

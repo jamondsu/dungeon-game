@@ -119,11 +119,15 @@ class VisualFX {
         scene.cameras.main.setBackgroundColor(VisualFX.prototype._vfxCfg.call({}).WALL.rock);
     }
 
+    // The world camera's zoom: ZOOM at 1280x720, and closer on a bigger window, so it always shows about the same 30x17 tiles
+    // (at a flat ZOOM a big window showed half the dungeon, everything tiny)
+    static worldZoom(scene) { return VisualFX.prototype._vfxCfg.call({}).ZOOM * Math.max(1, Math.min(scene.scale.width / 1280, scene.scale.height / 720)); }
+
     // ── SETUP ────────────────────────────────────────────────────────────────
     // Called once, at the end of GameScene.create().
     _vfxInit() {
         const C = this._vfxCfg(), cam = this.cameras.main;
-        cam.setZoom(C.ZOOM);
+        cam.setZoom(VisualFX.worldZoom(this));
         cam.setRoundPixels(true);
 
         // The HUD camera: unzoomed and unscrolled. Everything pinned to the screen (scrollFactor 0,
@@ -2051,8 +2055,9 @@ void main() {
                     bg.setDepth(4.3); fill.setDepth(4.31);
                 }
                 // shown once it's been hurt, and kept: healed back to full, or overhealed past it (a
-                // healer totem), it used to vanish
-                if (e.health < (e.maxHealth || 0) - 0.01 || e.health > (e.maxHealth || 0) + 0.01) e._vfxHurt = true;
+                // healer totem), it used to vanish. Armour chipped counts: a CEO's or knight's hits all
+                // go to its armour, and it showed only the grey armour bar
+                if (e.health < (e.maxHealth || 0) - 0.01 || e.health > (e.maxHealth || 0) + 0.01 || e._plate < e._plateMax) e._vfxHurt = true;
                 const show = !!e._vfxHurt;
                 if (bg.visible !== show) { bg.setVisible(show); fill.setVisible(show); }
                 // a cube's decay: the cut-off HP as an ice-blue piece after the fill, shrinking as it's locked in or grows back
@@ -2062,6 +2067,16 @@ void main() {
                     if (!e._decayBar?.active) e._decayBar = this.add.rectangle(0, 0, 1, 1, 0x9ae8ff, 0.95).setOrigin(0, 0).setDepth(4.32);
                     e._decayBar.setPosition(fx, fy).setSize(Math.max(0.5, Math.min(w, 24 - fill.width)), fill.height).setVisible(fill.alpha > 0.05);
                 } else if (e._decayBar) { e._decayBar.destroy(); e._decayBar = null; }
+                // overhealed (a healer slime, up to three times full): the second hundred percent a yellow bar over the red from its
+                // left, the third a green one over the yellow
+                const op = (e.health || 0) / (e.maxHealth || 1);
+                for (const [k, lo, col] of [['_hpBarY', 1, 0xffd34a], ['_hpBarG', 2, 0x5cff8a]]) {
+                    const f = Phaser.Math.Clamp(op - lo, 0, 1);
+                    if (f > 0.001 && show) {
+                        if (!e[k]?.active) e[k] = this.add.rectangle(0, 0, 1, 1, col, 1).setOrigin(0, 0).setDepth(4.31 + lo * 0.002);
+                        e[k].setPosition(fill.x - fill.displayOriginX, fill.y - fill.displayOriginY).setSize(24 * f, fill.height).setAlpha(fill.alpha).setVisible(fill.visible);
+                    } else if (e[k]) { e[k].destroy(); e[k] = null; }
+                }
             }
         }
         for (const [k, sh] of map) if (!live.has(k)) { sh.destroy(); map.delete(k); }
@@ -2097,10 +2112,10 @@ void main() {
             fontSize: `${size}px`, fontFamily: 'monospace', fontStyle: 'bold', color, stroke: '#05060a', strokeThickness: 3,
         }).setOrigin(ox, 0.5).setScrollFactor(0).setDepth(31);
         this._hudHp = txt(238, 27, 14, '#ffffff');
-        this._hudEl = txt(44, 52, 15, '#ffffff');
+        this._hudEl = txt(44, 62, 15, '#ffffff');
         this._hudTrail = this.health;
         // The scrap bank moves into the card's third row.
-        const rowY = 76, bx = 82, bw = 96, bh = 8;
+        const rowY = 88, bx = 82, bw = 96, bh = 8;
         this._orbBarX = bx; this._orbBarY = rowY; this._orbBarW = bw; this._orbBarH = bh;
         this.orbBarBg?.setPosition(bx, rowY).setSize(bw, bh);
         this.orbBarBorder?.setPosition(bx, rowY).setSize(bw, bh);
@@ -2133,7 +2148,7 @@ void main() {
         // the card, as wide as its longest line (the gadget readout can run long)
         const ot = this.orbCountText;
         const cw = Math.max(332, ot?.visible && ot.text ? Math.ceil(ot.x + ot.width) + 6 : 0);
-        const ch = this.orbBarBg?.visible ? 86 : 62;   // the third row (lightning's scrap bank) only when it's showing
+        const ch = this.orbBarBg?.visible ? 98 : 74;   // the third row (lightning's scrap bank) only when it's showing
         g.fillStyle(0x090b14, 0.82); g.fillRoundedRect(8, 8, cw, ch, 8);
         g.lineStyle(1, 0x2b3256, 0.9); g.strokeRoundedRect(8.5, 8.5, cw - 1, ch - 1, 8);
         // heart: beats when you're low
@@ -2153,10 +2168,23 @@ void main() {
         const step = 10 * Math.ceil(max / 400);   // a tick every 10 HP, at most 40 of them (a big health pool gets a tick every 20, 30...)
         for (let k = step; k < max; k += step) g.fillRect(Math.round(bx + 1 + iw * (k / max)), by + 3, 1, bh - 6);
         g.lineStyle(1, 0x000000, 0.9); g.strokeRoundedRect(bx, by, bw, bh, 4);
+        // stamina, under it (GameScene._stamSpend), with a dash's chevrons beside it: a notch at each dash's worth; red a
+        // moment when a dash is refused
+        const sm = this._stamMax?.() || 0;
+        if (sm > 0 && this._stam != null) {
+            const sy = 38, sh = 8, sf = Math.max(0, Math.min(1, this._stam / sm)), no = now - (this._stamDeniedAt || 0) < 350, cost = this._stamCost();
+            g.lineStyle(3, no ? 0xff4a5a : sf >= cost / sm ? 0x62ccff : 0x2a5a8a, 1);
+            for (const x of [20, 27]) { g.beginPath(); g.moveTo(x, sy - 1); g.lineTo(x + 5, sy + sh / 2); g.lineTo(x, sy + sh + 1); g.strokePath(); }
+            g.fillStyle(no ? 0x2a0a12 : 0x0a1424, 1); g.fillRoundedRect(bx, sy, bw, sh, 2);
+            if (sf > 0) { g.fillStyle(sf >= 1 ? 0x62ccff : 0x2c8ae0, 1); g.fillRoundedRect(bx + 1, sy + 1, Math.max(2, iw * sf), sh - 2, 1); }
+            g.fillStyle(0x000000, 0.55);
+            for (let k = cost; k < sm - 0.5; k += cost) g.fillRect(Math.round(bx + 1 + iw * (k / sm)), sy, 1, sh);
+            g.lineStyle(1, no ? 0xff4a5a : 0x000000, 0.9); g.strokeRoundedRect(bx, sy, bw, sh, 2);
+        }
         this._hudHp.setText(`${Math.ceil(hp)}/${max}`).setColor(low ? '#ff8a98' : '#ffffff');
         // element
         const el = this.currentElement, col = C.EL[el] ?? 0xffffff;
-        this._vfxElIcon(g, 26, 52, el, col);
+        this._vfxElIcon(g, 26, 62, el, col);
         this._hudEl.setText((el || '').toUpperCase()).setColor('#' + col.toString(16).padStart(6, '0'));
         // glorp card: the coin, then the number
         const gt = this.glorpText;
