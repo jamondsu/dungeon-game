@@ -35,6 +35,7 @@ class Training {
         ['Drowner',      (S, x, y) => S.createDrowner(x, y, 0)],
         ['Ripplerunner', (S, x, y) => S.createRipplerunner(x, y, 0)],
         ['Tidecaller',   (S, x, y) => S.createTidecaller(x, y, 0)],
+        ['Cheerleader',  (S, x, y) => S.createCheerleader(x, y, 0)],
         ['Wave rider',   (S, x, y) => S.createWaveRider(x, y, 0)],
         ['Tidal guard',  (S, x, y) => S.createTidalGuard(x, y, 0)],
         ['Conduit',      (S, x, y) => S.createConduit(x, y, 0)],

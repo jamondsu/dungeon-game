@@ -2301,57 +2301,55 @@ class LevelManager {
         const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // Visual — glowing purple void crystal key
-        const g = this.add.graphics().setDepth(3);
-        const drawKey = () => {
-            g.clear();
-            const t = this.time.now / 600;
-            const pulse = 0.7 + 0.3 * Math.sin(t);
-            // Outer glow
-            g.fillStyle(0xcc44ff, 0.15 * pulse); g.fillCircle(px, py, 16);
-            // Key shaft
-            g.fillStyle(0xcc44ff, 0.90); g.fillRect(px - 2, py - 10, 4, 18);
-            // Key bow (top circle)
-            g.lineStyle(3, 0xcc44ff, 0.90); g.strokeCircle(px, py - 13, 6);
-            g.fillStyle(0xee88ff, 0.80); g.fillCircle(px, py - 13, 3);
-            // Key teeth
-            g.fillStyle(0xcc44ff, 0.90);
-            g.fillRect(px + 2, py + 2, 5, 3);
-            g.fillRect(px + 2, py + 7, 4, 3);
-            // Sparkle
-            g.fillStyle(0xffffff, pulse * 0.70); g.fillCircle(px - 3, py - 16, 1.5);
-        };
-        drawKey();
-
-        // Bob animation
-        const startY = py;
-        const bobTimer = this.time.addEvent({ delay: 30, loop: true, callback: () => {
-            if (!g.active) { bobTimer.remove(); return; }
-            g.clear();
-            const t2 = this.time.now / 600;
-            const pulse2 = 0.7 + 0.3 * Math.sin(t2);
-            const bobOffset = Math.sin(this.time.now / 400) * 4;
-            const yOff = startY + bobOffset;
-            g.fillStyle(0xcc44ff, 0.15 * pulse2); g.fillCircle(px, yOff, 16);
-            g.fillStyle(0xcc44ff, 0.90); g.fillRect(px - 2, yOff - 10, 4, 18);
-            g.lineStyle(3, 0xcc44ff, 0.90); g.strokeCircle(px, yOff - 13, 6);
-            g.fillStyle(0xee88ff, 0.80); g.fillCircle(px, yOff - 13, 3);
-            g.fillStyle(0xcc44ff, 0.90);
-            g.fillRect(px + 2, yOff + 2, 5, 3);
-            g.fillRect(px + 2, yOff + 7, 4, 3);
-            g.fillStyle(0xffffff, pulse2 * 0.70); g.fillCircle(px - 3, yOff - 16, 1.5);
-        }});
+        // A cosmic dungeon key (pixel art, LevelManager.voidKeyArt), floating over its shadow in a violet glow, stars twinkling round it
+        const img = this.add.image(px, py - 4, LevelManager.voidKeyArt(this)).setDepth(3).setScale(1.3);
+        this.tweens.add({ targets: img, y: py - 10, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        this.tweens.add({ targets: img, angle: { from: -7, to: 7 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const shadow = this.add.image(px, py + 12, 'vfx_shadow').setScale(0.32, 0.1).setAlpha(0.55).setDepth(2.9);
+        this.tweens.add({ targets: shadow, scaleX: 0.24, alpha: 0.3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const glow = this.add.image(px, py - 6, 'vfx_glow').setTint(0xa050ff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.55).setAlpha(0.5).setDepth(2.95);
+        this.tweens.add({ targets: glow, alpha: 0.25, scale: 0.45, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const motes = this.add.particles(0, 0, 'vfx_dot', {
+            emitZone: { type: 'random', source: new Phaser.Geom.Circle(px, py - 6, 18) },
+            lifespan: 900, speedY: { min: -14, max: -4 }, scale: { start: 0.55, end: 0 }, alpha: { start: 1, end: 0 },
+            tint: [0xd8a8ff, 0xffffff, 0xffd34a], blendMode: 'ADD', frequency: 140 }).setDepth(3.05);
+        img._extras = [shadow, glow, motes];
 
         if (!this._voidKeys) this._voidKeys = [];
-        this._voidKeys.push({ gfx: g, tileX: tx, tileY: ty, roomIndex, timer: bobTimer, collected: false });
+        this._voidKeys.push({ gfx: img, tileX: tx, tileY: ty, roomIndex, timer: null, collected: false });
 
         // Label
-        const lbl = this.add.text(px, py - 28, 'VOID KEY', {
+        const lbl = this.add.text(px, py - 38, 'VOID KEY', {
             fontSize: '9px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#d8a8ff', resolution: 2,
             stroke: '#000', strokeThickness: 2, fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(4);
         this.tweens.add({ targets: lbl, y: lbl.y - 6, alpha: 0.6, duration: 800, yoyo: true, repeat: -1 });
-        g._label = lbl;
+        img._label = lbl;
+    }
+
+    // The Void Key: a dark violet key with a galaxy turning in its bow, gold star points and collar
+    static voidKeyArt(scene) {
+        return ShopScene.icon(scene, 'fx_void_key', 28, { M: '#5a3a9a', L: '#a58ae0', D: '#34205e', Y: '#ffd34a', y: '#c8901e', v: '#12041e', p: '#7a3ad8', P: '#e0b0ff' }, m => {
+            const cx = 14, cy = 7.5;
+            m.ring(cx, cy, 6, 2.2, 'M');
+            for (let y = 0; y < 16; y++) for (let x = 0; x < 28; x++) {   // lit from the top left
+                if (m.get(x, y) !== 'M') continue;
+                const d = (x + 0.5 - cx) + (y + 0.5 - cy);
+                if (d < -3.5) m.set(x, y, 'L'); else if (d > 3.5) m.set(x, y, 'D');
+            }
+            m.disc(cx, cy, 3.9, 'v');
+            for (let y = 3; y < 13; y++) for (let x = 9; x < 19; x++) {   // the galaxy: two arms round a bright core
+                const dx = x + 0.5 - cx, dy = y + 0.5 - cy, r = Math.hypot(dx, dy);
+                if (r > 3.9 || m.get(x, y) !== 'v') continue;
+                if (Math.sin(Math.atan2(dy, dx) * 2 + r * 1.6) > 0.45) m.set(x, y, r < 2.2 ? 'P' : 'p');
+            }
+            m.set(13, 7, 'W'); m.set(14, 7, 'P'); m.set(11, 9, 'W'); m.set(16, 5, 'W');
+            m.rect(13, 1, 2, 1, 'Y'); m.set(13, 0, 'W'); m.rect(7, 7, 1, 2, 'Y'); m.rect(20, 7, 1, 2, 'Y');   // star points
+            m.rect(11, 14, 6, 1, 'Y'); m.rect(11, 15, 6, 1, 'y');   // the collar
+            m.rect(13, 16, 1, 10, 'L'); m.rect(14, 16, 1, 10, 'M'); m.rect(13, 26, 2, 1, 'D');   // the shaft
+            m.rect(15, 20, 4, 2, 'M'); m.rect(15, 20, 4, 1, 'L'); m.rect(15, 23, 3, 2, 'M'); m.rect(15, 23, 3, 1, 'L');   // the teeth
+            m.set(18, 21, 'D'); m.set(17, 24, 'D');
+        });
     }
 
     _spawnBossDoor() {
@@ -2453,14 +2451,15 @@ class LevelManager {
         key.collected = true;
         key.timer?.remove();
         if (key.gfx?.active) {
-            // Collect flash
-            const flash = this.add.circle(key.gfx.x || key.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
-                key.gfx.y || key.tileY * this.TILE_SIZE + this.TILE_SIZE / 2, 6, 0xcc44ff, 0.90).setDepth(5);
+            const k = key.gfx;
+            const flash = this.add.circle(k.x, k.y, 6, 0xcc44ff, 0.90).setDepth(5);
             this.tweens.add({ targets: flash, radius: 28, alpha: 0, duration: 300, onComplete: () => flash.destroy() });
-            // up and gone (not scaled: it's drawn at its map spot inside a graphics at 0,0, so scaling flung it toward the bottom right)
-            this.tweens.add({ targets: [key.gfx, key.gfx._label].filter(Boolean), y: '-=18', alpha: 0, duration: 250,
-                onComplete: () => { key.gfx.destroy(); if (key.gfx._label?.active) key.gfx._label.destroy(); }
-            });
+            VisualFX.ripple(this, k.x, k.y, 6, 34, 0xd8a8ff, { depth: 5, duration: 450 });
+            for (const o of k._extras || []) { this.tweens.killTweensOf(o); o.stop?.(); this.tweens.add({ targets: o, alpha: 0, duration: 250, onComplete: () => o.destroy() }); }
+            this.tweens.killTweensOf(k);
+            this.tweens.add({ targets: k, y: k.y - 24, scale: k.scale * 1.5, angle: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => k.destroy() });
+            this.tweens.add({ targets: k, alpha: 0, delay: 180, duration: 200 });
+            if (k._label?.active) this.tweens.add({ targets: k._label, alpha: 0, duration: 200, onComplete: () => k._label.destroy() });
         }
         if (!this._level3KeysCollected) this._level3KeysCollected = 0;
         this._level3KeysCollected++;
@@ -3152,22 +3151,50 @@ class LevelManager {
     }
 
     // ── TIDECALLER — the water's strength ───────────────────────────────────
-    // Doesn't fight. Every enemy standing in water within TIDE_R tiles of it hits for TIDE_MULT
-    // (CombatSystem.takeDamage reads the hitter's _tideUntil). Dry the floor round it, or kill it.
-    // Every frame: its field follows it; everything standing in water inside it is boosted for a moment
+    // Doesn't fight. Every enemy within TIDE_R tiles of it attacks faster: ATK_LAND on dry floor, ATK_WATER
+    // standing in water (its attack cooldowns are divided by `_atkSpd`). Dry the floor round it, or kill it.
+    // Every frame: its field follows it; everything inside it is boosted for a moment
     _tideTick(e, time) {
         const C = this._tideCfg();
         if (e._tideAura?.active) { e._tideAura.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, e._tideAura); }
         for (const o of this.enemies) {
-            if (!o.sprite?.active || o.health <= 0 || Math.hypot(o.x - e.x, o.y - e.y) > C.TIDE_R || !this.isWaterAt(o.x, o.y)) continue;
-            o._tideUntil = time + 250; o._tideMult = C.TIDE_MULT;
-            if (Math.random() < 0.06) {   // charged by the water: a blue spark rising off it
-                const m = this.add.image(o.sprite.x + (Math.random() - 0.5) * 14, o.sprite.y, 'vfx_dot').setTint(0x6ab8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth((o.sprite.depth ?? 1) + 0.05);
+            if (!o.sprite?.active || o.health <= 0 || o._isTidecaller || Math.hypot(o.x - e.x, o.y - e.y) > C.TIDE_R) continue;
+            const wet = this.isWaterAt(o.x, o.y);
+            o._tideUntil = time + 250; o._tideAtk = wet ? C.ATK_WATER : C.ATK_LAND; o._tideWet = wet;
+            if (wet && Math.random() < 0.15) {   // charged by the water: a blue spark rising off it
+                const m = this.add.image(o.sprite.x + (Math.random() - 0.5) * 18, o.sprite.y + (0.72 - (o.sprite.originY ?? 0.5)) * (o.sprite.displayHeight || 38), 'vfx_dot').setTint(0x6ab8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth((o.sprite.depth ?? 1) + 0.05);
                 this.tweens.add({ targets: m, y: m.y - 16, alpha: 0, duration: 500, onComplete: () => m.destroy() });
             }
         }
     }
-    _tideCfg() { return { HP: 120, SPEED: 1.6, TIDE_R: 4, TIDE_MULT: 1.5 }; }
+    // The boost shown on whatever has it, while it lasts: a blue glow on it, and in water rings pulsing off its feet
+    _tideLook(e, time) {
+        const s = e.sprite, on = (e._tideUntil || 0) > time && s.visible && s.alpha > 0.3;   // (a shrouded one doesn't give itself away)
+        if (!on) {
+            const g = e._tideFx; e._tideFx = null;
+            if (g?.active) { this.tweens.killTweensOf(g); this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() }); }
+            return;
+        }
+        if (!e._tideFx?.active || e._tideFx._wet !== e._tideWet) {   // in water it glows brighter and quicker than on land
+            e._tideFx?.destroy();
+            const a = e._tideWet ? 0.5 : 0.28;
+            e._tideFx = this.add.image(s.x, s.y, 'vfx_glow').setTint(0x3a9cff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.34).setAlpha(a);
+            e._tideFx._wet = e._tideWet;
+            this.tweens.add({ targets: e._tideFx, alpha: a * 0.45, scale: 0.3, duration: e._tideWet ? 300 : 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            if (time - (e._tideSaidAt || 0) > 5000) { e._tideSaidAt = time; this.showStatusText(s.x, s.y - 34, 'FASTER ATTACKS', '#6ab8ff'); }
+        }
+        const H = s.displayHeight || 38, oy = s.originY ?? 0.5;   // the body sits low in its frame: its middle and its feet
+        e._tideFx.setPosition(s.x, s.y + (0.72 - oy) * H).setDepth((s.depth ?? 1) + 0.01);   // over the body: it's lit up by the water
+        if (e._tideWet && time - (e._tideRingAt || 0) > 600) {   // a ring on the water, flat, spreading from its feet
+            e._tideRingAt = time;
+            const r = this.add.image(s.x, s.y + (0.92 - oy) * H, VisualFX.auraTex(this, 'ring')).setTint(0x8fd8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth((s.depth ?? 1) - 0.02).setAlpha(0.9);
+            r.setDisplaySize(14, 5);
+            this.tweens.add({ targets: r, scaleX: r.scaleX * 3, scaleY: r.scaleY * 3, alpha: 0, duration: 600, ease: 'Quad.easeOut', onComplete: () => r.destroy() });
+        }
+    }
+    // How much faster than usual `e` attacks right now (a Tidecaller's boost): its attack cooldowns are divided by this
+    _atkSpd(e, now = this.time.now) { return (e?._tideUntil || 0) > now ? (e._tideAtk || 1) : 1; }
+    _tideCfg() { return { HP: 120, SPEED: 1.6, TIDE_R: 4, ATK_LAND: 1.2, ATK_WATER: 1.8 }; }
     createTidecaller(x, y, ri) {
         const C = this._tideCfg();
         const e = this.createEnemy(x, y, C.HP);
@@ -3186,6 +3213,304 @@ class LevelManager {
             }
         });
         return e;
+    }
+
+    // ── CHEERLEADER SLIME ────────────────────────────────────────────────────
+    // A pompom in each hand, and quick on her feet. She never comes for you: she runs to wherever her cheer would
+    // reach the most of her friends (within R tiles, keeping KEEP_OFF from you: _cheerSeek). There, every CD, a stage
+    // pops up under her, curtains, spotlights and all, and she performs on it for SHOW_MS, standing still. RAISE_AT in,
+    // every other enemy within R is ENCOURAGED for DUR: it moves x MOVE as fast and hits x DMG as hard
+    // (CombatSystem.takeDamage, moveEnemies), and any that come into range during the show catch it too; it all ends
+    // if she dies. On stage she takes x TAKEN damage (_specialHit). She only performs with someone to cheer for.
+    // Killed, everything within R of her is DISCOURAGED for DISC_MS: x DISC_SPD as fast, but braced, taking x DISC_TAKEN.
+    _cheerCfg() { return { HP: 110, SPEED: 0.16, R: 5, FIRST: 2500, SHOW_MS: 6000, DUR: 6000, CD: 8000, RAISE_AT: 450, MOVE: 1.6, DMG: 3, TAKEN: 0.5,
+        DISC_MS: 5000, DISC_SPD: 0.6, DISC_TAKEN: 0.6, SEEK_MS: 500, SEEK_R: 10, KEEP_OFF: 3, COL: 0xff6ad0, CSS: '#ff7ad8', DISC_COL: 0x7080b0, DISC_CSS: '#9aa8d8' }; }
+    // her art (made once): a gold pompom, a heart for the ones she cheers (and its two broken halves), a spotlight's beam, the stage and its
+    // curtains, her backup dancers
+    static cheerArt(scene) {
+        const pom = ShopScene.icon(scene, 'fx_pompom', 14, { Y: '#ffd84a', y: '#d8a020', w: '#fff3c0', p: '#ff7ad8', h: '#b04080' }, m => {
+            for (let y = 0; y < 12; y++) for (let x = 0; x < 14; x++) {   // a ball of strands, ragged at the edge
+                const dx = x + 0.5 - 7, dy = y + 0.5 - 6, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+                if (r > 5.6 || (r > 4.4 && Math.sin(a * 9) < -0.2)) continue;
+                const st = Math.sin(a * 9 + r * 0.6);
+                m.set(x, y, st > 0.55 ? 'w' : st < -0.6 ? 'p' : dx + dy > 3 ? 'y' : 'Y');
+            }
+            m.rect(6, 11, 2, 3, 'h');
+        });
+        const heart = ShopScene.icon(scene, 'fx_cheer_heart', 9, { p: '#ff5fb0', P: '#ffb0dc' }, m => {
+            m.rect(2, 2, 2, 1, 'p'); m.rect(5, 2, 2, 1, 'p'); m.rect(1, 3, 7, 2, 'p'); m.rect(2, 5, 5, 1, 'p'); m.rect(3, 6, 3, 1, 'p'); m.set(4, 7, 'p');
+            m.set(2, 3, 'P'); m.set(2, 2, 'P');
+        });
+        const inHeart = (x, y) => (y === 2 && (x === 2 || x === 3 || x === 5 || x === 6)) || ((y === 3 || y === 4) && x >= 1 && x <= 7) || (y === 5 && x >= 2 && x <= 6) || (y === 6 && x >= 3 && x <= 5);
+        const CRACK = { 2: 4, 3: 5, 4: 4, 5: 3, 6: 4 };   // a zigzag down its middle
+        const broke = [true, false].map(left => ShopScene.icon(scene, left ? 'fx_heartbreak_l' : 'fx_heartbreak_r', 9, { p: '#a8507a', P: '#d890b0' }, m => {
+            for (let y = 2; y < 7; y++) for (let x = 1; x < 8; x++) if (inHeart(x, y) && (left ? x < CRACK[y] : x > CRACK[y])) m.set(x, y, 'p');
+            if (left) m.set(2, 3, 'P');
+        }));
+        if (!scene.textures.exists('fx_spot')) {   // a cone of light, narrow at its lamp, wide and bright where it lands, soft at its sides
+            const W = 64, H = 128, t = scene.textures.createCanvas('fx_spot', W, H), ctx = t.getContext(), img = ctx.createImageData(W, H);
+            for (let y = 0; y < H; y++) {
+                const f = y / (H - 1), half = 5 + 26 * f;
+                for (let x = 0; x < W; x++) {
+                    const d = Math.abs(x + 0.5 - W / 2) / half;
+                    if (d >= 1) continue;
+                    const i = (y * W + x) * 4, a = (1 - d * d) * (0.15 + 0.6 * f) * Math.min(1, f * 6);
+                    img.data[i] = 255; img.data[i + 1] = 244; img.data[i + 2] = 214; img.data[i + 3] = Math.round(255 * a);
+                }
+            }
+            ctx.putImageData(img, 0, 0); t.refresh();
+        }
+        const stage = MenuArt.tex(scene, 'fx_cheer_stage', 96, 20, P => {   // a wooden deck, gold trim, a red skirt hung with bunting
+            for (let x = 0; x < 96; x++) {
+                for (let y = 0; y < 7; y++) {
+                    if ((x < 2 || x > 93) && y === 0) continue;
+                    P.put(x, y, y === 0 ? 0xc08a54 : y === 6 ? 0x4a2a14 : x % 9 === 0 ? 0x6a4024 : 0x9a6438);
+                }
+                P.put(x, 7, 0xffd84a); P.put(x, 8, 0xb8862a);
+                const fold = Math.sin(x * 1.1), edge = x === 0 || x === 95;
+                for (let y = 9; y < 19; y++) P.put(x, y, edge ? 0x1c1728 : fold > 0.5 ? 0xd83048 : fold < -0.5 ? 0x7a0c20 : 0xb01830);
+                P.put(x, 19, 0x2a0610);
+                const seg = Math.floor(x / 8), u = x - seg * 8;
+                if (!edge) for (let y = 9; y < 9 + 4 - Math.abs(u - 3.5); y++) P.put(x, y, [0xff5fb0, 0xffd84a, 0x6ad8ff, 0xffffff][seg % 4]);
+            }
+        });
+        const back = MenuArt.tex(scene, 'fx_cheer_back', 92, 60, P => {   // the back curtain, side drapes tied with gold, a scalloped valance of bulbs
+            for (let y = 6; y < 60; y++) for (let x = 10; x < 82; x++) {
+                const f = Math.sin(x * 0.9);
+                P.put(x, y, f > 0.6 ? 0x7a1226 : f < -0.6 ? 0x3a0610 : 0x5a0a18);
+            }
+            for (const side of [0, 1]) for (let y = 4; y < 60; y++) {
+                const w = y < 39 ? 12 - (y - 4) / 35 * 5 : 7 + (y - 39) / 21 * 5;
+                for (let i = 0; i < w; i++) {
+                    const f = Math.sin(i * 1.3 + side);
+                    P.put(side ? 91 - i : i, y, i === Math.ceil(w) - 1 ? 0x4a0814 : f > 0.5 ? 0xd83048 : f < -0.5 ? 0x7a0c20 : 0xb01830);
+                }
+                if (y >= 38 && y <= 40) for (let i = 0; i < 9; i++) P.put(side ? 91 - i : i, y, y === 39 ? 0xffd84a : 0xb8862a);
+            }
+            for (let x = 0; x < 92; x++) {
+                const b = 8 + Math.round(2.5 * Math.abs(Math.sin(x * Math.PI / 12)));
+                for (let y = 0; y < b; y++) P.put(x, y, y === 0 ? 0x7a0c20 : 0xc01c34);
+                P.put(x, b, 0xffd84a); P.put(x, b + 1, 0x8a5a14);
+                if (x % 8 === 3) for (const [bx, by, c] of [[0, 3, 0xfff3c0], [1, 3, 0xfff3c0], [0, 4, 0xffd84a], [1, 4, 0xffd84a]]) P.put(x + bx, by, c);
+            }
+        });
+        // a backup dancer: a little slime with a bow, two frames (down, then up with its pompoms high), in two colours
+        const dancer = (key, B, b, L) => ShopScene.icon(scene, key, 18, { B, b, L, Y: '#ffd84a', y: '#c89a2a', w: '#ffffff', r: '#ff7ad8' }, (m, f) => {
+            const cy = f ? 11.5 : 12.5, rx = f ? 5.4 : 6.4, ry = f ? 5 : 4;
+            for (let y = 0; y < 17; y++) for (let x = 0; x < 18; x++) {
+                const dx = (x + 0.5 - 9) / rx, dy = (y + 0.5 - cy) / ry;
+                if (y + 0.5 > 16.5 || dx * dx + dy * dy > 1) continue;
+                m.set(x, y, dy > 0.45 ? 'b' : dx < -0.2 && dy < -0.2 ? 'L' : 'B');
+            }
+            const ey = f ? 11 : 12;
+            m.set(7, ey, 'k'); m.set(11, ey, 'k'); m.set(7, ey - 1, 'w'); m.set(11, ey - 1, 'w');
+            const top = Math.round(cy - ry);
+            m.set(8, top - 1, 'r'); m.set(10, top - 1, 'r'); m.set(9, top - 1, 'r'); m.set(8, top - 2, 'r'); m.set(10, top - 2, 'r');   // its bow
+            for (const sx of [2.5, 15.5]) m.disc(sx, f ? 5 : 13, 2, 'Y');   // pompoms: low, then thrown up
+            m.set(2, f ? 4 : 12, 'w'); m.set(15, f ? 4 : 12, 'w');
+        }, 2);
+        return { pom, heart, broke, spot: 'fx_spot', stage, back, dancers: [dancer('fx_dancer_a', '#5ad0f0', '#2a7ab0', '#c0f4ff'), dancer('fx_dancer_b', '#ffb84a', '#c06a20', '#ffe8b0')] };
+    }
+    createCheerleader(x, y, ri) {
+        const C = this._cheerCfg();
+        const e = this.createEnemy(x, y, C.HP);
+        e.tutorialRoomIndex = ri;
+        e._isCheer = true; e._special = true;
+        e._moveCdMult = C.SPEED; e._cheerNext = this.time.now + C.FIRST;
+        const k = LevelManager.bodyKey(this, 'cheer');
+        if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        const A = LevelManager.cheerArt(this);
+        e._pomL = this.add.image(e.sprite.x, e.sprite.y, A.pom).setFlipX(true);
+        e._pomR = this.add.image(e.sprite.x, e.sprite.y, A.pom);
+        e._pomPhase = Math.random() * 6; e._pomUp = [0, 0];
+        return e;
+    }
+    // Where her cheer would reach the most friends (and not too near you): her goal tile, picked again every SEEK_MS
+    // (moveEnemies walks her there instead of at you)
+    _cheerSeek(e, time, C) {
+        if (time - (e._seekAt || 0) < C.SEEK_MS) return;
+        e._seekAt = time;
+        const fans = this.enemies.filter(o => o !== e && o.sprite?.active && o.health > 0);
+        const room = this._roomGated?.() ? this.rooms?.[e.tutorialRoomIndex] : null;
+        let best = null, top = -Infinity;
+        for (let dx = -C.SEEK_R; dx <= C.SEEK_R; dx++) for (let dy = -C.SEEK_R; dy <= C.SEEK_R; dy++) {
+            const x = e.x + dx, y = e.y + dy, here = !dx && !dy;
+            if (this.world[x]?.[y] !== this.FLOOR || (!here && this.getEnemyAt(x, y))) continue;
+            if (room && (x < room.x || y < room.y || x >= room.x + room.w || y >= room.y + room.h)) continue;
+            const pd = Math.hypot(x - this.playerX, y - this.playerY);
+            if (pd < C.KEEP_OFF) continue;
+            let n = 0, far = 0;
+            for (const o of fans) { const d = Math.hypot(o.x - x, o.y - y); if (d <= C.R) { n++; far += d; } }
+            const score = n * 10 - (n ? far / n : 0) * 0.8 + (here ? 1 : 0) - Math.hypot(dx, dy) * 0.08 + Math.min(pd, 8) * 0.1;   // the most friends, right at their side; then staying put, near, away from you
+            if (score > top) { top = score; best = [x, y]; }
+        }
+        if (best && (best[0] !== e._goalX || best[1] !== e._goalY)) { e._goalX = best[0]; e._goalY = best[1]; e._goalSince = time; e._committedPath = null; }
+    }
+    // Every frame: her goal, the show, and the pompoms (swaying at her sides; up and down in turn while she performs)
+    _cheerTick(e, time) {
+        const C = this._cheerCfg(), s = e.sprite;
+        const H = s.displayHeight || 38, mid = s.y + (0.72 - (s.originY ?? 0.5)) * H, side = 0.36 * (s.displayWidth || 38);
+        const stuck = e.isFrozen || e.isStunned || e._iceCube || this._deathScreenActive;
+        if (e._cheerStart && (stuck || time >= e._cheerStart + C.SHOW_MS)) { this._cheerEnd(e); e._cheerNext = time + C.CD; }
+        if (!e._cheerStart) this._cheerSeek(e, time, C);
+        const near = () => this.enemies.filter(o => o !== e && o.sprite?.active && o.health > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= C.R);
+        if (!e._cheerStart && !stuck && time >= e._cheerNext) {
+            const there = e._goalX == null || (e.x === e._goalX && e.y === e._goalY) || time - (e._goalSince || 0) > 2500;
+            const gatedOut = this._roomGated?.() && (e.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom();
+            if (!there || gatedOut || !near().length) e._cheerNext = time + 300;
+            else this._cheerShow(e, time);
+        }
+        let want = [0, 0];
+        if (e._cheerStart) {
+            const el = time - e._cheerStart, beat = Math.floor(el / 350);
+            if (!e._cheerDone && el >= C.RAISE_AT) this._cheerGo(e, time);
+            if (e._cheerDone) for (const o of near()) if (!((o._cheerUntil || 0) > time)) {   // walked into the show: caught up in it
+                o._cheerUntil = e._cheerStart + C.RAISE_AT + C.DUR; o._cheerDmg = C.DMG; o._cheerSpd = C.MOVE; o._cheerBy = e;
+                this.showStatusText(o.sprite.x, o.sprite.y - 30, 'ENCOURAGED!', C.CSS);
+            }
+            if (el > 300 && beat !== e._cheerBeat) {   // the routine: a hop on every other beat, both pompoms up every fourth
+                e._cheerBeat = beat;
+                if (beat % 2 === 0) this._vfxHop?.(s, e._baseScale ?? this.SLIME_SCALE, 220);
+                if (beat % 4 === 3) this._cheerConfetti(s, 8);
+            }
+            const ramp = Math.min(1, el / 250) * Math.min(1, (C.SHOW_MS - el) / 250);
+            want = (beat % 4 === 3 ? [1, 1] : beat % 2 ? [1, 0.15] : [0.15, 1]).map(v => v * ramp);
+        }
+        e._pomUp = e._pomUp.map((u, i) => u + (want[i] - u) * 0.35);
+        const bob = Math.sin(time * 0.006 + e._pomPhase), vis = s.visible && !e._phasedOut, al = s.alpha ?? 1;
+        [[e._pomL, -1, e._pomUp[0]], [e._pomR, 1, e._pomUp[1]]].forEach(([pm, dir, up]) => {
+            if (!pm?.active) return;
+            const shake = up > 0.3 ? Math.sin(time * 0.05 + dir) * 0.5 : Math.sin(time * 0.004 + e._pomPhase) * 0.18;
+            pm.setVisible(vis).setAlpha(al).setDepth((s.depth ?? 1) + 0.02)
+                .setPosition(s.x + dir * (side + 5 * up), mid + 5 + bob * 1.5 * dir - up * 26)
+                .setRotation(dir * (0.35 - 0.6 * up) + shake * dir).setScale(1 + 0.2 * up);
+        });
+        if (e._cheerStage?.active) {
+            e._cheerStage.setPosition(...this._cheerAnchor(e)).setDepth((s.depth ?? 1) - 0.03);
+            e._cheerDancers.forEach((dn, i) => { dn.y = -1 - Math.abs(Math.sin(time * 0.009 + i * Math.PI / 2)) * 4; dn.setRotation(Math.sin(time * 0.006 + i * 2) * 0.12); });
+        }
+        if (e._cheerStart && Math.random() < 0.25) {   // dust glittering in the lights
+            const feet = s.y + (0.92 - (s.originY ?? 0.5)) * H;
+            const m = this.add.image(s.x + (Math.random() - 0.5) * 50, feet - 6 - Math.random() * 50, 'vfx_dot').setTint(0xfff4d0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.4).setDepth((s.depth ?? 1) - 0.025);
+            this.tweens.add({ targets: m, y: m.y + 10, alpha: 0, duration: 600, onComplete: () => m.destroy() });
+        }
+    }
+    // Where her stage stands: her tile, at her feet (not her sprite, which may be mid-step)
+    _cheerAnchor(e) {
+        const s = e.sprite, T = this.TILE_SIZE;
+        return [e.x * T + T / 2, e.y * T + T / 2 + (this.SLIME_Y_OFFSET || 0) + (0.92 - (s.originY ?? 0.5)) * (s.displayHeight || 38)];
+    }
+    // The stage pops up under her (curtains behind, the deck at her feet, a backup dancer each side), she hops on, the lights snap on.
+    // All of it in one container just behind her, so it stays round her tile.
+    _cheerShow(e, time) {
+        const A = LevelManager.cheerArt(this), s = e.sprite, T = this.TILE_SIZE, [ax, ay] = this._cheerAnchor(e);
+        e._cheerStart = time; e._cheerDone = false; e._cheerBeat = -1;
+        e._cheerHold = e._moveCdMult; e._moveCdMult = 999; e._committedPath = null;
+        this.tweens.killTweensOf(s); s.setPosition(e.x * T + T / 2, e.y * T + T / 2 + (this.SLIME_Y_OFFSET || 0)); this.updateEnemyHealthBar?.(e);   // on her mark, centre stage
+        const box = this.add.container(ax, ay).setDepth((s.depth ?? 1) - 0.03);
+        const back = this.add.image(0, -3, A.back).setOrigin(0.5, 1).setScale(1, 0);
+        const stage = this.add.image(0, -5, A.stage).setOrigin(0.5, 0).setScale(1, 0);
+        const pool = this.add.image(0, -2, 'vfx_glow').setTint(0xffe8c0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.55, 0.13).setAlpha(0);
+        const dancers = A.dancers.map((k, i) => this.add.sprite(i ? 26 : -26, -1, k, '0').setOrigin(0.5, 1).setScale(0).play(k));
+        const beams = [-1, 1].map(k => {   // from lamps at the valance's ends down onto her
+            const dx = -k * 42, dy = 48;
+            return this.add.image(k * 42, -56, A.spot).setOrigin(0.5, 0).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(44, Math.hypot(dx, dy) + 12)
+                .setRotation(Math.atan2(-dx, dy)).setAlpha(0);
+        });
+        box.add([back, stage, pool, ...dancers, ...beams]);
+        e._cheerStage = box; e._cheerDancers = dancers; e._cheerFold = [back, stage];
+        this.tweens.add({ targets: back, scaleY: 1, duration: 240, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: stage, scaleY: 1, duration: 160, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: dancers, scale: 1.2, duration: 220, delay: 180, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: [pool, ...beams], alpha: 0.55, delay: 260, duration: 80 });
+        this._vfxHop?.(s, e._baseScale ?? this.SLIME_SCALE, 280);
+        this.showStatusText(s.x, s.y - 40, 'SHOWTIME!', this._cheerCfg().CSS);
+        Sfx.play(this, 'slam', { small: true });
+        this.time.delayedCall(260, () => { if (e._cheerStart === time) Sfx.play(this, 'cheer'); });
+    }
+    _cheerConfetti(s, n) {
+        if (!this.textures.exists('__WHITE')) return;
+        const conf = this.add.particles(s.x, s.y - 10, '__WHITE', { speed: { min: 80, max: 170 }, angle: { min: 210, max: 330 }, gravityY: 320, lifespan: 1000,
+            scale: { min: 0.8, max: 1.4 }, rotate: { min: 0, max: 360 }, alpha: { start: 1, end: 0 }, tint: [0xff5fb0, 0xffd84a, 0x6ad8ff, 0xffffff], emitting: false }).setDepth((s.depth ?? 1) + 0.05);
+        conf.explode(n); this.time.delayedCall(1100, () => conf.destroy());
+    }
+    // The cheer lands: everyone close is encouraged; confetti and a pink ring go out
+    _cheerGo(e, time) {
+        const C = this._cheerCfg(), s = e.sprite;
+        e._cheerDone = true;
+        VisualFX.ripple(this, s.x, s.y + 6, 10, C.R * this.TILE_SIZE, C.COL, { duration: 600, alpha: 0.7 });
+        this._cheerConfetti(s, 26);
+        for (const o of this.enemies) {
+            if (o === e || !o.sprite?.active || o.health <= 0 || Math.hypot(o.x - e.x, o.y - e.y) > C.R) continue;
+            o._cheerUntil = time + C.DUR; o._cheerDmg = C.DMG; o._cheerSpd = C.MOVE; o._cheerBy = e;
+            this.showStatusText(o.sprite.x, o.sprite.y - 30, 'ENCOURAGED!', C.CSS);
+        }
+    }
+    // The show's over (or cut short): the lights go, the stage folds away, she can move again. Dead, her cheer goes with her,
+    // and everything close loses heart: discouraged
+    _cheerEnd(e, dead) {
+        e._cheerStart = 0;
+        if (dead) {
+            const C = this._cheerCfg(), now = this.time.now;
+            for (const o of this.enemies || []) {
+                if (o === e || !o.sprite?.active || o.health <= 0) continue;
+                if (o._cheerBy === e) { o._cheerUntil = 0; o._cheerBy = null; }
+                if (Math.hypot(o.x - e.x, o.y - e.y) > C.R) continue;
+                o._discUntil = now + C.DISC_MS; o._discSpd = C.DISC_SPD; o._discTaken = C.DISC_TAKEN;
+                this.showStatusText(o.sprite.x, o.sprite.y - 30, 'DISCOURAGED', C.DISC_CSS);
+            }
+        }
+        if (e._cheerHold != null) { e._moveCdMult = e._cheerHold; e._cheerHold = null; }
+        const box = e._cheerStage; e._cheerStage = null;
+        if (box?.active) {
+            for (const g of box.list) this.tweens.killTweensOf(g);
+            this.tweens.add({ targets: e._cheerFold, scaleY: 0, duration: 220, ease: 'Quad.easeIn' });
+            this.tweens.add({ targets: e._cheerDancers, scale: 0, duration: 160, ease: 'Quad.easeIn' });
+            this.tweens.add({ targets: box, alpha: 0, duration: 240, ease: 'Quad.easeIn', onComplete: () => box.destroy() });
+        }
+    }
+    // Discouraged, while it lasts: a grey-blue pall and broken hearts splitting and falling off it (its slowness shows in the chevrons)
+    _discLook(e, time) {
+        const s = e.sprite, on = (e._discUntil || 0) > time && s.visible && s.alpha > 0.3;
+        if (!on) {
+            const g = e._discFx; e._discFx = null;
+            if (g?.active) { this.tweens.killTweensOf(g); this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() }); }
+            return;
+        }
+        const H = s.displayHeight || 38, mid = s.y + (0.72 - (s.originY ?? 0.5)) * H, d = s.depth ?? 1;
+        if (!e._discFx?.active) {
+            e._discFx = this.add.image(s.x, mid, 'vfx_glow').setTint(this._cheerCfg().DISC_COL).setBlendMode(Phaser.BlendModes.ADD).setScale(0.34).setAlpha(0.35);
+            this.tweens.add({ targets: e._discFx, alpha: 0.15, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        }
+        e._discFx.setPosition(s.x, mid).setDepth(d + 0.01);
+        if (time - (e._breakAt || 0) > 600) {
+            e._breakAt = time;
+            const x = s.x + (Math.random() - 0.5) * 12, y = mid - 16;
+            LevelManager.cheerArt(this).broke.forEach((k, i) => {
+                const h = this.add.image(x + (i ? 1 : -1), y, k).setDepth(d + 0.05);
+                this.tweens.add({ targets: h, x: h.x + (i ? 4 : -4), y: y + 10, angle: i ? 28 : -28, alpha: 0, duration: 850, ease: 'Quad.easeIn', onComplete: () => h.destroy() });
+            });
+        }
+    }
+    // Encouraged, while it lasts: a pink glow on it and hearts rising off it (its speed shows in the chevrons)
+    _cheerLook(e, time) {
+        const s = e.sprite, on = (e._cheerUntil || 0) > time && s.visible && s.alpha > 0.3;
+        if (!on) {
+            const g = e._cheerFx; e._cheerFx = null;
+            if (g?.active) { this.tweens.killTweensOf(g); this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() }); }
+            return;
+        }
+        const H = s.displayHeight || 38, mid = s.y + (0.72 - (s.originY ?? 0.5)) * H;
+        if (!e._cheerFx?.active) {
+            e._cheerFx = this.add.image(s.x, mid, 'vfx_glow').setTint(this._cheerCfg().COL).setBlendMode(Phaser.BlendModes.ADD).setScale(0.36).setAlpha(0.5);
+            this.tweens.add({ targets: e._cheerFx, alpha: 0.2, scale: 0.3, duration: 260, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        }
+        e._cheerFx.setPosition(s.x, mid).setDepth((s.depth ?? 1) + 0.01);
+        if (time - (e._heartAt || 0) > 420) {
+            e._heartAt = time;
+            const h = this.add.image(s.x + (Math.random() - 0.5) * 16, mid - 10, LevelManager.cheerArt(this).heart).setDepth((s.depth ?? 1) + 0.05).setScale(0.9);
+            this.tweens.add({ targets: h, y: h.y - 18, alpha: 0, scale: 1.2, duration: 700, ease: 'Quad.easeOut', onComplete: () => h.destroy() });
+        }
     }
 
     // ── WAVE RIDER — the terrain ────────────────────────────────────────────
@@ -3517,6 +3842,7 @@ class LevelManager {
     // the newer slimes do to a hit. An Adaptive Shade takes the hits of everything in its aura;
     // an Armored Slime's plates; a Shade's resistance; a CEO's or knight's armour.
     _specialHit(e, d, el) {
+        if ((e._discUntil || 0) > this.time.now) d *= e._discTaken;   // discouraged by a Cheerleader's death: braced
         if (!e._special && !this._shadeN) return d;
         if (this._shadeN && !e._isShade) {
             const sh = this._shadeGuard(e);
@@ -3525,6 +3851,7 @@ class LevelManager {
         if (e._armorWeak) d *= this._armorMult(e);
         if (e._isShade) d = this._shadeTake(e, d, el);
         if (e._plate > 0) d = this._plateTake(e, d);
+        if (e._isCheer && e._cheerStart) d *= this._cheerCfg().TAKEN;   // on stage
         return d;
     }
     // Clear line between two tiles (walls block it)
@@ -3562,6 +3889,10 @@ class LevelManager {
             if (e._isCeo) this._ceoTick(e, time);
             if (e._isGem) this._gemTick(e, time);
             if (e._isTidecaller) this._tideTick(e, time);
+            if (e._tideFx || (e._tideUntil || 0) > time) this._tideLook(e, time);
+            if (e._isCheer) this._cheerTick(e, time);
+            if (e._cheerFx || (e._cheerUntil || 0) > time) this._cheerLook(e, time);
+            if (e._discFx || (e._discUntil || 0) > time) this._discLook(e, time);
             if (e._plate > 0 || e._plateBar) this._plateDraw(e);
             for (const a of [e._healerAura, e._anchorRing]) if (a?.active && (a.x !== e.sprite.x || a.y !== e.sprite.y)) { a.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, a); }   // their fields glide with them, not a step behind
         }
@@ -3791,7 +4122,7 @@ class LevelManager {
         const free = [...line].reverse().find(([x, y]) => !(x === this.playerX && y === this.playerY) && !this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) || [e.x, e.y];
         this.tweens.killTweensOf(e.sprite);
         this.tweens.add({ targets: e.sprite, x: free[0] * T + T / 2, y: free[1] * T + T / 2 + this.SLIME_Y_OFFSET, duration: line.length * D.ZIP_MS, ease: 'Linear', onUpdate: () => this.updateEnemyHealthBar(e),
-            onComplete: () => { e.x = free[0]; e.y = free[1]; e._committedPath = null; e.lastMoveTime = this.time.now; e._diving = false; e._moveCdMult = e._diveHold; e._diveNext = this.time.now + D.CD; } });
+            onComplete: () => { e.x = free[0]; e.y = free[1]; e._committedPath = null; e.lastMoveTime = this.time.now; e._diving = false; e._moveCdMult = e._diveHold; e._diveNext = this.time.now + D.CD / this._atkSpd(e); } });
     }
 
     // ── LEECH ────────────────────────────────────────────────────────────────
@@ -4301,7 +4632,7 @@ class LevelManager {
             const cd = e._moveCdMult || 1;
             e._chevBase ??= cd < 50 ? cd : 1;   // its own pace, as born
             if (cd >= 50) continue;             // planted to cast or encased: not a pace
-            mark(e, s.x, s.y - 10, cd / e._chevBase * (e.isWet ? 2 : 1), e.isWet ? 'slow_ice' : 'slow_goop');
+            mark(e, s.x, s.y - 10, cd / e._chevBase * (e.isWet ? 2 : 1) / ((e._cheerUntil || 0) > time ? e._cheerSpd : 1) / ((e._discUntil || 0) > time ? e._discSpd : 1), e.isWet ? 'slow_ice' : 'slow_goop');
         }
         if (this.player?.active && this._stepMul && !this._deathScreenActive) mark(this, this.player.x, this.player.y - 6, this._stepMul, (this._frostHazeMult || 1) > 1 || this._ultMoveMult() > 1 ? 'slow_ice' : 'slow_goop');
     }
@@ -4630,6 +4961,7 @@ class LevelManager {
         ceo:           { pal: [[20, 14, 30], [52, 36, 80], [96, 70, 140], [160, 130, 200], [255, 222, 120]] },
         anchor:        { pal: [[16, 22, 34], [44, 58, 80], [84, 104, 134], [130, 156, 190], [200, 220, 240]] },
         healer:        { pal: [[14, 40, 26], [40, 110, 70], [80, 180, 120], [150, 230, 180], [236, 255, 244]] },
+        cheer:         { pal: [[56, 10, 36], [140, 30, 86], [220, 74, 146], [255, 140, 196], [255, 226, 242]], glint: [255, 255, 255] },
     };
     static TINTS = { berserker: 0xff4444, ranged: 0xffee88, rooter: 0x226633, splitter: 0xff6600, mortar: 0x445566, voidsniper: 0x6a3aa8, lightningelem: 0xe8ff3a,
                      singularity: 0x440088, drowner: 0x5a2d6b, ripplerunner: 0x66f0ff, tidecaller: 0x2a5cc8, waverider: 0xdff3ff, tidalguard: 0xb8912f,
@@ -4652,7 +4984,7 @@ class LevelManager {
         waverider: ['aggressor', 'water'], bud: ['aggressor', 'multiplier'], shade: ['buffer', 'tough'], wraith: ['buffer', 'trickster'],
         diver: ['aggressor', 'controller', 'water'], leech: ['trickster'], gem: ['controller', 'tough'], ceo: ['buffer', 'controller', 'tough'],
         armored: ['aggressor', 'tough'], hunter: ['aggressor', 'trickster'], frost: ['controller', 'water', 'tough'], tidalguard: ['controller', 'water'],
-        wishingwell: ['buffer', 'water'], conduit: ['controller', 'water'],
+        wishingwell: ['buffer', 'water'], conduit: ['controller', 'water'], cheer: ['buffer'],
     };
     static bodyKey(scene, kind) { const L = LevelManager.LOOKS[kind]; return L ? LevelManager.slimeRecolor(scene, 'slime_' + kind, L.pal, L.glint) : null; }
     // { tex, anim, tint } for a codex key, in any scene
@@ -5460,7 +5792,7 @@ class LevelManager {
             if (e._isDrowner) {
                 const dd = Math.hypot(e.x - PX, e.y - PY);
                 if (e._drownPhase === 'idle' && dd <= e._drownAtkR
-                    && time - (e._drownLastAtk || 0) >= e._drownCd) {
+                    && time - (e._drownLastAtk || 0) >= e._drownCd / this._atkSpd(e, time)) {
                     e._drownPhase = 'track';
                     e._drownLastAtk = time;
                     e._drownLockAt = time + e._drownTell;
@@ -5571,7 +5903,7 @@ class LevelManager {
                 }
                 const cd = wet ? e._rippleCdWater : e._rippleCdLand;
                 if (Math.hypot(e.x - PX, e.y - PY) <= e._rippleRange
-                    && time - (e._rippleLastFire || 0) >= cd) {
+                    && time - (e._rippleLastFire || 0) >= cd / this._atkSpd(e, time)) {
                     e._rippleLastFire = time;
                     this._fireRippleVolley(e, wet);
                 }
@@ -5583,7 +5915,7 @@ class LevelManager {
                 if (e._waveState === 'walk') {
                     e._moveCdMult = 1.0;
                     if (Math.hypot(e.x - PX, e.y - PY) <= e._waveEngageR
-                        && time - (e._waveLastEnd || 0) >= e._waveCd) {
+                        && time - (e._waveLastEnd || 0) >= e._waveCd / this._atkSpd(e, time)) {
                         e._waveState = 'tell';
                         e._waveTellEnd = time + (this._enemyWet(e) ? e._waveTellWet : e._waveTellMs);
                         e._moveCdMult = 999;              // plants itself to wind up
@@ -5618,14 +5950,14 @@ class LevelManager {
             if (e._isFrost) this._frostUpdate(e, time);
             if (e._isWishingWell) {
                 if (e._wwRing?.active) { e._wwRing.x = e.sprite.x; e._wwRing.y = e.sprite.y; }
-                if (time - (e._wwLast || 0) >= e._wwCd) this._wwPulse(e, time);
+                if (time - (e._wwLast || 0) >= e._wwCd / this._atkSpd(e, time)) this._wwPulse(e, time);
             }
 
             // ── Tidal Guard: aim the trident, then release ──
             if (e._isTidalGuard) {
                 if (e._tgPhase === 'idle') {
                     if (Math.hypot(e.x - PX, e.y - PY) <= e._tgEngageR
-                        && time - (e._tgLastFire || 0) >= e._tgCd) {
+                        && time - (e._tgLastFire || 0) >= e._tgCd / this._atkSpd(e, time)) {
                         e._tgAimTiles = this._tgAimAt(e, PX, PY);
                         if (e._tgAimTiles.length) {
                             e._tgPhase = 'aim';
@@ -5701,6 +6033,7 @@ class LevelManager {
         if (e._isFrost)            return 'frost';
         if (e._isBud)              return e._budCopy ? 'budcopy' : 'bud';
         if (e._isHunter)           return 'hunter';
+        if (e._isCheer)            return 'cheer';
         if (e._isArmored)          return 'armored';
         if (e._isShade)            return { void: 'shade', fire: 'shade_fire', ice: 'shade_ice', lightning: 'shade_lightning' }[e._form] || 'shade';
         if (e._isWraith)           return 'wraith';
@@ -5760,7 +6093,9 @@ class LevelManager {
             ripplerunner: { name: 'Ripplerunner',     role: 'Skirmisher',tint: 0x66f0ff,
                             desc: 'Fires a homing orb at you, or three at once while it stands in water. Each one slows you and bursts into standing water. Quick on water, sluggish on dry stone.' },
             tidecaller:   { name: 'Tidecaller',       role: 'Booster',   tint: 0x2a5cc8,
-                            desc: 'Doesn\'t fight. Everything standing in water near it hits half again as hard. Dry the floor round it, or kill it first.' },
+                            desc: 'Doesn\'t fight. Everything near it attacks faster: a little on dry floor, far faster standing in water. Dry the floor round it, or kill it first.' },
+            cheer:        { name: 'Cheerleader Slime', role: 'Booster',  tint: 0xff6ad0,
+                            desc: 'Fast, and never comes for you: she rushes to wherever she can cheer on the most of her friends. Then a stage pops up under her and she performs for six seconds, standing still and taking half damage: everything within five tiles is Encouraged for six seconds, moving faster and hitting three times as hard. Kill her and the cheer stops, but everything near her is Discouraged: slower, and harder to hurt for five seconds.' },
             waverider:    { name: 'Wave Rider',       role: 'Charger',   tint: 0xdff3ff,
                             desc: 'Swings like a Berserker up close. From across the room it winds up, then charges in one locked direction, flooding a five-wide lane and sweeping you along it until it hits a wall. Leave the lane while it winds up.' },
             bud:          { name: 'Budding Slime',    role: 'Grower',    tint: 0x9be05a,

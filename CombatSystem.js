@@ -78,6 +78,18 @@ class CombatSystem {
         }
         return dmg;
     }
+    // A boost's share of a hit ("+N" in its colour), right beside the number just shown for the rest of it: Hex on an enemy, what boosted a hit on you
+    _dmgShare(x, y, share, col) {
+        const list = this._vfxNums, now = this.time.now, base = list?.filter(n => n.t === now && n.txt.active).pop();
+        if (!base) { this.showDamageNumber(x + 16, y - 6, share, col); return; }
+        const bx = base.txt.x + base.txt.displayWidth / 2 + 3, pk = list.find(n => n.color === col && now - n.t < 300 && Math.abs(n.x - bx) < 40 && Math.abs(n.y0 - base.y0) < 20);
+        const fmt = v => v >= 9.95 ? String(Math.round(v)) : v.toFixed(1);
+        if (pk) { pk.total += share; pk.t = now; this.tweens.killTweensOf(pk.txt); pk.txt.setText('+' + fmt(pk.total)).setAlpha(1).setPosition(pk.x, pk.y0).setScale(1.2); this._vfxFloat?.(pk.txt); return; }
+        const txt = this.add.text(bx, base.y0, '+' + fmt(share), { fontSize: `${Math.max(9, Math.round(base.txt.style.fontSize ? parseInt(base.txt.style.fontSize) * 0.8 : 11))}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
+            color: col, stroke: '#05060a', strokeThickness: 4, resolution: 2 }).setOrigin(0, 0.5).setDepth(10).setScale(1.2);
+        list.push({ txt, x: bx, y: base.y, y0: base.y0, t: now, total: share, color: col });
+        this._vfxFloat?.(txt);
+    }
     showDamageNumber(x, y, amount, color = '#ffffff') {
         if (!amount || amount <= 0) return;
         const L = this._lastDmg;
@@ -86,15 +98,7 @@ class CombatSystem {
             if (color === '#ffffff') color = { fire: '#ff9a4a', ice: '#8ad8ff', lightning: '#ffe14a', cosmic: '#d79cff' }[L.el] || color;
             if (L.hex >= 0.5) {   // Hex's share, beside it in pink
                 this.showDamageNumber(x, y, amount - L.hex, this._critPending ? '#ffd34a' : color);   // (a crit's gold goes on this one)
-                const list = this._vfxNums, now = this.time.now, base = list?.filter(n => n.t === now && n.txt.active).pop();
-                if (!base) { this.showDamageNumber(x + 16, y - 6, L.hex, '#ff5fd2'); return; }
-                const bx = base.txt.x + base.txt.displayWidth / 2 + 3, pk = list.find(n => n.color === '#ff5fd2' && now - n.t < 300 && Math.abs(n.x - bx) < 40 && Math.abs(n.y0 - base.y0) < 20);
-                const fmt = v => v >= 9.95 ? String(Math.round(v)) : v.toFixed(1);
-                if (pk) { pk.total += L.hex; pk.t = now; this.tweens.killTweensOf(pk.txt); pk.txt.setText('+' + fmt(pk.total)).setAlpha(1).setPosition(pk.x, pk.y0).setScale(1.2); this._vfxFloat?.(pk.txt); return; }
-                const txt = this.add.text(bx, base.y0, '+' + fmt(L.hex), { fontSize: `${Math.max(9, Math.round(base.txt.style.fontSize ? parseInt(base.txt.style.fontSize) * 0.8 : 11))}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
-                    color: '#ff5fd2', stroke: '#05060a', strokeThickness: 4, resolution: 2 }).setOrigin(0, 0.5).setDepth(10).setScale(1.2);   // Hex's share, right beside the hit
-                list.push({ txt, x: bx, y: base.y, y0: base.y0, t: now, total: L.hex, color: '#ff5fd2' });
-                this._vfxFloat?.(txt);
+                this._dmgShare(x, y, L.hex, '#ff5fd2');
                 return;
             }
         }
@@ -664,8 +668,9 @@ class CombatSystem {
         if (enemy?._isEncased) this._encCleanup?.(enemy);   // its stone, its rubble: gone with it
         if (enemy?._isGem && enemy.sprite?.active) return;   // the Gem only breaks when the floor's clear (LevelManager._gemShatter)
         if (enemy?._isLeech) this._leechDie(enemy);   // what it stole comes back
+        if (enemy?._isCheer) this._cheerEnd(enemy, true);   // her stage folds away, and her cheer with it
         if (enemy && !enemy._achCounted) { enemy._achCounted = true; Achievements.onKill(this, enemy); }
-        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_leechRing', '_leechMark', '_diverTell', '_leechIcon', '_leechGlow', '_tideAura', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
+        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_leechRing', '_leechMark', '_diverTell', '_leechIcon', '_leechGlow', '_tideAura', '_tideFx', '_cheerFx', '_discFx', '_pomL', '_pomR', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
         const _leech = this._mods?.leech;   // relics and Tower boons: kills heal
         const _con = Enchants.n(this.equippedWeapons?.[this.currentElement], 'contagion') / 100;   // Contagion: its burn and chill move on
         if (_con && enemy && !enemy._spread && ((enemy.burnStacks || 0) > 0 || (enemy.chillStacks || 0) > 0) && this.enemies) {
@@ -1033,7 +1038,9 @@ class CombatSystem {
         // A taunted enemy's hit lands on the ally it's attacking, not you (_tauntBegin).
         if (this._tauntAlly) { this._tauntAlly.hurt?.(amount); return; }
         this._lastCombatAt = this.time.now;   // being hit is fighting too (combat time, _tickRunStats)
-        if ((this._hitBy?._tideUntil || 0) > this.time.now) amount *= this._hitBy._tideMult;   // standing in water by a Tidecaller
+        let boost = 1, big = 1, boostCol = null;   // what made this hit bigger, for its "+N" (in the biggest one's colour)
+        const boosted = (m, col) => { amount *= m; boost *= m; if (m > big) { big = m; boostCol = col; } };
+        if ((this._hitBy?._cheerUntil || 0) > this.time.now) boosted(this._hitBy._cheerDmg, '#ff7ad8');   // encouraged by a Cheerleader
         if (this.time.now < (this._frostShieldUntil || 0)) amount = this._frostShieldHit(amount);
         if (this._cs && this.time.now < this._cs.horizonUntil) { const src = this._hitBy?.sprite; this._cs.horizonHitAt = this.time.now; this._cs.horizonHitA = src && this.player ? Math.atan2(src.y - this.player.y, src.x - this.player.x) : -Math.PI / 2; }   // the Event Horizon ripples where it's hit
         // Mid-dash: the hit passes through you (ElementSystem.playerDash).
@@ -1053,10 +1060,15 @@ class CombatSystem {
 
         // damageReductionMultiplier is Cosmic.js' (rewritten every frame); armor (Stats.js) is its own.
         // Then the armor talents (Stats.js): Aegis can absorb it outright.
-        if (this.time.now < (this._iceFrostUntil || 0)) amount *= this._iceFrostCfg?.().TAKEN ?? 2;
-        if (this.time.now < (this._absHexUntil || 0)) amount *= 1.5;   // an Ult Absorber's Hex   // the ice ult: this cold, you're fragile
+        if (this.time.now < (this._iceFrostUntil || 0)) boosted(this._iceFrostCfg?.().TAKEN ?? 2, '#bff4ff');   // the ice ult: this cold, you're fragile
+        if (this.time.now < (this._absHexUntil || 0)) boosted(1.5, '#ff5fd2');   // an Ult Absorber's Hex
         const actualDamage = PlayerStats.hurt(this, amount * this.damageReductionMultiplier * (this.statTakenMult ?? 1) * Enchants.taken(this.equippedWeapons?.[this.currentElement]));   // Bulwark: the weapon you hold
         if (actualDamage <= 0) return;
+        if (this.player && this._vfxDamageNumber) {   // what the hit took, in red, and the share the boosts added beside it
+            const extra = actualDamage * (1 - 1 / boost), x = this.player.x, y = this.player.y - 8;
+            this._vfxDamageNumber(x, y, actualDamage - extra, '#ff4a5a');
+            if (extra >= 0.5) this._dmgShare(x, y, extra, boostCol);
+        }
         this._hurtTotal = (this._hurtTotal || 0) + actualDamage;   // a Tower floor without a scratch (Achievements.onFloor)
         if (this._luckCrit) { this._luckCrit = 0; if (!this._mods?.luckGain || !this._luck) this.showStatusText?.(this.player.x, this.player.y - 40, 'LUCK LOST', '#8a9a8a'); }
         if (this._mods?.luckGain && this._luck) { this._luck = 0; this.showStatusText?.(this.player.x, this.player.y - 40, 'LUCK LOST', '#8a9a8a'); }

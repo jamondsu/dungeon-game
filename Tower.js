@@ -45,6 +45,7 @@ class TowerFloors {
         { id: 'leech',     cost: 2, from: 7, role: 'ranged',  make: (S, x, y) => S.createLeech(x, y, 0) },
         { id: 'diver',     cost: 3, from: 9, role: 'ranged',  make: (S, x, y) => S.createTorpedoDiver(x, y, 0) },
         { id: 'wraith',    cost: 4, from: 12, role: 'support', make: (S, x, y) => S.createWraith(x, y, 0) },
+        { id: 'cheer',     cost: 3, from: 9, role: 'support', make: (S, x, y) => S.createCheerleader(x, y, 0) },
         { id: 'gem',       cost: 5, from: 14, role: 'elite', make: (S, x, y) => (S.enemies || []).some(e => e._isGem && e.sprite?.active) ? S.createEnemy(x, y) : S.createGem(x, y, 0) },   // one at a time
         { id: 'ceo',       cost: 6, from: 16, role: 'elite', make: (S, x, y) => S.createSlimeCeo(x, y, 0) },
         { id: 'shade',     cost: 8, from: 18, role: 'elite', make: (S, x, y) => S.createAdaptiveShade(x, y, 0) },

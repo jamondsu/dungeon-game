@@ -966,7 +966,7 @@ class GameScene extends Phaser.Scene {
                     this._frostShieldFx?.();
                     this.showStatusText(this.player.x, this.player.y - 30, 'FROST SHIELD', '#bff4ff');
                     this._vfxBursts?.ice?.explode(20, this.player.x, this.player.y);
-                    Sfx.play(this, 'freeze');
+                    Sfx.play(this, 'frost_shield');
                     this.cameras.main.shake(40, 0.002);
                     this._updateIcicleChargeBar();
                 }
@@ -1005,6 +1005,7 @@ class GameScene extends Phaser.Scene {
     _forkAim(...a) { return ElementSystem.prototype._forkAim.call(this, ...a); }
     _forkBolt(...a) { return ElementSystem.prototype._forkBolt.call(this, ...a); }
     _forkBegin(...a) { return ElementSystem.prototype._forkBegin.call(this, ...a); }
+    _forkSnapFx(...a) { return ElementSystem.prototype._forkSnapFx.call(this, ...a); }
     _forkIgnite(...a) { return ElementSystem.prototype._forkIgnite.call(this, ...a); }
     _encased(...a) { return ElementSystem.prototype._encased.call(this, ...a); }
     _iceShellTex(...a) { return ElementSystem.prototype._iceShellTex.call(this, ...a); }
@@ -2037,6 +2038,7 @@ class GameScene extends Phaser.Scene {
     showStatusText(...a) { return CombatSystem.prototype.showStatusText.call(this, ...a); }
     _dmgNote(...a) { return CombatSystem.prototype._dmgNote.call(this, ...a); }
     showDamageNumber(...a) { return CombatSystem.prototype.showDamageNumber.call(this, ...a); }
+    _dmgShare(...a) { return CombatSystem.prototype._dmgShare.call(this, ...a); }
     damageEnemy(...a) { return CombatSystem.prototype.damageEnemy.call(this, ...a); }
     killEnemy(...a) { return CombatSystem.prototype.killEnemy.call(this, ...a); }
     takeDamage(...a) { if (this._devGodMode) return; return CombatSystem.prototype.takeDamage.call(this, ...a); }
@@ -2321,6 +2323,19 @@ class GameScene extends Phaser.Scene {
     _gemDome(...a) { return LevelManager.prototype._gemDome.call(this, ...a); }
     _gemShatter(...a) { return LevelManager.prototype._gemShatter.call(this, ...a); }
     _tideTick(...a) { return LevelManager.prototype._tideTick.call(this, ...a); }
+    _tideLook(...a) { return LevelManager.prototype._tideLook.call(this, ...a); }
+    _atkSpd(...a) { return LevelManager.prototype._atkSpd.call(this, ...a); }
+    _cheerCfg(...a)  { return LevelManager.prototype._cheerCfg.call(this, ...a); }
+    createCheerleader(...a) { return LevelManager.prototype.createCheerleader.call(this, ...a); }
+    _cheerTick(...a) { return LevelManager.prototype._cheerTick.call(this, ...a); }
+    _cheerGo(...a)   { return LevelManager.prototype._cheerGo.call(this, ...a); }
+    _cheerSeek(...a) { return LevelManager.prototype._cheerSeek.call(this, ...a); }
+    _cheerShow(...a) { return LevelManager.prototype._cheerShow.call(this, ...a); }
+    _cheerAnchor(...a) { return LevelManager.prototype._cheerAnchor.call(this, ...a); }
+    _cheerConfetti(...a) { return LevelManager.prototype._cheerConfetti.call(this, ...a); }
+    _cheerEnd(...a)  { return LevelManager.prototype._cheerEnd.call(this, ...a); }
+    _cheerLook(...a) { return LevelManager.prototype._cheerLook.call(this, ...a); }
+    _discLook(...a)  { return LevelManager.prototype._discLook.call(this, ...a); }
     _tideCfg(...a) { return LevelManager.prototype._tideCfg.call(this, ...a); }
     createArmoredSlime(...a) { return LevelManager.prototype.createArmoredSlime.call(this, ...a); }
     _armorCfg(...a)        { return LevelManager.prototype._armorCfg.call(this, ...a); }

@@ -124,10 +124,12 @@ class CreatureFX {
   "icecrown": {"x": 10, "y": 13, "pal": {"W": "#ffffff", "I": "#9fe8ff", "i": "#5fb8e0", "d": "#2a6a9a"}, "rows": [
     "......k......", ".....kWk.....", "..k..kIk..k..", ".kWk.kIk.kWk.", ".kIkkiIikkIk.", "kiIiiIIIiiIik", "kiiiiiiiiiiik",
     "kdddddddddddk", ".kkkkkkkkkkk."]},
+  "bow": {"x": 11, "y": 18, "pal": {"P": "#fff3a8", "p": "#ffd84a", "d": "#c89a2a"}, "rows": [
+    ".kk.....kk.", "kPpk...kpPk", "kPppkkkpppk", "kpppkPkpppk", "kdppkkkppdk", ".kkk...kkk."]},
   "qcrown": {"x": 11, "y": 18, "pal": {"g": "#ffd84a", "G": "#fff3a8", "d": "#b8892a", "r": "#ff3a5a", "c": "#5ff4ff"}, "rows": [
     "k....k....k", "kk..kGk..kk", "kGk.kgk.kGk", "kgrkgGgkrgk", "kgggggcgggk", "kdddddddddk", ".kkkkkkkkk."]}
  },
- "sets": {"berserker": ["horns"], "rooter": ["sprout"], "voidsniper": ["shades", "mask"], "sniper": ["hood", "monocle"], "lightningelem": ["storm"], "drowner": ["weeds"], "tidecaller": ["cloud"], "tidalguard": ["helm"], "frost": ["icecrown"], "wishingwell": ["roof"], "conduit": ["terminals"], "volt": ["crown"], "queen": ["qcrown"], "bud": ["bud"], "bud0": ["bud0"], "bud1": ["bud1"], "bud2": ["bud2"], "bud3": ["bud3"], "leech": ["fangs"], "hunter": ["ears", "fangs"], "shade": ["voidcrown"], "shade_fire": ["flamecrown"], "shade_ice": ["frostspikes"], "shade_lightning": ["boltcrown"], "wraith": ["wisps"], "diver": ["goggles"], "ceo": ["tophat"], "healer": ["medic"], "anchor": ["anchorhat"]},
+ "sets": {"berserker": ["horns"], "rooter": ["sprout"], "voidsniper": ["shades", "mask"], "sniper": ["hood", "monocle"], "lightningelem": ["storm"], "drowner": ["weeds"], "tidecaller": ["cloud"], "tidalguard": ["helm"], "frost": ["icecrown"], "wishingwell": ["roof"], "conduit": ["terminals"], "volt": ["crown"], "queen": ["qcrown"], "bud": ["bud"], "bud0": ["bud0"], "bud1": ["bud1"], "bud2": ["bud2"], "bud3": ["bud3"], "leech": ["fangs"], "hunter": ["ears", "fangs"], "shade": ["voidcrown"], "shade_fire": ["flamecrown"], "shade_ice": ["frostspikes"], "shade_lightning": ["boltcrown"], "wraith": ["wisps"], "diver": ["goggles"], "ceo": ["tophat"], "healer": ["medic"], "anchor": ["anchorhat"], "cheer": ["bow"]},
  "bits": {
   "star": {"pal": {"Y": "#ffe94a", "W": "#ffffff"}, "rows": [
     "...k...", "..kYk..", ".kkYkk.", "kYYWYYk", ".kkYkk.", "..kYk..", "...k..."]},
@@ -735,7 +737,7 @@ class CreatureFX {
     }
 
     // The eyes an enemy wears, by what it does: carers look kind, the stubborn ones calm, the sneaky ones sly, the rest angry
-    static MOODS = { healer: 'kind', tidecaller: 'kind', wishingwell: 'kind',
+    static MOODS = { healer: 'kind', tidecaller: 'kind', wishingwell: 'kind', cheer: 'kind',
         armored: 'calm', encased: 'calm', gem: 'calm', anchor: 'calm', shade: 'calm', frost: 'calm', tidalguard: 'calm', conduit: 'calm',
         wraith: 'sly', leech: 'angry', hunter: 'sly', drowner: 'sly', voidsniper: 'sly', ceo: 'sly' };
     static moodOf(key) { return CreatureFX.MOODS[key] || 'angry'; }
@@ -862,6 +864,7 @@ class CreatureFX {
                 healer:        { hat: 'healer', eye: 0xc8ffd8 },
                 anchor:        { hat: 'anchor', eye: 0xc8dcf0 },
                 hunter:        { hat: 'hunter', eye: 0xffe8d0 },   // red when it frenzies (LevelManager._hunterFrenzy)
+                cheer:         { hat: 'cheer', eye: 0xffd0ec },
             },
             // The warnings that fade in over a head ("!") keep their timing; only the drawing
             // changes. Field -> colour (null: read it off the game's own text).
@@ -1005,6 +1008,7 @@ class CreatureFX {
         const lift = Math.max(0, (18.5 - top) * Math.abs(e.sprite.scaleY || 1.2));
         if (lift > 0) e._hpBarYOff = (e._hpBarYOff || 0) - Math.round(lift);
         e._cfxTop = top;
+        this.updateEnemyHealthBar?.(e);   // the bar starts at the lifted height, not on its face till its first step
     }
 
     // Marks: the replaced ones stop drawing (checked every frame: some are made later, or

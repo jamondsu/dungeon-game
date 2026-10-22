@@ -240,7 +240,7 @@ class EnemyManager {
                     enemy._arcRangeRing.x = enemy.sprite.x;
                     enemy._arcRangeRing.y = enemy.sprite.y;
                 }
-                if (currentTime - (enemy._lastArcTime || 0) >= (enemy._arcCooldown || 2500)) {
+                if (currentTime - (enemy._lastArcTime || 0) >= (enemy._arcCooldown || 2500) / this._atkSpd(enemy, currentTime)) {
                     enemy._lastArcTime = currentTime;
                     const dist = Math.hypot(this.playerX - enemy.x, this.playerY - enemy.y);   // round, as its ring shows
                     // not through a wall, and not out of a room you haven't come into (it zapped you in the doorway of the Void Rift's boss room)
@@ -248,7 +248,7 @@ class EnemyManager {
                     if (dist <= 5 && this.player?.active && sameRoom && this._clearShot(enemy.x, enemy.y, this.playerX, this.playerY)) {
                         // Arc toward player
                         this.drawLightningBolt({ sprite: enemy.sprite }, { sprite: this.player });
-                        this.takeDamage(8 * (this.enemyDamageScale || 1));
+                        this._hitBy = enemy; this.takeDamage(8 * (this.enemyDamageScale || 1)); this._hitBy = null;
                         enemy.sprite.setTint(0xffffaa);
                         this.time.delayedCall(120, () => { if (enemy.sprite?.active) enemy.sprite.setTint(0xffffaa); });
                         // Flash range ring on fire
@@ -278,7 +278,7 @@ class EnemyManager {
                 const bstate = enemy._berserkerState || 'idle';
 
                 if (bstate === 'idle' || bstate === 'cooldown') {
-                    if (bdist <= 3 && currentTime - (enemy._berserkerLastSwing || 0) >= (enemy._berserkerCooldown || 3200)) {
+                    if (bdist <= 3 && currentTime - (enemy._berserkerLastSwing || 0) >= (enemy._berserkerCooldown || 3200) / this._atkSpd(enemy, currentTime)) {
                         enemy._berserkerState = 'charging';
                         enemy._berserkerChargeStart = currentTime;
                         Sfx.play(this, 'tell', { ms: enemy._berserkerChargeDur || 600 });
@@ -310,7 +310,7 @@ class EnemyManager {
                 const sstate = enemy._singState || 'idle';
 
                 if (sstate === 'idle' || sstate === 'cooldown') {
-                    if (inRange && currentTime - (enemy._singLastAtk || 0) >= (enemy._singCooldown || 2800)) {
+                    if (inRange && currentTime - (enemy._singLastAtk || 0) >= (enemy._singCooldown || 2800) / this._atkSpd(enemy, currentTime)) {
                         enemy._singState = 'charging';
                         enemy._singChargeStart = currentTime;
                         Sfx.play(this, 'tell', { ms: enemy._singChargeDur || 700 });
@@ -367,7 +367,7 @@ class EnemyManager {
 
                                 // Damage + slow if player is on this tile
                                 if (this.playerX === tx && this.playerY === ty) {
-                                    this.takeDamage(4 * (this.enemyDamageScale || 1));
+                                    this._hitBy = enemy; this.takeDamage(4 * (this.enemyDamageScale || 1)); this._hitBy = null;
                                     this.player?.setTint(0xcc88ff);
                                     this.time.delayedCall(300, () => { if (this.player?.active) this.player.clearTint(); });
                                     this._singularitySlowed = true;
@@ -608,6 +608,8 @@ class EnemyManager {
             if (enemy._bomberSpeedMult) moveCooldown = Math.round(moveCooldown * enemy._bomberSpeedMult); // sapper rush
             if (enemy.isSingularitySlime) moveCooldown = Math.round(moveCooldown * 2); // goopy — 2× slower (and slows still count)
             if (enemy._anchorSpeedMult && enemy._anchorSpeedMult > 1) moveCooldown = Math.round(moveCooldown / enemy._anchorSpeedMult);
+            if ((enemy._cheerUntil || 0) > currentTime) moveCooldown = Math.round(moveCooldown / enemy._cheerSpd);   // encouraged by a Cheerleader
+            if ((enemy._discUntil || 0) > currentTime) moveCooldown = Math.round(moveCooldown / enemy._discSpd);   // discouraged: she's dead
             // Cloaked enemies (Wraith stealth) crawl — they trade speed for invincibility.
             // Applied after other multipliers so it stacks cleanly. _cloakSlowMult is set by
             // the cloak system (default ~2.2× slower); cleared the instant they're revealed.
@@ -644,7 +646,7 @@ class EnemyManager {
                     // an upper bound the only thing limiting range was the room gate above.
                     const mmax = enemy._mortarMaxRange ?? 13;
                     if (mdist > enemy._mortarSafeRadius && mdist <= mmax
-                        && currentTime - enemy._mortarLastFire >= enemy._mortarCooldown) {
+                        && currentTime - enemy._mortarLastFire >= enemy._mortarCooldown / this._atkSpd(enemy, currentTime)) {
                         enemy._mortarLastFire = currentTime;
                         this._fireMortarShot(enemy);
                     }
@@ -745,13 +747,13 @@ class EnemyManager {
                     const rdist = rdx + rdy;
                     if (rdist <= (enemy._thumpRange || 3)) {
                         // CLOSE — ground thump every 2s
-                        if (currentTime - (enemy._thumpLastFire || 0) >= (enemy._thumpCooldown || 2000)) {
+                        if (currentTime - (enemy._thumpLastFire || 0) >= (enemy._thumpCooldown || 2000) / this._atkSpd(enemy, currentTime)) {
                             enemy._thumpLastFire = currentTime;
                             this._rooterGroundThump(enemy);
                         }
                     } else if (rdist <= (enemy._tendrilRange || 12)) {
                         // FAR — pull tendril
-                        if (currentTime - (enemy._tendrilLastFire || 0) >= (enemy._tendrilCooldown || 4000)) {
+                        if (currentTime - (enemy._tendrilLastFire || 0) >= (enemy._tendrilCooldown || 4000) / this._atkSpd(enemy, currentTime)) {
                             enemy._tendrilLastFire = currentTime;
                             this._fireRootTendril(enemy);
                         }
@@ -762,8 +764,8 @@ class EnemyManager {
 
             // _enemyTargetX/Y and _enemyActivationRange can be overridden by other scenes
             // (e.g. TowerDefenseScene sets these to the base tile and a large range)
-            const _etx = this._enemyTargetX ?? this.playerX;
-            const _ety = this._enemyTargetY ?? this.playerY;
+            const _etx = enemy._goalX ?? this._enemyTargetX ?? this.playerX;   // (_goalX: a tile of its own to go to, not you: a Cheerleader)
+            const _ety = enemy._goalY ?? this._enemyTargetY ?? this.playerY;
             const dist = Math.abs(enemy.x - _etx) + Math.abs(enemy.y - _ety);
 
             // Room gating for tutorial, level 2, level 3, and level 4
@@ -839,7 +841,7 @@ class EnemyManager {
                 if (!nextStep) continue;
 
                 // Player collision — attack instead of moving
-                if (nextStep.x === _etx && nextStep.y === _ety) {
+                if (enemy._goalX == null && nextStep.x === _etx && nextStep.y === _ety) {
                     if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
                         this.enemyAttackAnimation(enemy, _etx, _ety);
                         this._hitBy = enemy;   // who it was (the Frost Shield chills them back)
@@ -848,14 +850,15 @@ class EnemyManager {
                         this._hitBy = null;
                         this.lastPlayerDamageTime = currentTime;
                     }
-                    enemy.lastMoveTime = currentTime;
+                    enemy.lastMoveTime = currentTime - moveCooldown * (1 - 1 / this._atkSpd(enemy, currentTime));   // its next hit comes sooner when it attacks faster
                     enemy._committedPath = null;
                     enemy._pathIndex = undefined;
                     continue;
                 }
 
                 // Final occupied check for the fresh-BFS case (pathStillValid already handles its own)
-                if (this.getEnemyAt(nextStep.x, nextStep.y) || this._tauntBlocks?.(nextStep.x, nextStep.y)) {   // a taunted enemy still can't walk onto you
+                if (this.getEnemyAt(nextStep.x, nextStep.y) || this._tauntBlocks?.(nextStep.x, nextStep.y)   // a taunted enemy still can't walk onto you
+                    || (enemy._goalX != null && nextStep.x === this.playerX && nextStep.y === this.playerY)) {   // nor one going somewhere of its own
                     enemy.lastMoveTime = currentTime;
                     continue;
                 }
@@ -905,11 +908,11 @@ class EnemyManager {
                             // Sync health bars and marks
                             if (enemy.healthBarBg) {
                                 enemy.healthBarBg.x = enemy.sprite.x;
-                                enemy.healthBarBg.y = enemy.sprite.y;
+                                enemy.healthBarBg.y = enemy.sprite.y + (enemy._hpBarYOff || 0);
                             }
                             if (enemy.healthBarFill) {
                                 enemy.healthBarFill.x = enemy.sprite.x;
-                                enemy.healthBarFill.y = enemy.sprite.y;
+                                enemy.healthBarFill.y = enemy.sprite.y + (enemy._hpBarYOff || 0);
                             }
                             if (enemy.burnVisual) {
                                 enemy.burnVisual.x = enemy.sprite.x;
@@ -1177,7 +1180,7 @@ class EnemyManager {
         }
         const playerKey = `${Math.round(this.player.x / this.TILE_SIZE)},${Math.round(this.player.y / this.TILE_SIZE)}`;
         if (hitTiles.has(playerKey)) {
-            this.takeDamage(SWING_DMG);
+            this._hitBy = enemy; this.takeDamage(SWING_DMG); this._hitBy = null;
             this.cameras.main.shake(60, 0.006);
             // Knockback 1 tile away
             const kbDX = Math.sign(this.playerX - enemy.x);
@@ -1237,6 +1240,8 @@ class EnemyManager {
         const slow = Math.max(enemy.isSlowed ? (enemy._slowMult ?? 1.0) : 0, enemy.isWet ? 1.0 : 0);
         let delay = (enemy.moveDelay || 1000) * (1 + slow);
         if ((enemy._csHexUntil || 0) > time) delay /= 0.6;   // Cosmic.js: Hexed
+        if ((enemy._cheerUntil || 0) > time) delay /= enemy._cheerSpd;   // encouraged by a Cheerleader
+        if ((enemy._discUntil || 0) > time) delay /= enemy._discSpd;   // discouraged: she's dead
         if (time - (enemy.lastMoveTime || 0) < delay) return;
         const next = path[1];
         if (this.world[next.x]?.[next.y] !== this.FLOOR) return;
@@ -1288,8 +1293,8 @@ class EnemyManager {
             if (!enemy.rangedState) enemy.rangedState = 'idle';
 
             // Electrical ranged enemies are 3× faster
-            const prefireDur = enemy.isElectrical ? 4000 / 3 : 4000;
-            const cooldownDur = enemy.isElectrical ? 3000 / 3 : 3000;
+            const prefireDur = (enemy.isElectrical ? 4000 / 3 : 4000) / this._atkSpd(enemy, time);
+            const cooldownDur = (enemy.isElectrical ? 3000 / 3 : 3000) / this._atkSpd(enemy, time);
             const shotGap = enemy.isElectrical ? 220 / 3 : 220;
 
             // ── MOVEMENT during idle/cooldown only ────────────────────────
@@ -2115,7 +2120,7 @@ class EnemyManager {
                     const curPY = this.playerY * TS + TS / 2;
                     const pdx = curPX - targetPX, pdy = curPY - targetPY;
                     if (Math.sqrt(pdx*pdx + pdy*pdy) <= SPLASH_R * TS) {
-                        this.takeDamage(DMG);
+                        this._hitBy = enemy; this.takeDamage(DMG); this._hitBy = null;
                     }
                     // Damage any engineer tower caught in the splash
                     if (this.engineerTowers?.length) {

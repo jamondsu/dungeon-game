@@ -72,7 +72,7 @@ const Sfx = {
     // synth version until it's in (or if it never loads).
     // (CC0 from Freesound, Pixabay for the snap: see assets/sfx/CREDITS.md)
     SAMPLES: Object.fromEntries(['evil_laugh', 'snap', 'roar', 'roar_big', 'bossdie', 'lava_loop', 'lava_pop1', 'lava_pop2', 'sear', 'crackle',
-        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_burst', 'zap', 'magic_whoosh',
+        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_dash', 'ice_dash', 'frost_shield', 'fire_burst', 'zap', 'magic_whoosh',
         'splat1', 'splat2', 'splat_big', 'squelch', 'punch', 'sword', 'chest_open', 'potion', 'boom1', 'boom2', 'eshot', 'block', 'door', 'gust', 'wind',
         'lava_erupt', 'slam', 'thud', 'powerup', 'buzz', 'click'].map(k => [k, `assets/sfx/${k}.wav`])),
     _buf: {},
@@ -421,7 +421,8 @@ const Sfx = {
             if (o.el === 'ice') this._glass(ctx, t + 0.07, { n: 3, spread: 0.06, f: 2600, vol: 0.02, dur: 0.25 });
         },
         snap(ctx, t, o, j) {               // a finger snap (Fork's), ringing out
-            if (!this._sample(ctx, t, { name: 'snap', vol: 0.5, space: 0.25 })) this.SOUNDS.e_snap.call(this, ctx, t, o, j);
+            if (!this._sample(ctx, t, { name: 'snap', vol: 1.5, space: 0.35 })) { this.SOUNDS.e_snap.call(this, ctx, t, o, j); return; }
+            this._tone(ctx, t + 0.01, { type: 'sine', f0: 120, f1: 38, dur: 0.45, vol: 0.32 });   // the world dropping still under it
         },
         coin(ctx, t, o, j) {               // glorps: a coin landing in the purse, a purchase
             if (!this._sample(ctx, t, { name: 'coin', rate: 0.9 + Math.random() * 0.25, vol: 0.4 })) this.SOUNDS.pickup.call(this, ctx, t, o, j);
@@ -456,14 +457,24 @@ const Sfx = {
         // a magic whoosh (the cosmic hop); air rushing past when the recordings aren't in
         dash(ctx, t, o, j) {
             const r = 0.94 + Math.random() * 0.12;
-            if (o.el === 'fire' ? this._sample(ctx, t, { name: 'fire_whoosh', rate: r, vol: 0.3 })
-                : o.el === 'lightning' ? this._sample(ctx, t, { name: 'zap', rate: r, vol: 0.4 })
+            if (o.el === 'fire' ? this._sample(ctx, t, { name: 'fire_dash', rate: r * 1.08, vol: 0.27 })
+                : o.el === 'ice' ? this._rec(ctx, t, { name: 'dash_whoosh', rate: r, vol: 0.3 }, { name: 'ice_dash', rate: r, vol: 0.28 })
                 : o.el === 'cosmic' ? this._sample(ctx, t, { name: 'magic_whoosh', rate: r, vol: 0.45 })
                 : this._sample(ctx, t, { name: 'dash_whoosh', rate: r, vol: 0.4 })) {
-                if (o.el === 'ice') this._sample(ctx, t + 0.03, { name: 'ice_crack', rate: 1.2, vol: 0.18 });
+                if (o.el === 'lightning') this._sample(ctx, t + 0.02, { name: 'zap', rate: 1.5, vol: 0.12 });   // a tick of static on the whoosh, not a full zap
                 return;
             }
             this._noise(ctx, t, { filter: 'bandpass', f0: 500 * j, f1: 2400 * j, q: 1.2, dur: 0.17, vol: 0.32, attack: 0.02 });
+        },
+        // The Frost Shield going up: an icy cast, crystal ringing round you.
+        frost_shield(ctx, t, o, j) {
+            if (!this._sample(ctx, t, { name: 'frost_shield', vol: 0.36 })) this.SOUNDS.freeze.call(this, ctx, t, o, j);
+        },
+        // A Cheerleader Slime's cheer: three shakes of its pompoms and a bright rising "yay" of notes.
+        cheer(ctx, t, o, j) {
+            for (let k = 0; k < 3; k++) this._noise(ctx, t + k * 0.09, { filter: 'bandpass', f0: 1100, f1: 1700, q: 1.4, dur: 0.07, vol: 0.13, attack: 0.008 });
+            [523, 659, 784, 1047].forEach((f, k) => this._tone(ctx, t + 0.12 + k * 0.06, { type: 'triangle', f0: f * j, dur: 0.12, vol: 0.08 }));
+            this._tone(ctx, t + 0.38, { type: 'sine', f0: 1568 * j, f1: 1760 * j, dur: 0.25, vol: 0.05 });
         },
         // Two quick notes, rising: the element changed.
         switch(ctx, t, o, j) {
@@ -507,7 +518,7 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sawtooth', f0: 300 * j, f1: 150, dur: 0.1, vol: 0.04 });
         },
         w_magma_staff(ctx, t, o, j) {      // a glob of lava flung: it pulls free with a gloopy blorp, heat breathing off it, a bubble popping
-            if (this._rec(ctx, t, { name: 'splat1', rate: 0.55 + Math.random() * 0.1, vol: 0.32 }, { name: 'fire_whoosh', rate: 1.5, vol: 0.14 })) return;   // a glob of lava, flung
+            if (this._rec(ctx, t, { name: 'fire_whoosh', rate: 1.6 + Math.random() * 0.2, vol: 0.3 }, { name: Math.random() < 0.5 ? 'lava_pop1' : 'lava_pop2', rate: 1.15, vol: 0.2 })) return;   // a lava bubble popping off the staff and a rush of heat (a pitched-down splat sounded like retching)
             this._tone(ctx, t, { type: 'sine', f0: 70 * j, f1: 150 * j, dur: 0.07, vol: 0.28, attack: 0.008 });
             this._tone(ctx, t + 0.06, { type: 'sine', f0: 150 * j, f1: 60, dur: 0.16, vol: 0.24 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 500, f1: 1400, dur: 0.14, vol: 0.12, attack: 0.03 });

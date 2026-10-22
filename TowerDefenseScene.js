@@ -503,6 +503,9 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     // All EnemyManager internal methods used by updateRangedEnemies and other systems
     _hasLineOfSight(...a)          { return EnemyManager.prototype._hasLineOfSight.call(this,...a); }
+    _atkSpd(...a)                  { return LevelManager.prototype._atkSpd.call(this,...a); }
+    _cheerEnd(...a)                { return LevelManager.prototype._cheerEnd.call(this,...a); }
+    _cheerCfg(...a)                { return LevelManager.prototype._cheerCfg.call(this,...a); }
     _findSniperRepositionTile(enemy,minRange,attackMax){
         if(enemy?._tdStationary)return{x:enemy._pinnedX??enemy.x,y:enemy._pinnedY??enemy.y};
         // TD sniper: the stock dungeon algorithm only ever searches a small radius

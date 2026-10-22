@@ -45,3 +45,6 @@ Trimmed, levelled and resampled for the game. All free to use; none require cred
 | powerup.wav | freesound.org/s/368651 "Game Powerup" | Jofae | CC0 |
 | buzz.wav | freesound.org/s/419023 "acess denied buzz" | Jacco18 | CC0 |
 | click.wav | freesound.org/s/253168 "SFX UI Button Click" | suntemple | CC0 |
+| fire_dash.wav | freesound.org/s/260555 "Basic Fire Whoosh 2" (its swell trimmed) | LookIMadeAThing | CC0 |
+| frost_shield.wav | freesound.org/s/691005 "Icy Magic Cast" | DustyWind | CC0 |
+| ice_dash.wav | freesound.org/s/411979 "instant chill 2" | PanxoZerok | CC0 |

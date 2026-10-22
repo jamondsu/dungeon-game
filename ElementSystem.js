@@ -933,8 +933,8 @@ class ElementSystem {
                             duration: 140,
                             ease: 'Quad.easeIn',
                             onUpdate: () => {
-                                if (enemy.healthBarBg) { enemy.healthBarBg.x = enemy.sprite.x; enemy.healthBarBg.y = enemy.sprite.y; }
-                                if (enemy.healthBarFill) { enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y; }
+                                if (enemy.healthBarBg) { enemy.healthBarBg.x = enemy.sprite.x; enemy.healthBarBg.y = enemy.sprite.y + (enemy._hpBarYOff || 0); }
+                                if (enemy.healthBarFill) { enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y + (enemy._hpBarYOff || 0); }
                                 if (enemy.burnVisual) { enemy.burnVisual.x = enemy.sprite.x; enemy.burnVisual.y = enemy.sprite.y - 18; }
                                 if (enemy.brittleVisual) { enemy.brittleVisual.x = enemy.sprite.x; enemy.brittleVisual.y = enemy.sprite.y + 14; }
                                 if (enemy._tsunamiMultText) { enemy._tsunamiMultText.x = enemy.sprite.x; enemy._tsunamiMultText.y = enemy.sprite.y - 28; }
@@ -1288,7 +1288,7 @@ class ElementSystem {
 
     // ─── FIRE HELPERS ──────────────────────────────────────────────────
 
-    // ── FORK (the lightning ult) ── you become lightning and time stops: the bolt streaks to the nearest enemy, then to
+    // ── FORK (the lightning ult) ── a snap of your fingers stops time and you become lightning: the bolt streaks to the nearest enemy, then to
     // random ones in the room until it has passed through them all (a combo count over each), leaving its path behind it,
     // and back to you. A snap, and the whole web ignites: the comboed take HIT (more the higher their count), anything on
     // a path takes PATH. For AFTER_MS, damage to anything it touched splashes SHARE of itself (at most CAP) to those near it.
@@ -1297,7 +1297,7 @@ class ElementSystem {
         // Weak on a few, ruinous on a crowd: every hit is multiplied by CROWD per enemy past the first (up to CROWD_MAX)
         // (ESC: each hop that much quicker than the last, up to ESC_MAX, never under HOP_FLOOR ms)
         return { HIT: 18, HIT_PCT: 0.012, COMBO_STEP: 0.04, CROWD: 0.16, CROWD_MAX: 4.5, PATH: 8, PATH_R: 0.7, BOSS_PCT: 0.25, MAX_HOPS: 30, REACH: 12,
-                 SPEED: 650, HOP_MIN: 120, HOP_MAX: 340, ESC: 0.12, ESC_MAX: 3.5, HOP_FLOOR: 45, TRANSFORM_MS: 420, SNAP_MS: 320, BOOM_MS: 160, ZOOM: 1.55,
+                 SPEED: 650, HOP_MIN: 120, HOP_MAX: 340, ESC: 0.12, ESC_MAX: 3.5, HOP_FLOOR: 45, STOP_MS: 450, TRANSFORM_MS: 420, SNAP_MS: 320, BOOM_MS: 160, ZOOM: 1.55,
                  AFTER_MS: (s2 ? 16000 : 12000) * (this._mods?.ultLong || 1), SPLASH_R: s2 ? 3 : 2.5, SHARE: 0.4, CAP: 30,
                  THUMP_MS: 350, THUMP_R: 2, THUMP_DAZE: 350, SPEED_MULT: 0.5,   // each step's thump: a squircle THUMP_R tiles round you (5x5, its corners off); you move at SPEED_MULT of the move delay
                  ZAP_R: 5, ZAP: 5, ZAP_PCT: 0.005, ZAP_FORKS: 2, ZAP_FORK_R: 3, ZAP_FORK_SHARE: 0.5 };   // ...and zaps everything within ZAP_R, each zap forking to ZAP_FORKS more
@@ -1324,6 +1324,28 @@ class ElementSystem {
             for (const [w, col, al] of [[3 * thick, 0xffe14a, 0.5], [1.2 * thick, 0xffffff, 0.9]]) { g.lineStyle(w, col, al).beginPath(); g.moveTo(q.x, q.y); g.lineTo(m.x, m.y); g.lineTo(e.x, e.y); g.strokePath(); }
         }
     }
+    // The snap of the fingers: the world drops to deep blue for a blink, then a white flash, a shockwave off you, lightning
+    // cracking out round you and the camera jolted. (New tweens still run in stopped time: only the ones already playing pause.)
+    // (Not a camera postFX colour flip: alongside the bloom pipeline it rendered the screen black.)
+    _forkSnapFx(x, y) {
+        const cam = this.cameras.main, W = this.scale.width, H = this.scale.height, ADD = Phaser.BlendModes.ADD;
+        Sfx.play(this, 'snap');
+        const blue = this.add.rectangle(W / 2, H / 2, W, H, 0x3a4cff, 1).setScrollFactor(0).setDepth(19.4).setBlendMode(Phaser.BlendModes.MULTIPLY);
+        this.tweens.addCounter({ duration: 90, onComplete: () => {
+            blue.destroy();
+            const fl = this.add.rectangle(W / 2, H / 2, W, H, 0xfff6d8, 0.7).setScrollFactor(0).setDepth(19.5);
+            this.tweens.add({ targets: fl, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
+        } });
+        for (const [r, w, col, ms] of [[40, 3, 0xfff2a0, 560], [26, 2, 0xffffff, 380]]) {   // the shockwave: two rings racing out
+            const ring = this.add.graphics({ x, y }).setDepth(4.8).setBlendMode(ADD).lineStyle(w, col, 1).strokeCircle(0, 0, r);
+            this.tweens.add({ targets: ring, scale: 300 / r, alpha: 0, duration: ms, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+        }
+        const cr = this.add.graphics().setDepth(4.75).setBlendMode(ADD);
+        for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2 + Math.random() * 0.5, L = 46 + Math.random() * 50; this._forkBolt(cr, { x, y }, { x: x + Math.cos(a) * L, y: y + Math.sin(a) * L }, 0.8, true); }
+        this.tweens.add({ targets: cr, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => cr.destroy() });
+        this._vfxFlash?.(x, y, 80, 0xffffff, 240, 1);
+        cam.shake(160, 0.008);
+    }
     _forkBegin() {
         if (this._forkStop) return;
         const C = this._forkCfg(), p = this.player, list = this._forkTargets();
@@ -1338,18 +1360,21 @@ class ElementSystem {
         const web = this.add.graphics().setDepth(4.6), head = this.add.image(p.x, p.y, 'vfx_glow').setTint(0xfff6a0).setBlendMode(ADD).setScale(0).setDepth(4.7);
         const segs = [], combos = [];
         const drawWeb = (thick) => { web.clear(); for (const s of segs) this._forkBolt(web, s.a, s.b, thick, true); };   // re-jagged every frame: it crackles
-        let stage = 'transform', t0 = this.game.loop.time, at = { ...home }, i = 0, from = at, hopMs = 0;
-        Sfx.play(this, 'e_thunder'); p.setTintFill?.(0xfff6a0);
+        let stage = 'stop', t0 = this.game.loop.time, at = { ...home }, i = 0, from = at, hopMs = 0;
+        this._forkSnapFx(home.x, home.y);   // the snap comes first: it's what stops everything
         cam.startFollow(head, false, 0.12, 0.12);   // the camera rides the bolt
         const done = () => { this.events.off('update', step); web.destroy(); head.destroy(); dim.destroy(); };
         const restoreCam = () => { if (f0) cam.startFollow(f0, false, lx, ly); };
         const step = () => {
             const now = this.game.loop.time, e = now - t0;   // (real time: the scene clock is stopped)
             if (!this.player?.active) { done(); combos.forEach(c => c.destroy()); restoreCam(); cam.setZoom(z0); this._forkStop = false; this._freezeClock?.(false); return; }
-            if (stage === 'transform') {   // the camera closes in, the slime goes white-hot and becomes a ball of lightning
+            if (stage === 'stop') {   // a held beat of stillness after the snap, the world draining dark
+                dim.setAlpha(0.4 * Math.min(1, e / 120));
+                if (e >= C.STOP_MS) { stage = 'transform'; t0 = now; Sfx.play(this, 'e_thunder'); p.setTintFill?.(0xfff6a0); }
+            } else if (stage === 'transform') {   // the camera closes in, the slime goes white-hot and becomes a ball of lightning
                 const k = Math.min(1, e / C.TRANSFORM_MS);
                 cam.setZoom(z0 * (1 + (C.ZOOM - 1) * Phaser.Math.Easing.Cubic.Out(k)));
-                dim.setAlpha(0.4 * k); head.setPosition(home.x, home.y).setScale(0.7 * k); p.setAlpha(1 - k);
+                head.setPosition(home.x, home.y).setScale(0.7 * k); p.setAlpha(1 - k);
                 if (k >= 1) { stage = 'hop'; t0 = now; from = at; hopMs = 0; }
             } else if (stage === 'hop' || stage === 'return') {
                 const tgt = stage === 'hop' ? order[i] : null, live = tgt?.sprite?.active, to = tgt ? (live ? this._forkAim(tgt) : from) : home;
@@ -1376,7 +1401,7 @@ class ElementSystem {
             } else if (stage === 'snap') {   // back where you began; the camera pulls back out; a snap of the fingers
                 drawWeb(1);
                 cam.setZoom(z0 * (1 + (C.ZOOM - 1) * (1 - Math.min(1, e / C.SNAP_MS))));
-                if (e >= C.SNAP_MS && !this._forkSnapped) { this._forkSnapped = true; Sfx.play(this, 'snap'); restoreCam(); }
+                if (e >= C.SNAP_MS && !this._forkSnapped) { this._forkSnapped = true; this._forkSnapFx(home.x, home.y); restoreCam(); }
                 if (e >= C.SNAP_MS + C.BOOM_MS) { this._forkSnapped = false; cam.setZoom(z0); stage = 'boom'; t0 = now; this._forkStop = false; this._freezeClock?.(false); this._forkIgnite(order, segs, combos); }
             } else if (stage === 'boom') {   // the web goes off: white-hot and thick, then fading
                 const k = e / 700; dim.setAlpha(Math.max(0, 0.4 - k));
@@ -4680,8 +4705,8 @@ class ElementSystem {
                     enemy.sprite.x = snap.px;
                     enemy.sprite.y = snap.py + this.SLIME_Y_OFFSET;
                     // Sync healthbars immediately after snap
-                    if (enemy.healthBarBg) { enemy.healthBarBg.x = enemy.sprite.x; enemy.healthBarBg.y = enemy.sprite.y; }
-                    if (enemy.healthBarFill) { enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y; }
+                    if (enemy.healthBarBg) { enemy.healthBarBg.x = enemy.sprite.x; enemy.healthBarBg.y = enemy.sprite.y + (enemy._hpBarYOff || 0); }
+                    if (enemy.healthBarFill) { enemy.healthBarFill.x = enemy.sprite.x; enemy.healthBarFill.y = enemy.sprite.y + (enemy._hpBarYOff || 0); }
                     if (enemy.brittleVisual) { enemy.brittleVisual.x = enemy.sprite.x; enemy.brittleVisual.y = enemy.sprite.y + 14; }
                     if (enemy.burnVisual) { enemy.burnVisual.x = enemy.sprite.x; enemy.burnVisual.y = enemy.sprite.y - 18; }
                     if (enemy._tsunamiMultText) { enemy._tsunamiMultText.x = enemy.sprite.x; enemy._tsunamiMultText.y = enemy.sprite.y - 28; }
