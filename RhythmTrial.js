@@ -11,16 +11,18 @@
 // the slab you're on tears apart and mends MEND later, so you jump (Space) over it, not too early. There's no note lane:
 // fault lines of light open round each slab's cell and close in on it, landing on its beat; a note over each, coloured by
 // its value (crotchet, quaver...), says how long it lasts; a dash or a jump is drawn a few beats early as an arrow from the slab you'll go from
-// (hud). A step marked with a MORDENT (the ornament) wants forward, back, forward: land on it, step back to the slab you came
-// from and onto it again, untimed, before the next slab forms, or lose a life. An ACCENT (>): click as you land on it and the
-// core takes a big hit; click as you land anywhere else and the slab breaks under you. A TRILL (rare): your step quickens, and
-// you hop back and forth TRILL_N times before its time runs out. A SLUR over a few steps: its slabs stay till the phrase ends
+// (hud). The ornaments are extras, never misses: a step marked with a MORDENT wants forward, back, forward (land on it, step
+// back to the slab you came from and onto it again, untimed, before the next slab forms) for a hit on the core; an ACCENT (>):
+// click as you land on it and the core takes a big hit. Skip either and nothing's lost. A TRILL (rare): your step quickens, and
+// you hop back and forth TRILL_N times before its time runs out (that one's a must). A SLUR over a few steps: its slabs stay till the phrase ends
 // and nothing in it grades below GOOD. Once a run a GLISSANDO: no notes, a row of keys shown, and on the beat you sweep your
 // finger along them (T to P, F to L, V to ,) for a big hit. With a SONG (set in the panel; a file of your own in
 // assets/music/local/, kept out of git) the run is played to it: one tempo, its beat found in the file by ear. Each is graded: PERFECT builds the combo and the groove (a run of them
 // multiplies your damage to the core, GROOVE), GOOD keeps the combo, BAD (made it, only just) breaks both. The core floats
-// in the middle, out of reach: kill it before the song ends AND reach the far side alive. LIVES lives; a fall puts you
-// back on the newest slab.
+// in the middle, out of reach, and your PLAYING is what hurts it: every note you land flies into it and hits (PERF: a
+// PERFECT's full share, a GOOD's less, a BAD's nothing; the groove multiplies it), sized so a run of near-PERFECTs kills it
+// before the song's out; the ornaments, the glissando and your weapons in the breaks hit it on top. Kill it before the song
+// ends AND reach the far side alive. LIVES lives; a fall puts you back on the newest slab.
 class RhythmTrial {
     static CFG = { BPM: [66, 82, 96, 110], COUNT_IN: 4, HOLD: 0.55, LIVES: 5, CORE_HP: 1500, ROWS: [5, 2, -2, -5], HALF: 8,
         PERFECT: 85, GOOD: 170, EARLY: 220,   // the grades (ms either side of the note); you may land EARLY ms before a slab forms
@@ -47,10 +49,11 @@ class RhythmTrial {
         QUAKE_P: [0.1, 0.14, 0.16, 0.18], MORDENT_P: [0.05, 0.07, 0.09, 0.1], MORDENT_GAP: 340,   // a mordent's odds on a step, and the least time after it (its two steps back and forth; past that the rhythm's free)
         START_BEAT: 8,   // with a song: the route's first beat, this many of the song's in (the count-in, the four before it)
         GHOST: 0.4,   // you, your face and what you hold, see-through for the trial: solid, you sat on the symbols and over the cell above
-        ACCENT_P: [0.05, 0.06, 0.07, 0.08], ACCENT_WIN: 160, ACCENT: 0.05,   // an accent's odds on a step; click and landing this close count as together; its hit (of the core's health)
-        TRILL_P: [0, 0.03, 0.04, 0.1], TRILL_MS: 2600, TRILL_N: 14, TRILL_STEP: 60,   // 1 or 2 a run: the time for it, the hops it wants (each difficulty its own, DIFF.TRILL; even, to end on it), your step meanwhile
+        ACCENT_P: [0.05, 0.06, 0.07, 0.08], ACCENT_WIN: 160, ACCENT: 3, MORDENT_HIT: 1.5,   // an accent's odds on a step; click and landing this close count as together; its hit, a mordent's (in PERFECT notes' worth, PERF)
+        PERF: { KILL: 1.3, GOOD: 0.55 },   // your notes' hits on the core: a PERFECT's is 1 / (KILL x the run's notes) of its health (a run of them all, KILL runs to kill it before the groove: about 85% PERFECTs kill it by the end), a GOOD's this share of that
+        TRILL_P: [0, 0.03, 0.04, 0.1], TRILL_MS: 2800, TRILL_N: 10, TRILL_STEP: 60,   // 1 or 2 a run: the time for it, the hops it wants (each difficulty its own, DIFF.TRILL; even, to end on it), your step meanwhile
         SLUR_P: 0.18,   // the odds a run of plain steps is slurred
-        GLISS: { BEATS: 9, SLIDE: 6, WIN: [700, 1100], SPAN: 900, PERFECT: [180, 500], DMG: [0.1, 0.06] },   // its beats clear of notes, the beat to slide on, the window (early, late), all the keys within SPAN ms, a perfect's start and length, its hits
+        GLISS: { BEATS: 9, SLIDE: 6, WIN: [700, 1100], SPAN: 900, PERFECT: [180, 500], DMG: [36, 22] },   // its beats clear of notes, the beat to slide on, the window (early, late), all the keys within SPAN ms, a perfect's start and length, its hits (in notes' worth)
         DASH: { lightning: 3, fire: 4, ice: 6 },
         DASH_CD: { fire: 715, lightning: 825, ice: 1265, cosmic: 1400 }, SWITCH_CD: 1000,   // the game's own: a dash's cooldown after it (DASH_COOLDOWN x its element's), a hop's (from its second jump), an element switch's
         LAND: { fire: 250, ice: 750, cosmic: 750 },   // ms before the next note after each kind of dash (the glide, the hop's two jumps)
@@ -173,15 +176,15 @@ class RhythmTrial {
     // accent's click and landing this close count as together (clicking and stepping at once is hard: wider the easier); ACC_GAP: a
     // song's accents, on its strongest hits, at least this many semiquavers apart; ACC_HIT: how strong a hit takes one; ACC_LEAD: the
     // semiquavers clear before one, to line the click up; ORN: how thick the ornaments come, with SECTION_ORN)
-    static DIFF = { easy: { shift: -2, quake: 0.5, mordent: 0.7, PERFECT: 115, GOOD: 230, EARLY: 300, HOLD: 0.8, GAP: 5000, TRILL: 12, CHART: 0.75, SPACE: [2, 0], METRIC: [1, 0.6, 0.85, 0.6], PULSE: true, DASH_SQ: 4, ACC_WIN: 300, ACC_GAP: 32, ACC_HIT: 0.9, ACC_LEAD: 2, ORN: 0.7 },
-        normal: { shift: -1, quake: 0.8, mordent: 1, PERFECT: 100, GOOD: 200, EARLY: 260, HOLD: 0.65, GAP: 3200, TRILL: 14, CHART: 0.6, SPACE: [1, 1], METRIC: [1, 0.8, 0.9, 0.8], DASH_SQ: 2, ACC_WIN: 240, ACC_GAP: 16, ACC_HIT: 0.9, ACC_LEAD: 2, ORN: 1 },
-        hard: { shift: 0, quake: 1, mordent: 1, PERFECT: 85, GOOD: 170, EARLY: 220, HOLD: 0.55, GAP: 1600, TRILL: 18, CHART: 0.45, SPACE: [1, 3], METRIC: [1, 1, 1, 1], DASH_SQ: 1, ACC_WIN: 180, ACC_GAP: 16, ACC_HIT: 0.75, ACC_LEAD: 1, ORN: 1.6, DASH_P: 0.45, UNLOCK_X: 0.4, SWITCH: true, DEMI_P: 0.05, DD_P: 0.3, STEP: 55 },
+    static DIFF = { easy: { shift: -2, quake: 0.5, mordent: 0.7, PERFECT: 115, GOOD: 230, EARLY: 300, HOLD: 0.8, GAP: 5000, TRILL: 8, CHART: 0.75, SPACE: [2, 0], METRIC: [1, 0.6, 0.85, 0.6], PULSE: true, DASH_SQ: 4, ACC_WIN: 300, ACC_GAP: 32, ACC_HIT: 0.9, ACC_LEAD: 2, ORN: 0.7 },
+        normal: { shift: -1, quake: 0.8, mordent: 1, PERFECT: 100, GOOD: 200, EARLY: 260, HOLD: 0.65, GAP: 3200, TRILL: 10, CHART: 0.6, SPACE: [1, 1], METRIC: [1, 0.8, 0.9, 0.8], DASH_SQ: 2, ACC_WIN: 240, ACC_GAP: 16, ACC_HIT: 0.9, ACC_LEAD: 2, ORN: 1 },
+        hard: { shift: 0, quake: 1, mordent: 1, PERFECT: 85, GOOD: 170, EARLY: 220, HOLD: 0.55, GAP: 1600, TRILL: 12, CHART: 0.45, SPACE: [1, 3], METRIC: [1, 1, 1, 1], DASH_SQ: 1, ACC_WIN: 180, ACC_GAP: 16, ACC_HIT: 0.75, ACC_LEAD: 1, ORN: 1.6, DASH_P: 0.45, UNLOCK_X: 0.4, SWITCH: true, DEMI_P: 0.05, DD_P: 0.3, STEP: 55 },
         // IMPOSSIBLE: Hard, twice: you and your lover (DUAL), each a Hard part of your own, and the notes shown much further ahead
         // (AHEAD_B / LEAD_B beats). (DASH_P: a dash's odds where one fits; UNLOCK_X: the elements come in that much sooner; SWITCH:
         // each dash another element than the last; DEMI_P: a demisemiquaver's odds after a step (a quick double step); DD_P: a dash's
         // odds of following a dash nearly at once (once its cooldown's over: DASH_CD; another element, once the switch's is too);
         // STEP: your step's cooldown, ms, for them)
-        impossible: { shift: 0, quake: 1, mordent: 1, PERFECT: 85, GOOD: 170, EARLY: 220, HOLD: 0.55, GAP: 1600, TRILL: 18, CHART: 0.45, SPACE: [1, 3], METRIC: [1, 1, 1, 1], DASH_SQ: 1, ACC_WIN: 180, ACC_GAP: 16, ACC_HIT: 0.75, ACC_LEAD: 1, ORN: 1.6, DASH_P: 0.45, UNLOCK_X: 0.4, SWITCH: true, DEMI_P: 0.05, DD_P: 0.3, STEP: 55,
+        impossible: { shift: 0, quake: 1, mordent: 1, PERFECT: 85, GOOD: 170, EARLY: 220, HOLD: 0.55, GAP: 1600, TRILL: 12, CHART: 0.45, SPACE: [1, 3], METRIC: [1, 1, 1, 1], DASH_SQ: 1, ACC_WIN: 180, ACC_GAP: 16, ACC_HIT: 0.75, ACC_LEAD: 1, ORN: 1.6, DASH_P: 0.45, UNLOCK_X: 0.4, SWITCH: true, DEMI_P: 0.05, DD_P: 0.3, STEP: 55,
             DUAL: true, AHEAD_B: 5, AHEAD: [2800, 5200], LEAD_B: 5, LEAD: [3000, 5200] } };
     static C = RhythmTrial.CFG;
     // a beat's four semiquavers in a song's chart (0-1), the beat counted from the map's start bar; null past its end
@@ -662,6 +665,7 @@ class RhythmTrial {
         cam.zoomTo(st.zBase, 700, 'Cubic.easeInOut', true);
         Training.showPanel(S, false);   // the Training panel out of the way (back at the end)
         if (C.DUAL) RhythmTrial.loverBegin(S, st, song);
+        st.unit = 1 / (C.PERF.KILL * (st.R.length - 1 + (st.lover ? st.lover.st2.R.length - 1 : 0)));   // a PERFECT note's hit on the core (PERF: the lover's notes count too)
         RhythmTrial.banner(S, 'READY', C.DUAL ? 'YOU: WASD  ·  YOUR LOVER: ARROWS  ·  SHIFT dashes, SPACE jumps, both of you' : 'WASD step  ·  SHIFT dash  ·  SPACE jump', '#f3e3b8');
     }
     static stop(S) {
@@ -816,7 +820,7 @@ class RhythmTrial {
             if (md && !md.done && !st.falling && !st.done) {
                 if (md.stage === 1 && at(md.k - 1) && !airborne) { md.stage = 2; RhythmTrial.light(S, md.k - 1); if (!st.snd) Sfx.play(S, 'rt_hit', { n: 2 }); }
                 else if (md.stage === 2 && at(md.k) && !airborne) { md.done = true; RhythmTrial.mordentDone(S, md.k); }
-                if (!md.done && (md.k >= N || now >= st.times[md.k + 1] + C.GOOD)) { md.done = true; RhythmTrial.penalty(S, 'MORDENT MISSED'); }   // (a moment's grace past the next note)
+                if (!md.done && (md.k >= N || now >= st.times[md.k + 1] + C.GOOD)) md.done = true;   // let go by: nothing lost (an extra, not a must)
             }
             // a trill under way: each hop between its slab and the one before counts; done on its own slab, or out of time
             const tr = st.trill;
@@ -923,8 +927,9 @@ class RhythmTrial {
         [0, 70, 140].forEach((d, i) => S.time.delayedCall(d, () => Sfx.play(S, 'rt_hit', { n: 5 + i * 2, perfect: true })));
         st.combo++; st.best = Math.max(st.best || 0, st.combo); st.kick = 1;
         RhythmTrial.judge(S, 'MORDENT!', '#ffd84a');
+        RhythmTrial.hurtCore(S, RhythmTrial.C.MORDENT_HIT);
     }
-    // a life lost where you stand (a mordent left undone)
+    // a life lost where you stand (a trill left unfinished)
     static penalty(S, text) {
         const st = S._rtrial;
         st.lives--; st.combo = 0; st.streak = 0; st.shake = 1; st.flash = 1; st.misses = (st.misses || 0) + 1;
@@ -1037,8 +1042,7 @@ class RhythmTrial {
     }
 
     // ── ACCENTS ──
-    // a click and a landing within ACCENT_WIN of each other, whichever came first: on an accent, the strike; anywhere else
-    // the slab breaks under you
+    // a click and a landing within ACCENT_WIN of each other, whichever came first: on an accent, the strike
     static strike(S, src) {
         const st = S._rtrial, C = RhythmTrial.C, now = RhythmTrial.now(S);
         if (!st) return;
@@ -1047,7 +1051,7 @@ class RhythmTrial {
         if (src === 'click' && !st.R[st.landK]?.accent && nx?.accent && st.times[st.landK + 1] - now <= C.ACCENT_WIN) return;
         if (st.landDone || st.landK == null || st.done || st.falling || Math.abs(st.clickAt - st.landAt) > C.ACCENT_WIN) return;
         st.landDone = true; st.clickAt = -1e9;   // (a click strikes once: an accent's then broke a semiquaver landed right after it)
-        if (st.R[st.landK].accent) RhythmTrial.accentHit(S, st.landK); else RhythmTrial.breakTile(S, st.landK);
+        if (st.R[st.landK].accent) RhythmTrial.accentHit(S, st.landK);   // (struck anywhere else: nothing, it's an extra)
     }
     static accentHit(S, k) {
         const st = S._rtrial, C = RhythmTrial.C, core = st.core, T = S.TILE_SIZE;
@@ -1061,23 +1065,17 @@ class RhythmTrial {
         const r = S.add.image(x1, y1, 'vfx_ring').setBlendMode(Phaser.BlendModes.ADD).setTint(0xff7a4a).setScale(0.3).setDepth(RhythmTrial.DEPTH + 0.3);
         S.tweens.add({ targets: r, scale: 2.2, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => r.destroy() });
         S.cameras.main.shake(140, 0.005);
-        S.damageEnemy(core, core.maxHealth * C.ACCENT, S.currentElement);
+        RhythmTrial.hurtCore(S, C.ACCENT);
     }
-    static accentMiss(S) {
-        const st = S._rtrial;
-        st.combo = 0;
-        RhythmTrial.judge(S, 'NO STRIKE', '#ff9a6a');
-    }
-    // struck as you landed on a plain slab: it breaks, and down you go
-    static breakTile(S, k) {
-        const st = S._rtrial, t = st.tiles[k];
-        if (t && !t.gone && !t.ghost) {
-            t.gone = true; t.top.setTint(0xff6a4a); t.face.setTint(0xa04a3a);
-            S.tweens.add({ targets: t.box, scale: 0.3, y: t.box.y + S.TILE_SIZE, angle: 40, alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => { t.box.destroy(); t.shadow.destroy(); t.rim.destroy(); } });
-        }
-        Sfx.play(S, 'e_crack');
-        RhythmTrial.say(S, 'STRIKE ONLY ON ACCENTS', '#ff7a5a');
-        RhythmTrial.fall(S);
+    static accentMiss(S) { RhythmTrial.judge(S, 'NO STRIKE', '#a89ab8'); }   // (let go by: the combo stands)
+    // A hit on the core from your playing: `n` PERFECT notes' worth, times the groove, with no roll and none of your stats in
+    // it: how well you play is all that counts
+    static hurtCore(S, n) {
+        const st = S._rtrial, main = st?.main || S, core = st?.core;
+        if (!core?.sprite?.active || core.health <= 0 || !main._rtrial || !(n > 0)) return;
+        core.health -= core.maxHealth * n * main._rtrial.unit * RhythmTrial.groove(main);
+        main.updateEnemyHealthBar?.(core);
+        if (core.health <= 0) main.killEnemy(core);
     }
 
     // ── TRILLS ──
@@ -1106,7 +1104,7 @@ class RhythmTrial {
         [0, 60, 120, 180].forEach((d, i) => S.time.delayedCall(d, () => Sfx.play(S, 'rt_hit', { n: 4 + i * 2, perfect: true })));
         st.combo += 2; st.best = Math.max(st.best || 0, st.combo); st.kick = 1.2;
         RhythmTrial.judge(S, 'TRILL!', '#c8a0ff');
-        if (st.core?.sprite?.active) S.damageEnemy(st.core, st.core.maxHealth * RhythmTrial.C.ACCENT, S.currentElement);
+        RhythmTrial.hurtCore(S, RhythmTrial.C.TRILL_N);   // (a note's worth a hop)
     }
 
     // ── GLISSANDO ──
@@ -1197,7 +1195,7 @@ class RhythmTrial {
         st.combo += 3; st.best = Math.max(st.best || 0, st.combo); st.kick = 1.6;
         RhythmTrial.banner(S, grade === 'perfect' ? 'GLISSANDO!' : 'GLISSANDO', grade === 'perfect' ? 'perfect slide' : null, '#7fe8ff', true);
         Sfx.play(S, 'fanfare'); S.cameras.main.shake(160, 0.006);
-        if (st.core?.sprite?.active) S.damageEnemy(st.core, st.core.maxHealth * C.GLISS.DMG[grade === 'perfect' ? 0 : 1], S.currentElement);
+        RhythmTrial.hurtCore(S, C.GLISS.DMG[grade === 'perfect' ? 0 : 1]);
     }
     static glissClean(S) {
         const st = S._rtrial, gl = st?.gl;
@@ -1638,6 +1636,7 @@ class RhythmTrial {
                     st.flying = Math.max(0, st.flying - 1);
                     if (!st.flying && vortex.active) S.tweens.add({ targets: vortex, alpha: 0, duration: 400 });
                     if (!c.active) return;
+                    RhythmTrial.hurtCore(S, perfect ? 1 : RhythmTrial.C.PERF.GOOD);   // in it goes: its hit (PERF)
                     const imp = S.add.image(c.x, c.y, 'vfx_ring').setBlendMode(ADD).setTint(0x7a4aff).setScale(0.9).setAlpha(0.6).setDepth(D + 0.3);   // (the gulp: a ring pulled in)
                     S.tweens.add({ targets: imp, scale: 0.15, alpha: 0, duration: 110, ease: 'Quad.easeIn', onComplete: () => {
                         imp.destroy();
