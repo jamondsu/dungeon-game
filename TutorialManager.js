@@ -843,7 +843,7 @@ class TutorialManager {
     // Glerp's speech box, along the bottom: a panel, his portrait, the line typing itself out
     // (a click or Enter finishes it, the next one moves on), and a page count when it's one of
     // a run (_tutSay). Used by every level for its story beats too.
-    showTutorialDialogue(message, speakerName = null, onComplete = null, page = null) {
+    showTutorialDialogue(message, speakerName = null, onComplete = null, page = null, look = null) {   // look: the speaker's face, { key, anim, hue, mood } (Glerp's by default)
         this.clearTutorialDialogue();
         const W = this.scale.width, H = this.scale.height, P = UIKit.PALETTE, D = 1000;
         const bw = Math.min(980, W - 80), bh = 132, bx = W / 2 - bw / 2, by = H - bh - 78;   // above the ult gems
@@ -852,9 +852,11 @@ class TutorialManager {
         this._dialogueObjects.push(...UIKit.panel(this, { x: bx, y: by, w: bw, h: bh, accent: P.accentGold, depth: D }).objs);
         let tx = bx + 28;
         if (speakerName) {
-            const portrait = keep(this.add.sprite(bx + 62, by + bh / 2 - 22, 'slime_orange', 0).setScale(3.4).setDepth(D + 2));   // the slime fills its frame's bottom
-            portrait.play('orange_idle');
-            if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, portrait, { mood: 'friend', look: () => null });   // Creatures.js
+            const L = look || { key: 'slime_orange', anim: 'orange_idle', mood: 'friend' };
+            const portrait = keep(this.add.sprite(bx + 62, by + bh / 2 - 22, L.key, 0).setScale(3.4).setDepth(D + 2));   // the slime fills its frame's bottom
+            if (this.anims.exists(L.anim)) portrait.play(L.anim);
+            if (L.hue != null && portrait.preFX) portrait.preFX.addColorMatrix().hue(L.hue);
+            if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, portrait, { mood: L.mood || 'friend', look: () => null });   // Creatures.js
             this.tweens.add({ targets: portrait, y: portrait.y - 4, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             keep(this.add.text(bx + 62, by + 16, speakerName.toUpperCase(), {
                 fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f6d58a', stroke: '#000', strokeThickness: 3,

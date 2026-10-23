@@ -1267,7 +1267,7 @@ class HUD {
         const base = key.replace(/\d+$/, ''), seen = this._bossIntroSeen ||= {};
         if (seen[base] || this._bossIntroState) return false;
         seen[base] = true;
-        const TITLES = { volt: 'the storm that walks', sovereign: 'ruler of the dark between stars', core: 'the stone that remembers fire', queen: 'mother of the brood', tide: 'the queen beneath the water' };
+        const TITLES = { volt: 'the storm that walks', sovereign: 'ruler of the dark between stars', core: 'the stone that remembers fire', queen: 'mother of the brood', tide: 'queen of the sea kingdom' };
         const cam = this.cameras.main, W = this.scale.width, H = this.scale.height, css = '#' + col.toString(16).padStart(6, '0');
         this._bossIntroOn = true; this._pauseMenuOpen = true; this._freezeClock(true); this.anims.resumeAll();
         const hid = (this._dialogueObjects || []).filter(o => o?.active && o.visible); hid.forEach(o => o.setVisible(false));   // a speech box would sit over it

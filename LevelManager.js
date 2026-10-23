@@ -560,6 +560,7 @@ class LevelManager {
             const t = this.waterTiles.get(k);
             if (t) t.lastEnergized = now;
         }
+        if (this._tmRunes) TideMother.energized(this, pool);   // the Reservoir's lightning rune takes current through water
 
         // ── damage everything standing in it ────────────────────────────────────
         // Routed through resolveElementalHit, so a lightning-resistant enemy standing in
@@ -7694,7 +7695,7 @@ class LevelManager {
         if (!this.portals || !this.portals.length) return;
         for (let pi = this.portals.length - 1; pi >= 0; pi--) {
             const queen = this.portals[pi];
-            if (!queen.active) continue;
+            if (!queen.active || queen.rune) continue;   // (the Reservoir's runes: TideMother.update runs them)
             // Only update when player is in the same room
             if (this.getCurrentPlayerRoom() !== queen.tutorialRoomIndex) continue;
             if (queen.tide) { TideMother.update(this, queen, time); continue; }   // the Cistern's boss: her own moves, not the brood and the pulse
@@ -7882,6 +7883,7 @@ class LevelManager {
     }
 
     damagePortal(portal, damage, opts = {}) {
+        if (portal.tide || portal.rune) return TideMother.hit(this, portal, damage, opts);   // the Reservoir's: her mother can't be hurt, the runes each break their own way
         damage = this._afterHit(null, null, damage * this._dmgOutMult(null) * this._hitRoll(null));   // your damage, and a hit's roll and extras, as on any enemy
         if (!portal.active) return;
         // opts.src (a projectile): it lands once on this queen, not every frame it overlaps her
