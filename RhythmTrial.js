@@ -26,7 +26,7 @@
 class RhythmTrial {
     static CFG = { BPM: [66, 82, 96, 110], COUNT_IN: 4, HOLD: 0.55, LIVES: 5, CORE_HP: 1500, ROWS: [5, 2, -2, -5], HALF: 8,
         PERFECT: 85, GOOD: 170, EARLY: 220,   // the grades (ms either side of the note); you may land EARLY ms before a slab forms
-        JUMP_MS: 560, JGRACE: 130, MEND: 340,   // a jump's time in the air; a torn slab holds JGRACE, and is whole at MEND (jump more than EARLY early and you land before it is)
+        JUMP_MS: 560, JGRACE: 130, MEND: 340, SLAM_MS: 650,   // a jump's time in the air; a torn slab holds JGRACE, and is whole at MEND (jump more than EARLY early and you land before it is)
         STEP_MS: 110,   // your step during the trial (200 as ever): quick enough for a run of semiquavers at the top tempo
         GROOVE: [[32, 2], [16, 1.5], [8, 1.25]],   // perfects in a row: damage to the core
         BREAK_BEATS: 4, BREAK_MULT: 1.5,   // the break between phases, and the core's damage taken in it
@@ -844,12 +844,24 @@ class RhythmTrial {
             }
             else if (now >= gl.end) RhythmTrial.glissClean(S);
         }
-        // the core floating (in a break, it blazes: hit it now); its death called out once
+        // the core floating (in a break, it blazes: hit it now), its eyes on you. SLAM_MS before a quake it rears up, swelling,
+        // glowing red, its eyes narrowed, and slams down on the note (slam), squashed flat a moment; your notes going in
+        // squash it and shake it, harder with the groove (hurtCore). Its death called out once
         if (st.lane) return RhythmTrial.hud(S, now, dt);   // (the lover: its own cues; the core, the camera are yours)
         const core = st.core, brk = RhythmTrial.inBreak(st, now);
         if (core?.sprite?.active) {
-            core._floatY ??= core.sprite.y; core.sprite.y = core._floatY - 6 + Math.sin(now / 500) * 5;
-            st.coreGlow.setPosition(core.sprite.x, core.sprite.y).setScale(brk ? 1.15 + 0.15 * Math.sin(now / 80) : 0.8).setAlpha(brk ? 0.8 : 0.5);
+            let left = 1e9;
+            for (let j = st.i + 1; j <= N && st.times[j] - now < C.SLAM_MS; j++) if (st.R[j].kind === 'quake') { left = st.times[j] - now; break; }
+            const rear = left > 0 && left < C.SLAM_MS ? (1 - left / C.SLAM_MS) ** 2 : 0, flat = Math.max(0, 1 - (now - (st.slamAt ?? -1e9)) / 220), b = core._baseScale;
+            st.coreHit = Math.max(0, (st.coreHit || 0) - dt / 250);
+            const hit = st.coreHit;
+            core._floatY ??= core.sprite.y; core._floatX ??= core.sprite.x;
+            core.sprite.y = core._floatY - 6 + Math.sin(now / 500) * 5 * (1 - rear) - rear * T * 0.7 + flat * T * 0.2;
+            core.sprite.x = core._floatX + hit * 1.5 * Math.sin(now / 18);
+            core.sprite.setScale(b * (1 + 0.1 * rear + 0.22 * flat + 0.1 * hit), b * (1 + 0.18 * rear - 0.22 * flat - 0.1 * hit));
+            if (core.sprite._cfx) core.sprite._cfx.mood = rear > 0.25 ? 'sly' : 'angry';
+            st.coreGlow.setPosition(core.sprite.x, core.sprite.y).setTint(rear > 0.05 ? 0xff4a3a : 0xffa040)
+                .setScale(brk ? 1.15 + 0.15 * Math.sin(now / 80) : 0.8 + 0.6 * rear).setAlpha(brk ? 0.8 : 0.5 + 0.4 * rear);
         }
         if (!st.coreDead && (!core?.sprite?.active || core.health <= 0)) { st.coreDead = true; st.coreGlow?.setVisible(false); RhythmTrial.say(S, 'CORE SHATTERED!', '#ffd84a'); S.cameras.main.shake(200, 0.006); }
         // the camera: a kick on each note landed, and leaning a third of the way toward the core
@@ -867,6 +879,7 @@ class RhythmTrial {
     // (the same slab, now note k's); the ground shakes
     static quake(S, k) {
         const st = S._rtrial, C = RhythmTrial.C, T = S.TILE_SIZE, old = st.tiles[k - 1];
+        if (!st.lane) RhythmTrial.slam(S, k);   // (the lover's quakes are yours: one slam)
         if (!old?.box?.active || old.gone) return RhythmTrial.tile(S, k, false);
         st.tiles[k] = old; st.tiles[k - 1] = { ghost: true };
         const { box } = old, x = box.x, y = box.y;
@@ -890,6 +903,22 @@ class RhythmTrial {
         });
         S.cameras.main.shake(220, 0.009);
         Sfx.play(S, 'quake');
+    }
+    // the core slams down on a quake's note: a shockwave rolling out across the floor from under it, and a crack racing from
+    // it to the slab it tears
+    static slam(S, k) {
+        const st = S._rtrial, c = st.core?.sprite, T = S.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
+        if (!c?.active || st.coreDead) return;
+        st.slamAt = RhythmTrial.now(S);
+        const x0 = c.x, y0 = c.y + T * 0.5, m = st.R[k], x1 = m.x * T + T / 2, y1 = m.y * T + T / 2;
+        [0, 110].forEach((d, i) => {
+            const r = S.add.image(x0, y0, 'vfx_ring').setBlendMode(ADD).setTint(i ? 0xff8a4a : 0xff4a5a).setScale(0.4).setAlpha(0.9 - 0.3 * i).setDepth(0.555);
+            S.tweens.add({ targets: r, scale: 11, alpha: 0, delay: d, duration: 560, ease: 'Quad.easeOut', onComplete: () => r.destroy() });
+        });
+        const g = S.add.graphics().setDepth(0.556), o = { u: 0, a: 1 };
+        const draw = () => { g.clear(); const x = x0 + (x1 - x0) * o.u, y = y0 + (y1 - y0) * o.u; g.lineStyle(4, 0xff4a5a, 0.3 * o.a).lineBetween(x0, y0, x, y); g.lineStyle(1.5, 0xffc0a0, o.a); RhythmTrial.crack(g, x0, y0, x, y, k * 5.3, 5); };
+        S.tweens.add({ targets: o, u: 1, duration: 110, ease: 'Quad.easeIn', onUpdate: draw,
+            onComplete: () => S.tweens.add({ targets: o, a: 0, duration: 380, onUpdate: draw, onComplete: () => g.destroy() }) });
     }
     // Space: a jump straight up, in the air JUMP_MS (no steps until you land; the abyss can't have you while you're up)
     static jump(S) {
@@ -1073,7 +1102,10 @@ class RhythmTrial {
     static hurtCore(S, n) {
         const st = S._rtrial, main = st?.main || S, core = st?.core;
         if (!core?.sprite?.active || core.health <= 0 || !main._rtrial || !(n > 0)) return;
-        core.health -= core.maxHealth * n * main._rtrial.unit * RhythmTrial.groove(main);
+        const gv = RhythmTrial.groove(main);
+        core.health -= core.maxHealth * n * main._rtrial.unit * gv;
+        main._rtrial.coreHit = Math.min(1.5, (main._rtrial.coreHit || 0) + 0.25 * gv * Math.min(3, n));   // (it flinches: tick)
+        core._vfxHitAt = main.time.now;   // (its eyes squeezed shut)
         main.updateEnemyHealthBar?.(core);
         if (core.health <= 0) main.killEnemy(core);
     }
