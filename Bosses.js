@@ -674,7 +674,8 @@ class BossFX {
         if (vs?.active && vs.container && !far(vs.container.x, vs.container.y)) bars.push(['sovereign', vs.hp / vs.maxHp, 'THE VOID SOVEREIGN', 0xb45cff, '', vs.container.x, vs.container.y, ice(vs)]);
         const qs = (this.portals || []).filter(q => q.active && q.container && !far(q.container.x, q.container.y))
             .sort((a, b) => Math.hypot(a.tileX - this.playerX, a.tileY - this.playerY) - Math.hypot(b.tileX - this.playerX, b.tileY - this.playerY));
-        for (const q of qs) bars.push(['queen' + this.portals.indexOf(q), q.hp / q.maxHp, 'THE QUEEN SLIME', 0xff3a4a, `brood ${q.ammo ?? 0} / ${q.ammoMax ?? 0}`, q.container.x, q.container.y]);
+        for (const q of qs) bars.push(q.tide ? ['tide', q.hp / q.maxHp, 'THE TIDE MOTHER', TideMother.CFG.COL, q.tide.line, q.container.x, q.container.y]   // the Cistern's (TideMother.js)
+                                             : ['queen' + this.portals.indexOf(q), q.hp / q.maxHp, 'THE QUEEN SLIME', 0xff3a4a, `brood ${q.ammo ?? 0} / ${q.ammoMax ?? 0}`, q.container.x, q.container.y]);
         const meet = !this.trainingRun && !this._bossIntroOn && !(R === null && this._roomGated?.()) && bars.find(b => !this._bossIntroSeen?.[b[0].replace(/\d+$/, '')]);   // one not met yet: its intro first (once you're in a room, not seen down a corridor)
         if (meet && this._bossIntro?.(meet[0], meet[2], meet[3], meet[5], meet[6])) return;
         bars.slice(0, 4).forEach(([key, frac, name, col, line, , , ice], i) => this._bossBar(frac, name, col, line, key, i, ice));
@@ -1312,11 +1313,11 @@ class BossFX {
         for (const o of c.list) if (o.type === 'Rectangle' && o.width === 24 && o.height === 16) o.setVisible(false);
         if (this.textures.exists('vfx_glow')) {
             q.glowImg = this.make.image({ x: 0, y: 6, key: 'vfx_glow' }, false).setBlendMode(Phaser.BlendModes.ADD)
-                .setTint(0xff3a4a).setAlpha(0.35).setScale(0.9, 0.36);
+                .setTint(q.tide ? TideMother.CFG.COL : 0xff3a4a).setAlpha(0.35).setScale(0.9, 0.36);
             c.addAt(q.glowImg, 1);
         }
         const r = q.hitR || this.TILE_SIZE * 1.25, L = 7, br = this.make.graphics({}, false);
-        for (const [w, col, a] of [[3, 0x000000, 0.35], [1.5, 0xff5a6a, 0.7]]) {
+        for (const [w, col, a] of [[3, 0x000000, 0.35], [1.5, q.tide ? 0x7fe0ff : 0xff5a6a, 0.7]]) {
             br.lineStyle(w, col, a);
             for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
                 br.beginPath(); br.moveTo(sx * r, sy * r + -sy * L); br.lineTo(sx * r, sy * r); br.lineTo(sx * r - sx * L, sy * r); br.strokePath();
@@ -1341,11 +1342,11 @@ class BossFX {
 
     // Her death: a burst of her red, a ring, and her crown thrown off.
     _bfxQueenDeath(q, px, py) {
-        const c = q.container, x = c?.x ?? px, y = (c?.y ?? py) - 14;
+        const c = q.container, x = c?.x ?? px, y = (c?.y ?? py) - 14, col = q.tide ? TideMother.CFG.COL : 0xff3a4a;
         const goo = this._vfxBursts?.goo;
-        if (goo) { goo.setParticleTint?.(0xff3a4a); goo.explode(30, x, y); }
-        BossFX.blast(this, x, y + 14, 60, 'bolt');
-        this._vfxFlash?.(x, y, 200, this._bfxCfg().QUEEN, 600, 1);
+        if (goo) { goo.setParticleTint?.(col); goo.explode(q.tide ? 60 : 30, x, y); }
+        BossFX.blast(this, x, y + 14, q.tide ? 110 : 60, q.tide ? 'volt' : 'bolt');
+        this._vfxFlash?.(x, y, 200, q.tide ? col : this._bfxCfg().QUEEN, 600, 1);
         if (this.textures.exists('cfx_face') && c) {
             const cr = this.add.image(x, c.y - 40, 'cfx_face', 'h_queen_0').setScale(3.2).setDepth(5.1);
             this._vfxSort?.(cr);
@@ -1353,7 +1354,7 @@ class BossFX {
             this.tweens.add({ targets: cr, alpha: 0, delay: 420, duration: 300, onComplete: () => cr.destroy() });
         }
         if (this.textures.exists('vfx_splat')) {
-            const sp = this.add.image(x, y + 22, 'vfx_splat').setTint(0xff3a4a).setAlpha(0.55).setDepth(0.2).setScale(1.8);
+            const sp = this.add.image(x, y + 22, 'vfx_splat').setTint(col).setAlpha(0.55).setDepth(0.2).setScale(q.tide ? 2.6 : 1.8);
             this._vfxSort?.(sp);
             this.tweens.add({ targets: sp, alpha: 0, delay: 2500, duration: 3000, onComplete: () => sp.destroy() });
         }

@@ -1030,7 +1030,7 @@ class WorldGen {
         //                      |
         //                 R10 Torrent -- R11 Picket
         //                                      |
-        //   R14 Sluice -- R13 Drowning Pool -- R12 Switchyard
+        //   R14 Reservoir -- R13 Drowning Pool -- R12 Switchyard
         //
         // Water only pools inside room rectangles, so every wall is also a bank: pillars
         // make islands, long runs make channels, a gap is somewhere you have to wade.
@@ -1191,15 +1191,15 @@ class WorldGen {
         pillar(62, 82, 3, 3); pillar(74, 82, 3, 3); pillar(68, 90, 3, 2);
         hall(81, 89, 86);
 
-        // ── R14: Sluice Gate (38x18) — finale ──────────────────────────────
-        // Wide enough for the Wave Riders to build speed and for the queen's adds to have
-        // somewhere to come from. Gate housings give cover, but every piece is an island.
-        room(14, 78, 38, 18, [{ x: 51, y: 86, direction: 'east' }]);
-        // finale: two long lines down the arena plus a pool at the queen's end
-        pipe(13, 86, 1, 0, 'line', 12);
-        pipe(33, 77, 0, 1, 'pool', 3);
-        for (const [px, py] of [[19,82],[31,82],[43,82],[25,90],[37,90],[47,90]]) pillar(px, py, 3, 2);
-        hall(51, 59, 86);
+        // ── R14: The Reservoir (round, 23 across) — the Tide Mother's ──────
+        // Round so her moves read at a glance: a ring wave out of the middle, a line through
+        // it, a flood round the rim. No cover: every one of them is answered by where you stand.
+        const res = room(22, 76, 23, 23, [{ x: 44, y: 86, direction: 'east' }]);
+        res.round = { cx: 33, cy: 87, R: 11 };   // (TideMother.js reads it)
+        for (let x = res.x; x < res.x + res.w; x++) for (let y = res.y; y < res.y + res.h; y++) if (Math.hypot(x - 33, y - 87) > 11.5) world[x][y] = this.WALL;
+        pipe(33, 75, 0, 1, 'pool', 3);   // a pool at the top and one at the side: the water keeps coming back
+        pipe(21, 87, 1, 0, 'pool', 3);
+        hall(44, 59, 86);
 
         this.isLevel6 = true;   // turns on room gating: see LevelManager._roomGated
 

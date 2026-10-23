@@ -2637,7 +2637,7 @@ class LevelManager {
         //
         //   R1 water   R2 Ripplerunner  R3 Drowner   R4 pairing   R5 Conduit
         //   R6 Tidecaller  R7 Wave Rider  R8 Tidal Guard  R9 Wishing Well
-        //   R10 WAVE RIDERS  R11 GUARDS  R12 CONDUITS  R13 DROWNERS  R14 finale
+        //   R10 WAVE RIDERS  R11 GUARDS  R12 CONDUITS  R13 DROWNERS  R14 THE TIDE MOTHER
 
         // ── WATER ────────────────────────────────────────────────────────────
         //   R0  0%   R1 12%  R2 32%  R3  8%  R4 25%  R5 30%  R6 20%  R7 15%
@@ -2645,7 +2645,7 @@ class LevelManager {
         // R3 dips on purpose (the Drowner is taught dry) and R9 stays low so you can watch
         // the Well fill it.
         const COVERAGE = [0, 0.12, 0.32, 0.08, 0.25, 0.30, 0.20, 0.15,
-                          0.22, 0.15, 0.30, 0.28, 0.45, 0.40, 0.35];
+                          0.22, 0.15, 0.30, 0.28, 0.45, 0.40, 0.12];   // R14 her own: she floods it as she fights
         this.generateWaterBlobs((ri) => COVERAGE[ri] ?? 0.25);
         this.initPipes();   // pipes prime their own tiles and keep refilling them
 
@@ -2752,24 +2752,8 @@ class LevelManager {
         native(this.createTidalGuard(72, 88, 13), 13);   // punishes standing still to read four commits
         this.createFrostSlime(64, 82, 13);
 
-        // R14: Sluice Gate — the finale, stacked rather than sprinkled.
-        // Two Wave Riders with runway, three Ripplerunners so orbs arrive from several
-        // angles at once, two Guards on crossing lanes, two Drowners to punish standing
-        // still, a Tidecaller and a Well to keep the floor against you.
-        this.createQueenSlimePortal(32, 86, 14, 1);
-        this._tagResist(native(this.createWaveRider(17, 93, 14), 14), 'fire');
-        native(this.createWaveRider(48, 80, 14), 14);
-        this._tagResist(native(this.createTidalGuard(24, 80, 14), 14), ['ice', 'lightning']);
-        this._tagResist(native(this.createTidalGuard(44, 93, 14), 14), 'ice');
-        native(this.createTidalGuard(34, 84, 14), 14);
-        native(this.createRipplerunner(20, 86, 14), 14);
-        this._tagResist(native(this.createRipplerunner(40, 86, 14), 14), 'lightning');
-        native(this.createRipplerunner(34, 94, 14), 14);
-        native(this.createDrowner(28, 94, 14), 14);
-        this._tagResist(native(this.createDrowner(38, 80, 14), 14), 'fire');
-        this._tagResist(native(this.createTidecaller(15, 80, 14), 14), 'ice');
-        native(this.createWishingWell(50, 93, 14), 14);
-        this.createFrostSlime(26, 88, 14); this.createFrostSlime(42, 84, 14);
+        // R14: the Reservoir — the Tide Mother's. Her brood comes as the fight goes (TideMother.js).
+        TideMother.spawn(this, 14);
 
         // ── BARRIERS ─────────────────────────────────────────────────────────
         // Nothing to do here. generateLevel6 flags rooms 1-14 as lockable, and
@@ -2790,8 +2774,8 @@ class LevelManager {
         //   SPLITTER      its children are not _waterNative, so every split inherits the water
         //                 slow. That makes a flooded room the place you WANT to fight them --
         //                 the first time water is an advantage on this floor rather than a tax.
-        //   QUEEN PORTAL  brood pressure. One already guards the finale; a second, earlier one
-        //                 stops room 14 being the first time the player sees it.
+        //   QUEEN PORTAL  brood pressure. The Tide Mother (room 14) is a Queen risen; this one, earlier,
+        //                 means room 14 is not the first time the player meets one.
         //   MORTAR        arcs OVER walls, so it punishes sheltering in a flooded corridor while
         //                 waiting out a Tidal Guard telegraph. The one addition that makes
         //                 standing still worse than wading.
@@ -2858,23 +2842,6 @@ class LevelManager {
         ], { roomIndex: 13 });
         this._placeSupportInCluster(13, (x, y) => this.createHealerTotem(x, y, 13),
                                     { fallback: { x: 76, y: 80 } });
-
-        // ── Room 14 finale: more bodies for the existing Queen portal, no new mechanics ──
-        // Two separate knots at opposite ends of the finale rather than a line of four: you
-        // have to commit to one and accept the other closing in.
-        this.spawnCluster(20, 80, [
-            (x, y) => this.createSplitter(x, y, 14, 0),
-            (x, y) => this.createEnemy(x, y, 100),
-            (x, y) => this.createEnemy(x, y, 100),
-        ], { roomIndex: 14 });
-        this.spawnCluster(30, 82, [
-            (x, y) => this.createSplitter(x, y, 14, 0),
-            (x, y) => this.createEnemy(x, y, 100),
-            (x, y) => this.createEnemy(x, y, 100),
-        ], { roomIndex: 14 });
-        this._placeSupportInCluster(14, (x, y) => this.createHealerTotem(x, y, 14),
-                                    { fallback: { x: 16, y: 80 } });
-        this.createMortar(40, 80, 14);   // mortars WANT the far corner -- they arc over walls
 
     }
 
@@ -7730,6 +7697,7 @@ class LevelManager {
             if (!queen.active) continue;
             // Only update when player is in the same room
             if (this.getCurrentPlayerRoom() !== queen.tutorialRoomIndex) continue;
+            if (queen.tide) { TideMother.update(this, queen, time); continue; }   // the Cistern's boss: her own moves, not the brood and the pulse
 
             queen.spawnedEnemies = queen.spawnedEnemies.filter(e => this.enemies.includes(e));
 
@@ -7986,6 +7954,7 @@ class LevelManager {
 
     _destroyPortal(portal) {
         portal.active = false;
+        if (portal.tide) TideMother.die(this, portal);
         Sfx.play(this, 'bossdie');
         // Drop the pending thaw. It is guarded by `if (portal.active)` so it was harmless,
         // but leaving a live 8s timer holding a reference to a dead queen is how the
@@ -8010,7 +7979,7 @@ class LevelManager {
         const burst = this.add.circle(px, py, 12, 0xffffff, 0.9).setDepth(4);
         this.tweens.add({ targets: burst, scaleX: 3.5, scaleY: 3.5, alpha: 0, duration: 300, onComplete: () => burst.destroy() });
         this.cameras.main.shake(80, 0.006);
-        this.showStatusText(px, py - 40, 'QUEEN SLAIN!', '#ff8888');
+        this.showStatusText(px, py - 40, portal.tide ? 'THE TIDE MOTHER FALLS' : 'QUEEN SLAIN!', portal.tide ? '#9fe8ff' : '#ff8888');
 
         for (const g of portal.gfxObjs) {
             if (g?.active) { this.tweens.killTweensOf(g); g.destroy(); }
