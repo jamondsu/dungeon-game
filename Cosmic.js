@@ -61,7 +61,7 @@ class CosmicSystem {
             // for DAZE_MS (no damage), then lie for WINDOW to be picked up within PICK_R tiles.
             // Each one collected marks MARKS_PER enemies in the room, MAX_MARKS at most. A mark
             // stays until a hit pops it: POP_CUR of a gem to the element you hold, POP_OTHER to
-            // each other one (cosmic's fills with time only). Ascend doubles the pops.
+            // each other one, none to cosmic's (the stars are its share). Ascend doubles the pops.
             // A long cooldown and a big payout (2026-10-22; CD 14s and half the charge before: at 14s
             // it was a charger without a limit, about 0.8 of an Ascend from the stars alone every cast).
             ASTRO:   { CD: 40000, MIN: 4 + WeaponLevels.perk('astrolabe', 'stars'), MAX: 10 + 2 * WeaponLevels.perk('astrolabe', 'stars'), PER_TILES: 40, FALL_MS: 420, STAGGER: 110, DAZE_R: 1.5 + 0.5 * WeaponLevels.perk('astrolabe', 'impact'), DAZE_MS: 700 + 300 * WeaponLevels.perk('astrolabe', 'impact'),
@@ -826,15 +826,15 @@ class CosmicSystem {
     }
 
     // A hit landed on an astral mark: pop it. Charge goes to the element you hold (POP_CUR of a
-    // gem) and a little to every other (POP_OTHER); cosmic's own gem fills with time only.
+    // gem) and a little to every other (POP_OTHER); none to cosmic's (the stars are its share).
     // Doubled during Ascend.
     _csAstralPop(enemy) {
         if (!enemy?._csAstral || !this.ultGems) return;
         enemy._csAstral = false;
         const C = this._csCfg().ASTRO, col = this._csCfg().COL, max = this.ultChargeMax, k = this._csAscending() ? 2 : 1;
-        for (const el of ['fire', 'ice', 'lightning']) {
-            this.gainUltCharge(max * (el === this.currentElement ? C.POP_CUR : C.POP_OTHER) * k, el, true);
-        }
+        this._cs.popping = true;   // (gainUltCharge passes every gain on to the cosmic gem: 1.25x the pop, more than the gem you hold got)
+        try { for (const el of ['fire', 'ice', 'lightning']) this.gainUltCharge(max * (el === this.currentElement ? C.POP_CUR : C.POP_OTHER) * k, el, true); }
+        finally { this._cs.popping = false; }
         const x = enemy.sprite?.x ?? enemy.container?.x, y = (enemy.sprite?.y ?? enemy.container?.y) - 18;
         if (x === undefined) return;
         // a chain of pops climbs the scale and grows a little each time
@@ -1357,7 +1357,7 @@ class CosmicSystem {
     // your stage's. Nothing while sealed (Ascend running), transformed or charging.
     _csGainCharge(amt) {
         const S = this._cs, now = this.time.now, max = this.ultChargeMax;
-        if (!S?.unlocked || !this.ultGems || S.tf || S.charge || now < (this._ultNoChargeUntil?.cosmic || 0)) return;
+        if (!S?.unlocked || !this.ultGems || S.tf || S.charge || S.popping || now < (this._ultNoChargeUntil?.cosmic || 0)) return;
         let left = amt * this._csCfg().CHARGE_SHARE;
         if (this.ultGems.cosmic < max) {
             const take = Math.min(left, max - this.ultGems.cosmic);
