@@ -24,12 +24,15 @@
 //   HIGH TIDE   the outer TIDE_RIM tiles flood deep: hurting and slowing while you're in it
 //   GEYSERS     a spout under where you stood a beat ago: keep moving, don't double back
 //   SPRAY       a spinning spiral of droplets from her, a puddle wherever each one lands
+//   CAVITATION  huge bubbles boil up round the room and burst where they sit; a Smasher near one punches it at you
 //   TIDAL CLOCK (last phase) a Parting turned into a clock hand sweeping the room, and Undertow rings, short short long
 //
 // HER BROOD. The SMASHERS are hers alone, her guard (mantis shrimp, true to life): close enough, one winds up for
-// SMASH.WIND_MS and swings its club too fast to see, SMASH.DMG to the two tiles in front of it; the strike throws a
-// cavitation bubble on SMASH.TRAVEL tiles that bursts SMASH.CAV_MS later over SMASH.CAV_R tiles for a third of that.
-// Stand in both and both land. Two guard her from the start, one more at each of SMASH.AT runes broken (SMASH.MAX
+// SMASH.WIND_MS and swings its club too fast to see, SMASH.DMG to the six tiles in front of it (two deep, three wide);
+// the strike throws a cavitation bubble on SMASH.TRAVEL tiles that hangs there SMASH.CAV_FUSE, then bursts over
+// SMASH.CAV_R tiles for a third of that (or is turned onto you first, by a Ripplerunner or another Smasher).
+// Stand in both and both land. One of her huge field bubbles within SMASH.PUNCH_R and you not close, it squares up
+// and punches the bubble straight at you instead. Two guard her from the start, one more at each of SMASH.AT runes broken (SMASH.MAX
 // at once); three Leeches come at LEECH_AT, Ripplerunners with every High Tide. Nothing joins in the last phase, and
 // the brood goes with her.
 class TideMother {
@@ -43,7 +46,9 @@ class TideMother {
         RUNE_HITS: 2,
         BUB: { EVERY: [7000, 6000, 5200], PAIR_AT: 2, MAX: 3, THROW_MS: 750, SHORT: 2.5, SPEED: 2.6, TURN: 2.4, LIFE: 12000, WARN: 1500,
                TOUCH: 0.6, RUNE_R: 1.0, DMG: 40, POP_R: 1.5, POP_DMG: 16, WET_MS: 4000 },   // SHORT: it lands that many tiles short of you; SPEED tiles a second; TURN rad a second
-        SMASH: { HP: 90, MOVE: 0.8, REACH: 1.6, WIND_MS: 280, DMG: 24, TRAVEL: 2.5, CAV_MS: 360, CAV_R: 2, CD: 2200, AT: [2, 3], MAX: 3 },
+        SMASH: { HP: 90, MOVE: 0.8, REACH: 1.6, WIND_MS: 280, DMG: 24, TRAVEL: 2.5, CAV_MS: 300, CAV_FUSE: 1500, CAV_R: 2, CD: 2200, AT: [2, 3], MAX: 3,
+                 PUNCH_R: 6, PUNCH_WIND: 420 },   // a field bubble within PUNCH_R tiles of it: punched straight at you
+        FIELD: { N: [3, 4, 5], FORM_MS: 700, FUSE: 3200, R: 2.5, DMG: 20, SIZE: 3, SPEED: 9, COL: 0x9fe8ff, GAP: 4 },   // her huge bubbles (by phase); GAP tiles between them
         PHASE_AT: [2, 4], LEECH_AT: 1, SHIELD_AT: 2, SHIELD_CD: 15000, SLOW_AT: 4,
         UNDER_TELL: 950, UNDER_SPEED: 12, UNDER_SPEED_FREE: 9, CREST: 0.5, UNDER_DMG: 16,   // tiles a second; the ring's half-thickness, in tiles
         PART_TELL: 1300, PART_HALF: 2.5, PART_ENDS: 3, PART_DMG: 20, PART_WET_MS: 2500,
@@ -118,7 +123,6 @@ class TideMother {
         const dt = Math.min(0.05, (S.game.loop.delta || 16) / 1000);
         T.phase = T.freed >= C.PHASE_AT[1] ? 3 : T.freed >= C.PHASE_AT[0] ? 2 : 1;
         TideMother._brood(S, q);
-        for (const e of [...T.smashers]) TideMother._smashTick(S, q, e, now);
         if (now >= T.bubAt) TideMother._throwTurn(S, q, now);
         TideMother._bubblesTick(S, q, now, dt);
         for (const r of T.runes) if (!r.done) TideMother._symFrame(S, r.sym, r.el, now, r.tileX);
@@ -156,12 +160,19 @@ class TideMother {
         const cx = (T.cx + 0.5) * TS, cy = (T.cy + 0.5) * TS, d = Math.hypot(lx - cx, ly - cy), lim = (T.R - 1) * TS;
         if (d > lim) { lx = cx + (lx - cx) * lim / d; ly = cy + (ly - cy) * lim / d; }
         const cont = S.add.container(mx, my).setDepth(3.2);
-        const ring = S.add.image(0, 0, 'vfx_ring').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setScale(0.55);
+        const ring = LevelManager.cavSprite(S, 0, 0, col).setScale(1.45);
         const glow = S.add.image(0, 0, 'vfx_glow').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setScale(0.32).setAlpha(0.5);
         const sym = S.add.image(0, 0, TideMother._symKey(el), '0').setScale(1.1);
         cont.add([glow, ring, sym]);
         S._vfxSort?.(cont);
         const b = { el, x: mx, y: my, a, t0: 0, live: false, cont, ring, sym };
+        // a Ripplerunner turns it onto you: it's a burst at your feet then, not a sign for a rune (LevelManager._rippleTurn)
+        b.redirect = (tx, ty) => {
+            const i = T.bubbles.indexOf(b);
+            if (i < 0) return;
+            T.bubbles.splice(i, 1); cont.destroy();
+            S._cavBubble(b.x, b.y, tx, ty, { r: B.POP_R, dmg: B.POP_DMG, col, atYou: true });
+        };
         T.bubbles.push(b);
         const m = BossFX.mark(S, [[Math.floor(lx / TS), Math.floor(ly / TS)]], col, B.THROW_MS, { fill: 0.1 });
         Sfx.play(S, 'lob');
@@ -178,6 +189,8 @@ class TideMother {
             Sfx.play(S, 'bubbles', { soft: true });
         } });
     }
+    // Her bubbles a Ripplerunner can turn onto you (the landed ones)
+    static redirectables(S) { return (S.portals || []).find(p => p.tide && p.active)?.tide.bubbles.filter(b => b.live) || []; }
     static _bubblesTick(S, q, now, dt) {
         const T = q.tide, B = TideMother.CFG.BUB, TS = S.TILE_SIZE;
         const px = S.player.x, py = S.player.y - (S.SLIME_Y_OFFSET || 0), cx = (T.cx + 0.5) * TS, cy = (T.cy + 0.5) * TS, lim = (T.R - 0.3) * TS;
@@ -214,7 +227,7 @@ class TideMother {
         const T = q.tide, B = TideMother.CFG.BUB, TS = S.TILE_SIZE;
         T.bubbles.splice(T.bubbles.indexOf(b), 1);
         b.cont.destroy();
-        BossFX.blast(S, b.x, b.y, (o.quiet ? 0.8 : B.POP_R) * TS, 'volt');
+        LevelManager.cavFlash(S, b.x, b.y, (o.quiet ? 0.8 : B.POP_R) * TS, TideMother.CFG.RUNE_COL[b.el]);   // it collapses, as they do
         Sfx.play(S, 'splash', { big: !o.quiet });
         if (o.quiet) return;
         const px = S.player.x, py = S.player.y - (S.SLIME_Y_OFFSET || 0);
@@ -278,9 +291,9 @@ class TideMother {
     // ── WHAT SHE DOES NEXT ───────────────────────────────────────────────────
     static _attack(S, q, now) {
         const T = q.tide, C = TideMother.CFG, P = T.phase;
-        const pool = P === 1 ? ['undertow', 'parting', 'geysers']
-                   : P === 2 ? ['tide_parting', 'parting_undertow', 'undertow', 'geysers', 'spray', 'tide']
-                   : ['clock', 'spray'];
+        const pool = P === 1 ? ['undertow', 'parting', 'geysers', 'field']
+                   : P === 2 ? ['tide_parting', 'parting_undertow', 'undertow', 'geysers', 'spray', 'tide', 'field']
+                   : ['clock', 'field', 'spray'];
         if (T.bagPhase !== P || !T.bag.length) {
             T.bag = P === 3 ? [...pool] : pool.map(a => [Math.random(), a]).sort((a, b) => a[0] - b[0]).map(a => a[1]);
             if (T.bag[0] === T.last && T.bag.length > 1) T.bag.push(T.bag.shift());   // never the same move twice running
@@ -292,6 +305,7 @@ class TideMother {
         if (a === 'geysers') return TideMother._geysers(S, q, now);
         if (a === 'spray') return TideMother._spray(S, q, now);
         if (a === 'tide') return TideMother._highTide(S, q, now);
+        if (a === 'field') return TideMother._field(S, q, now);
         if (a === 'tide_parting') {   // the flood comes in as the line does: one half of the middle or the other
             TideMother._highTide(S, q, now);
             return TideMother._parting(S, q, now, { tell: C.TIDE_TELL });
@@ -380,6 +394,25 @@ class TideMother {
         };
         T.haz.push(h);
         return C.TIDE_TELL + 300;
+    }
+
+    // ── CAVITATION FIELD ─────────────────────────────────────────────────────
+    // Huge bubbles boil up at FIELD.N spots round the room (LevelManager._cavBubble, `field`), each bursting where it
+    // sits once FIELD.FUSE runs out. A Smasher near one punches it straight at you (smashTick); a Ripplerunner can
+    // turn one too. Each spot is marked the whole time it's there.
+    static _field(S, q, now) {
+        const T = q.tide, F = TideMother.CFG.FIELD, TS = S.TILE_SIZE, spots = [];
+        const free = TideMother._tiles(S, T, (dx, dy) => { const d = Math.hypot(dx, dy); return d >= 2.5 && d <= T.R - 1.5; })
+            .filter(([x, y]) => Math.hypot(x - S.playerX, y - S.playerY) >= 2.5 && !T.runes.some(r => Math.hypot(r.tileX - x, r.tileY - y) < 2))
+            .sort(() => Math.random() - 0.5);
+        for (const p of free) if (spots.length < F.N[T.phase - 1] && spots.every(o => Math.hypot(o[0] - p[0], o[1] - p[1]) >= F.GAP)) spots.push(p);
+        for (const [x, y] of spots) {
+            const px = (x + 0.5) * TS, py = (y + 0.5) * TS;
+            S._cavBubble(px, py, px, py, { form: F.FORM_MS, ms: F.FUSE, r: F.R, dmg: F.DMG, size: F.SIZE, col: F.COL, speed: F.SPEED, field: true });
+        }
+        Sfx.play(S, 'bubbles');
+        TideMother._say(S, q, 'CAVITATION', TideMother._count(S, 'smasher') ? 'her Smashers will punch them at you' : 'keep clear of them');
+        return F.FORM_MS + 600;
     }
 
     // ── GEYSERS ──────────────────────────────────────────────────────────────
@@ -492,50 +525,88 @@ class TideMother {
     static _count(S, kind) { return (S.enemies || []).filter(e => e._motherBrood === kind && e.sprite?.active && e.health > 0).length; }
 
     // ── THE SMASHER ──────────────────────────────────────────────────────────
+    // Hers, and in the Training Ground (makeSmasher); LevelManager._updateCisternEnemies runs smashTick every frame
+    // wherever one is, and killEnemy's _clearCisternGfx takes its clubs.
     static _smasher(S, q, x, y, ri) {
+        const e = TideMother.makeSmasher(S, x, y, ri);
+        q.tide.smashers.push(e);
+        return e;
+    }
+    static makeSmasher(S, x, y, ri) {
         const K = TideMother.CFG.SMASH, e = S.createEnemy(x, y, K.HP);
-        e.tutorialRoomIndex = ri; e._isSmasher = true; e._moveCdMult = K.MOVE;
+        e.tutorialRoomIndex = ri; e._isSmasher = true; e._waterNative = true; e._moveCdMult = K.MOVE;
         e._smash = { state: 'idle', readyAt: S.time.now + 800 + Math.random() * 600 };
         const k = LevelManager.bodyKey(S, 'smasher');   // (assets/art/slime_smasher.png)
         if (k) { e.sprite.setTexture(k, e.sprite.frame?.name ?? 0); e.sprite.play(k + '_idle'); }
         e._clubs = [-1, 1].map(s => S.add.image(e.sprite.x + s * 12, e.sprite.y, 'tm_club').setScale(1.3).setFlipX(s < 0).setDepth((e.sprite.depth || 1) + 0.02));
         e._clubs.forEach(c => S._vfxSort?.(c));
-        q.tide.smashers.push(e);
         return e;
     }
-    // Every frame, each one: close enough, the wind-up, the strike, and the bubble the strike leaves
-    static _smashTick(S, q, e, now) {
-        const T = q.tide, K = TideMother.CFG.SMASH, TS = S.TILE_SIZE, s = e._smash, sp = e.sprite;
-        if (!sp?.active || e.health <= 0) {
-            e._clubs?.forEach(c => c.destroy()); s.m?.kill();
-            T.smashers.splice(T.smashers.indexOf(e), 1);
-            return;
-        }
-        // its clubs ride at its sides; drawn back on the wind-up, snapped out on the strike
-        const back = s.state === 'wind' ? 1 : 0, flick = Math.max(0, 1 - (now - (s.struckAt || -1e9)) / 160);
+    // Every frame, each one: close in, it swings at you (the strike, and the bubble the strike leaves); one of her
+    // field bubbles in reach and you not, it punches that straight at you instead
+    static smashTick(S, e, now) {
+        const K = TideMother.CFG.SMASH, TS = S.TILE_SIZE, s = e._smash, sp = e.sprite;
+        if (!sp?.active || e.health <= 0 || !s) return;
+        // its clubs ride at its sides; drawn back on a wind-up, snapped out on the strike
+        const back = s.state !== 'idle' ? 1 : 0, flick = Math.max(0, 1 - (now - (s.struckAt || -1e9)) / 160);
         const fx = s.dir ? s.dir[0] : 0, fy = s.dir ? s.dir[1] : 0;
-        e._clubs.forEach((c, i) => {
+        e._clubs?.forEach((c, i) => {
             const side = i ? 1 : -1;
             c.setPosition(sp.x + side * 12 - fx * 5 * back + fx * 14 * flick, sp.y + 2 - fy * 5 * back + fy * 14 * flick)
              .setVisible(sp.visible).setAlpha(sp.alpha).clearTint();
             if (back && Math.floor(now / 60) % 2) c.setTintFill(0xffffff);   // the wind-up: its clubs flash
         });
         if ((e.stunnedUntil || 0) > now || e._iceCube) {   // dazed or frozen: no swing
-            if (s.state === 'wind') { s.state = 'idle'; s.m?.kill(); e._moveCdMult = K.MOVE; }
+            if (s.state !== 'idle') { s.state = 'idle'; s.m?.kill(); s.g?.destroy(); e._moveCdMult = K.MOVE; }
             return;
         }
         if (s.state === 'idle') {
+            if (now < s.readyAt) return;
             const dx = S.playerX - e.x, dy = S.playerY - e.y;
-            if (now < s.readyAt || Math.hypot(dx, dy) > K.REACH) return;
-            s.dir = [Math.sign(dx), Math.sign(dy)];
-            s.tiles = [1, 2].map(k => [e.x + s.dir[0] * k, e.y + s.dir[1] * k]).filter(([x, y]) => S.world?.[x]?.[y] === S.FLOOR);
-            s.state = 'wind'; s.until = now + K.WIND_MS;
-            e._moveCdMult = 99;   // it plants itself for the swing
-            s.m = BossFX.mark(S, s.tiles, 0xff8a3a, K.WIND_MS, { fill: 0.14 });
-            Sfx.play(S, 'tell', { ms: K.WIND_MS });
+            if (Math.hypot(dx, dy) <= K.REACH) {   // you, close: the swing
+                s.dir = [Math.sign(dx), Math.sign(dy)];
+                const [fx, fy] = s.dir, seen = new Set();   // the swing: two tiles deep, three wide
+                s.tiles = [];
+                for (const k of [1, 2]) for (const w of [-1, 0, 1]) {
+                    const x = e.x + fx * k - fy * w, y = e.y + fy * k + fx * w;
+                    if (S.world?.[x]?.[y] === S.FLOOR && !seen.has(x + ',' + y)) { seen.add(x + ',' + y); s.tiles.push([x, y]); }
+                }
+                s.state = 'wind'; s.until = now + K.WIND_MS;
+                e._moveCdMult = 99;   // it plants itself for the swing
+                s.m = BossFX.mark(S, s.tiles, 0xff8a3a, K.WIND_MS, { fill: 0.14 });
+                Sfx.play(S, 'tell', { ms: K.WIND_MS });
+                return;
+            }
+            const ex = sp.x, ey = sp.y - (S.SLIME_Y_OFFSET || 0);
+            const b = (S._cavs || []).filter(b => (b.field || b.lingering) && !b.atYou && !b.forming && Math.hypot(b.x - ex, b.y - ey) <= K.PUNCH_R * TS)
+                .sort((a, c) => Math.hypot(a.x - ex, a.y - ey) - Math.hypot(c.x - ex, c.y - ey))[0];
+            if (!b) return;
+            // a field bubble in reach: it squares up to it, then punches it at you
+            s.bub = b; s.state = 'punch'; s.until = now + K.PUNCH_WIND;
+            s.dir = [Math.sign(Math.round((b.x - ex) / TS)), Math.sign(Math.round((b.y - ey) / TS))];
+            e._moveCdMult = 99;
+            b.atYou = true;   // (claimed: nothing else turns it meanwhile)
+            s.g = S.add.graphics().setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD);
+            S._vfxSort?.(s.g);
+            Sfx.play(S, 'tell', { ms: K.PUNCH_WIND });
+            S.showStatusText(sp.x, sp.y - 26, 'CLACK!', '#ffb070');
             return;
         }
-        if (s.state !== 'wind' || now < s.until) return;
+        if (s.state === 'punch') {
+            const b = s.bub;
+            if (s.g?.active && b) { s.g.clear(); BossFX.arc(s.g, sp.x, sp.y, b.x, b.y, 0xff8a3a, 3, 5, 1.5); }   // its aim
+            if (now < s.until) return;
+            s.g?.destroy(); s.g = null;
+            s.state = 'idle'; s.readyAt = now + K.CD; s.struckAt = now; e._moveCdMult = K.MOVE;
+            if (!b || !(S._cavs || []).includes(b)) return;   // it went off first
+            const g = S.add.graphics().setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD);
+            BossFX.arc(g, sp.x, sp.y, b.x, b.y, 0xffd0a0, 5, 6, 3);
+            S.tweens.add({ targets: g, alpha: 0, duration: 220, onComplete: () => g.destroy() });
+            Sfx.play(S, 'swing'); Sfx.play(S, 'slam'); S.cameras.main.shake(90, 0.005);
+            b.redirect(S.player.x, S.player.y - (S.SLIME_Y_OFFSET || 0));   // straight at you
+            return;
+        }
+        if (now < s.until) return;
         // the strike: faster than you can see
         s.state = 'idle'; s.readyAt = now + K.CD; s.struckAt = now; e._moveCdMult = K.MOVE;
         s.m?.done(120);
@@ -545,23 +616,9 @@ class TideMother {
             S.takeDamage(K.DMG * (S.enemyDamageScale || 1));
             S.showStatusText(S.player.x, S.player.y - 30, 'SMASH', '#ffb070');
         }
-        // the cavitation bubble: on along the swing, then it bursts wide
+        // the cavitation bubble: on along the swing, then it bursts wide (LevelManager._cavBubble: a Ripplerunner can turn it onto you)
         const [dx, dy] = s.dir, sx = (e.x + dx + 0.5) * TS, sy = (e.y + dy + 0.5) * TS, n = Math.hypot(dx, dy) || 1;
-        const ex = sx + dx / n * K.TRAVEL * TS, ey = sy + dy / n * K.TRAVEL * TS;
-        const area = BossFX.tilesInRadius(S, ex, ey, K.CAV_R * TS, false);
-        const m = BossFX.mark(S, area, 0xbfeaff, K.CAV_MS, { fill: 0.08 });
-        const bub = S.add.image(sx, sy, 'vfx_ring').setTint(0xdff8ff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3).setDepth(3.2);
-        S._vfxSort?.(bub);
-        S.tweens.add({ targets: bub, x: ex, y: ey, scale: 0.55, duration: K.CAV_MS, ease: 'Quad.easeOut', onComplete: () => {
-            bub.destroy(); m.done();
-            if (!q.active || T.over) return;
-            BossFX.blast(S, ex, ey, K.CAV_R * TS, 'volt'); Sfx.play(S, 'splash');
-            const ppx = S.player.x, ppy = S.player.y - (S.SLIME_Y_OFFSET || 0);
-            if (S.time.now >= (S._dashInvulnUntil || 0) && Math.hypot(ppx - ex, ppy - ey) <= K.CAV_R * TS + TS / 2) {
-                S.takeDamage(K.DMG / 3 * (S.enemyDamageScale || 1));
-                S.showStatusText(ppx, ppy - 40, 'CAVITATION', '#bfeaff');
-            }
-        } });
+        S._cavBubble(sx, sy, sx + dx / n * K.TRAVEL * TS, sy + dy / n * K.TRAVEL * TS, { ms: K.CAV_MS, fuse: K.CAV_FUSE, r: K.CAV_R, dmg: K.DMG / 3, wet: false });
     }
 
     // ── THE SCENES ───────────────────────────────────────────────────────────
@@ -661,6 +718,7 @@ class TideMother {
         T.bubble?.destroy();
         for (const b of [...T.bubbles]) b.cont.destroy();
         T.bubbles = [];
+        S._cavClear?.();
         for (const p of [...(S.enemyProjectiles || [])]) if (p._tideDrop) { p.gfx?.destroy(); S.enemyProjectiles.splice(S.enemyProjectiles.indexOf(p), 1); }
         TideMother._broodGone(S, q);   // the water goes still: her brood with it
         const c = TideMother._cineOn(S), r = T.riyal, mum = q.container, mid = { x: r.x, y: r.y };
@@ -726,8 +784,7 @@ class TideMother {
         if (i >= 0) S.portals.splice(i, 1);
     }
     static _broodGone(S, q) {
-        for (const e of [...(S.enemies || [])]) if (e._motherBrood && e.sprite?.active) S.killEnemy(e);
-        for (const e of q.tide.smashers) e._clubs?.forEach(c => c.destroy());
+        for (const e of [...(S.enemies || [])]) if (e._motherBrood && e.sprite?.active) S.killEnemy(e);   // (a Smasher's clubs go with it: _clearCisternGfx)
         q.tide.smashers = [];
     }
     // Everything of hers stops, and her brood goes with her (from _gone, and _destroyPortal should anything kill her)
@@ -739,6 +796,7 @@ class TideMother {
         T.bubble?.destroy();
         for (const b of T.bubbles) b.cont.destroy();
         T.bubbles = [];
+        S._cavClear?.();
         for (const r of T.runes) { r.chain?.destroy?.(); for (const o of [r.sym, r.glow, r.glyph]) if (o?.active) { S.tweens.killTweensOf(o); o.destroy(); } }
         TideMother._broodGone(S, q);
     }

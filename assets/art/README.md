@@ -166,6 +166,8 @@ If a file is missing, the game draws its own version instead (the code that firs
 | slime_volt.png (+ .json) | 64x32, 2 frames | the Voltslime's body (two 32x32 frames) |
 | slime_wraith.png (+ .json) | 224x192, 42 frames | an enemy's recoloured slime body (32x32 frames; 0 and 18 make its idle) |
 | slime_wraith_ghost.png (+ .json) | 224x192, 42 frames | an enemy's recoloured slime body (32x32 frames; 0 and 18 make its idle) |
+| tm_bubble.png (+ .json) | 96x24, 4 frames | a cavitation bubble, wobbling (pale: tinted in game) |
+| tm_bubble_s.png | 8x8 | a speck of vapour, as a bubble forms |
 | tm_chain.png | 8x5 | a chain link, tiled along the Reservoir's binding chains (light grey, tinted per rune) |
 | tm_club.png | 10x7 | a Smasher's club (two ride beside it and snap forward on the strike) |
 | tm_statue.png | 14x19 | the Reservoir's rune statue (its rune glows in the dark recess) |

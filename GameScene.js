@@ -123,6 +123,7 @@ class GameScene extends Phaser.Scene {
         this.lockedDoorSprites       = [];
         this.tutorialChests          = [];
         this.portals                 = [];
+        this._cavs                   = [];   // cavitation bubbles in flight (LevelManager._cavBubble)
         this.tutorialRoomCleared     = [];
         this.tutorialDoorsLocked     = [];
         this.currentTutorialRoom     = -1;
@@ -1823,9 +1824,18 @@ class GameScene extends Phaser.Scene {
     _wwPulse(...a)           { return LevelManager.prototype._wwPulse.call(this, ...a); }
     _enemyWet(...a)          { return LevelManager.prototype._enemyWet.call(this, ...a); }
     _drownWarn(...a)         { return LevelManager.prototype._drownWarn.call(this, ...a); }
-    _fireRippleVolley(...a)  { return LevelManager.prototype._fireRippleVolley.call(this, ...a); }
-    _rippleDetonate(...a)    { return LevelManager.prototype._rippleDetonate.call(this, ...a); }
-    _updateRippleOrbs(...a)  { return LevelManager.prototype._updateRippleOrbs.call(this, ...a); }
+    _cavCfg(...a)            { return LevelManager.prototype._cavCfg.call(this, ...a); }
+    _cavBubble(...a)         { return LevelManager.prototype._cavBubble.call(this, ...a); }
+    _cavForm(...a)           { return LevelManager.prototype._cavForm.call(this, ...a); }
+    _cavGo(...a)             { return LevelManager.prototype._cavGo.call(this, ...a); }
+    _takeWater(...a)         { return LevelManager.prototype._takeWater.call(this, ...a); }
+    _cavSplash(...a)         { return LevelManager.prototype._cavSplash.call(this, ...a); }
+    _cavAfflict(...a)        { return LevelManager.prototype._cavAfflict.call(this, ...a); }
+    _cavBurst(...a)          { return LevelManager.prototype._cavBurst.call(this, ...a); }
+    _cavClear(...a)          { return LevelManager.prototype._cavClear.call(this, ...a); }
+    _rippleTurn(...a)        { return LevelManager.prototype._rippleTurn.call(this, ...a); }
+    _rippleDraw(...a)        { return LevelManager.prototype._rippleDraw.call(this, ...a); }
+    _rippleKeep(...a)        { return LevelManager.prototype._rippleKeep.call(this, ...a); }
     _waveTell(...a)          { return LevelManager.prototype._waveTell.call(this, ...a); }
     _waveClearTell(...a)     { return LevelManager.prototype._waveClearTell.call(this, ...a); }
     _updateWaveCharge(...a)  { return LevelManager.prototype._updateWaveCharge.call(this, ...a); }

@@ -2343,11 +2343,9 @@ class CosmicSystem {
             if (!b.gfx?.active || !near(b.gfx.x, b.gfx.y)) continue;
             this._csWardEat(b.gfx.x, b.gfx.y, b); b.gfx.destroy(); vb.splice(i, 1);
         }
-        const ro = this._rippleOrbs;
-        if (ro) for (let i = ro.length - 1; i >= 0; i--) {
-            const o = ro[i];
-            if (!near(o.x, o.y)) continue;
-            this._csWardEat(o.x, o.y); o.g?.destroy(); ro.splice(i, 1);
+        for (const b of [...(this._cavs || [])]) {   // cavitation bubbles (LevelManager._cavBubble)
+            if (!near(b.x, b.y)) continue;
+            this._csWardEat(b.x, b.y); this._cavBurst(b, true);
         }
         const vr = this._voidRipples;
         if (vr) for (let i = vr.length - 1; i >= 0; i--) {

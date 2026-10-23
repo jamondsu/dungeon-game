@@ -39,6 +39,7 @@ class Training {
         ['Wave rider',   (S, x, y) => S.createWaveRider(x, y, 0), 'waverider'],
         ['Tidal guard',  (S, x, y) => S.createTidalGuard(x, y, 0), 'tidalguard'],
         ['Conduit',      (S, x, y) => S.createConduit(x, y, 0), 'conduit'],
+        ['Smasher',      (S, x, y) => TideMother.makeSmasher(S, x, y, 0), 'smasher'],
     ];
     static BOSSES = [
         ['Voltslime',      (S, x, y) => S.spawnVoltslimeBoss(x, y), 'volt'],   // (and its body: BossFX.body)
