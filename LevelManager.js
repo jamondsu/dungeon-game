@@ -3074,11 +3074,11 @@ class LevelManager {
     // light flashes where it vanished, and the shock goes out as a ring, over r tiles. this._cavs: every one out;
     // redirect(x, y) sends one on to a new spot. The Tide Mother's sign bubbles can be turned too (TideMother.redirectables).
     _cavCfg() { return { SPEED: 7, MIN_MS: 280, R: 1.8, DMG: 10, WET_MS: 6000, COL: 0xdff8ff, COLLAPSE_MS: 120, SPLASH: [2, 5], SPLASH_R: 1.6, SCALE: 0.7,   // SPLASH: how many tiles round it a wet one throws water on (random); SCALE: its sprite's at size 1
-                         EDGE: 0.15, BLEED_MS: 3000, DAZE_MS: 450, WAVE: 16, HIT_GAP: 300,   // EDGE: the share of its blow at the rim of its burst (all of it at the heart); WAVE: its burst runs out over the floor this fast (tiles a second); HIT_GAP: one cavitation blow on you this often at most
+                         EDGE: 0.15, BLEED_MS: 3000, DAZE_MS: 450, WAVE: 8, WAVE_FADE: 550, HIT_GAP: 300,   // EDGE: the share of its blow at the rim of its burst (all of it at the heart); WAVE: its burst runs out over the floor this fast (tiles a second), each tile lit WAVE_FADE as it passes; HIT_GAP: one cavitation blow on you this often at most
                          DRAW_R: 3.5, FORM_MS: 560,   // DRAW_R: how far round it the Ripplerunner pulls water up into bubbles (standing in it or not)
                          SIZES: [[0.6, 1.6, 0.45], [0.9, 2.6, 0.35], [1.3, 3.8, 0.2]],   // its bubbles: small, medium, large (sprite size, burst radius in tiles, how often); the same blow
                          GOD: { DETECT_R: 8, RISE: 8, RISE_MS: 300, FORM_STEP: 90, FORM_MS: 420, LIFT_MS: 320, HOVER: [1.2, 2.8], SPREAD: 1.8, DMG: 5,
-                                SEND_STEP: 140, SEND_SPEED: 8, SLOW: 1.7, BOMBARD_R: 3.5, AT_YOU: 3, CD: 4200 } }; }   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
+                                SEND_STEP: 140, SEND_SPEED: 11, SLOW: 1.4, BOMBARD_R: 3.5, AT_YOU: 3, CD: 4200 } }; }   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
     _cavBubble(x, y, tx, ty, o = {}) {
         const C = this._cavCfg();
         const b = { x, y, tx, ty, r: o.r ?? C.R, dmg: o.dmg ?? C.DMG, col: o.col ?? C.COL, wet: o.wet ?? true, atYou: !!o.atYou, field: !!o.field,
@@ -3203,7 +3203,7 @@ class LevelManager {
     // going out as a ring R px across, throwing droplets
     // The collapse (any scene): it goes off like a depth charge. A pinprick of light where it vanished
     // (sonoluminescence) and a white-hot flash; the shock running out over the floor at WAVE tiles a second to its
-    // edge, a ring of lit tiles, two rings of light with it; a column of water thrown up that rains down round it; a
+    // edge, every tile it passes lit and fading, two rings of light with it; a column of water thrown up that rains down round it; a
     // dark wet splat left on the ground; and, for any but the dimmed (k: a crowd of them at once), a shake that grows
     // with it. hit(f): called once if the wave reaches you (f: how far out you were, 0 at its heart to 1 at its edge),
     // not while a dash covers you as it passes. A burst can be huge: the wave is what you dodge.
@@ -3214,23 +3214,32 @@ class LevelManager {
         S.tweens.add({ targets: core, alpha: 0, scale: 0.1, duration: 140, onComplete: () => core.destroy() });
         const flash = add('vfx_glow', 0xffffff, 3.35).setScale(0.05);
         S.tweens.add({ targets: flash, scale: Math.max(0.35, R / 45), alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
-        // the shock, over the floor: a ring of lit tiles running out to its edge, and the blow travels with it
-        const wave = Math.max(200, rt / (S._cavCfg?.().WAVE || 16) * 1000);
+        // the shock, over the floor: it runs out at WAVE tiles a second, each tile lighting white as the front reaches it
+        // and glowing in its colour for WAVE_FADE after, so you see it spread; the blow travels with the front
+        const CC = S._cavCfg?.() || {}, speed = CC.WAVE || 8, fade = CC.WAVE_FADE || 550, reach = rt + 0.5, wave = Math.max(180, reach / speed * 1000);
         let caught = !hit;
         if (S.world) {
             const g = S.add.graphics().setDepth(0.48).setBlendMode(Phaser.BlendModes.ADD);   // (added light: plain, the room's dark swallowed it)
             S._vfxSort?.(g);
-            const all = BossFX.tilesInRadius(S, x, y, R + TS * 0.5, false).map(([tx, ty]) => [tx, ty, Math.hypot(tx + 0.5 - x / TS, ty + 0.5 - y / TS)]);
-            S.tweens.addCounter({ from: 0, to: 1, duration: wave, ease: 'Linear', onUpdate: tw => {
-                const u = tw.getValue(), r = u * (rt + 0.5);
-                g.clear().setAlpha((1 - u * 0.6) * Math.max(0.5, k));
-                BossFX.drawTiles(g, TS, all.filter(t => Math.abs(t[2] - r) <= 0.7).map(t => [t[0], t[1]]), col, 1, S.time.now, 0, 0, { fill: 0.4 });
+            const tiles = BossFX.tilesInRadius(S, x, y, R + TS * 0.5, false).map(([tx, ty]) => ({ tx, ty, d: Math.hypot(tx + 0.5 - x / TS, ty + 0.5 - y / TS) }));
+            const t0 = S.time.now;
+            S.tweens.addCounter({ from: 0, to: 1, duration: wave + fade, onUpdate: () => {
+                const t = S.time.now - t0, r = Math.min(reach, t / 1000 * speed);
+                g.clear();
+                for (const p of tiles) {
+                    const age = t - p.d / speed * 1000;   // since the front reached it
+                    if (age < 0) continue;
+                    const a = Math.max(0, 1 - age / fade) * Math.max(0.5, k);
+                    if (a <= 0) continue;
+                    const front = age < 100, X = p.tx * TS + 1, Y = p.ty * TS + 1;
+                    g.fillStyle(front ? 0xffffff : col, (front ? 0.6 : 0.38) * a).fillRect(X, Y, TS - 2, TS - 2);
+                    g.lineStyle(1, front ? 0xffffff : col, 0.85 * a).strokeRect(X, Y, TS - 2, TS - 2);
+                }
                 if (caught || !S.player?.active) return;
                 const d = Math.hypot(S.playerX + 0.5 - x / TS, S.playerY + 0.5 - y / TS);
-                if (d > rt + 0.5) return;
-                if (r < d - 0.5) return;   // not to you yet
+                if (d > reach || Math.abs(r - d) > 0.6) return;   // the front's on your tile, or it isn't (behind it, you're past it)
                 caught = true;
-                if (S.time.now >= (S._dashInvulnUntil || 0)) hit(Math.min(1, d / (rt + 0.5)));
+                if (S.time.now >= (S._dashInvulnUntil || 0)) hit(Math.min(1, d / reach));
             }, onComplete: () => g.destroy() });
         }
         for (const [tint, dur, w] of [[col, wave, 1], [0xffffff, wave * 1.35, 1.25]]) {   // two rings of light, the outer later
@@ -3339,7 +3348,7 @@ class LevelManager {
             let px = this.player.x, py = this.player.y - (this.SLIME_Y_OFFSET || 0);
             if (i % G.AT_YOU) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * G.BOMBARD_R * TS; px += Math.cos(a) * d; py += Math.sin(a) * d; }
             b.godHeld = false; b.held = false;
-            b.redirect(px, py, { ms: Math.max(380, Math.hypot(px - b.x, py - b.y) / TS / G.SEND_SPEED * 1000 * G.SLOW), ease: 'Cubic.easeIn' });   // slow, then faster and faster, straight at where you are
+            b.redirect(px, py, { ms: Math.max(300, Math.hypot(px - b.x, py - b.y) / TS / G.SEND_SPEED * 1000 * G.SLOW), ease: 'Cubic.easeIn' });   // slow, then faster and faster, straight at where you are
             Sfx.play(this, 'whoosh');
         }));
         this.time.delayedCall(queue.length * G.SEND_STEP + 120, () => this._rippleGodEnd(e));
