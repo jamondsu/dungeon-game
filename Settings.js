@@ -32,6 +32,7 @@ const Settings = {
         { id: 'ultCosmic',  label: 'Cosmic ult (hold)',  def: 'V' },
         { id: 'gadget1',    label: 'Gadget 1',           def: 'Q' },
         { id: 'gadget2',    label: 'Gadget 2',           def: 'F' },
+        { id: 'call',       label: "Riyal's Call",       def: 'T' },   // once she's free (TideMother.js)
         { id: 'surge',      label: 'Weapon ability',     def: 'R' },
         { id: 'detonate',   label: 'Weapon secondary',   def: 'G' },   // Ignition: every kindled mark goes off at once   // Magma surge, Icicle heal, Ignition... (each weapon's own)
         { id: 'mute',       label: 'Mute',               def: 'M' },

@@ -790,6 +790,10 @@ class GameScene extends Phaser.Scene {
             if (this._pauseMenuOpen || this._deathScreenActive) return;
             this.useGadget(0, this.pointerX, this.pointerY);
         });
+        this.input.keyboard.on('keydown-' + Settings.key('call'), () => {   // Riyal's Call, once she's free (TideMother.js)
+            if (this._pauseMenuOpen || this._deathScreenActive) return;
+            TideMother.call(this);
+        });
 
         this.input.mouse?.disableContextMenu();   // right-click is a game input (the Twin Collapse anchor)
         this.input.on('pointerdown', (pointer) => {

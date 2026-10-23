@@ -630,6 +630,86 @@ class TideMother {
         for (const e of [...(S.enemies || [])]) if (e._motherBrood && e.sprite?.active) S.killEnemy(e);
     }
 
+    // ── RIYAL'S CALL (yours once she's free: localStorage ally_riyal) ─────────
+    // Your key (Settings 'call'): she comes up out of the floor beside you (at once out of water you're standing in),
+    // her wave goes out over CALL.R tiles and hits only them (CALL.DMG, a CALL.DAZE_MS daze, and it leaves the ground
+    // wet), and for CALL.TAUNT_MS she draws whatever's within CALL.TAUNT tiles onto herself (_addAlly, as the Decoy
+    // does). Then she sinks. Once every CALL.CD.
+    static CALL = { CD: 40000, R: 5, DMG: 28, DAZE_MS: 1200, TAUNT: 5, TAUNT_MS: 3500, HP: 120, RISE_MS: 600, RISE_WET_MS: 150, WET_MS: 6000 };
+    static hasCall() { try { return localStorage.getItem('ally_riyal') === '1'; } catch (e) { return false; } }
+    static call(S) {
+        const C = TideMother.CALL, now = S.time.now, TS = S.TILE_SIZE;
+        if (!TideMother.hasCall() || !S.player?.active || S._cinemaUntil > now || S.isTutorial || S._rtrial) return;
+        const say = (t, c = '#9ff8e4') => S.showStatusText(S.player.x, S.player.y - 28, t, c);
+        if (S._tmRunes) return say("SHE'S BOUND: FREE HER");   // (the Reservoir, played again)
+        if (now < (S._riyalReadyAt || 0)) return say(`${Math.ceil((S._riyalReadyAt - now) / 1000)}s`, '#9ab8b0');
+        const wet = S.isWaterAt?.(S.playerX, S.playerY);
+        const free = (x, y) => S.world?.[x]?.[y] === S.FLOOR && !S.getEnemyAt?.(x, y) && !(x === S.playerX && y === S.playerY);
+        let spot = null;
+        for (let r = 1; r <= 2 && !spot; r++) {
+            const ring = [];
+            for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r && free(S.playerX + dx, S.playerY + dy)) ring.push([S.playerX + dx, S.playerY + dy]);
+            spot = ring.sort((a, b) => S.isWaterAt?.(b[0], b[1]) - S.isWaterAt?.(a[0], a[1]))[0] || null;   // water first
+        }
+        if (!spot) return say('NO ROOM');
+        S._riyalReadyAt = now + C.CD;
+        const [sx, sy] = spot, px = (sx + 0.5) * TS, py = (sy + 0.5) * TS + (S.SLIME_Y_OFFSET || 0), k = S.SLIME_SCALE * TideMother.CFG.RIYAL_SCALE, rise = wet ? C.RISE_WET_MS : C.RISE_MS;
+        const s = S.add.sprite(px, py + 16, 'slime_red', 0).setScale(k, k * 0.2).setAlpha(0).setDepth(S.player.depth - 0.02);
+        if (S.anims.exists('red_idle')) s.play('red_idle');
+        if (s.preFX) s.preFX.addColorMatrix().hue(TideMother.CFG.RIYAL_HUE); else s.setTint(0x6fffd8);
+        S._vfxSort?.(s);
+        if (typeof CreatureFX !== 'undefined') CreatureFX.face(S, s, { mood: 'kind' });
+        Sfx.play(S, 'bubbles');
+        S.tweens.add({ targets: s, y: py, scaleY: k, alpha: 1, duration: rise, ease: 'Back.easeOut' });
+        S.showStatusText(px, py - 30, 'RIYAL!', '#9ff8e4');
+        let ally = null;
+        S.time.delayedCall(rise, () => {
+            if (!s.active) return;
+            // her wave, on your side this time
+            const g = S.add.graphics().setDepth(3.1).setBlendMode(Phaser.BlendModes.ADD);
+            S._vfxSort?.(g);
+            S.tweens.addCounter({ from: 0, to: 1, duration: 380, ease: 'Quad.easeOut', onUpdate: tw => { const u = tw.getValue(); g.clear().lineStyle(10, 0x6fffd8, 0.5 * (1 - u)).strokeCircle(px, py, u * C.R * TS).lineStyle(2, 0xffffff, 0.8 * (1 - u)).strokeCircle(px, py, u * C.R * TS); }, onComplete: () => g.destroy() });
+            Sfx.play(S, 'splash', { big: true }); S.cameras.main.shake(120, 0.005);
+            const dmg = C.DMG * (S.damageScaling || 1), t = S.time.now;
+            for (const e of [...(S.enemies || [])]) {
+                if (!e.sprite?.active || e.health <= 0 || Math.hypot(e.x - sx, e.y - sy) > C.R || S._phasedOut?.(e)) continue;
+                S.damageEnemy(e, dmg, 'physical');
+                if (e.health > 0) { e.isStunned = true; e.stunnedUntil = Math.max(e.stunnedUntil || 0, t + C.DAZE_MS); }
+            }
+            S._hitPortalsAround?.(sx, sy, C.R, dmg);
+            for (const b of [S.voltslimeBoss, S.voidSovereignBoss, S.fractureCore]) if (b?.active && Math.hypot(b.tileX - sx, b.tileY - sy) <= C.R) S.damageBossAtTile(b.tileX, b.tileY, dmg, 'riyal', 'physical');
+            for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) S.addWater?.(sx + dx, sy + dy, C.WET_MS);
+            // and everything near her comes for her instead of you, for a while
+            ally = S._addAlly({ x: sx, y: sy, hp: C.HP, taunt: C.TAUNT, until: t + C.TAUNT_MS,
+                hurt: amt => { ally.hp -= amt; if (s.active) { s.setTintFill(0xffffff); S.time.delayedCall(80, () => s.active && s.clearTint()); } },
+                onEnd: () => S.tweens.add({ targets: s, y: py + 16, scaleY: k * 0.2, alpha: 0, duration: 400, ease: 'Quad.easeIn', onComplete: () => s.destroy() }) });
+        });
+    }
+    // Her socket, left of the gadgets' (FieldKit.updateFieldKit, every frame): her face, its key, the cooldown sweeping down
+    static callHud(S) {
+        const on = TideMother.hasCall() && S.player?.active && !S.isTutorial && !S._rtrial && !S._deathScreenActive;
+        const H = S._riyalSock;
+        if (!on) { if (H) { H.g.setVisible(false); H.face.setVisible(false); H.key.setVisible(false); H.txt.setVisible(false); } return; }
+        const W = S.scale.width, cx = W / 2 - 236 - 54, cy = S.scale.height - 34, R = 21;   // left of the gadgets (right of them is the gems)
+        if (!H || !H.g.active) {
+            const g = S.add.graphics().setScrollFactor(0).setDepth(40);
+            const face = S.add.sprite(cx, cy + 4, 'slime_red', 0).setScrollFactor(0).setDepth(40.5).setScale(1.1);
+            if (face.preFX) face.preFX.addColorMatrix().hue(TideMother.CFG.RIYAL_HUE); else face.setTint(0x6fffd8);
+            const key = S.add.text(cx, cy + R + 7, Settings.label(Settings.key('call')), { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d2bf98', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5).setScrollFactor(0).setDepth(41);
+            const txt = S.add.text(cx, cy, '', { fontSize: '16px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0).setDepth(41);
+            S._riyalSock = { g, face, key, txt };
+        }
+        const K = S._riyalSock, left = Math.max(0, (S._riyalReadyAt || 0) - S.time.now), frac = left / TideMother.CALL.CD;
+        K.face.setVisible(true).setAlpha(left > 0 ? 0.45 : 1); K.key.setVisible(true);
+        K.g.clear().setVisible(true);
+        K.g.fillStyle(0x000000, 0.5).fillCircle(cx + 1, cy + 2, R + 3);
+        K.g.fillStyle(0x2e2a26, 1).fillCircle(cx, cy, R + 2);
+        K.g.fillStyle(0x12201e, 1).fillCircle(cx, cy, R - 1);
+        K.g.fillStyle(0x6fffd8, left > 0 ? 0.1 : 0.28).fillCircle(cx, cy, R - 4);
+        if (left > 0) { K.g.fillStyle(0x000000, 0.55).slice(cx, cy, R - 1, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2, false).fillPath(); }
+        K.txt.setText(left > 0 ? String(Math.ceil(left / 1000)) : '').setVisible(left > 0);
+    }
+
     // ── BITS ─────────────────────────────────────────────────────────────────
     static _q(S) { return (S.portals || []).find(p => p.tide && p.active); }
     // The arena's floor tiles where fn(dx, dy) holds (dx, dy from the middle, in tiles)

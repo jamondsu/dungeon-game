@@ -724,6 +724,7 @@ class FieldKit {
         this._decayEmpSlows(time);
         this._fkUpdateMend(time);
         this._fkDrawSockets();
+        TideMother.callHud(this);   // Riyal's socket, beside the gadgets'
         if (this._fkHeld) {
             if (time >= this._fkHeld.until) this._timeoutDisplaced(this._fkHeld);
             else this._fkUpdateHeldPrompt(time);
