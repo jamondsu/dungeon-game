@@ -170,7 +170,7 @@ class TideMother {
             const i = T.bubbles.indexOf(b);
             if (i < 0) return;
             T.bubbles.splice(i, 1); cont.destroy(); b.gone = true;
-            S._cavBubble(b.x, b.y, tx, ty, { r: B.POP_R, dmg: B.POP_DMG, col, atYou: true, ms: r.ms, ease: r.ease });
+            S._cavBubble(b.x, b.y, tx, ty, { r: B.POP_R, dmg: B.POP_DMG, col, atYou: true, ms: r.ms, ease: r.ease, follow: r.follow });
         };
         T.bubbles.push(b);
         const m = BossFX.mark(S, [[Math.floor(lx / TS), Math.floor(ly / TS)]], col, B.THROW_MS, { fill: 0.1 });

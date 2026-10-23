@@ -3078,16 +3078,16 @@ class LevelManager {
                          DRAW_R: 3.5, FORM_MS: 560,   // DRAW_R: how far round it the Ripplerunner pulls water up into bubbles (standing in it or not)
                          SIZES: [[0.6, 1.6, 0.45], [0.9, 2.6, 0.35], [1.3, 3.8, 0.2]],   // its bubbles: small, medium, large (sprite size, burst radius in tiles, how often); the same blow
                          GOD: { DETECT_R: 8, RISE: 8, RISE_MS: 300, FORM_STEP: 90, FORM_MS: 420, LIFT_MS: 320, HOVER: [1.2, 2.8], SPREAD: 1.8, DMG: 5,
-                                SEND_STEP: 140, SEND_SPEED: 11, SLOW: 1.4, BOMBARD_R: 3.5, AT_YOU: 3, CD: 4200 } }; }   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
+                                SEND_STEP: 140, SEND_SPEED: 11, SLOW: 1.4, BOMBARD_R: 3.5, AT_YOU: 3, FOLLOW: 0.65, CD: 4200 } }; }   // FOLLOW: a sent bubble keeps after you for this share of its flight, then it's committed   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
     _cavBubble(x, y, tx, ty, o = {}) {
         const C = this._cavCfg();
         const b = { x, y, tx, ty, r: o.r ?? C.R, dmg: o.dmg ?? C.DMG, col: o.col ?? C.COL, wet: o.wet ?? true, atYou: !!o.atYou, field: !!o.field,
                     speed: o.speed ?? C.SPEED, size: o.size ?? 1, ms: o.ms, fuse: o.fuse || 0, ease: o.ease, hold: !!o.hold, markR: o.markR };   // markR: how much ground it marks where it'll land (its whole burst by default)   // hold: formed, it waits for whoever made it (_rippleGod) instead of going
         b.img = LevelManager.cavSprite(this, x, y, b.col).setScale(C.SCALE * b.size).setDepth(3.2);
-        b.redirect = (nx, ny, r = {}) => { b.atYou = true; b.hold = false; b.fuse = 0; b.fuseTimer?.remove(); b.lingering = false; if (r.ease) b.ease = r.ease; if (b.forming) { b.tx = nx; b.ty = ny; } else this._cavGo(b, nx, ny, r.ms); };   // sent at you: it bursts when it gets there
+        b.redirect = (nx, ny, r = {}) => { b.atYou = true; b.hold = false; b.fuse = 0; b.fuseTimer?.remove(); b.lingering = false; if (r.ease) b.ease = r.ease; if (b.forming) { b.tx = nx; b.ty = ny; } else this._cavGo(b, nx, ny, r.ms, r.follow); };   // sent at you: it bursts when it gets there
         (this._cavs ||= []).push(b);
         if (o.form) this._cavForm(b, o.form);
-        else this._cavGo(b, tx, ty, o.ms);
+        else this._cavGo(b, tx, ty, o.ms, o.follow);
         return b;
     }
     // Forming in the water where it sits, `ms` long: the water boils (specks of vapour come up, jitter and swell)
@@ -3116,15 +3116,25 @@ class LevelManager {
             this._cavGo(b, b.tx, b.ty, b.ms);
         });
     }
-    // (Re)aimed: on to (tx, ty), where it'll collapse marked till it does
-    _cavGo(b, tx, ty, ms) {
+    // (Re)aimed: on to (tx, ty), where it'll collapse marked till it does. follow { dx, dy, until }: the spot is that
+    // far off you, and moves with you (its mark too) for `until` of the flight; after that it's committed
+    _cavGo(b, tx, ty, ms, follow = null) {
         const C = this._cavCfg(), TS = this.TILE_SIZE;
         b.tween?.stop(); b.mark?.kill(); b.fuseTimer?.remove();
         b.tx = tx; b.ty = ty;
         const dur = ms ?? Math.max(C.MIN_MS, Math.hypot(tx - b.x, ty - b.y) / TS / b.speed * 1000), x0 = b.x, y0 = b.y, k = C.SCALE * b.size;
         b.mark = BossFX.mark(this, BossFX.tilesInRadius(this, tx, ty, Math.max(b.markR ?? b.r, 0.5) * TS, false), b.col, dur + b.fuse + C.COLLAPSE_MS, { fill: 0.08 });
+        let mt = Math.floor(tx / TS) + ',' + Math.floor(ty / TS);
         b.tween = this.tweens.addCounter({ from: 0, to: 1, duration: dur, ease: b.ease || 'Quad.easeOut',
-            onUpdate: tw => { const u = tw.getValue(); b.x = x0 + (tx - x0) * u; b.y = y0 + (ty - y0) * u; if (b.img?.active) b.img.setPosition(b.x, b.y).setScale(k * (1 + 0.15 * u)); },
+            onUpdate: tw => {
+                if (follow && tw.elapsed < dur * follow.until && this.player?.active) {   // still after you: the spot moves with you
+                    tx = this.player.x + follow.dx; ty = this.player.y - (this.SLIME_Y_OFFSET || 0) + follow.dy;
+                    const key = Math.floor(tx / TS) + ',' + Math.floor(ty / TS);
+                    if (key !== mt && b.mark) { mt = key; b.mark.tiles = BossFX.tilesInRadius(this, tx, ty, Math.max(b.markR ?? b.r, 0.5) * TS, false); }
+                    b.tx = tx; b.ty = ty;
+                }
+                const u = tw.getValue(); b.x = x0 + (tx - x0) * u; b.y = y0 + (ty - y0) * u; if (b.img?.active) b.img.setPosition(b.x, b.y).setScale(k * (1 + 0.15 * u));
+            },
             onComplete: () => {
                 b.tween = null;   // (a finished tween can't be paused or stopped: it throws)
                 if (!b.fuse) return this._cavBurst(b);
@@ -3294,7 +3304,7 @@ class LevelManager {
     // white, and it holds every bubble it found where it is, on a rippling thread. Then the water round it boils up, a
     // tile at a time (the tile goes dry), into bubbles small, medium and large, each rising to hang over it. Then it
     // bombards you with them, one by one (the ones it found first; _rippleGodSend): each starts slow and speeds up,
-    // straight to its spot (no homing). Cut short (dazed, frozen, killed), whatever it still holds bursts where it
+    // its spot (on you, or near you) moving with you for most of its flight, then committed. Cut short (dazed, frozen, killed), whatever it still holds bursts where it
     // is. True if it went into one.
     _rippleGod(e, wet) {
         const C = this._cavCfg(), G = C.GOD, TS = this.TILE_SIZE, ex = e.sprite.x, ey = e.sprite.y - (this.SLIME_Y_OFFSET || 0);
@@ -3345,10 +3355,12 @@ class LevelManager {
         const queue = [...god.found, ...god.made].filter(b => b.godHeld);
         queue.forEach((b, i) => this.time.delayedCall(i * G.SEND_STEP, () => {
             if (e._god !== god || !b.godHeld || b.gone || (b.img && !this._cavs?.includes(b))) return;
-            let px = this.player.x, py = this.player.y - (this.SLIME_Y_OFFSET || 0);
-            if (i % G.AT_YOU) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * G.BOMBARD_R * TS; px += Math.cos(a) * d; py += Math.sin(a) * d; }
+            let dx = 0, dy = 0;   // one in AT_YOU straight at you, the rest somewhere round you
+            if (i % G.AT_YOU) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * G.BOMBARD_R * TS; dx = Math.cos(a) * d; dy = Math.sin(a) * d; }
+            const px = this.player.x + dx, py = this.player.y - (this.SLIME_Y_OFFSET || 0) + dy;
             b.godHeld = false; b.held = false;
-            b.redirect(px, py, { ms: Math.max(300, Math.hypot(px - b.x, py - b.y) / TS / G.SEND_SPEED * 1000 * G.SLOW), ease: 'Cubic.easeIn' });   // slow, then faster and faster, straight at where you are
+            // slow, then faster and faster, keeping after you for the first part of its flight (FOLLOW), then committed
+            b.redirect(px, py, { ms: Math.max(300, Math.hypot(px - b.x, py - b.y) / TS / G.SEND_SPEED * 1000 * G.SLOW), ease: 'Cubic.easeIn', follow: { dx, dy, until: G.FOLLOW } });
             Sfx.play(this, 'whoosh');
         }));
         this.time.delayedCall(queue.length * G.SEND_STEP + 120, () => this._rippleGodEnd(e));
