@@ -30,7 +30,8 @@
 // HER BROOD. The SMASHERS are hers alone, her guard (mantis shrimp, true to life): close enough, one winds up for
 // SMASH.WIND_MS and swings its club too fast to see, SMASH.DMG to the six tiles in front of it (two deep, three wide);
 // the strike leaves a dormant cavitation bubble that drifts SMASH.DRIFT tiles over SMASH.DORMANT_MS, then bursts over
-// SMASH.CAV_R tiles for a third of that (unless a Ripplerunner takes it in its trance and sends it at you first).
+// SMASH.CAV_R tiles, a wave of lit tiles running out, for a third of that (unless a Ripplerunner takes it in its trance and
+// sends it at you first).
 // Stand in both and both land. Two guard her from the start, one more at each of SMASH.AT runes broken (SMASH.MAX
 // at once); three Leeches come at LEECH_AT, Ripplerunners with every High Tide. Nothing joins in the last phase, and
 // the brood goes with her.
@@ -44,9 +45,9 @@ class TideMother {
         RUNE_COL: { fire: 0xff6a2a, ice: 0x7fd8ff, lightning: 0xffe040, cosmic: 0xb070ff, tide: 0x3fd0ff },
         RUNE_HITS: 2,
         BUB: { EVERY: [7000, 6000, 5200], PAIR_AT: 2, MAX: 3, THROW_MS: 750, SHORT: 2.5, SPEED: 2.6, TURN: 2.4, LIFE: 12000, WARN: 1500,
-               TOUCH: 0.6, RUNE_R: 1.0, DMG: 40, POP_R: 2.2, POP_DMG: 16, WET_MS: 4000 },   // SHORT: it lands that many tiles short of you; SPEED tiles a second; TURN rad a second
-        SMASH: { HP: 90, MOVE: 0.8, REACH: 1.6, WIND_MS: 280, DMG: 24, DRIFT: 1, DORMANT_MS: 2000, CAV_R: 4, CD: 2200, AT: [2, 3], MAX: 3 },   // its bubble drifts DRIFT tiles over DORMANT_MS, then bursts over CAV_R
-        FIELD: { N: [3, 4, 5], FORM_MS: 700, FUSE: 3200, R: 3.5, DMG: 20, SIZE: 3, COL: 0x9fe8ff, GAP: 4 },   // her huge bubbles (by phase); GAP tiles between them
+               TOUCH: 0.6, RUNE_R: 1.0, DMG: 40, POP_R: 3, POP_DMG: 16, WET_MS: 4000 },   // SHORT: it lands that many tiles short of you; SPEED tiles a second; TURN rad a second
+        SMASH: { HP: 90, MOVE: 0.8, REACH: 1.6, WIND_MS: 280, DMG: 24, DRIFT: 1, DORMANT_MS: 2000, CAV_R: 5, CD: 2200, AT: [2, 3], MAX: 3 },   // its bubble drifts DRIFT tiles over DORMANT_MS, then bursts over CAV_R
+        FIELD: { N: [3, 4, 5], FORM_MS: 700, FUSE: 3200, R: 5.5, DMG: 20, SIZE: 3, COL: 0x9fe8ff, GAP: 4 },   // her huge bubbles (by phase); GAP tiles between them
         PHASE_AT: [2, 4], LEECH_AT: 1, SHIELD_AT: 2, SHIELD_CD: 15000, SLOW_AT: 4,
         UNDER_TELL: 950, UNDER_SPEED: 12, UNDER_SPEED_FREE: 9, CREST: 0.5, UNDER_DMG: 16,   // tiles a second; the ring's half-thickness, in tiles
         PART_TELL: 1300, PART_HALF: 2.5, PART_ENDS: 3, PART_DMG: 20, PART_WET_MS: 2500,
@@ -225,11 +226,10 @@ class TideMother {
         const T = q.tide, B = TideMother.CFG.BUB, TS = S.TILE_SIZE;
         T.bubbles.splice(T.bubbles.indexOf(b), 1);
         b.cont.destroy(); b.gone = true;
-        LevelManager.cavFlash(S, b.x, b.y, (o.quiet ? 0.8 : B.POP_R) * TS, TideMother.CFG.RUNE_COL[b.el]);   // it collapses, as they do
+        // it collapses, as they do: its wave runs out over the floor, and catches you if you're in its reach (not if it burst on you, or into its rune)
+        LevelManager.cavFlash(S, b.x, b.y, (o.quiet ? 0.8 : B.POP_R) * TS, TideMother.CFG.RUNE_COL[b.el], 1, o.quiet || o.spare ? null : f => TideMother._hurt(S, q, B.POP_DMG * (1 - 0.85 * f)));
         Sfx.play(S, 'splash', { big: !o.quiet });
         if (o.quiet) return;
-        const px = S.player.x, py = S.player.y - (S.SLIME_Y_OFFSET || 0);
-        if (!o.spare && Math.hypot(b.x - px, b.y - py) <= B.POP_R * TS) TideMother._hurt(S, q, B.POP_DMG);
         const tx = Math.floor(b.x / TS), ty = Math.floor(b.y / TS);
         for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) S.addWater(tx + dx, ty + dy, B.WET_MS);
     }

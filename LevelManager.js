@@ -3074,14 +3074,15 @@ class LevelManager {
     // light flashes where it vanished, and the shock goes out as a ring, over r tiles. this._cavs: every one out;
     // redirect(x, y) sends one on to a new spot. The Tide Mother's sign bubbles can be turned too (TideMother.redirectables).
     _cavCfg() { return { SPEED: 7, MIN_MS: 280, R: 1.8, DMG: 10, WET_MS: 6000, COL: 0xdff8ff, COLLAPSE_MS: 120, SPLASH: [2, 5], SPLASH_R: 1.6, SCALE: 0.7,   // SPLASH: how many tiles round it a wet one throws water on (random); SCALE: its sprite's at size 1
-                         EDGE: 0.15, BLEED_MS: 3000, DAZE_MS: 450,   // EDGE: the share of its blow at the rim of its burst (all of it at the heart)
-                         DRAW_R: 2.5, DRAW_DMG: 24, DRAW_ONE: 8, DRAW_BUB_R: 2.4, FORM_MS: 560,   // DRAW_*: the Ripplerunner's own bubbles, from the water round it; DRAW_DMG shared out among them
-                         GOD: { DETECT_R: 8, RISE: 8, RISE_MS: 300, FORM_STEP: 110, FORM_MS: 420, LIFT_MS: 320, HOVER: [1.2, 2.6], SPREAD: 1.4,
-                                SEND_STEP: 220, SEND_SPEED: 8, SLOW: 1.7, CD: 4200 } }; }   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
+                         EDGE: 0.15, BLEED_MS: 3000, DAZE_MS: 450, WAVE: 16, HIT_GAP: 300,   // EDGE: the share of its blow at the rim of its burst (all of it at the heart); WAVE: its burst runs out over the floor this fast (tiles a second); HIT_GAP: one cavitation blow on you this often at most
+                         DRAW_R: 3.5, FORM_MS: 560,   // DRAW_R: how far round it the Ripplerunner pulls water up into bubbles (standing in it or not)
+                         SIZES: [[0.6, 1.6, 0.45], [0.9, 2.6, 0.35], [1.3, 3.8, 0.2]],   // its bubbles: small, medium, large (sprite size, burst radius in tiles, how often); the same blow
+                         GOD: { DETECT_R: 8, RISE: 8, RISE_MS: 300, FORM_STEP: 90, FORM_MS: 420, LIFT_MS: 320, HOVER: [1.2, 2.8], SPREAD: 1.8, DMG: 5,
+                                SEND_STEP: 140, SEND_SPEED: 8, SLOW: 1.7, BOMBARD_R: 3.5, AT_YOU: 3, CD: 4200 } }; }   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
     _cavBubble(x, y, tx, ty, o = {}) {
         const C = this._cavCfg();
         const b = { x, y, tx, ty, r: o.r ?? C.R, dmg: o.dmg ?? C.DMG, col: o.col ?? C.COL, wet: o.wet ?? true, atYou: !!o.atYou, field: !!o.field,
-                    speed: o.speed ?? C.SPEED, size: o.size ?? 1, ms: o.ms, fuse: o.fuse || 0, ease: o.ease, hold: !!o.hold };   // hold: formed, it waits for whoever made it (_rippleGod) instead of going
+                    speed: o.speed ?? C.SPEED, size: o.size ?? 1, ms: o.ms, fuse: o.fuse || 0, ease: o.ease, hold: !!o.hold, markR: o.markR };   // markR: how much ground it marks where it'll land (its whole burst by default)   // hold: formed, it waits for whoever made it (_rippleGod) instead of going
         b.img = LevelManager.cavSprite(this, x, y, b.col).setScale(C.SCALE * b.size).setDepth(3.2);
         b.redirect = (nx, ny, r = {}) => { b.atYou = true; b.hold = false; b.fuse = 0; b.fuseTimer?.remove(); b.lingering = false; if (r.ease) b.ease = r.ease; if (b.forming) { b.tx = nx; b.ty = ny; } else this._cavGo(b, nx, ny, r.ms); };   // sent at you: it bursts when it gets there
         (this._cavs ||= []).push(b);
@@ -3121,7 +3122,7 @@ class LevelManager {
         b.tween?.stop(); b.mark?.kill(); b.fuseTimer?.remove();
         b.tx = tx; b.ty = ty;
         const dur = ms ?? Math.max(C.MIN_MS, Math.hypot(tx - b.x, ty - b.y) / TS / b.speed * 1000), x0 = b.x, y0 = b.y, k = C.SCALE * b.size;
-        b.mark = BossFX.mark(this, BossFX.tilesInRadius(this, tx, ty, Math.max(b.r, 0.5) * TS, false), b.col, dur + b.fuse + C.COLLAPSE_MS, { fill: 0.08 });
+        b.mark = BossFX.mark(this, BossFX.tilesInRadius(this, tx, ty, Math.max(b.markR ?? b.r, 0.5) * TS, false), b.col, dur + b.fuse + C.COLLAPSE_MS, { fill: 0.08 });
         b.tween = this.tweens.addCounter({ from: 0, to: 1, duration: dur, ease: b.ease || 'Quad.easeOut',
             onUpdate: tw => { const u = tw.getValue(); b.x = x0 + (tx - x0) * u; b.y = y0 + (ty - y0) * u; if (b.img?.active) b.img.setPosition(b.x, b.y).setScale(k * (1 + 0.15 * u)); },
             onComplete: () => {
@@ -3144,15 +3145,18 @@ class LevelManager {
             if (!crowd) this._cavFlashAt = now;
             if (crowd) b.mark?.kill(); else b.mark?.done();
             if (!this.player?.active) return;
-            LevelManager.cavFlash(this, b.x, b.y, b.r * TS, b.col, crowd ? 0.3 : 1);
-            Sfx.play(this, 'splash', { soft: b.r < 1 });
-            const px = this.player.x, py = this.player.y - (this.SLIME_Y_OFFSET || 0), d = Math.hypot(px - b.x, py - b.y) / TS, reach = b.r + 0.5;
-            if (this.time.now >= (this._dashInvulnUntil || 0) && d <= reach) {
-                this.takeDamage(b.dmg * (1 - (1 - C.EDGE) * Math.min(1, d / reach)) * (this.enemyDamageScale || 1));   // hardest at its heart
-                this._cavAfflict();
-            }
+            Sfx.play(this, 'splash', { soft: b.r < 1.5, big: b.r >= 3 });
+            LevelManager.cavFlash(this, b.x, b.y, b.r * TS, b.col, crowd ? 0.3 : 1, f => this._cavHit(b.dmg * (1 - (1 - C.EDGE) * f)));   // hardest at its heart, as the wave reaches you
             if (b.wet) this._cavSplash(b);
         });
+    }
+    // A cavitation blow landing on you (its wave reached you): one every HIT_GAP at most, a barrage or not
+    _cavHit(dmg) {
+        const now = this.time.now;
+        if (now - (this._cavBlowAt || -1e9) < this._cavCfg().HIT_GAP) return;
+        this._cavBlowAt = now;
+        this.takeDamage(dmg * (this.enemyDamageScale || 1));
+        this._cavAfflict();
     }
     // What a burst does to you besides the blow (once, however many land together): soaked, so you drip; torn, so you
     // bleed as you move; dazed for a moment (and then you can't be dazed again for a while: _ccGate)
@@ -3197,18 +3201,57 @@ class LevelManager {
     }
     // The collapse, seen (any scene): a pinprick of light where it vanished (sonoluminescence), a flash, and the shock
     // going out as a ring R px across, throwing droplets
-    static cavFlash(S, x, y, R, col, k = 1) {   // k: how bright (a crowd of them goes dimmer)
-        const add = (key, tint, depth) => { const o = S.add.image(x, y, key).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth).setAlpha(k); S._vfxSort?.(o); return o; };
-        const core = add('vfx_dot', 0xfffbe8, 3.36).setScale(0.7);
-        S.tweens.add({ targets: core, alpha: 0, scale: 0.1, duration: 110, onComplete: () => core.destroy() });
+    // The collapse (any scene): it goes off like a depth charge. A pinprick of light where it vanished
+    // (sonoluminescence) and a white-hot flash; the shock running out over the floor at WAVE tiles a second to its
+    // edge, a ring of lit tiles, two rings of light with it; a column of water thrown up that rains down round it; a
+    // dark wet splat left on the ground; and, for any but the dimmed (k: a crowd of them at once), a shake that grows
+    // with it. hit(f): called once if the wave reaches you (f: how far out you were, 0 at its heart to 1 at its edge),
+    // not while a dash covers you as it passes. A burst can be huge: the wave is what you dodge.
+    static cavFlash(S, x, y, R, col, k = 1, hit = null) {
+        const TS = S.TILE_SIZE || 24, rt = R / TS;
+        const add = (key, tint, depth, a = k) => { const o = S.add.image(x, y, key).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth).setAlpha(a); S._vfxSort?.(o); return o; };
+        const core = add('vfx_dot', 0xfffbe8, 3.36).setScale(1.2);
+        S.tweens.add({ targets: core, alpha: 0, scale: 0.1, duration: 140, onComplete: () => core.destroy() });
         const flash = add('vfx_glow', 0xffffff, 3.35).setScale(0.05);
-        S.tweens.add({ targets: flash, scale: Math.max(0.2, R / 80), alpha: 0, duration: 170, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
-        const ring = add('vfx_ring', col, 3.1).setScale(0.05);
-        S.tweens.add({ targets: ring, scale: Math.max(0.3, R / 26.5), alpha: 0, duration: 260, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
-        for (let i = 0; i < 7; i++) {
-            const a = Math.random() * Math.PI * 2, d = R * (0.5 + Math.random() * 0.6), drop = add('vfx_dot', col, 3.2).setScale(0.14);
-            S.tweens.add({ targets: drop, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d - 6, alpha: 0, scale: 0.04, duration: 260 + Math.random() * 120, ease: 'Quad.easeOut', onComplete: () => drop.destroy() });
+        S.tweens.add({ targets: flash, scale: Math.max(0.35, R / 45), alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
+        // the shock, over the floor: a ring of lit tiles running out to its edge, and the blow travels with it
+        const wave = Math.max(200, rt / (S._cavCfg?.().WAVE || 16) * 1000);
+        let caught = !hit;
+        if (S.world) {
+            const g = S.add.graphics().setDepth(0.48).setBlendMode(Phaser.BlendModes.ADD);   // (added light: plain, the room's dark swallowed it)
+            S._vfxSort?.(g);
+            const all = BossFX.tilesInRadius(S, x, y, R + TS * 0.5, false).map(([tx, ty]) => [tx, ty, Math.hypot(tx + 0.5 - x / TS, ty + 0.5 - y / TS)]);
+            S.tweens.addCounter({ from: 0, to: 1, duration: wave, ease: 'Linear', onUpdate: tw => {
+                const u = tw.getValue(), r = u * (rt + 0.5);
+                g.clear().setAlpha((1 - u * 0.6) * Math.max(0.5, k));
+                BossFX.drawTiles(g, TS, all.filter(t => Math.abs(t[2] - r) <= 0.7).map(t => [t[0], t[1]]), col, 1, S.time.now, 0, 0, { fill: 0.4 });
+                if (caught || !S.player?.active) return;
+                const d = Math.hypot(S.playerX + 0.5 - x / TS, S.playerY + 0.5 - y / TS);
+                if (d > rt + 0.5) return;
+                if (r < d - 0.5) return;   // not to you yet
+                caught = true;
+                if (S.time.now >= (S._dashInvulnUntil || 0)) hit(Math.min(1, d / (rt + 0.5)));
+            }, onComplete: () => g.destroy() });
         }
+        for (const [tint, dur, w] of [[col, wave, 1], [0xffffff, wave * 1.35, 1.25]]) {   // two rings of light, the outer later
+            const ring = add('vfx_ring', tint, 3.1).setScale(0.05);
+            S.tweens.add({ targets: ring, scale: Math.max(0.3, R * w / 26.5), alpha: 0, duration: dur, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+        }
+        // the water: thrown up in a column, raining down round it
+        const goo = S._vfxBursts?.goo;
+        if (goo) { goo.setParticleTint?.(col); goo.explode(Math.round((5 + rt * 2.5) * k), x, y); }
+        const n = Math.round((8 + rt * 5) * (0.4 + 0.6 * k));
+        for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2, d = R * (0.4 + Math.random() * 0.8), h = 20 + Math.random() * 30 * Math.max(1, rt / 1.5), drop = add('vfx_dot', i % 3 ? col : 0xffffff, 3.2, 0.9).setScale(0.12 + Math.random() * 0.1);
+            S.tweens.addCounter({ from: 0, to: 1, duration: 380 + Math.random() * 260, ease: 'Linear', onUpdate: tw => { const u = tw.getValue(); drop.setPosition(x + Math.cos(a) * d * u, y + Math.sin(a) * d * u - h * 4 * u * (1 - u)); }, onComplete: () => drop.destroy() });
+        }
+        if (S.textures?.exists('vfx_splat')) {
+            const sp = S.add.image(x, y, 'vfx_splat').setTint(col).setAlpha(0.5 * k).setDepth(0.47).setScale(0.2).setAngle(Math.random() * 360);
+            S._vfxSort?.(sp);
+            S.tweens.add({ targets: sp, scale: Math.max(0.5, R / 34), duration: 160, ease: 'Quad.easeOut' });
+            S.tweens.add({ targets: sp, alpha: 0, delay: 900, duration: 1100, onComplete: () => sp.destroy() });
+        }
+        if (k >= 1) S.cameras?.main?.shake(70 + rt * 35, Math.min(0.012, 0.002 + rt * 0.0022));
     }
     // Water lifted off a tile (the Ripplerunner's bubbles): gone, not boiled, so it can come back
     _takeWater(tx, ty) {
@@ -3238,18 +3281,18 @@ class LevelManager {
         if (best && (best[0] !== e._goalX || best[1] !== e._goalY)) { e._goalX = best[0]; e._goalY = best[1]; e._goalSince = time; e._committedPath = null; }
     }
     // THE TRANCE. A cavitation bubble near it (DETECT_R: a Smasher's drifting, one of the Tide Mother's), or water
-    // round it while it stands in water, and the Ripplerunner goes into a trance: it floats up, its eyes go white, and
-    // it holds every bubble it found where it is, on a rippling thread. Then the water round it (DRAW_R) boils up, a
-    // tile at a time (the tile goes dry), each bubble rising to hang over it. Then, one by one (the ones it found
-    // first), it sends them at you: each starts slow and speeds up, straight at where you stood when it went (no
-    // homing): stand still and it lands; keep moving and it doesn't. Cut short (dazed, frozen, killed), whatever it
-    // still holds bursts where it is. True if it went into one.
+    // round it (DRAW_R: it needn't stand in it), and the Ripplerunner goes into a trance: it floats up, its eyes go
+    // white, and it holds every bubble it found where it is, on a rippling thread. Then the water round it boils up, a
+    // tile at a time (the tile goes dry), into bubbles small, medium and large, each rising to hang over it. Then it
+    // bombards you with them, one by one (the ones it found first; _rippleGodSend): each starts slow and speeds up,
+    // straight to its spot (no homing). Cut short (dazed, frozen, killed), whatever it still holds bursts where it
+    // is. True if it went into one.
     _rippleGod(e, wet) {
         const C = this._cavCfg(), G = C.GOD, TS = this.TILE_SIZE, ex = e.sprite.x, ey = e.sprite.y - (this.SLIME_Y_OFFSET || 0);
         const found = [...(this._cavs || []).filter(b => !b.atYou && !b.forming && !b.godHeld), ...(typeof TideMother !== 'undefined' ? TideMother.redirectables(this) : [])]
             .filter(b => Math.hypot(b.x - ex, b.y - ey) <= G.DETECT_R * TS);
         const k = Math.ceil(C.DRAW_R), water = [];
-        if (wet) for (let dx = -k; dx <= k; dx++) for (let dy = -k; dy <= k; dy++) if ((dx || dy) && Math.hypot(dx, dy) <= C.DRAW_R && this.isWaterAt(e.x + dx, e.y + dy)) water.push([e.x + dx, e.y + dy]);
+        for (let dx = -k; dx <= k; dx++) for (let dy = -k; dy <= k; dy++) if ((dx || dy) && Math.hypot(dx, dy) <= C.DRAW_R && this.isWaterAt(e.x + dx, e.y + dy)) water.push([e.x + dx, e.y + dy]);
         if (!found.length && !water.length) return false;
         water.sort((a, c) => Math.hypot(a[0] - e.x, a[1] - e.y) - Math.hypot(c[0] - e.x, c[1] - e.y));
         const god = e._god = { found, made: [], g: this.add.graphics().setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD) };
@@ -3268,11 +3311,12 @@ class LevelManager {
             if (b.fuseTimer) b.fuseTimer.paused = true;
         }
         // the water, a tile at a time: boiling up, then rising to hang over it
-        const dmg = Math.min(C.DRAW_ONE, Math.max(1, C.DRAW_DMG / Math.max(1, water.length)));
         water.forEach(([x, y], i) => this.time.delayedCall(G.RISE_MS + i * G.FORM_STEP, () => {
             if (e._god !== god || !e.sprite?.active) return;
             this._takeWater(x, y);
-            const b = this._cavBubble((x + 0.5) * TS, (y + 0.5) * TS, 0, 0, { col: 0x66f0ff, hold: true, atYou: true, r: C.DRAW_BUB_R, dmg, size: 0.75, form: G.FORM_MS });
+            let roll = Math.random(), [size, r] = C.SIZES[0];   // small, medium or large: only the look and the burst's reach differ
+            for (const z of C.SIZES) { if (roll < z[2]) { [size, r] = z; break; } roll -= z[2]; }
+            const b = this._cavBubble((x + 0.5) * TS, (y + 0.5) * TS, 0, 0, { col: 0x66f0ff, hold: true, atYou: true, r, dmg: G.DMG, size, form: G.FORM_MS, markR: 0.7 });   // (a barrage marks where each lands; its wave shows its reach)
             b.godHeld = true;
             god.made.push(b);
             b.onFormed = () => {
@@ -3284,14 +3328,16 @@ class LevelManager {
         this.time.delayedCall(G.RISE_MS + water.length * G.FORM_STEP + G.FORM_MS + G.LIFT_MS + 150, () => this._rippleGodSend(e, god));
         return true;
     }
-    // Then one by one at you, the ones it found first
+    // Then one by one, the ones it found first: a bombardment, every AT_YOU-th straight at you, the rest anywhere
+    // within BOMBARD_R of where you are as it goes
     _rippleGodSend(e, god) {
         const G = this._cavCfg().GOD, TS = this.TILE_SIZE;
         if (e._god !== god) return;
         const queue = [...god.found, ...god.made].filter(b => b.godHeld);
         queue.forEach((b, i) => this.time.delayedCall(i * G.SEND_STEP, () => {
             if (e._god !== god || !b.godHeld || b.gone || (b.img && !this._cavs?.includes(b))) return;
-            const px = this.player.x, py = this.player.y - (this.SLIME_Y_OFFSET || 0);
+            let px = this.player.x, py = this.player.y - (this.SLIME_Y_OFFSET || 0);
+            if (i % G.AT_YOU) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * G.BOMBARD_R * TS; px += Math.cos(a) * d; py += Math.sin(a) * d; }
             b.godHeld = false; b.held = false;
             b.redirect(px, py, { ms: Math.max(380, Math.hypot(px - b.x, py - b.y) / TS / G.SEND_SPEED * 1000 * G.SLOW), ease: 'Cubic.easeIn' });   // slow, then faster and faster, straight at where you are
             Sfx.play(this, 'whoosh');
@@ -6302,7 +6348,7 @@ class LevelManager {
             drowner:      { name: 'Drowner',          role: 'Ambusher',  tint: 0x5a2d6b,
                             desc: 'Sinks to attack and tracks you for two seconds before it strikes. In water it lands at once and holds you under for two seconds. On dry ground you get a moment to step off the mark, but it leaves a pool either way.' },
             ripplerunner: { name: 'Ripplerunner',     role: 'Skirmisher',tint: 0x66f0ff,
-                            desc: 'Quick on water, sluggish on dry stone, and it keeps its distance. Near a bubble, or standing in water, it goes into a trance: it floats, its eyes go white, it holds the bubbles near it and boils the water round it into more, then sends them at you one by one, slow at first and faster and faster, at where you stand. Keep moving. Hit it mid-trance and it drops the lot.' },
+                            desc: 'Quick on water, sluggish on dry stone, and it keeps its distance. Near a bubble or near water, it goes into a trance: it floats, its eyes go white, it holds the bubbles near it and boils the water round it into more, then bombards the ground all round you with them, one by one, slow at first and faster and faster. Keep moving. Hit it mid-trance and it drops the lot.' },
             tidecaller:   { name: 'Tidecaller',       role: 'Booster',   tint: 0x2a5cc8,
                             desc: 'Doesn\'t fight. Everything near it attacks faster: a little on dry floor, far faster standing in water. Dry the floor round it, or kill it first.' },
             cheer:        { name: 'Cheerleader Slime', role: 'Booster',  tint: 0xff6ad0,

@@ -1830,6 +1830,7 @@ class GameScene extends Phaser.Scene {
     _cavGo(...a)             { return LevelManager.prototype._cavGo.call(this, ...a); }
     _takeWater(...a)         { return LevelManager.prototype._takeWater.call(this, ...a); }
     _cavSplash(...a)         { return LevelManager.prototype._cavSplash.call(this, ...a); }
+    _cavHit(...a)            { return LevelManager.prototype._cavHit.call(this, ...a); }
     _cavAfflict(...a)        { return LevelManager.prototype._cavAfflict.call(this, ...a); }
     _cavBurst(...a)          { return LevelManager.prototype._cavBurst.call(this, ...a); }
     _cavClear(...a)          { return LevelManager.prototype._cavClear.call(this, ...a); }
