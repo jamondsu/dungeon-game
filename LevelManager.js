@@ -3052,7 +3052,7 @@ class LevelManager {
         e._rippleCdLand  = 3800;
         e._rippleLastFire = 0;
         e._rippleRange   = 11;    // tiles: you within this, it works
-        e._rippleReach   = 5;     // tiles: a bubble within this of it, it can turn onto you
+        e._rippleReach   = 7;     // tiles: a bubble within this of it, it can take with its mind and throw at you
         if (e.sprite.setTint) e.sprite.setTint(0x66f0ff);
         e.sprite.setScale((e.sprite.scaleX || 1) * 0.82);   // small, so it reads as fast
         this._cisternMark(e, m => {
@@ -3072,9 +3072,10 @@ class LevelManager {
     // the whole way, and COLLAPSES there as they really do (_cavBurst, cavFlash): it caves in to a point, a pinprick of
     // light flashes where it vanished, and the shock goes out as a ring, over r tiles. this._cavs: every one out;
     // redirect(x, y) sends one on to a new spot. The Tide Mother's sign bubbles can be turned too (TideMother.redirectables).
-    _cavCfg() { return { SPEED: 7, MIN_MS: 280, R: 1.2, DMG: 10, WET_MS: 6000, COL: 0xdff8ff, COLLAPSE_MS: 120, SPLASH: [2, 5], SPLASH_R: 1.6, SCALE: 0.7,   // SPLASH: how many tiles round it a wet one throws water on (random); SCALE: its sprite's at size 1
+    _cavCfg() { return { SPEED: 7, MIN_MS: 280, R: 1.8, DMG: 10, WET_MS: 6000, COL: 0xdff8ff, COLLAPSE_MS: 120, SPLASH: [2, 5], SPLASH_R: 1.6, SCALE: 0.7,   // SPLASH: how many tiles round it a wet one throws water on (random); SCALE: its sprite's at size 1
                          EDGE: 0.25, BLEED_MS: 3000, DAZE_MS: 450,   // EDGE: the share of its blow at the rim of its burst (all of it at the heart)
-                         DRAW_R: 2.5, DRAW_DMG: 24, DRAW_ONE: 8, DRAW_SPEED: 6, DRAW_JIT: 0.8, DRAW_BUB_R: 1.8, FORM_MS: 560, FORM_STEP: 60 }; }   // DRAW_*: the Ripplerunner's volley (_rippleDraw); DRAW_DMG split over its bubbles
+                         DRAW_R: 2.5, DRAW_DMG: 24, DRAW_ONE: 8, DRAW_SPEED: 6, DRAW_JIT: 0.8, DRAW_BUB_R: 2.4, FORM_MS: 560, FORM_STEP: 60,
+                         GRAB_MS: 420, THROW_SPEED: 10 }; }   // the Ripplerunner's mind-grab: held this long, then thrown this fast (tiles a second)   // DRAW_*: the Ripplerunner's volley (_rippleDraw); DRAW_DMG split over its bubbles
     _cavBubble(x, y, tx, ty, o = {}) {
         const C = this._cavCfg();
         const b = { x, y, tx, ty, r: o.r ?? C.R, dmg: o.dmg ?? C.DMG, col: o.col ?? C.COL, wet: o.wet ?? true, atYou: !!o.atYou, field: !!o.field,
@@ -3121,6 +3122,7 @@ class LevelManager {
         b.tween = this.tweens.addCounter({ from: 0, to: 1, duration: dur, ease: 'Quad.easeOut',
             onUpdate: tw => { const u = tw.getValue(); b.x = x0 + (tx - x0) * u; b.y = y0 + (ty - y0) * u; if (b.img?.active) b.img.setPosition(b.x, b.y).setScale(k * (1 + 0.15 * u)); },
             onComplete: () => {
+                b.tween = null;   // (a finished tween can't be paused or stopped: it throws)
                 if (!b.fuse) return this._cavBurst(b);
                 b.lingering = true;   // it hangs there `fuse` long first (a Smasher's: time for something to turn it onto you)
                 b.fuseTimer = this.time.delayedCall(b.fuse, () => { b.lingering = false; this._cavBurst(b); });
@@ -3214,19 +3216,41 @@ class LevelManager {
     // Every bubble out, gone at once (a level's end, the Reservoir's)
     _cavClear() { for (const b of [...(this._cavs || [])]) this._cavBurst(b, true); }
 
-    // The Ripplerunner, anywhere: a bubble within its reach (a Smasher's, the Tide Mother's, one of its own going
-    // elsewhere) turned onto where you stand. True if it found one.
+    // The Ripplerunner, anywhere: a bubble within its reach (a Smasher's hanging there, one of the Tide Mother's, any
+    // going elsewhere), taken with its mind: held where it is, lifted and swelling on a rippling thread for GRAB_MS,
+    // then thrown at where you stand. True if it found one.
     _rippleTurn(e) {
-        const TS = this.TILE_SIZE, ex = e.sprite.x, ey = e.sprite.y - (this.SLIME_Y_OFFSET || 0);
-        const pool = [...(this._cavs || []).filter(b => !b.atYou), ...(typeof TideMother !== 'undefined' ? TideMother.redirectables(this) : [])];
+        const C = this._cavCfg(), TS = this.TILE_SIZE, ex = e.sprite.x, ey = e.sprite.y - (this.SLIME_Y_OFFSET || 0);
+        const pool = [...(this._cavs || []).filter(b => !b.atYou && !b.forming), ...(typeof TideMother !== 'undefined' ? TideMother.redirectables(this) : [])];
         const b = pool.filter(b => Math.hypot(b.x - ex, b.y - ey) <= e._rippleReach * TS).sort((a, c) => Math.hypot(a.x - ex, a.y - ey) - Math.hypot(c.x - ex, c.y - ey))[0];
         if (!b) return false;
-        const g = this.add.graphics().setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD);   // a ripple runs from it to the bubble
-        BossFX.arc(g, ex, ey, b.x, b.y, 0x66f0ff, 4, 6, 2);
-        this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
-        b.redirect(this.player.x, this.player.y - (this.SLIME_Y_OFFSET || 0));
+        b.atYou = true;   // (claimed: nothing else takes it meanwhile)
+        if (b.tween?.isPlaying()) b.tween.pause(); if (b.fuseTimer) b.fuseTimer.paused = true;   // held still (a sign bubble stops chasing: TideMother skips it while held)
+        b.held = true;
+        const img = b.img || b.cont, y0 = img?.y ?? b.y, s0x = img?.scaleX ?? 1, s0y = img?.scaleY ?? 1;
+        const g = this.add.graphics().setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD);
+        this._vfxSort?.(g);
         this.showStatusText?.(e.sprite.x, e.sprite.y - 24, 'RIPPLE', '#66f0ff');
         Sfx.play(this, 'bubbles', { soft: true });
+        this.tweens.addCounter({ from: 0, to: 1, duration: C.GRAB_MS, onUpdate: tw => {
+            const u = tw.getValue(), sx = e.sprite?.active ? e.sprite.x : ex, sy = e.sprite?.active ? e.sprite.y - 6 : ey, bx = b.x, by = y0 - 10 * u;
+            if (img?.active) img.setPosition(bx, by).setScale(s0x * (1 + 0.25 * u), s0y * (1 + 0.25 * u));
+            // the thread: a ripple running from its head to the bubble
+            const n = 18, len = Math.hypot(bx - sx, by - sy) || 1, nx = -(by - sy) / len, ny = (bx - sx) / len, t = this.time.now * 0.02;
+            g.clear();
+            for (const [w, a, col] of [[4, 0.3, 0x66f0ff], [1.5, 0.9, 0xdfffff]]) {
+                g.lineStyle(w, col, a * (0.5 + 0.5 * u)).beginPath();
+                for (let i = 0; i <= n; i++) { const k = i / n, off = Math.sin(k * 12 - t) * 4 * Math.sin(k * Math.PI); const px = sx + (bx - sx) * k + nx * off, py = sy + (by - sy) * k + ny * off; i ? g.lineTo(px, py) : g.moveTo(px, py); }
+                g.strokePath();
+            }
+        }, onComplete: () => {
+            g.destroy();
+            b.held = false;
+            if (img?.active) img.setScale(s0x, s0y);
+            b.y = y0 - 10; b.speed = C.THROW_SPEED;
+            Sfx.play(this, 'whoosh');
+            b.redirect(this.player.x, this.player.y - (this.SLIME_Y_OFFSET || 0));   // and thrown at you
+        } });
         return true;
     }
     // A skirmisher: it holds off about KEEP tiles from you (water first, where it's quick and has bubbles to draw), so
@@ -6202,7 +6226,7 @@ class LevelManager {
     _enemyCodex() {
         const C = {
             smasher:      { name: 'Smasher',          role: 'Bruiser',   tint: 0x3eba68,
-                            desc: "The Tide Mother's own guard. Close in, it plants itself and swings its club faster than you can see: the six tiles in front of it light first. The strike throws a bubble on that hangs there a moment, then bursts wide for a third as much and leaves you dripping, bleeding and dazed. One of the Tide Mother's bubbles in reach, it punches that at you instead." },
+                            desc: "The Tide Mother's own guard. Close in, it plants itself and swings its club faster than you can see: the six tiles in front of it light first. The strike throws a bubble on that hangs there a moment, then bursts wide for a third as much and leaves you dripping, bleeding and dazed. With a Ripplerunner about, that bubble comes for you." },
             slime:        { name: 'Slime',            role: 'Chaser',    tint: 0xcc3333,
                             desc: 'Walks at you and hits you on contact. Five times slower than you are.' },
             berserker:    { name: 'Berserker',        role: 'Charger',   tint: 0xff4444,
@@ -6230,7 +6254,7 @@ class LevelManager {
             drowner:      { name: 'Drowner',          role: 'Ambusher',  tint: 0x5a2d6b,
                             desc: 'Sinks to attack and tracks you for two seconds before it strikes. In water it lands at once and holds you under for two seconds. On dry ground you get a moment to step off the mark, but it leaves a pool either way.' },
             ripplerunner: { name: 'Ripplerunner',     role: 'Skirmisher',tint: 0x66f0ff,
-                            desc: 'Quick on water, sluggish on dry stone, and it keeps its distance. Standing in water it boils every bit of water round it into bubbles and flings them at where you stand, using the water up. Each bursts hardest at its heart and leaves you dripping, bleeding and dazed for a moment. Anywhere, it turns a bubble that is already out onto you.' },
+                            desc: 'Quick on water, sluggish on dry stone, and it keeps its distance. Standing in water it boils every bit of water round it into bubbles and flings them at where you stand, using the water up. Each bursts hardest at its heart and leaves you dripping, bleeding and dazed for a moment. Anywhere, it takes any bubble near it with its mind and throws it at you.' },
             tidecaller:   { name: 'Tidecaller',       role: 'Booster',   tint: 0x2a5cc8,
                             desc: 'Doesn\'t fight. Everything near it attacks faster: a little on dry floor, far faster standing in water. Dry the floor round it, or kill it first.' },
             cheer:        { name: 'Cheerleader Slime', role: 'Booster',  tint: 0xff6ad0,
