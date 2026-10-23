@@ -29,8 +29,8 @@
 //
 // HER BROOD. The SMASHERS are hers alone, her guard (mantis shrimp, true to life): close enough, one winds up for
 // SMASH.WIND_MS and swings its club too fast to see, SMASH.DMG to the six tiles in front of it (two deep, three wide);
-// the strike throws a cavitation bubble on SMASH.TRAVEL tiles that hangs there SMASH.CAV_FUSE, then bursts over
-// SMASH.CAV_R tiles for a third of that (or is turned onto you first, by a Ripplerunner or another Smasher).
+// the strike leaves a dormant cavitation bubble that drifts SMASH.DRIFT tiles over SMASH.DORMANT_MS, then bursts over
+// SMASH.CAV_R tiles for a third of that (unless a Ripplerunner takes it in its trance and sends it at you first).
 // Stand in both and both land. Two guard her from the start, one more at each of SMASH.AT runes broken (SMASH.MAX
 // at once); three Leeches come at LEECH_AT, Ripplerunners with every High Tide. Nothing joins in the last phase, and
 // the brood goes with her.
@@ -45,8 +45,8 @@ class TideMother {
         RUNE_HITS: 2,
         BUB: { EVERY: [7000, 6000, 5200], PAIR_AT: 2, MAX: 3, THROW_MS: 750, SHORT: 2.5, SPEED: 2.6, TURN: 2.4, LIFE: 12000, WARN: 1500,
                TOUCH: 0.6, RUNE_R: 1.0, DMG: 40, POP_R: 2.2, POP_DMG: 16, WET_MS: 4000 },   // SHORT: it lands that many tiles short of you; SPEED tiles a second; TURN rad a second
-        SMASH: { HP: 90, MOVE: 0.8, REACH: 1.6, WIND_MS: 280, DMG: 24, TRAVEL: 2.5, CAV_MS: 300, CAV_FUSE: 1500, CAV_R: 3, CD: 2200, AT: [2, 3], MAX: 3 },
-        FIELD: { N: [3, 4, 5], FORM_MS: 700, FUSE: 3200, R: 3.5, DMG: 20, SIZE: 3, SPEED: 9, COL: 0x9fe8ff, GAP: 4 },   // her huge bubbles (by phase); GAP tiles between them
+        SMASH: { HP: 90, MOVE: 0.8, REACH: 1.6, WIND_MS: 280, DMG: 24, DRIFT: 1, DORMANT_MS: 2000, CAV_R: 4, CD: 2200, AT: [2, 3], MAX: 3 },   // its bubble drifts DRIFT tiles over DORMANT_MS, then bursts over CAV_R
+        FIELD: { N: [3, 4, 5], FORM_MS: 700, FUSE: 3200, R: 3.5, DMG: 20, SIZE: 3, COL: 0x9fe8ff, GAP: 4 },   // her huge bubbles (by phase); GAP tiles between them
         PHASE_AT: [2, 4], LEECH_AT: 1, SHIELD_AT: 2, SHIELD_CD: 15000, SLOW_AT: 4,
         UNDER_TELL: 950, UNDER_SPEED: 12, UNDER_SPEED_FREE: 9, CREST: 0.5, UNDER_DMG: 16,   // tiles a second; the ring's half-thickness, in tiles
         PART_TELL: 1300, PART_HALF: 2.5, PART_ENDS: 3, PART_DMG: 20, PART_WET_MS: 2500,
@@ -164,12 +164,12 @@ class TideMother {
         cont.add([glow, ring, sym]);
         S._vfxSort?.(cont);
         const b = { el, x: mx, y: my, a, t0: 0, live: false, cont, ring, sym };
-        // a Ripplerunner turns it onto you: it's a burst at your feet then, not a sign for a rune (LevelManager._rippleTurn)
-        b.redirect = (tx, ty) => {
+        // a Ripplerunner sends it at you: it's a burst at your feet then, not a sign for a rune (LevelManager._rippleGod)
+        b.redirect = (tx, ty, r = {}) => {
             const i = T.bubbles.indexOf(b);
             if (i < 0) return;
-            T.bubbles.splice(i, 1); cont.destroy();
-            S._cavBubble(b.x, b.y, tx, ty, { r: B.POP_R, dmg: B.POP_DMG, col, atYou: true });
+            T.bubbles.splice(i, 1); cont.destroy(); b.gone = true;
+            S._cavBubble(b.x, b.y, tx, ty, { r: B.POP_R, dmg: B.POP_DMG, col, atYou: true, ms: r.ms, ease: r.ease });
         };
         T.bubbles.push(b);
         const m = BossFX.mark(S, [[Math.floor(lx / TS), Math.floor(ly / TS)]], col, B.THROW_MS, { fill: 0.1 });
@@ -224,7 +224,7 @@ class TideMother {
     static _pop(S, q, b, o = {}) {
         const T = q.tide, B = TideMother.CFG.BUB, TS = S.TILE_SIZE;
         T.bubbles.splice(T.bubbles.indexOf(b), 1);
-        b.cont.destroy();
+        b.cont.destroy(); b.gone = true;
         LevelManager.cavFlash(S, b.x, b.y, (o.quiet ? 0.8 : B.POP_R) * TS, TideMother.CFG.RUNE_COL[b.el]);   // it collapses, as they do
         Sfx.play(S, 'splash', { big: !o.quiet });
         if (o.quiet) return;
@@ -396,8 +396,8 @@ class TideMother {
 
     // ── CAVITATION FIELD ─────────────────────────────────────────────────────
     // Huge bubbles boil up at FIELD.N spots round the room (LevelManager._cavBubble, `field`), each bursting where it
-    // sits once FIELD.FUSE runs out, unless a Ripplerunner takes one with its mind and throws it at you
-    // (LevelManager._rippleTurn). Each spot is marked the whole time it's there.
+    // sits once FIELD.FUSE runs out, unless a Ripplerunner near one goes into its trance and sends it at you
+    // (LevelManager._rippleGod). Each spot is marked the whole time it's there.
     static _field(S, q, now) {
         const T = q.tide, F = TideMother.CFG.FIELD, TS = S.TILE_SIZE, spots = [];
         const free = TideMother._tiles(S, T, (dx, dy) => { const d = Math.hypot(dx, dy); return d >= 2.5 && d <= T.R - 1.5; })
@@ -406,7 +406,7 @@ class TideMother {
         for (const p of free) if (spots.length < F.N[T.phase - 1] && spots.every(o => Math.hypot(o[0] - p[0], o[1] - p[1]) >= F.GAP)) spots.push(p);
         for (const [x, y] of spots) {
             const px = (x + 0.5) * TS, py = (y + 0.5) * TS;
-            S._cavBubble(px, py, px, py, { form: F.FORM_MS, ms: F.FUSE, r: F.R, dmg: F.DMG, size: F.SIZE, col: F.COL, speed: F.SPEED, field: true });
+            S._cavBubble(px, py, px, py, { form: F.FORM_MS, ms: F.FUSE, r: F.R, dmg: F.DMG, size: F.SIZE, col: F.COL, field: true });
         }
         Sfx.play(S, 'bubbles');
         TideMother._say(S, q, 'CAVITATION', (S.enemies || []).some(e => e._isRipplerunner && e.sprite?.active) ? 'the Ripplerunners will throw them at you' : 'keep clear of them');
@@ -587,9 +587,10 @@ class TideMother {
             S.takeDamage(K.DMG * (S.enemyDamageScale || 1));
             S.showStatusText(S.player.x, S.player.y - 30, 'SMASH', '#ffb070');
         }
-        // the cavitation bubble: on along the swing, then it bursts wide (LevelManager._cavBubble: a Ripplerunner can turn it onto you)
+        // the cavitation bubble the strike leaves: dormant, drifting on a tile, then a wide burst (LevelManager._cavBubble: a
+        // Ripplerunner near it takes it and sends it at you)
         const [dx, dy] = s.dir, sx = (e.x + dx + 0.5) * TS, sy = (e.y + dy + 0.5) * TS, n = Math.hypot(dx, dy) || 1;
-        S._cavBubble(sx, sy, sx + dx / n * K.TRAVEL * TS, sy + dy / n * K.TRAVEL * TS, { ms: K.CAV_MS, fuse: K.CAV_FUSE, r: K.CAV_R, dmg: K.DMG / 3, wet: false });
+        S._cavBubble(sx, sy, sx + dx / n * K.DRIFT * TS, sy + dy / n * K.DRIFT * TS, { ms: K.DORMANT_MS, ease: 'Linear', r: K.CAV_R, dmg: K.DMG / 3, wet: false });
     }
 
     // ── THE SCENES ───────────────────────────────────────────────────────────

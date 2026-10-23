@@ -1833,8 +1833,10 @@ class GameScene extends Phaser.Scene {
     _cavAfflict(...a)        { return LevelManager.prototype._cavAfflict.call(this, ...a); }
     _cavBurst(...a)          { return LevelManager.prototype._cavBurst.call(this, ...a); }
     _cavClear(...a)          { return LevelManager.prototype._cavClear.call(this, ...a); }
-    _rippleTurn(...a)        { return LevelManager.prototype._rippleTurn.call(this, ...a); }
-    _rippleDraw(...a)        { return LevelManager.prototype._rippleDraw.call(this, ...a); }
+    _rippleGod(...a)         { return LevelManager.prototype._rippleGod.call(this, ...a); }
+    _rippleGodSend(...a)     { return LevelManager.prototype._rippleGodSend.call(this, ...a); }
+    _rippleGodEnd(...a)      { return LevelManager.prototype._rippleGodEnd.call(this, ...a); }
+    _rippleGodDraw(...a)     { return LevelManager.prototype._rippleGodDraw.call(this, ...a); }
     _rippleKeep(...a)        { return LevelManager.prototype._rippleKeep.call(this, ...a); }
     _waveTell(...a)          { return LevelManager.prototype._waveTell.call(this, ...a); }
     _waveClearTell(...a)     { return LevelManager.prototype._waveClearTell.call(this, ...a); }
