@@ -1538,7 +1538,7 @@ void main() {
             const c = d.container;
             if (c?.active) add(c.x, c.y, 24, d.type === 'glorp' ? 0x3dffb0 : d.type === 'healthpot' ? 0xff5577 : 0xe8e0ff, 0.6, 0.3);
         }
-        for (const q of this.portals || []) if (q.active) add(q.tileX * T + T / 2, q.tileY * T + T / 2, 64, q.rune ? TideMother.CFG.RUNE_COL[q.rune.el] : q.tide ? TideMother.CFG.COL : this._bfxOn ? 0xff3a4a : C.EL.cosmic, 0.8, 0.3);
+        for (const q of this.portals || []) if (q.active) add(q.tileX * T + T / 2, q.tileY * T + T / 2, 64, q.tide ? TideMother.CFG.COL : this._bfxOn ? 0xff3a4a : C.EL.cosmic, 0.8, 0.3);
         // torches breathe; sealed doorways and the boss door glow
         const TH = this._vfxTheme();
         for (const t of this._vfxTorches || []) {

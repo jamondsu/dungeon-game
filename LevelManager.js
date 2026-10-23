@@ -560,7 +560,6 @@ class LevelManager {
             const t = this.waterTiles.get(k);
             if (t) t.lastEnergized = now;
         }
-        if (this._tmRunes) TideMother.energized(this, pool);   // the Reservoir's lightning rune takes current through water
 
         // ── damage everything standing in it ────────────────────────────────────
         // Routed through resolveElementalHit, so a lightning-resistant enemy standing in
@@ -4977,6 +4976,7 @@ class LevelManager {
     // How each enemy is drawn: a body of its own (the red slime redrawn in PAL, with GLINT speckles), or the red or purple
     // slime tinted; its hat and eyes are Creatures.js's TYPES. One table, for the game, the new-enemy card and the index.
     static LOOKS = {
+        smasher:       { pal: [[14, 46, 34], [22, 112, 74], [62, 186, 104], [168, 232, 112], [240, 255, 200]], glint: [96, 176, 255] },   // the Tide Mother's guard (TideMother.js)
         bud:           { pal: [[20, 48, 18], [52, 120, 40], [98, 180, 66], [168, 228, 110], [236, 255, 200]], glint: [255, 176, 220] },
         hunter:        { pal: [[14, 10, 14], [44, 30, 40], [78, 52, 64], [140, 60, 70], [230, 90, 90]] },
         hunter_frenzy: { pal: [[20, 4, 8], [66, 8, 16], [110, 14, 24], [160, 26, 34], [230, 66, 66]] },
@@ -6072,6 +6072,7 @@ class LevelManager {
         if (e._isWaveRider)        return 'waverider';
         if (e._isConduit)          return 'conduit';
         if (e._isTidalGuard)       return 'tidalguard';
+        if (e._isSmasher)          return 'smasher';
         if (e._isWishingWell)      return 'wishingwell';
         if (e._isEncased)          return 'encased';
         if (e.isMortar)            return 'mortar';
@@ -6089,6 +6090,8 @@ class LevelManager {
 
     _enemyCodex() {
         const C = {
+            smasher:      { name: 'Smasher',          role: 'Bruiser',   tint: 0x3eba68,
+                            desc: "The Tide Mother's own guard. Close in, it plants itself and swings its club faster than you can see: the two tiles in front of it light first. The strike throws a bubble on that bursts wide a moment later for a third as much. Stand in both and both land." },
             slime:        { name: 'Slime',            role: 'Chaser',    tint: 0xcc3333,
                             desc: 'Walks at you and hits you on contact. Five times slower than you are.' },
             berserker:    { name: 'Berserker',        role: 'Charger',   tint: 0xff4444,
@@ -7695,7 +7698,7 @@ class LevelManager {
         if (!this.portals || !this.portals.length) return;
         for (let pi = this.portals.length - 1; pi >= 0; pi--) {
             const queen = this.portals[pi];
-            if (!queen.active || queen.rune) continue;   // (the Reservoir's runes: TideMother.update runs them)
+            if (!queen.active) continue;
             // Only update when player is in the same room
             if (this.getCurrentPlayerRoom() !== queen.tutorialRoomIndex) continue;
             if (queen.tide) { TideMother.update(this, queen, time); continue; }   // the Cistern's boss: her own moves, not the brood and the pulse
@@ -7883,7 +7886,7 @@ class LevelManager {
     }
 
     damagePortal(portal, damage, opts = {}) {
-        if (portal.tide || portal.rune) return TideMother.hit(this, portal, damage, opts);   // the Reservoir's: her mother can't be hurt, the runes each break their own way
+        if (portal.tide) return TideMother.hit(this, portal);   // the Reservoir's Tide Mother can't be hurt
         damage = this._afterHit(null, null, damage * this._dmgOutMult(null) * this._hitRoll(null));   // your damage, and a hit's roll and extras, as on any enemy
         if (!portal.active) return;
         // opts.src (a projectile): it lands once on this queen, not every frame it overlaps her

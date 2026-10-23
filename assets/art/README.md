@@ -161,13 +161,16 @@ If a file is missing, the game draws its own version instead (the code that firs
 | slime_shade_ice.png (+ .json) | 224x192, 42 frames | the Adaptive Shade's body in one of its forms |
 | slime_shade_lightning.png (+ .json) | 224x192, 42 frames | the Adaptive Shade's body in one of its forms |
 | slime_shade_void.png (+ .json) | 224x192, 42 frames | the Adaptive Shade's body in one of its forms |
+| slime_smasher.png (+ .json) | 224x192, 42 frames | the Smasher, the Tide Mother's guard: the slime sheet in mantis-shrimp green with blue glints |
 | slime_void.png (+ .json) | 64x32, 2 frames | the Void Sovereign's body (two 32x32 frames) |
 | slime_volt.png (+ .json) | 64x32, 2 frames | the Voltslime's body (two 32x32 frames) |
 | slime_wraith.png (+ .json) | 224x192, 42 frames | an enemy's recoloured slime body (32x32 frames; 0 and 18 make its idle) |
 | slime_wraith_ghost.png (+ .json) | 224x192, 42 frames | an enemy's recoloured slime body (32x32 frames; 0 and 18 make its idle) |
 | tm_chain.png | 8x5 | a chain link, tiled along the Reservoir's binding chains (light grey, tinted per rune) |
+| tm_club.png | 10x7 | a Smasher's club (two ride beside it and snap forward on the strike) |
 | tm_statue.png | 14x19 | the Reservoir's rune statue (its rune glows in the dark recess) |
 | tm_statue_broken.png | 14x19 | the same statue, broken once its rune is undone |
+| tm_sym_tide.png | 16x16 | the tide rune's symbol (the other four runes use the element icons) |
 | ui_fragment.png | 9x11 | an ult fragment |
 | vfx_aura2_field.png | 256x256 | an effect sprite (white, tinted in game) |
 | vfx_aura2_ring.png | 256x256 | an effect sprite (white, tinted in game) |

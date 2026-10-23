@@ -650,7 +650,7 @@ class BossFX {
         const fc = this.fractureCore;
         if (fc?.container?.active) this._bfxCoreTick(fc, now, dt);
         for (const q of this.portals || []) {
-            if (!q.active || !q.container?.active || q.rune) continue;
+            if (!q.active || !q.container?.active) continue;
             if (!q._bfx) this._bfxQueenDress(q);
             this._bfxQueenTick(q, now);
         }
@@ -672,7 +672,7 @@ class BossFX {
         const K = this._chillCfg?.(), ice = b => K ? { chill: b._iceCubeUntil ? 1 : Math.min(1, (b.chillStacks || 0) / K.MAX), cubed: !!b._iceCubeUntil, decay: (b._decayOwed || 0) / b.maxHp } : null;
         if (vb?.active && vb.container && !far(vb.container.x, vb.container.y)) bars.push(['volt', vb.hp / vb.maxHp, 'THE VOLTSLIME', 0x5ff0ff, '', vb.container.x, vb.container.y, ice(vb)]);
         if (vs?.active && vs.container && !far(vs.container.x, vs.container.y)) bars.push(['sovereign', vs.hp / vs.maxHp, 'THE VOID SOVEREIGN', 0xb45cff, '', vs.container.x, vs.container.y, ice(vs)]);
-        const qs = (this.portals || []).filter(q => q.active && q.container && !q.rune && !(q.tide && (!q.tide.introDone || q.tide.over)) && !far(q.container.x, q.container.y))
+        const qs = (this.portals || []).filter(q => q.active && q.container && !(q.tide && (!q.tide.introDone || q.tide.over)) && !far(q.container.x, q.container.y))
             .sort((a, b) => Math.hypot(a.tileX - this.playerX, a.tileY - this.playerY) - Math.hypot(b.tileX - this.playerX, b.tileY - this.playerY));
         for (const q of qs) bars.push(q.tide ? ['tide', TideMother.bar(q).frac, 'THE TIDE MOTHER', TideMother.CFG.COL, TideMother.bar(q).line, q.container.x, q.container.y]   // the Reservoir's (TideMother.js): how hard she still holds Riyal
                                              : ['queen' + this.portals.indexOf(q), q.hp / q.maxHp, 'THE QUEEN SLIME', 0xff3a4a, `brood ${q.ammo ?? 0} / ${q.ammoMax ?? 0}`, q.container.x, q.container.y]);
