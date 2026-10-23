@@ -50,7 +50,7 @@ class RhythmTrial {
         START_BEAT: 8,   // with a song: the route's first beat, this many of the song's in (the count-in, the four before it)
         GHOST: 0.4,   // you, your face and what you hold, see-through for the trial: solid, you sat on the symbols and over the cell above
         ACCENT_P: [0.05, 0.06, 0.07, 0.08], ACCENT_WIN: 160, ACCENT: 3, MORDENT_HIT: 1.5,   // an accent's odds on a step; click and landing this close count as together; its hit, a mordent's (in PERFECT notes' worth, PERF)
-        PERF: { KILL: 1.3, GOOD: 0.55 },   // your notes' hits on the core: a PERFECT's is 1 / (KILL x the run's notes) of its health (a run of them all, KILL runs to kill it before the groove: about 85% PERFECTs kill it by the end), a GOOD's this share of that
+        PERF: { KILL: 1.6, GOOD: 0.55 },   // your notes' hits on the core: a PERFECT's is 1 / (KILL x the run's notes) of its health (a run of them all, KILL runs to kill it before the groove; with the ornaments, about 85% PERFECTs kill it most of the way through), a GOOD's this share of that
         TRILL_P: [0, 0.03, 0.04, 0.1], TRILL_MS: 2800, TRILL_N: 10, TRILL_STEP: 60,   // 1 or 2 a run: the time for it, the hops it wants (each difficulty its own, DIFF.TRILL; even, to end on it), your step meanwhile
         SLUR_P: 0.18,   // the odds a run of plain steps is slurred
         GLISS: { BEATS: 9, SLIDE: 6, WIN: [700, 1100], SPAN: 900, PERFECT: [180, 500], DMG: [36, 22] },   // its beats clear of notes, the beat to slide on, the window (early, late), all the keys within SPAN ms, a perfect's start and length, its hits (in notes' worth)
