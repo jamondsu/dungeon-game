@@ -13,8 +13,8 @@
 //                  room (more in a bigger one), dazing what they land on. Collect the fallen
 //                  stars before they fade: each one astrally marks 2 enemies in that room
 //                  (nearest first, bosses too; 10 at most). A mark lasts until you hit it:
-//                  the hit pops it for 3% of your current element's gem and 1% of the
-//                  others                                                             (14s)
+//                  the hit pops it for 6% of your current element's gem and 2% of the
+//                  others                                                             (40s)
 //   Singularity    a well at the cursor pulls enemies in for 5s, Hexing them deeper the longer they stay
 //                  Event Horizon: -30% damage taken while it's out and 5s after (12s)
 //   Void Blade     hold to charge, release to slash: longer, wider and a longer stun the
@@ -62,10 +62,11 @@ class CosmicSystem {
             // Each one collected marks MARKS_PER enemies in the room, MAX_MARKS at most. A mark
             // stays until a hit pops it: POP_CUR of a gem to the element you hold, POP_OTHER to
             // each other one (cosmic's fills with time only). Ascend doubles the pops.
-            // About 6 marks on an average catch: ~+60% ult rate; a perfect one roughly doubles it.
-            ASTRO:   { CD: 14000, MIN: 4 + WeaponLevels.perk('astrolabe', 'stars'), MAX: 10 + 2 * WeaponLevels.perk('astrolabe', 'stars'), PER_TILES: 40, FALL_MS: 420, STAGGER: 110, DAZE_R: 1.5 + 0.5 * WeaponLevels.perk('astrolabe', 'impact'), DAZE_MS: 700 + 300 * WeaponLevels.perk('astrolabe', 'impact'),
-                       WINDOW: 5000, PICK_R: 1.0, MARKS_PER: 2, MAX_MARKS: 10, POP_CUR: 0.03 * (1 + 0.25 * WeaponLevels.perk('astrolabe', 'charts')), POP_OTHER: 0.01 * (1 + 0.25 * WeaponLevels.perk('astrolabe', 'charts')),
-                       STAR_CHARGE: WeaponLevels.perk('astrolabe', 'gift') ? 0.25 : 0.08 },   // each star collected: 8% of a cosmic gem
+            // A long cooldown and a big payout (2026-10-22; CD 14s and half the charge before: at 14s
+            // it was a charger without a limit, about 0.8 of an Ascend from the stars alone every cast).
+            ASTRO:   { CD: 40000, MIN: 4 + WeaponLevels.perk('astrolabe', 'stars'), MAX: 10 + 2 * WeaponLevels.perk('astrolabe', 'stars'), PER_TILES: 40, FALL_MS: 420, STAGGER: 110, DAZE_R: 1.5 + 0.5 * WeaponLevels.perk('astrolabe', 'impact'), DAZE_MS: 700 + 300 * WeaponLevels.perk('astrolabe', 'impact'),
+                       WINDOW: 5000, PICK_R: 1.0, MARKS_PER: 2, MAX_MARKS: 10, POP_CUR: 0.06 * (1 + 0.25 * WeaponLevels.perk('astrolabe', 'charts')), POP_OTHER: 0.02 * (1 + 0.25 * WeaponLevels.perk('astrolabe', 'charts')),
+                       STAR_CHARGE: WeaponLevels.perk('astrolabe', 'gift') ? 0.5 : 0.16 },   // each star collected: 16% of a cosmic gem
             WELL:    { CD: 12000, MS: 5000 + 1000 * WeaponLevels.perk('singularity_staff', 'time'), AFTER: 5000, TICK: 500, DMG: 2, RADIUS: 3 + 0.5 * WeaponLevels.perk('singularity_staff', 'radius'), RANGE: 9, TAKEN: 0.7 - 0.05 * WeaponLevels.perk('singularity_staff', 'guard'),
                        HEX_RAMP: 2000, HEX_AFTER: 1000,
                        BEAM_SPEED: 24, BEAM_HEX_MS: 1000, GROW_FROM: 0.6, GROW_TO: 1.4, END_DAZE_MS: 1000 },   // the beam (tiles a second, its Hex); the well's reach grows; the daze when it closes   // in the well: a Hex stack per HEX_RAMP ms inside (3 at most), gone HEX_AFTER after leaving
