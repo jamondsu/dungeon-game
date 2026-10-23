@@ -264,7 +264,7 @@ class RhythmTrial {
         const turns = alt.flatMap(x => { const n = Math.round((x.t1 - x.t) / (4 * b0)); return Array.from({ length: n }, (_, j) => j).filter(j => j % 2 === (o.lane ? 0 : 1)).map(j => [x.t + j * 4 * b0, x.t + (j + 1) * 4 * b0]); });
         const holes = [...secs.filter(x => x.kind === 'break').map(x => [x.t, x.t1]), ...gl0.map(g => [g.t, g.t + C.GLISS.BEATS * b0]), ...turns,
             ...(o.other || []).filter(m => m.kind === 'quake').map(m => [m.t + 1, m.t + C.JUMP_MS + 80])];   // (the lover's in the air with you on your jumps: nothing to step on then)
-        const qOn = new Set([...(M?.quakes || []).map(b => Math.round(tBar(b) / b0) * 4), ...(o.other || []).filter(m => m.kind === 'quake').map(m => m.q)]),   // (the lover jumps with you: Space is both)
+        const qOn = new Set(o.other ? o.other.filter(m => m.kind === 'quake').map(m => m.q) : (M?.quakes || []).map(b => Math.round(tBar(b) / b0) * 4)),   // (the lover jumps with you and only then: Space is both, and a song's quake you didn't get, after a mordent, isn't its either)
             MC = o.lane && M?.chart2 ? { ...M, chart: M.chart2 } : M, hitOn = new Set((M?.hits || []).map(b => Math.round(tBar(b) / b0) * 4));
         const musts = new Set([...qOn, ...hitOn].map(q => q / 4)), trillDone = new Set();   // beats a note must fall on
         const X0 = o.lane ? A.cx + 1 : A.cx - C.HALF, X1 = o.lane ? A.cx + C.HALF : C.DUAL ? A.cx - 1 : A.cx + C.HALF;   // (the rows' ends: with two of you, yours the left half, the lover's the right)
