@@ -81,6 +81,19 @@ class MirrorTrial extends Phaser.Scene {
         '#########O#########',
     ];
     static DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
+    // HOW THE HALL WORKS: the game's own guide (LevelSelectScene._guide), a picture from the hall a page (assets/mirror_guide).
+    // By itself the first time you come in (mirror_guide_seen), and on H; the hall holds still while it's open
+    static GUIDE = [
+        ['THE HALL OF REFLECTIONS', 'Three fragments of the way out are in mirrors, among the hall\'s 30 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they all hear it. With all three, walk back out through the mirror you came in by. H shows this again, any time.'],
+        ['MIRROR OR GLASS?', 'Straight on, a mirror here looks just like glass: you see through both. Only a reflection of a reflection shows. Turn your back on a pane and hold up your shard (SPACE): a mirror shows you, holding the shard; glass shows what\'s beyond it. Your decoys and sentries are made of reflection, so a mirror shows them even straight on.'],
+        ['CHALK AND MARKS', 'Chalk is the real test: an eye for a mirror, a cross for glass. C puts your own mark on a pane (glass, then mirror, then rubbed out) so you don\'t test it twice; with the shard up, it marks the pane behind you. Shattered glass wakes every sleeper near it, and the awake ones lunge two steps at you.'],
+        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every step they take, they look different.'],
+        ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and nothing is watching them. In your shard they can\'t do that to you. Hold one in your raised shard for two seconds and it slinks off, back to sleep far away.'],
+        ['THEY CAN\'T HURT YOU', 'One that reaches you pranks you, and it stays with you as stress. Your dread counts toward it too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
+        ['YOUR SHARD', 'Held up, your arm tires: it gives out after four seconds, and rests slowly once it\'s down. The goo arm beside the shard shows what\'s left. Down, the shard fogs up now and then. Hold F to wipe it, but your arm can\'t rest while you do.'],
+        ['WHAT YOU\'LL FIND', 'Flasks of your goo: SHIFT dashes you three tiles on, past one of them, loudly. Decoys (Q): they take it for you, and whatever it stares at holds. Sentries (E): one of them moving near it, even a wall away, or waking beside it, sets it off, and two pings show you where they are. Glorps go into your purse.'],
+        ['LOOKING FROM ABOVE', 'Hold TAB to step out of your own eyes, up behind yourself: you, the panes round you with your chalk and marks, your slimes. You never see them this way, except where a sentry pings, and while you\'re out of your eyes nothing watches them. W S step, A D turn, ESC leaves the hall.'],
+    ];
     // their looks (mt_twin, a strip: scratchpad art states.mjs --game): asleep; seen from afar (awake and wrong, or toying with you:
     // waving, peekaboo, on the ceiling, up the wall, holding your decoy...); right behind a pane between you, up against the glass
     // (face squashed on it, a heart in its breath, waving in, licking it, knocking); two away (your face, dropped down, peeking
@@ -128,7 +141,7 @@ class MirrorTrial extends Phaser.Scene {
         this.frags = new Set(mirrors.sort(() => Math.random() - 0.5).slice(0, C.FRAGMENTS));
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
             charges: 1, vials: 1, chargeT: 0, fovK: 1, gooK: 0, bubbles: [], drips: [], echoes: [], wards: 0, placed: [], labels: {}, marks: {}, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, pranks: 0, breaks: 0, closest: Infinity,
-            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, blur: 0, blurTo: 0, blurAt: this.time.now + Phaser.Math.Between(...C.BLUR.CLEAR_MS), wiping: false, mapUp: false });
+            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, reading: false, blur: 0, blurTo: 0, blurAt: this.time.now + Phaser.Math.Between(...C.BLUR.CLEAR_MS), wiping: false, mapUp: false });
         // the dread's cracks: from the screen's edges in, a little further the more you dread (fixed, so they grow, not jump)
         let seed = 9; const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
         this.cracks = Array.from({ length: 12 }, (_, i) => {
@@ -198,12 +211,36 @@ class MirrorTrial extends Phaser.Scene {
         this.events.once('shutdown', () => { this.input.keyboard.off('keydown', this._key, this); this.input.keyboard.off('keyup', this._keyUp, this); this.input.off('pointerdown', this._boop, this); });
         if (typeof Music !== 'undefined') Music.duck(true, 'mirror');
         this.cameras.main.fadeIn(700, 8, 4, 16);
+        this.time.delayedCall(750, () => this._openGuide(false));   // (the first time in: how it works)
+    }
+
+    // the guide: the game's (LevelSelectScene's, and the shop's words under it); the hall holds still meanwhile (its clock moved on
+    // after, by as long as you read)
+    _guide(...a) { return LevelSelectScene.prototype._guide.call(this, ...a); }
+    _richText(...a) { return ShopScene.prototype._richText.call(this, ...a); }
+    _tipZone(...a) { return ShopScene.prototype._tipZone.call(this, ...a); }
+    _showTip(...a) { return LevelSelectScene.prototype._showTip.call(this, ...a); }
+    _moveTip(...a) { return ShopScene.prototype._moveTip.call(this, ...a); }
+    _hideTip(...a) { return ShopScene.prototype._hideTip.call(this, ...a); }
+    _openGuide(force) {
+        if (this.reading || this.caught || this.escaped || this.leaving) return;
+        this.reading = true; const at = this.time.now;
+        if (this.raised) { this.raised = false; this._shardAt(false, 0); }
+        this._guide({ id: 'mguide', dir: 'mirror_guide', title: 'HOW THE HALL WORKS', pages: MirrorTrial.GUIDE, seenKey: 'mirror_guide_seen', force, end: 'INTO THE HALL  ▸',
+            then: () => { this._shiftTime(this.time.now - at); this.reading = false; } });
+    }
+    // every moment the hall keeps, on by dt (it held still that long)
+    _shiftTime(dt) {
+        for (const k of ['t0', 'calmUntil', 'blurAt', 'blackUntil', 'dreadAt', 'heartAt', 'wipeAt']) if (this[k] != null) this[k] += dt;
+        for (const w of this.placed) { w.at += dt; w.until += dt; }
+        for (const o of this.sentries) for (const k of ['at', 'next', 'showUntil', 'pingAt']) if (o[k] != null) o[k] += dt;
+        for (const e of this.ents) if (e.movedAt != null) e.movedAt += dt;
     }
 
     _hud() {
         const have = [this.holding && 'SPACE (hold) the shard · F (hold) wipe it', this.vials && 'SHIFT dash',
             (this.wards || this.placed.length) && `Q decoy slime (${this.wards})`, (this.sentryLeft || this.sentries.length) && `E set down / pick up a sentry (${this.sentryLeft})`].filter(Boolean);
-        this.keysTxt.setText(`W S step · A D turn · TAB (hold) look from above · walk into a pane: chalk it · C mark it · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
+        this.keysTxt.setText(`W S step · A D turn · TAB (hold) look from above · walk into a pane: chalk it · C mark it · H how it works · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
         this.countTxt.setText(`FRAGMENTS OF THE WAY OUT  ${'◆ '.repeat(this.found)}${'◇ '.repeat(MirrorTrial.CFG.FRAGMENTS - this.found)}`.trim());
     }
     _say(a, b, col = '#d8c8ff', hold = 2600) {
@@ -221,8 +258,9 @@ class MirrorTrial extends Phaser.Scene {
     }
 
     _key(e) {
-        if (this.leaving) return;
+        if (this.leaving || this.reading) return;   // (reading the guide: its keys)
         const k = e.code;
+        if (k === 'KeyH') return this._openGuide(true);
         if (k === 'Escape') return this._leave(this.escaped ? 'YOU GOT OUT OF THE HALL OF REFLECTIONS' : null);
         if (this.caught || this.escaped) { if (k === 'KeyR' || (this.escaped && k === 'Enter')) this.scene.restart({ zoom: this.zoom0 }); return; }
         if (k === 'Space') { if (e.repeat) return; if (this.holding && !this.raised && !this.mapUp && this.armOut) return Sfx.play(this, 'deny'); if (this.holding && !this.raised && !this.mapUp) { this.raised = true; Sfx.play(this, 'hover'); this._shardAt(true, MirrorTrial.CFG.RAISE_MS); } return; }
@@ -684,6 +722,7 @@ class MirrorTrial extends Phaser.Scene {
     }
 
     update(time, delta) {
+        if (this.reading) return;   // (the guide open: the hall holds still)
         const C = MirrorTrial.CFG, now = this.time.now;
         this._gooTick(now, delta);
         // your reflection: a beat behind you (where you were ECHO_MS ago, the shard up or not)
