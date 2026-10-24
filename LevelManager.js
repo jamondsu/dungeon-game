@@ -1216,10 +1216,12 @@ class LevelManager {
             if (c.el && c.el !== this.currentElement) this.switchToElement(c.el);
             this.updateHUD?.();
         }
-        const need = F.exit ? (F.cells || []).length : 0;
+        const need = F.exit ? F.need ?? (F.cells || []).length : 0;
         this._cells = { got: 0, need, items: [] };
+        const ci = this.rooms.findIndex(r => r.tpl === 'g_circuit');
+        if (ci >= 0) this._circuitBuild(ci);
         if (need) {
-            for (const k of F.cells) if (typeof k === 'string') { const ri = this.rooms.findIndex(r => r.tpl === k); if (ri >= 0) this._cellDrop(ri); }
+            for (const k of F.cells) if (typeof k === 'string') { const ri = this.rooms.findIndex(r => r.tpl === k); if (ri >= 0) this._cellDrop(ri, false, ri === ci ? this._circuit.cellAt : null); }
             this._cellLabel();
         }
         this.time.delayedCall(n > 1 ? 1500 : 700, () => this._showRhythmSessionBanner(`${this.currentLevelIndex}-${n}  ·  ${F.name}`, '#ffe14a', `Floor ${n} of ${all}` + (need ? `  ·  find ${need} storm cells for the lift` : '')));
@@ -1291,13 +1293,13 @@ class LevelManager {
         else if (!E.on) { E.on = true; Sfx.play(this, 'deny'); this.showStatusText?.(E.px, E.py - 56, `FIND THE STORM CELLS  ${this._cells.got}/${this._cells.need}`, '#8fb8d8'); }
     }
 
-    // A storm cell in room ri, beside its middle (where its chest is), bobbing in a glow of charge (fresh: it just dropped)
-    _cellDrop(ri, fresh) {
+    // A storm cell in room ri, beside its middle (where its chest is), or on tile `at`, bobbing in a glow of charge (fresh: it just dropped)
+    _cellDrop(ri, fresh, at) {
         const room = this.rooms[ri], cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2), TS = this.TILE_SIZE, C = this._cells;
         if (!C) return;
         const ok = (x, y) => x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h && this.world[x]?.[y] === this.FLOOR
             && !(this.tutorialChests || []).some(c => c.tileX === x && c.tileY === y) && !C.items.some(c => c.x === x && c.y === y) && !(this._floorExit?.x === x && this._floorExit?.y === y);
-        let spot = [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, 2], [2, -2], [-2, -2]].map(([dx, dy]) => [cx + dx, cy + dy]).find(([x, y]) => ok(x, y));
+        let spot = at || [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, 2], [2, -2], [-2, -2]].map(([dx, dy]) => [cx + dx, cy + dy]).find(([x, y]) => ok(x, y));
         for (let r = 1; r < 8 && !spot; r++) for (let dx = -r; dx <= r && !spot; dx++) for (let dy = -r; dy <= r && !spot; dy++) if (ok(cx + dx, cy + dy)) spot = [cx + dx, cy + dy];
         if (!spot) return;
         const [x, y] = spot, px = x * TS + TS / 2, py = y * TS + TS / 2;
@@ -1313,6 +1315,7 @@ class LevelManager {
     }
     _cellTick() {
         for (const c of this._cells?.items || []) if (!c.got && this.playerX === c.x && this.playerY === c.y) this._cellTake(c);
+        if (this._circuit) this._circuitTick();
     }
     _cellTake(c) {
         const C = this._cells;
@@ -1321,16 +1324,16 @@ class LevelManager {
         this.tweens.killTweensOf([c.img, c.glow]); c.glow.destroy();
         VisualFX.ripple(this, c.img.x, c.img.y + 8, 6, 30, 0x4fc3ff, { depth: 0.97, duration: 500, alpha: 0.8 });
         this.tweens.add({ targets: c.img, y: c.img.y - 26, scale: 1.4, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => c.img.destroy() });
-        this.showStatusText?.(c.img.x, c.img.y - 30, `STORM CELL  ${C.got}/${C.need}`, '#bfeeff');
+        this.showStatusText?.(c.img.x, c.img.y - 30, C.got > C.need ? 'A SPARE STORM CELL' : `STORM CELL  ${C.got}/${C.need}`, '#bfeeff');
         this._cellLabel(true);
         const E = this._floorExit;
-        if (E) { E.tag?.setText(`STORM CELLS ${C.got}/${C.need}`); if (C.got >= C.need && !E.live) this._floorPower(E, true); }
+        if (E && !E.live) { E.tag?.setText(`STORM CELLS ${C.got}/${C.need}`); if (C.got >= C.need) this._floorPower(E, true); }
     }
     // the count up top, under the clock (pop: one just came in)
     _cellLabel(pop) {
-        const C = this._cells, done = C.got >= C.need;
+        const C = this._cells, done = C.got >= C.need, n = Math.min(C.got, C.need);
         C.label ||= this.add.text(this.scale.width / 2, 50, '', { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', stroke: '#05060a', strokeThickness: 4 }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(30);
-        C.label.setText(`STORM CELLS  ${'◆ '.repeat(C.got)}${'◇ '.repeat(C.need - C.got)}`.trim() + (done ? '  ·  TO THE LIFT' : '')).setColor(done ? '#bfeeff' : '#8fb8d8');
+        C.label.setText(`STORM CELLS  ${'◆ '.repeat(n)}${'◇ '.repeat(C.need - n)}`.trim() + (done ? '  ·  TO THE LIFT' : '')).setColor(done ? '#bfeeff' : '#8fb8d8');
         if (pop) { C.label.setScale(1.25); this.tweens.add({ targets: C.label, scale: 1, duration: 300, ease: 'Back.easeOut' }); }
     }
 
@@ -1414,6 +1417,156 @@ class LevelManager {
         this.scene.restart({ levelIndex: this.currentLevelIndex, floor: this.storyFloor + 1, continueRun: true,
             carry: { hp: this.health, gems: { ...(this.ultGems || {}) }, el: this.currentElement,
                      stats: R ? { ago: this.time.now - R.t0, kills: R.kills, glorps0: R.glorps0, dmg: R.dmg, elTime: R.elTime } : null } });
+    }
+
+    // ─── THE CIRCUIT MAZE ───────────────────────────────────────────────────
+    // The Coil Works' side room: junction boxes in a grid, a storm coil feeding the first column from the west, and past the last
+    // column the gate of a vault, in a fence of bars you see its prize through. Walk into a box and it turns a quarter. A box is live
+    // when a run of joined boxes reaches it from the coil, and the wire between two live joined boxes zaps you if you stand on it.
+    // Join the coil to the gate and the vault opens: a storm cell, and a gold chest (a sealed book and glorps). There's always a way:
+    // the boxes on one path from coil to gate are pieces that fit it, only turned wrong.
+    _circuitCfg() {
+        return { COLS: [3, 5, 7, 9, 11], ROWS: [2, 4, 6, 8], FENCE: 13,   // where the boxes stand in the room, and the fence's column
+                 PIECES: { i: 5, l: 3, t: 7 }, SPARE: [['i', 0.35], ['l', 0.4], ['t', 0.25]],   // their wires (N 1, E 2, S 4, W 8) unturned; the odds of each off the path
+                 ZAP: 6, ZAP_MS: 700, GLORPS: 60 };
+    }
+    _circuitBuild(ri) {
+        const C = this._circuitCfg(), room = this.rooms[ri], TS = this.TILE_SIZE, R = Math.random, nc = C.COLS.length, nr = C.ROWS.length;
+        const turn = m => ((m << 1) | (m >> 3)) & 15, DIR = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];
+        const rs = Math.floor(R() * nr), rv = Math.floor(R() * nr);
+        // a path through the grid from the coil's box to the gate's, never crossing itself
+        const path = [], seen = new Set();
+        const walk = (c, r) => {
+            path.push([c, r]); seen.add(c + ',' + r);
+            if (c === nc - 1 && r === rv) return true;
+            for (const [dx, dy] of DIR.slice().sort(() => R() - 0.5)) {
+                const a = c + dx, b = r + dy;
+                if (a >= 0 && a < nc && b >= 0 && b < nr && !seen.has(a + ',' + b) && walk(a, b)) return true;
+            }
+            path.pop(); return false;
+        };
+        walk(0, rs);
+        const want = {};   // each path box: the wires it needs (in from the last, out to the next)
+        path.forEach(([c, r], k) => {
+            const [pc, pr] = k ? path[k - 1] : [c - 1, r], [qc, qr] = k < path.length - 1 ? path[k + 1] : [c + 1, r];
+            const bit = (a, b) => DIR.find(([dx, dy]) => dx === a - c && dy === b - r)[2];
+            want[c + ',' + r] = bit(pc, pr) | bit(qc, qr);
+        });
+        const Q = this._circuit = { ri, room, rs, rv, want, boxes: [], live: new Set(), wires: [], open: false, turn, DIR };
+        const tile = (c, r) => [room.x + C.COLS[c], room.y + C.ROWS[r]], at = (x, y) => [x * TS + TS / 2, y * TS + TS / 2];
+        for (let c = 0; c < nc; c++) for (let r = 0; r < nr; r++) {
+            const need = want[c + ',' + r];
+            let kind = need ? ((need === 5 || need === 10) ? 'i' : 'l') : null;
+            if (!kind) { let u = R(); kind = C.SPARE.find(([, p]) => (u -= p) < 0)?.[0] || 't'; }
+            let mask = C.PIECES[kind], rot = 0;
+            const spin = Math.floor(R() * 4);
+            for (let k = 0; k < spin; k++) { mask = turn(mask); rot++; }
+            const [x, y] = tile(c, r), [px, py] = at(x, y);
+            this.world[x][y] = this.WALL;
+            const img = this.add.image(px, py, 'junc_' + kind).setDepth(0.9).setAngle(rot * 90);
+            const glow = this.add.image(px, py, 'vfx_glow').setTint(0x4fc3ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.91).setScale(0.3).setAlpha(0);
+            Q.boxes.push({ c, r, x, y, px, py, mask, rot, img, glow });
+        }
+        Q.box = (c, r) => Q.boxes.find(b => b.c === c && b.r === r);
+        // the coil, west of the first column; the fence and its gate, east of the last; the prize behind it
+        const [kx, ky] = [room.x + C.COLS[0] - 2, room.y + C.ROWS[rs]], [kpx, kpy] = at(kx, ky);
+        this.world[kx][ky] = this.WALL;
+        Q.coil = { x: kx, y: ky, px: kpx, py: kpy, img: this.add.image(kpx, kpy + TS / 2, 'coil_storm').setOrigin(0.5, 1).setDepth(1.02) };
+        const fx = room.x + C.FENCE;
+        for (let y = room.y; y < room.y + room.h; y++) {
+            this.world[fx][y] = this.WALL;
+            const gate = y === room.y + C.ROWS[rv], img = this.add.image(fx * TS + TS / 2, y * TS + TS, gate ? 'vault_gate' : 'vault_bars').setOrigin(0.5, 1).setDepth(1.02);
+            if (gate) Q.gate = { x: fx, y, img };
+        }
+        const [cx, cy] = [fx + 2, Q.gate.y], [cpx, cpy] = at(cx, cy);
+        Q.chest = { x: cx, y: cy, ...LootFX.chest(this, cpx, cpy, 'gold') };
+        Q.cellAt = [fx + 2, Q.gate.y + (Q.gate.y - room.y >= 2 ? -2 : 2)];
+        Q.gfx = this.add.graphics().setDepth(0.92).setBlendMode(Phaser.BlendModes.ADD);
+        Q.coilGlow = this.add.image(kpx, kpy - 26, 'vfx_glow').setTint(0x7fd8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(1.03).setScale(0.22).setAlpha(0.8);
+        this.tweens.add({ targets: Q.coilGlow, alpha: 0.4, duration: 140, yoyo: true, repeat: -1, repeatDelay: 260 });
+        // never solved before you've touched it
+        this._circuitPower(true);
+        if (Q.open || Q.boxes.every(b => !want[b.c + ',' + b.r] || b.mask === want[b.c + ',' + b.r])) {
+            const b = Q.box(...path[0]); b.mask = turn(b.mask); b.rot = (b.rot + 1) % 4; b.img.setAngle(b.rot * 90); Q.open = false; this._circuitPower(true);
+        }
+    }
+
+    // walking into (x, y): a junction box there turns a quarter, clockwise
+    _circuitBump(x, y) {
+        const Q = this._circuit, b = Q?.boxes.find(o => o.x === x && o.y === y);
+        if (!b) return false;
+        b.mask = Q.turn(b.mask); b.rot++;
+        this.tweens.killTweensOf(b.img);
+        this.tweens.add({ targets: b.img, angle: b.rot * 90, duration: 120, ease: 'Back.easeOut', onComplete: () => { b.rot %= 4; b.img.setAngle(b.rot * 90); } });
+        Sfx.play(this, 'switch');
+        this._circuitPower();
+        return true;
+    }
+
+    // what's live now: from the coil, box to joined box; the wires between them; the gate, if the run reaches it (quiet: no fuss)
+    _circuitPower(quiet) {
+        const Q = this._circuit, C = this._circuitCfg(), nc = C.COLS.length, was = Q.live;
+        const live = new Set(), wires = [], todo = [];
+        const first = Q.box(0, Q.rs);
+        if (first.mask & 8) { live.add(first); todo.push(first); wires.push([Q.coil.px, Q.coil.py - 22, first.px, first.py, Q.coil.x + 1, Q.coil.y]); }
+        while (todo.length) {
+            const b = todo.pop();
+            for (const [dx, dy, bit] of Q.DIR) {
+                if (!(b.mask & bit)) continue;
+                const n = Q.box(b.c + dx, b.r + dy), back = Q.turn(Q.turn(bit));
+                if (!n || !(n.mask & back)) continue;
+                if (b.c + b.r * nc < n.c + n.r * nc || !live.has(n)) wires.push([b.px, b.py, n.px, n.py, b.x + dx, b.y + dy]);
+                if (!live.has(n)) { live.add(n); todo.push(n); }
+            }
+        }
+        // (each wire once: a pair seen from both ends keeps the first)
+        Q.wires = wires.filter((w, i) => wires.findIndex(v => v[4] === w[4] && v[5] === w[5]) === i);
+        const end = Q.box(nc - 1, Q.rv);
+        if (live.has(end) && (end.mask & 2)) Q.wires.push([end.px, end.py, Q.gate.img.x, Q.gate.img.y - 20, end.x + 1, end.y]);
+        Q.live = live;
+        for (const b of Q.boxes) if (live.has(b) !== was.has(b)) this.tweens.add({ targets: b.glow, alpha: live.has(b) ? 0.55 : 0, duration: 160 });
+        if (!quiet && live.size > was.size) Sfx.play(this, 'zap');
+        if (live.has(end) && (end.mask & 2) && !Q.open) { Q.open = true; if (!quiet) this._circuitOpen(); }
+    }
+
+    // every frame: the live wires crackle; standing on one zaps you; the gold chest, once the vault's open
+    _circuitTick() {
+        const Q = this._circuit, C = this._circuitCfg(), now = this.time.now, g = Q.gfx;
+        if (now - (Q.drawn || 0) > 70) {
+            Q.drawn = now; g.clear();
+            for (const [x0, y0, x1, y1] of Q.wires) {
+                const pts = [[x0, y0]], nx = -(y1 - y0), ny = x1 - x0, L = Math.hypot(nx, ny) || 1;
+                for (let k = 1; k < 5; k++) { const t = k / 5, j = (Math.random() - 0.5) * 7; pts.push([x0 + (x1 - x0) * t + nx / L * j, y0 + (y1 - y0) * t + ny / L * j]); }
+                pts.push([x1, y1]);
+                for (const [w, col, a] of [[4, 0x2a8fd0, 0.45], [1.5, 0xe8fbff, 0.95]]) { g.lineStyle(w, col, a); g.beginPath(); g.moveTo(...pts[0]); for (const p of pts.slice(1)) g.lineTo(...p); g.strokePath(); }
+            }
+        }
+        if (Q.wires.some(w => w[4] === this.playerX && w[5] === this.playerY) && now - (Q.zapAt || 0) > C.ZAP_MS) {
+            Q.zapAt = now;
+            Sfx.play(this, 'zap'); this.cameras.main.shake(90, 0.004);
+            this.takeDamage(C.ZAP);
+            this.showStatusText?.(this.player.x, this.player.y - 34, 'ZAP!', '#bfeeff');
+        }
+        const ch = Q.chest;
+        if (Q.open && !ch.opened && this.playerX === ch.x && this.playerY === ch.y) {
+            ch.opened = true;
+            LootFX.open(this, ch);
+            this.totalGlorps = (this.totalGlorps || 0) + C.GLORPS;
+            this.glorpText?.setText(`✦ ${this.totalGlorps} Glorps`);
+            localStorage.setItem('glorps', this.totalGlorps);
+            Enchants.addBooks(1);
+            LootFX.reward(this, ch.container.x, ch.container.y - 14, `+${C.GLORPS}`);
+            this.time.delayedCall(350, () => LootFX.reward(this, ch.container.x, ch.container.y - 32, 'A SEALED BOOK', '#e8c8ff'));
+        }
+    }
+
+    // the run reaches the gate: it slides up into the fence and the vault's open
+    _circuitOpen() {
+        const Q = this._circuit, gt = Q.gate;
+        this.world[gt.x][gt.y] = this.FLOOR;
+        Sfx.play(this, 'surge'); this.cameras.main.shake(160, 0.004);
+        this.tweens.add({ targets: gt.img, y: gt.img.y - 30, alpha: 0, duration: 600, ease: 'Quad.easeIn' });
+        this.showStatusText?.(gt.img.x, gt.img.y - 50, 'THE VAULT IS OPEN', '#bfeeff');
     }
 
     // ─── LEVEL 2 ENEMY SPAWNING ───────────────────────────────────────────

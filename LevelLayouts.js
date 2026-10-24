@@ -23,6 +23,7 @@ const LevelLayouts = {
                                            ...Array.from({ length: 18 }, (_, i) => i + 1).filter(x => x !== 12 && x !== 13).map(x => [x, 7])] },
         g_ambush:  { w: 22, h: 16, walls: [[3, 2], [3, 9], [14, 2], [14, 9], [8, 5]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]) },
         g_landing: { w: 10, h: 8, name: 'Landing' },   // where a floor starts: the lift comes up here
+        g_circuit: { w: 17, h: 11, name: 'The Circuit', open: true },   // the Coil Works' maze (LevelManager._circuitBuild lays it); open: its doors never lock
         g_coil:    { w: 18, h: 13, name: 'The Coil Hall', walls: [[4, 3], [13, 3], [4, 9], [13, 9]].flatMap(([x, y]) => [[x, y], [x, y + 1]]) },
         g_boss:    { w: 24, h: 22, walls: [...[[2, 2], [20, 2], [2, 17], [20, 17]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
                                            [11, 2], [12, 2], [11, 18], [12, 18], [2, 10], [2, 11], [21, 10], [21, 11]] },
@@ -60,11 +61,12 @@ const LevelLayouts = {
     // its number in the level as one map (the level's code knows its rooms by those; null: a room only the floors have), and the
     // way on to the next (`exit`: GameScene._floorExit), and its storm cells (`cells`: the lift runs on them; a number: the story
     // room on this floor whose clearing drops one, a template: the side room one waits in). You climb the Gauntlet's storm tower,
-    // the Voltslime on its roof.
+    // the Voltslime on its roof. (`need`: how many of them the lift wants, when there are more; a side room [template, how many,
+    // the story rooms it may hang off, the ways it may go from one]: the circuit's way in is on its west, its vault on the east.)
     FLOORS: {
         2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift', cells: [2, 'chest_s'] },
             { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift', cells: [1, 'elite'] },
-            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1]], exit: 'lift', cells: [1, 'chest'] },
+            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1], ['g_circuit', 1, [1, 2], ['east']]], exit: 'lift', cells: [1, 'chest', 'g_circuit'], need: 2 },
             { name: 'THE ROOF', path: ['g_landing', 'g_boss'], story: [null, 6] }],
     },
     // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'
@@ -133,11 +135,11 @@ const LevelLayouts = {
         }
         const story = rooms.length;
         // the side rooms, off story rooms between the start and the boss
-        for (const [t, n] of recipe.side || []) for (let i = 0; i < n; i++) {
-            const T = LevelLayouts.T[t], order = Array.from({ length: story - 2 }, (_, k) => k + 1).sort(() => R() - 0.5);   // every story room in turn till one has space
+        for (const [t, n, at, dirs] of recipe.side || []) for (let i = 0; i < n; i++) {
+            const T = LevelLayouts.T[t], order = (at || Array.from({ length: story - 2 }, (_, k) => k + 1)).slice().sort(() => R() - 0.5);   // every story room in turn till one has space
             let placed = false;
             for (const pi of order) {
-                const r = attach(rooms[pi], t, Object.keys(LevelLayouts.DIRS), T.chest ? { isChestRoom: true, parentTag: 'r' + pi } : {});
+                const r = attach(rooms[pi], t, dirs || Object.keys(LevelLayouts.DIRS), T.chest ? { isChestRoom: true, parentTag: 'r' + pi } : {});
                 if (!r) continue;
                 if (T.chest) r.entranceTiles = r.entryTiles;
                 placed = true; break;

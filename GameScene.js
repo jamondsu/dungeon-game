@@ -46,7 +46,7 @@ class GameScene extends Phaser.Scene {
         // without threading `data` down through every init helper.
         this._sceneData = data || {};
         this.tutorialStage = data?.tutorialStage ?? 0;
-        this.storyFloor = data?.floor || 1; this._floorExit = null; this._cells = null;   // a story level in floors: the one you're on (LevelManager._floorPlan)
+        this.storyFloor = data?.floor || 1; this._floorExit = null; this._cells = null; this._circuit = null;   // a story level in floors: the one you're on (LevelManager._floorPlan)
         // Water lives on the scene object, which outlives a restart: the Cistern's (or a flooded
         // Tower floor's) tiles were still there, unseen, on the next level. Its pipes were too, still
         // refilling their old tiles on the new map and flinging water from mouths out in the void.
@@ -1255,6 +1255,8 @@ class GameScene extends Phaser.Scene {
                     return;
                 }
 
+                if (this._circuit && this._circuitBump(newX, newY)) { this.lastMoveTime = time + 100; return; }   // a junction box: walking into it turns it
+
                 if (newX >= 0 && newX < this.WORLD_WIDTH &&
                     newY >= 0 && newY < this.WORLD_HEIGHT &&
                     this.world[newX][newY] === this.FLOOR &&
@@ -1595,6 +1597,12 @@ class GameScene extends Phaser.Scene {
     _cellTick(...a) { return LevelManager.prototype._cellTick.call(this, ...a); }
     _cellTake(...a) { return LevelManager.prototype._cellTake.call(this, ...a); }
     _cellLabel(...a) { return LevelManager.prototype._cellLabel.call(this, ...a); }
+    _circuitCfg(...a) { return LevelManager.prototype._circuitCfg.call(this, ...a); }
+    _circuitBuild(...a) { return LevelManager.prototype._circuitBuild.call(this, ...a); }
+    _circuitBump(...a) { return LevelManager.prototype._circuitBump.call(this, ...a); }
+    _circuitPower(...a) { return LevelManager.prototype._circuitPower.call(this, ...a); }
+    _circuitTick(...a) { return LevelManager.prototype._circuitTick.call(this, ...a); }
+    _circuitOpen(...a) { return LevelManager.prototype._circuitOpen.call(this, ...a); }
     _spawnLevel2ChestRooms(...a){ return LevelManager.prototype._spawnLevel2ChestRooms.call(this, ...a); }
     // Level 3 proxies
     updateLevel3(...a)           { return LevelManager.prototype.updateLevel3.call(this, ...a); }

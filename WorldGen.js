@@ -338,12 +338,14 @@ class WorldGen {
         this.tutorialDoorsLocked = this.rooms.map((r, i) => {
             if (i === 0) return false;       // safe start
             if (r.isChestRoom) return false; // free explore
+            if (LevelLayouts.T[r.tpl]?.open) return false;   // a room with no fight in it (the circuit)
             return true;
         });
         this.tutorialRoomCleared[0] = true;
 
         const boss = this.rooms[this._storyRoom(6)];
-        this._dressRooms(world, 'gauntlet', [], boss ? [[boss.x + 12, boss.y + 10]] : []);   // the Voltslime's room left clear
+        const bare = this.rooms.map((r, i) => r.tpl === 'g_circuit' ? i : -1).filter(i => i >= 0);   // (the circuit's laid out by its own code)
+        this._dressRooms(world, 'gauntlet', bare, boss ? [[boss.x + 12, boss.y + 10]] : []);   // the Voltslime's room left clear
         return world;
     }
 
