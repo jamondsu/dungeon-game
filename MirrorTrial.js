@@ -6,8 +6,9 @@
 // get out. They're far beyond you, and you're a game to them: they don't want to hurt you, they want to scare you. They
 // sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane, a stand turned), and
 // every fragment of the way out you take wakes another. Awake, they're bigger than you and they move only while nothing
-// sees them, never while you watch, and only ever in still poses: far off, asleep, looking like you; nearer, awake and
-// wrong; close, your own face, huge and much too near, then BOO. They giggle (where they are, to your ears) when they wake
+// sees them, never while you watch, and only ever in still poses, a new one each step: asleep, looking like you; awake and
+// wrong, or toying with you (waving, peekaboo, up the wall, holding your decoy...); close, your own face, huge and much too
+// near, BOO, dropped down from the ceiling... They giggle (where they are, to your ears) when they wake
 // and after they've made you jump. Watching them holds them, but don't meet their eyes: looking straight at one that's
 // awake fills you with dread (the screen darkens, cracks, your heart pounds) till you can't bear it and look away, and for a
 // moment nothing watches them. In a reflection they can't reach you that way: watch them there.
@@ -79,6 +80,10 @@ class MirrorTrial extends Phaser.Scene {
         '#########O#########',
     ];
     static DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
+    // their looks (mt_twin, a strip: scratchpad art states.mjs --game): asleep; seen from afar (awake and wrong, or toying with you:
+    // waving, peekaboo, on the ceiling, up the wall, holding your decoy...); up close (your face, BOO, dropped down, peeking in...);
+    // FACE, the one a prank slams into you; CORRIDOR, the ones holding a corridor's walls (only where it runs toward you)
+    static POSES = { SLEEP: [0, 1], FAR: [2, 24], NEAR: [25, 34], FACE: 25, CORRIDOR: [9, 10] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_map', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
@@ -146,7 +151,7 @@ class MirrorTrial extends Phaser.Scene {
             this.tex[k] = { w: src.width, h: src.height, d: x.getImageData(0, 0, src.width, src.height).data };
         }
         this.tex.mt_twin.fw = this.tex.mt_decoy.fw = this.tex.mt_items.fw = this.tex.mt_self.fw = 48;   // strips: its poses, the decoy's four sides, things to find, you (the shard down, up)
-        if (!this.textures.get('mt_twin').has('face')) this.textures.get('mt_twin').add('face', 0, 4 * 48, 0, 48, 64);
+        if (!this.textures.get('mt_twin').has('face')) this.textures.get('mt_twin').add('face', 0, MirrorTrial.POSES.FACE * 48, 0, 48, 64);
         // the two views: ahead (the screen), and the shard's (behind you), each a canvas drawn every frame
         const canvas = (key, w, h) => {
             const t = this.textures.exists(key) ? this.textures.get(key) : this.textures.createCanvas(key, w, h), ctx = t.getContext();
@@ -574,7 +579,7 @@ class MirrorTrial extends Phaser.Scene {
         if (i >= 0 && !this.caught) {   // the one behind it, that you took for you: awake, right there (if there's room)
             const [t] = this.twins.splice(i, 1), e = { x: t.x, y: t.y, pose: 0, t: 0, seen: false, awake: false };
             if ([this.me, ...this.ents].some(o => o.x === t.x && o.y === t.y)) return;
-            this.ents.push(e); this._wake(e); e.pose = 4; e.fresh = true;
+            this.ents.push(e); this._wake(e); e.pose = MirrorTrial.POSES.FACE; e.fresh = true;
             this._note('GLASS. AND THAT WASN\'T YOU.');
         }
     }
@@ -711,9 +716,12 @@ class MirrorTrial extends Phaser.Scene {
         if (nx === me.x && ny === me.y) return this._prank(e);
         e.x = nx; e.y = ny;
         this.closest = Math.min(this.closest, Math.abs(nx - me.x) + Math.abs(ny - me.y));
-        const near = path.length - 2, pick = near >= 3 ? [2, 3] : [4, 5];
-        if (near <= 2 && e.pose < 4) e.fresh = true;   // (turned horrible: the first time you see it, the sting)
-        e.pose = pick[0] === e.pose ? pick[1] : pick[1] === e.pose ? pick[0] : pick[Math.random() < 0.5 ? 0 : 1];
+        // a new look for how near it is (never the one it had); the ones holding a corridor's walls only in a corridor running at you
+        const P = MirrorTrial.POSES, near = path.length - 2, [lo, hi] = near >= 3 ? P.FAR : P.NEAR, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y);
+        const walled = along ? !this._open(nx, ny - 1) && !this._open(nx, ny + 1) : !this._open(nx - 1, ny) && !this._open(nx + 1, ny);
+        const looks = []; for (let f = lo; f <= hi; f++) if (f !== e.pose && (walled || !P.CORRIDOR.includes(f))) looks.push(f);
+        if (near <= 2 && e.pose < P.NEAR[0]) e.fresh = true;   // (turned horrible: the first time you see it, the sting)
+        e.pose = looks[Math.floor(Math.random() * looks.length)];
         this._hear(e);
     }
     // where one is, to your ears: left or right of the way you face, louder the nearer, dull through stone (null: too far off)
@@ -732,7 +740,7 @@ class MirrorTrial extends Phaser.Scene {
     // one wakes: its eyes open (seen as it happens: a jolt)
     _wake(e) {
         if (e.awake) return;
-        e.awake = true; e.pose = 2; e.t = -MirrorTrial.CFG.WAKE.MS;   // (coming to: a moment before its first step, to see it coming)
+        e.awake = true; e.pose = MirrorTrial.POSES.FAR[0]; e.t = -MirrorTrial.CFG.WAKE.MS;   // (coming to: a moment before its first step, to see it coming)
         Sfx.play(this, 'tell'); this.time.delayedCall(500, () => !this.caught && this._giggle(e));
         this._note('SOMETHING WOKE UP. IT WANTS TO PLAY.');
         if (e.seen) { this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.25); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 500 }); this.cameras.main.shake(140, 0.006); }
