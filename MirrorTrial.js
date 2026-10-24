@@ -7,8 +7,10 @@
 // still poses, nearer and worse each time (in a mirror they show another pose than they hold). The hall's mirrors see for
 // you: the ones at the ends of its corridors show you what's behind, and the mirror stands at its corners (at 45 degrees:
 // walk into one to turn it) show you round them, so you can watch two ways at once. Glass you see through, and so do they
-// (it's in the way of nothing but walking). You walk slowly; SHIFT surges you on while your strength lasts (it comes back
-// when you rest). Two decoy wards (Q): set one down and it stares the way you face for a while, and they take it for an
+// (it's in the way of nothing but walking). A pane of glass and a mirror look the same here, so a mirror can pass for a way
+// on: walk into one to tap it (a mirror rings, glass thuds) and you chalk it, an eye for a mirror, a cross for glass.
+// You walk slowly. SHIFT cracks open one of your three surges: a rush of speed for a moment, the screen fizzing with it;
+// they come back slowly, one at a time. Two decoy wards (Q): set one down and it stares the way you face for a while, and they take it for an
 // eye (anything in its line holds) till it burns out. On the floor at your feet, a broken shard: hold it up (SPACE) and you see what's behind you, but the
 // view dives into the shard and everything in front of you goes unwatched. Find the three shards the way out is missing,
 // and it's whole again: step back through it. If one of them reaches you, it has you.
@@ -19,8 +21,8 @@ class MirrorTrial extends Phaser.Scene {
     static CFG = {
         W: 256, H: 144, FOV: 0.66, FOG: 12, BOUNCES: 4, LEVELS: 11,   // the view, drawn this small; how wide; how far you see; mirrors deep; the dither
         BACK: { W: 96, H: 72, FOV: 0.5 },                           // the shard's view (the size of its art, mt_shard)
-        STEP_MS: 340, BOOST_MS: 130, TURN_MS: 160, RAISE_MS: 220,    // your step (surging: BOOST_MS), turn, and lifting the shard
-        SURGE: { MAX: 100, DRAIN: 40, REGEN: 14, WAIT: 700, MIN: 25, FOV: 1.2 },   // the surge's strength: spent a second, back a second after WAIT ms; spent out, not again till MIN; the view widened
+        STEP_MS: 340, BOOST_MS: 120, TURN_MS: 160, RAISE_MS: 220,    // your step (surging: BOOST_MS), turn, and lifting the shard
+        SURGE: { CHARGES: 3, CHARGE_MS: 9000, MS: 2200, FOV: 1.22, BEAT_MS: 420 },   // surges: how many, one back every CHARGE_MS, how long one lasts; the view widened; its heartbeat
         WARDS: 2, WARD_MS: 7000, WARD_RANGE: 8,                      // decoy wards: how many, how long one stares, how far
         ENT_MS: 900, ENT_SHARD: 90, ENT_MIN: 520, GRACE_MS: 3200,    // unseen this long, one moves (quicker by ENT_SHARD a shard found); none at first
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
@@ -45,7 +47,7 @@ class MirrorTrial extends Phaser.Scene {
         '########O########',
     ];
     static DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
-    static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_ward'];
+    static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_ward', 'mt_mark_m', 'mt_mark_g'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
     // From the Training Ground: down into your slime's eyes, and through
@@ -77,7 +79,7 @@ class MirrorTrial extends Phaser.Scene {
         }));
         this.view = { x: this.me.x + 0.5, y: this.me.y + 0.5, a: -Math.PI / 2 };
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
-            stam: C.SURGE.MAX, surgeHeld: false, surging: false, spent: false, surgedAt: -1e9, fovK: 1, surgeK: 0, wards: C.WARDS, placed: [] });
+            charges: C.SURGE.CHARGES, chargeT: 0, surging: false, surgeUntil: 0, beatAt: 0, fovK: 1, surgeK: 0, bubbles: [], wards: C.WARDS, placed: [], labels: {} });
         // the textures, as pixels to read
         this.tex = {};
         for (const k of MirrorTrial.TEX) {
@@ -107,8 +109,18 @@ class MirrorTrial extends Phaser.Scene {
         this.time.delayedCall(2300, () => Sfx.play(this, 'e_absorb'));
         this.tweens.add({ targets: [this.title, this.sub], alpha: 0, delay: C.GRACE_MS - 500, duration: 600 });
         this.keysTxt = this.add.text(W / 2, H - 24, '', { fontSize: '13px', fontFamily: 'monospace', color: '#8a7aa8', stroke: '#05030a', strokeThickness: 3 }).setOrigin(0.5).setDepth(6);
-        this.fx = this.add.graphics().setDepth(4);   // the surge's streaks and its bar
-        this.surgeGlow = this.add.rectangle(0, 0, W, H, 0x40ffd8).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(3);
+        this.fx = this.add.graphics().setDepth(4);   // the surge's streaks, fizz and pulse
+        this.surgeGlow = this.add.rectangle(0, 0, W, H, 0x8cff3a).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(3);
+        // the surges: three cans, bottom left; an empty one fills back up from the bottom
+        const ct = this.textures.get('mt_charge');
+        if (!ct.has('full')) { ct.add('full', 0, 0, 0, 20, 36); ct.add('empty', 0, 20, 0, 20, 36); }
+        this.cans = Array.from({ length: C.SURGE.CHARGES }, (_, i) => {
+            const x = 40 + i * 50, y = H - 78;
+            return { glow: this.add.image(x, y, 'vfx_glow').setTint(0x8cff3a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.5).setAlpha(0.35).setDepth(5),
+                     empty: this.add.image(x, y, 'mt_charge', 'empty').setScale(2).setDepth(5), full: this.add.image(x, y, 'mt_charge', 'full').setScale(2).setDepth(5) };
+        });
+        this.surgeTxt = this.add.text(W / 2, H * 0.3, 'SURGE!', { fontSize: '54px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#c8ff3a', stroke: '#0d2a06', strokeThickness: 8 }).setOrigin(0.5).setDepth(6).setAlpha(0);
+        this.noteTxt = this.add.text(W / 2, H * 0.72, '', { fontSize: '18px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f0ece0', stroke: '#05030a', strokeThickness: 5 }).setOrigin(0.5).setDepth(6).setAlpha(0);
         this.countTxt = this.add.text(W / 2, 22, '', { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#bfd8ff', stroke: '#05030a', strokeThickness: 4 }).setOrigin(0.5).setDepth(6);
         this._hud();
         this.input.keyboard.on('keydown', this._key, this);
@@ -119,7 +131,7 @@ class MirrorTrial extends Phaser.Scene {
     }
 
     _hud() {
-        this.keysTxt.setText(`W S step · A D turn · SHIFT surge${this.holding ? ' · SPACE (hold) the shard' : ''} · Q decoy ward (${this.wards}) · walk into a mirror stand: turn it · ESC leave`);
+        this.keysTxt.setText(`W S step · A D turn · SHIFT surge${this.holding ? ' · SPACE (hold) the shard' : ''} · Q decoy ward (${this.wards}) · walk into a pane: tap it · into a stand: turn it · ESC leave`);
         this.countTxt.setText(this.holding ? `SHARDS OF THE WAY OUT  ${'◆ '.repeat(this.found)}${'◇ '.repeat(this.shards.length - this.found)}`.trim() : '');
     }
     _say(a, b, col = '#d8c8ff', hold = 2600) {
@@ -142,14 +154,13 @@ class MirrorTrial extends Phaser.Scene {
         if (k === 'Escape') return this._leave();
         if (this.caught) { if (k === 'KeyR') this.scene.restart({ zoom: this.zoom0 }); return; }
         if (k === 'Space') { if (this.holding && !this.raised) { this.raised = true; Sfx.play(this, 'hover'); this._shardAt(true, MirrorTrial.CFG.RAISE_MS); } return; }
-        if (k === 'ShiftLeft' || k === 'ShiftRight') { this.surgeHeld = true; return; }
+        if (k === 'ShiftLeft' || k === 'ShiftRight') { if (!e.repeat) this._surgeGo(); return; }
         if (k === 'KeyQ') return this._ward();
         if (this.moving) { this.queued = k; return; }
         this._act(k);
     }
     _keyUp(e) {
         if (e.code === 'Space' && this.raised) { this.raised = false; this._shardAt(false, MirrorTrial.CFG.RAISE_MS); }
-        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.surgeHeld = false;
     }
     // a decoy ward set down where you stand, staring the way you face
     _ward() {
@@ -172,38 +183,81 @@ class MirrorTrial extends Phaser.Scene {
             }
         }
     }
-    // the surge on or off: the view widens, the screen glows and shudders
+    // SHIFT: a can cracked open, a surge (another while one runs adds to it)
+    _surgeGo() {
+        const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height;
+        if (this.charges <= 0 || this.caught || this.leaving) {
+            Sfx.play(this, 'deny');
+            for (const c of this.cans) { this.tweens.killTweensOf(c.empty); this.tweens.add({ targets: c.empty, x: c.empty.x + 3, duration: 40, yoyo: true, repeat: 2 }); }
+            return;
+        }
+        const can = this.cans[--this.charges];
+        this.surgeUntil = Math.max(this.surgeUntil, this.time.now) + C.SURGE.MS;
+        if (!this.surging) this._surge(true);
+        Sfx.play(this, 'gulp'); this.time.delayedCall(110, () => Sfx.play(this, 'surge'));
+        this.cameras.main.flash(180, 150, 255, 70);
+        this.tweens.killTweensOf(this.surgeTxt);
+        this.surgeTxt.setAlpha(1).setScale(1.7).setAngle(-6 + Math.random() * 12);
+        this.tweens.add({ targets: this.surgeTxt, scale: 1, duration: 260, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: this.surgeTxt, alpha: 0, delay: 450, duration: 400 });
+        this.tweens.add({ targets: can.full, scale: 2.7, duration: 90, yoyo: true });
+        for (let n = 0; n < 40; n++) this.bubbles.push({ x: can.full.x + (Math.random() - 0.5) * 30, y: can.full.y - 30, vx: (Math.random() - 0.3) * 260, vy: -150 - Math.random() * 380, r: 2 + Math.random() * 5, life: 1 });   // the fizz, spraying out of it
+    }
+    // the surge on or off: the view widens, the screen fizzes
     _surge(on) {
         const C = MirrorTrial.CFG;
         this.surging = on;
         this.tweens.killTweensOf(this);
-        this.tweens.add({ targets: this, fovK: on ? C.SURGE.FOV : 1, surgeK: on ? 1 : 0, duration: on ? 200 : 350, ease: 'Quad.easeOut' });
-        if (on) { Sfx.play(this, 'surge'); this.cameras.main.shake(140, 0.004); this.cameras.main.zoomTo(1.04, 90, 'Quad.easeOut', true, (c, p) => p === 1 && c.zoomTo(1, 220)); }
+        this.tweens.add({ targets: this, fovK: on ? C.SURGE.FOV : 1, surgeK: on ? 1 : 0, duration: on ? 180 : 450, ease: 'Quad.easeOut' });
+        if (on) this.cameras.main.shake(160, 0.005);
+        else Sfx.play(this, 'hover');
     }
-    // every frame: its strength, spent or coming back; its streaks rushing past; its bar
+    // every frame: the surge running out, the cans coming back; its heartbeat, streaks, fizz and the screen's edge pulsing
     _surgeTick(now, delta) {
-        const C = MirrorTrial.CFG, S = C.SURGE, W = this.scale.width, H = this.scale.height, g = this.fx;
-        const want = this.surgeHeld && !this.spent && this.stam > 0 && !this.caught && !this.leaving;
-        if (want !== this.surging) this._surge(want);
-        if (this.surging) {
-            this.stam = Math.max(0, this.stam - S.DRAIN * delta / 1000); this.surgedAt = now;
-            if (!this.stam) { this.spent = true; this._surge(false); Sfx.play(this, 'deny'); }
-        } else if (now - this.surgedAt > S.WAIT) {
-            this.stam = Math.min(S.MAX, this.stam + S.REGEN * delta / 1000);
-            if (this.spent && this.stam >= S.MIN) this.spent = false;
-        }
-        this.surgeGlow.setAlpha(this.surgeK * (0.07 + 0.04 * Math.sin(now / 60)));
+        const C = MirrorTrial.CFG, S = C.SURGE, W = this.scale.width, H = this.scale.height, g = this.fx, k = this.surgeK;
+        if (this.surging && now >= this.surgeUntil) this._surge(false);
+        if (this.charges < S.CHARGES) {
+            if ((this.chargeT += delta) >= S.CHARGE_MS) {
+                this.chargeT = 0; const can = this.cans[this.charges++];
+                Sfx.play(this, 'ready');
+                this.tweens.add({ targets: can.full, scale: 2.5, duration: 120, yoyo: true });
+            }
+        } else this.chargeT = 0;
+        this.cans.forEach((c, i) => {
+            const f = i < this.charges ? 1 : i === this.charges ? this.chargeT / S.CHARGE_MS : 0;
+            c.full.setVisible(f > 0).setCrop(0, 36 * (1 - f), 20, 36 * f);
+            c.glow.setAlpha(i < this.charges ? 0.25 + 0.15 * Math.sin(now / 300 + i) : 0);
+        });
+        const beat = this.surging ? Math.max(0, 1 - ((now - this.beatAt) / C.SURGE.BEAT_MS) * 3) : 0;
+        if (this.surging && now - this.beatAt >= S.BEAT_MS) { this.beatAt = now; this.cameras.main.zoomTo(1.025, 70, 'Quad.easeOut', true, (cam, p) => p === 1 && cam.zoomTo(1, 200)); }
+        this.surgeGlow.setAlpha(k * (0.06 + 0.07 * beat));
         g.clear();
-        if (this.surgeK > 0.02) {
-            for (let i = 0; i < 28; i++) {
-                const a = Math.random() * Math.PI * 2, r0 = H * (0.42 + Math.random() * 0.3), len = 40 + Math.random() * 120 * this.surgeK;
-                g.lineStyle(1 + Math.random() * 2, Math.random() < 0.3 ? 0xffffff : 0x9ff8e4, 0.35 * this.surgeK);
+        if (k > 0.02) {
+            for (let i = 0; i < 34; i++) {   // the world rushing past
+                const a = Math.random() * Math.PI * 2, r0 = H * (0.4 + Math.random() * 0.32), len = 40 + Math.random() * 160 * k;
+                g.lineStyle(1 + Math.random() * 2.5, Math.random() < 0.35 ? 0xffffff : Math.random() < 0.5 ? 0xc8ff3a : 0x5afff0, 0.4 * k);
                 g.lineBetween(W / 2 + Math.cos(a) * r0, H / 2 + Math.sin(a) * r0 * 0.7, W / 2 + Math.cos(a) * (r0 + len), H / 2 + Math.sin(a) * (r0 + len) * 0.7);
             }
+            const edge = 6 + 14 * beat;   // the edge of the screen, pulsing with it
+            g.lineStyle(edge, 0x8cff3a, (0.25 + 0.35 * beat) * k).strokeRect(edge / 2, edge / 2, W - edge, H - edge);
+            for (let n = 0; n < 3; n++) this.bubbles.push({ x: Math.random() * W, y: H + 8, vx: (Math.random() - 0.5) * 30, vy: -120 - Math.random() * 240, r: 2 + Math.random() * 6, life: 1 });   // fizz rising up the screen
         }
-        const bx = 28, by = H - 58, bw = 200, f = this.stam / S.MAX;
-        g.fillStyle(0x05030a, 0.75).fillRect(bx - 3, by - 3, bw + 6, 14);
-        g.fillStyle(this.spent ? 0xff6a7a : this.surging ? 0xbffff0 : 0x40d8b8, 1).fillRect(bx, by, bw * f, 8);
+        const dt = delta / 1000;
+        this.bubbles = this.bubbles.filter(b => (b.life -= dt * 0.7) > 0 && b.y > -10);
+        for (const b of this.bubbles) {
+            b.x += (b.vx + Math.sin((now + b.r * 200) / 160) * 40) * dt; b.y += b.vy * dt; b.vy *= 0.995;
+            g.lineStyle(1.5, b.r > 5 ? 0xffffff : 0xc8ff3a, 0.7 * b.life).strokeCircle(b.x, b.y, b.r);
+            if (b.r > 4) g.fillStyle(0xffffff, 0.6 * b.life).fillCircle(b.x - b.r * 0.35, b.y - b.r * 0.35, 1.2);
+        }
+    }
+    // walking into a pane: a mirror rings, glass thuds, and it's chalked (an eye, a cross)
+    _tap(x, y, c) {
+        this.labels[y * 64 + x] = c;
+        Sfx.play(this, c === 'M' ? 'clink' : 'bonk');
+        this.cameras.main.shake(60, 0.002);
+        this.tweens.killTweensOf(this.noteTxt);
+        this.noteTxt.setText(c === 'M' ? 'IT RINGS: A MIRROR. CHALKED.' : 'A DULL KNOCK: GLASS. CHALKED.').setAlpha(1);
+        this.tweens.add({ targets: this.noteTxt, alpha: 0, delay: 1100, duration: 500 });
     }
     _act(k) {
         if (k === 'KeyW' || k === 'ArrowUp') this._step(1);
@@ -217,6 +271,7 @@ class MirrorTrial extends Phaser.Scene {
         if (this.done && this.map[y]?.[x] === 'Q') return this._leave('YOU GOT OUT OF THE HALL OF REFLECTIONS');   // back through the mirror, whole
         const c = this.map[y]?.[x];
         if (c === 'L' || c === 'R') { this.map[y][x] = c === 'L' ? 'R' : 'L'; Sfx.play(this, 'switch'); this.cameras.main.shake(60, 0.003); return; }   // a stand: turned a quarter
+        if (c === 'M' || c === 'G') return this._tap(x, y, c);
         if (!this._open(x, y) || this.ents.some(e => e.x === x && e.y === y)) { this.cameras.main.shake(80, 0.004); return; }
         this.me.x = x; this.me.y = y; this.moving = true;
         this.tweens.add({ targets: this.view, x: x + 0.5, y: y + 0.5, duration: this.surging ? MirrorTrial.CFG.BOOST_MS : MirrorTrial.CFG.STEP_MS, ease: this.surging ? 'Linear' : 'Sine.easeInOut', onComplete: () => this._moved() });
@@ -353,7 +408,8 @@ class MirrorTrial extends Phaser.Scene {
                 T += h.t;
                 if (b === 1) after = T * cos;
                 if ((h.c === 'M' || h.c === 'Q' || h.diag) && b < C.BOUNCES) {
-                    ov.push({ k: 'mt_mirror', T, u: h.u, tint: h.c === 'Q' ? 2 : 1 });
+                    ov.push({ k: h.diag ? 'mt_mirror' : 'mt_glass', T, u: h.u, tint: h.c === 'Q' ? 2 : h.diag ? 1 : 0 });   // (a mirror in a wall looks like glass)
+                    if (this.labels[h.cell]) ov.push({ k: 'mt_mark_m', T, u: h.u });
                     if (b === 0) { zOpaque = T * cos; first = { key: h.diag ? h.c + ':' + h.k : h.side + ':' + h.plane, side: h.side, plane: h.plane, diag: h.diag && h.c, k: h.k, z: T * cos }; if (!groups.has(first.key)) groups.set(first.key, first); }
                     if (h.diag) [rx, ry] = h.c === 'L' ? [-ry, -rx] : [ry, rx];
                     else if (h.side === 0) rx = -rx; else ry = -ry;
@@ -402,12 +458,15 @@ class MirrorTrial extends Phaser.Scene {
         }
         if (watch) for (const e of this.ents) e.seen = px0.get(e) >= (V === this.back ? C.SEEN_BACK : C.SEEN_PX);
         // the dither (each channel to a few levels, a 4x4 Bayer pattern between them); flipped, for the shard; cut to its shape
-        const L = C.LEVELS - 1, BAY = MirrorTrial.BAYER, cut = V === this.back ? this.tex.mt_shard.d : null;
+        // (surging, the view ahead: its colours pushed toward neon, and split, red one way and blue the other)
+        const L = C.LEVELS - 1, BAY = MirrorTrial.BAYER, cut = V === this.back ? this.tex.mt_shard.d : null, sk = V === this.front ? this.surgeK : 0;
+        const gain = [1 + 0.25 * sk, 1 + 0.7 * sk, 1 + 0.45 * sk], lift = 14 * sk, split = Math.round(3 * sk), row = this._row ||= new Uint8ClampedArray(W * 4 + 8);
         for (let y = 0; y < H; y++) {
             if (flip) for (let x = 0; x < W / 2; x++) { const i = (y * W + x) * 4, j = (y * W + W - 1 - x) * 4; for (let c = 0; c < 4; c++) { const t = d[i + c]; d[i + c] = d[j + c]; d[j + c] = t; } }
+            if (split) { row.set(d.subarray(y * W * 4, (y + 1) * W * 4)); for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; d[i] = row[Math.max(0, x - split) * 4]; d[i + 2] = row[Math.min(W - 1, x + split) * 4 + 2]; } }
             for (let x = 0; x < W; x++) {
                 const i = (y * W + x) * 4, o = BAY[(y & 3) * 4 + (x & 3)];
-                for (let c = 0; c < 3; c++) d[i + c] = Math.max(0, Math.min(L, Math.round(d[i + c] / 255 * L + o))) * 255 / L;
+                for (let c = 0; c < 3; c++) d[i + c] = Math.max(0, Math.min(L, Math.round((d[i + c] * gain[c] + lift) / 255 * L + o))) * 255 / L;
                 if (cut) d[i + 3] = cut[i + 3] ? 255 : 0;
             }
         }
@@ -433,8 +492,8 @@ class MirrorTrial extends Phaser.Scene {
                 continue;
             }
             const hx = ox + rx * t, hy = oy + ry * t, u = side === 0 ? hy - Math.floor(hy) : hx - Math.floor(hx);
-            if (c === 'G') { ov.push({ k: 'mt_glass', T: T0 + t, u }); continue; }
-            return { t, c, side, u, hx, hy, plane: side === 0 ? (sx > 0 ? mx : mx + 1) : (sy > 0 ? my : my + 1) };
+            if (c === 'G') { ov.push({ k: 'mt_glass', T: T0 + t, u }); if (this.labels[my * 64 + mx]) ov.push({ k: 'mt_mark_g', T: T0 + t, u }); continue; }
+            return { t, c, side, u, hx, hy, cell: my * 64 + mx, plane: side === 0 ? (sx > 0 ? mx : mx + 1) : (sy > 0 ? my : my + 1) };
         }
         return { t: 64, c: '#', side: 0, u: 0, hx: ox, hy: oy, plane: 0 };
     }
