@@ -48,7 +48,7 @@ class MirrorTrial extends Phaser.Scene {
         WARD_MS: 7000, WARD_RANGE: 8,                                // decoy slimes (found in the hall): how long one stares, how far
         DASH: { TILES: 3, COST: 1 },                                 // SHIFT: a dash, up to TILES on, for COST vials
         SENTRY: { R: 3.5, WALLS: 1, PINGS: 2, EVERY_MS: 3000, SHOW_MS: 1000, LIT_MS: 2500 },   // sentries (found in the hall): their reach (a squircle, through WALLS of stone); set off, PINGS pings EVERY_MS apart, each showing them SHOW_MS; their reach lit, just set down
-        OVER: { UP_MS: 420, BACK: 2.4, HIGH: 3, PITCH: 0.74, F: 700, SEE: [2, 5.5] },   // the view from up behind you (TAB): how long the rise takes; how far back, how high (tiles), how steeply it looks down; its lens; the dark (clear within SEE[0] tiles, black by SEE[1])
+        OVER: { UP_MS: 420, BACK: 2.4, HIGH: 3, PITCH: 0.74, YAW: 0.5, F: 700, SEE: [2, 5.5] },   // the view from up behind you (TAB): how long the rise takes; how far back, how high (tiles), how steeply it looks down; how far it swings round toward the middle of the hall; its lens; the dark (clear within SEE[0] tiles, black by SEE[1])
         ENT_MS: 600, ENT_SHARD: 30, ENT_MIN: 450, GRACE_MS: 5000,    // unseen this long, one moves (quicker by ENT_SHARD a shard found: not far off your walk, so you can't leave one be); none at first
         WAKE: { NEAR: 2, DASH: 6, TAP: 4, TURN: 3, MS: 1500 },         // asleep, one wakes: you this near (tiles), or a noise this near; it takes MS to come to
         HEAR: 10,                                                    // how far off you hear one move
@@ -417,17 +417,31 @@ class MirrorTrial extends Phaser.Scene {
             this.tweens.add({ targets: this.keysTxt, alpha: 1, duration: 200 });
         }
     }
-    // The hall from up behind you, looking down ahead (a camera BACK tiles behind, HIGH up, PITCH down; overT from your own eyes):
+    // The hall from up behind you, looking down ahead (a camera BACK tiles behind, HIGH up, PITCH down, swung YAW round toward the
+    // hall's middle, so it's angled by where in the hall you are; overT from your own eyes):
     // stone in blocks (the ones between it and you see-through), panes as glass (chalked, or your mark faint on them), the stands,
     // the way out, the floor lit where a sentry reaches or a decoy stares; what's lying about, your slimes, you; them only where a
     // ping shows them. Far to near, a row at a time, what stands in a row after it; the dark closing in round you
     _overDraw(now) {
         const O = MirrorTrial.CFG.OVER, V = this.overCv, x = V.ctx, W = V.W, H = V.H, rows = this.map.length, cols = this.map[0].length;
         const t = this.overT || 0, b = O.BACK * t, h = 0.5 + (O.HIGH - 0.5) * t, pc = Math.cos(O.PITCH * t), ps = Math.sin(O.PITCH * t);
-        const [fx, fy] = MirrorTrial.DIRS[this.me.dir], mx = this.me.x + 0.5, my = this.me.y + 0.5;
-        const rf = (px, py) => [(px - mx) * -fy + (py - my) * fx, (px - mx) * fx + (py - my) * fy];   // (a spot in the hall: right of you, ahead)
+        const [dx0, dy0] = MirrorTrial.DIRS[this.me.dir], mx = this.me.x + 0.5, my = this.me.y + 0.5;
+        const side = Math.sign((cols / 2 - mx) * -dy0 + (rows / 2 - my) * dx0) || 1, yaw = Math.atan2(dy0, dx0) + side * O.YAW * t;   // (swung toward the middle)
+        const fx = Math.cos(yaw), fy = Math.sin(yaw);
+        const rf = (px, py) => [(px - mx) * -fy + (py - my) * fx, (px - mx) * fx + (py - my) * fy];   // (a spot in the hall: right of the camera's line, ahead along it)
         const pr = (r, f, u) => { const dz = f + b, dy = h - u, zc = dz * pc + dy * ps; if (zc < 0.08) return null; return [W / 2 + r * O.F / zc, H / 2 + (dy * pc - dz * ps) * O.F / zc, zc]; };
         const quad = (pts, fill, edge) => { if (pts.some(p => !p)) return; x.beginPath(); x.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) x.lineTo(p[0], p[1]); x.closePath(); if (fill) { x.fillStyle = fill; x.fill(); } if (edge) { x.strokeStyle = edge; x.lineWidth = 1; x.stroke(); } };
+        const tri = (img, p0, p1, p2, q0, q1, q2) => {   // (img's triangle q0 q1 q2, its pixels, onto p0 p1 p2)
+            const d = (q1[0] - q0[0]) * (q2[1] - q0[1]) - (q2[0] - q0[0]) * (q1[1] - q0[1]); if (!d) return;
+            const a = ((p1[0] - p0[0]) * (q2[1] - q0[1]) - (p2[0] - p0[0]) * (q1[1] - q0[1])) / d, bb = ((p1[1] - p0[1]) * (q2[1] - q0[1]) - (p2[1] - p0[1]) * (q1[1] - q0[1])) / d;
+            const c = ((p2[0] - p0[0]) * (q1[0] - q0[0]) - (p1[0] - p0[0]) * (q2[0] - q0[0])) / d, dd = ((p2[1] - p0[1]) * (q1[0] - q0[0]) - (p1[1] - p0[1]) * (q2[0] - q0[0])) / d;
+            x.save(); x.beginPath(); x.moveTo(p0[0], p0[1]); x.lineTo(p1[0], p1[1]); x.lineTo(p2[0], p2[1]); x.closePath(); x.clip();
+            x.transform(a, bb, c, dd, p0[0] - a * q0[0] - c * q0[1], p0[1] - bb * q0[0] - dd * q0[1]); x.drawImage(img, 0, 0); x.restore();
+        };
+        const texQuad = (img, pts, a = 1) => {   // (pts: top-left, top-right, bottom-right, bottom-left)
+            if (pts.some(p => !p)) return; const w = img.width, hh = img.height; x.globalAlpha = a;
+            tri(img, pts[0], pts[1], pts[2], [0, 0], [w, 0], [w, hh]); tri(img, pts[0], pts[2], pts[3], [0, 0], [w, hh], [0, hh]); x.globalAlpha = 1;
+        };
         const dim = (hex, k, a = 1) => { const n = parseInt(hex.slice(1), 16), m = 1 - k; return `rgba(${((n >> 16) & 255) * m | 0},${((n >> 8) & 255) * m | 0},${(n & 255) * m | 0},${a})`; };
         const src = k => this.textures.get(k).getSourceImage();
         x.fillStyle = '#07050c'; x.fillRect(0, 0, W, H); x.imageSmoothingEnabled = false;
@@ -439,6 +453,7 @@ class MirrorTrial extends Phaser.Scene {
         const sprite = (k, f, gx, gy, alpha = 1) => {
             const [r, ff] = rf(gx + 0.5, gy + 0.5), a = pr(r, ff, 0), top = pr(r, ff, 1.35); if (!a || !top) return;
             const hgt = a[1] - top[1], w = 1.01 * O.F / a[2], dk = Math.max(0, Math.min(1, (Math.hypot(r, ff) - O.SEE[0]) / (O.SEE[1] - O.SEE[0])));
+            x.fillStyle = `rgba(0,0,0,${0.35 * alpha * (1 - dk)})`; x.beginPath(); x.ellipse(a[0], a[1] - hgt * 0.02, w * 0.36, w * 0.36 * ps * 0.9 + 1, 0, 0, 7); x.fill();   // (its shadow)
             x.globalAlpha = alpha * (1 - dk); x.drawImage(src(k), f * 48, 0, 48, 64, a[0] - w / 2, top[1], w, hgt); x.globalAlpha = 1;
         };
         for (const o of [...this.items, ...this.glorps]) if (!o.got) put(o.x, o.y, () => o.k ? sprite('mt_items', 'vdn'.indexOf(o.k), o.x, o.y) : sprite('mt_glorp', 0, o.x, o.y));
@@ -458,22 +473,26 @@ class MirrorTrial extends Phaser.Scene {
             const cs = [[gx, gy], [gx + 1, gy], [gx + 1, gy + 1], [gx, gy + 1]].map(([px, py]) => rf(px, py));
             const at = u => cs.map(([r, f]) => pr(r, f, u));
             const floor = at(0);
-            const box = (hgt, side, top, edge, a = 1) => {   // its faces toward the camera, then its top
+            const box = (hgt, side, top, edge, a = 1, tex = null) => {   // its faces toward the camera (textured, if it has one; the ones side-on darker), then its top
                 const up = at(hgt);
                 for (let i = 0; i < 4; i++) {
                     const j = (i + 1) % 4, [r0, f0] = cs[i], [r1, f1] = cs[j], em = [(r0 + r1) / 2, (f0 + f1) / 2], out = [em[0] - cl.r, em[1] - cl.f];   // (an edge; out from the cell's middle)
                     if (out[0] * (0 - em[0]) + out[1] * (-b - em[1]) <= 0) continue;   // (facing away from the camera)
-                    quad([floor[i], floor[j], up[j], up[i]], dim(side, dk, a), edge);
+                    const face = [up[i], up[j], floor[j], floor[i]];
+                    if (tex) { texQuad(tex, face, a); quad(face, `rgba(5,3,10,${Math.min(1, dk + (Math.abs(out[0]) > Math.abs(out[1]) ? 0.35 : 0.1)) * a})`, edge); }
+                    else quad(face, dim(side, dk, a), edge);
                 }
                 quad(up, dim(top, dk, a), edge);
             };
-            if (c === '#' || c === 'O' || c === 'Q') { const behind = cl.f < -0.2; box(1, c === 'Q' ? '#6a3ac0' : c === 'O' ? '#3a2a50' : '#2e2648', c === 'Q' ? '#b89aff' : '#43385f', null, behind ? 0.18 : 1); }
+            if (c === '#' || c === 'O' || c === 'Q') { const behind = cl.f < -0.2; box(1, c === 'Q' ? '#6a3ac0' : '#2e2648', c === 'Q' ? '#b89aff' : '#3d3358', null, behind ? 0.18 : 1, c === 'Q' ? null : src(c === 'O' ? 'mt_broken' : 'mt_wall')); }
             else {
                 quad(floor, dim((gx + gy) % 2 ? '#2c2342' : '#30264a', dk), dim('#1e1830', dk));
                 const lt = this.lines.get(k);
                 if (lt > 0) quad(floor, `rgba(80,220,190,${0.5 * lt * (1 - dk)})`); else if (lt < 0) quad(floor, `rgba(230,110,170,${0.3 * (1 - dk)})`);
                 if (c === 'M' || c === 'G') {
-                    box(1, '#a8d0ff', '#cde8ff', `rgba(207,234,255,${0.6 * (1 - dk)})`, 0.2);
+                    const near = cl.f < -0.2 ? 0.25 : 1;   // (between it and you: faint)
+                    box(1, '#a8d0ff', '#cde8ff', `rgba(207,234,255,${0.6 * (1 - dk) * near})`, 0.2 * near);
+                    for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0]]) { const em = [(cs[i][0] + cs[j][0]) / 2, (cs[i][1] + cs[j][1]) / 2]; if ((em[0] - cl.r) * -em[0] + (em[1] - cl.f) * (-b - em[1]) > 0) texQuad(src('mt_glass'), [pr(...cs[i], 1), pr(...cs[j], 1), pr(...cs[j], 0), pr(...cs[i], 0)], (1 - dk) * near); }   // (its sheen)
                     const lab = this.labels[k] || this.marks[k], mid = pr(cl.r, cl.f, 0.55);
                     if (lab && mid) { const sz = 0.55 * O.F / mid[2]; x.globalAlpha = (this.labels[k] ? 1 : 0.5) * (1 - dk); x.drawImage(src(lab === 'M' ? 'mt_mark_m' : 'mt_mark_g'), mid[0] - sz / 2, mid[1] - sz / 2, sz, sz); x.globalAlpha = 1; }
                 } else if (c === 'L' || c === 'R') {   // a stand: its mirror on the diagonal, standing
