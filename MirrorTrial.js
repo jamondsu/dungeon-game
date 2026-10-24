@@ -99,13 +99,13 @@ class MirrorTrial extends Phaser.Scene {
         ['LOOKING FROM ABOVE', 'Hold TAB to step out of your own eyes, up behind yourself: you, the panes round you with your chalk and marks, your slimes. You never see them this way, except where a sentry pings, and while you\'re out of your eyes nothing watches them. W S step, A D turn, ESC leaves the hall.'],
     ];
     // their looks (mt_twin, a strip: scratchpad art states.mjs --game): asleep; seen from afar, by their mood: calm (reading in
-    // glasses, juggling your gems, whistling, counting glorps, lounging...), playful (waving, peekaboo, copying you...), hunting
+    // glasses, juggling your gems, whistling, counting glorps, a baby with a pacifier, lounging...), playful (waving, peekaboo, copying you...), hunting
     // (staring, up the walls, splatted on one, weeping...); right behind a pane between you, up against the glass
     // (face squashed on it, a heart in its breath, waving in, licking it, knocking); two away (your face, dropped down, peeking
     // in...); one away, caught in time just before it got you (mid-reach, sneaking, mid-BOO, going for a hug, BOO); FACE, the one
     // a prank slams into you; CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
-    static POSES = { SLEEP: [0, 1], calm: [2, 13], play: [14, 22], hunt: [23, 30], GLASS: [31, 35], NEAR: [36, 42], CLOSE: [43, 47], FACE: 36, CORRIDOR: [26, 27, 28], WALLED: [29] };
+    static POSES = { SLEEP: [0, 1], calm: [2, 14], play: [15, 23], hunt: [24, 31], GLASS: [32, 36], NEAR: [37, 43], CLOSE: [44, 48], FACE: 37, CORRIDOR: [27, 28, 29], WALLED: [30] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
