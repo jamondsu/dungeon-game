@@ -48,8 +48,8 @@ class MirrorTrial extends Phaser.Scene {
         MIRRORS: 0.45, FRAGMENTS: 3, SHATTER: { WAKE: 7, LUNGE: 2 },     // a pane's odds of being a mirror; the way out's fragments (in mirrors); glass struck: sleepers this near wake, the awake lunge this many steps
         TWINS: 0.35, ECHO_MS: 300,                                   // a glass pane's odds of a twin behind it (in reflections, posed like you); how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
-        DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near
-        STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good (dread on top; full: you black out); after one, CALM_MS with none of them moving
+        DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; stress full: you black out OUT_MS, dread back to AFTER of what room it has
+        STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good (full: it's over); after one, CALM_MS with none of them moving
     };
     // # stone, P a pane (each a mirror or glass, at random), L R mirror stands at 45 degrees (L like /, R like \), O the way out
     // (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a sentry slime, W one of them, @ you (facing north).
@@ -120,8 +120,8 @@ class MirrorTrial extends Phaser.Scene {
             this.twins.push({ x: x + dx, y: y + dy, pane: y * 64 + x });
         }));
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
-            charges: 1, vials: 1, chargeT: 0, fovK: 1, gooK: 0, bubbles: [], drips: [], echoes: [], wards: 0, placed: [], labels: {}, marks: {}, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, pranks: 0, closest: Infinity,
-            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, heartAt: 0, arm: 1, armOut: false, mapUp: false });
+            charges: 1, vials: 1, chargeT: 0, fovK: 1, gooK: 0, bubbles: [], drips: [], echoes: [], wards: 0, placed: [], labels: {}, marks: {}, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, pranks: 0, breaks: 0, closest: Infinity,
+            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, mapUp: false });
         // the dread's cracks: from the screen's edges in, a little further the more you dread (fixed, so they grow, not jump)
         let seed = 9; const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
         this.cracks = Array.from({ length: 12 }, (_, i) => {
@@ -149,6 +149,7 @@ class MirrorTrial extends Phaser.Scene {
         this.add.image(W / 2, H / 2, 'mt_view').setScale(Math.max(W / C.W, H / C.H));
         this.dim = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0);   // ahead, unwatched while you look in the shard
         this.shard = this.add.container(0, 0, [this.add.image(0, 0, 'mt_back'), this.add.image(0, 0, 'mt_shard')]).setVisible(false);
+        this.armG = this.add.graphics().setDepth(5);   // your arm's strength, by the shard
         this._shardAt(false, 0);
         // what's said, and the keys
         const T = (y, s, size, col) => this.add.text(W / 2, y, s, { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#05030a', strokeThickness: 5, align: 'center' }).setOrigin(0.5).setDepth(6);
@@ -214,7 +215,7 @@ class MirrorTrial extends Phaser.Scene {
         const k = e.code;
         if (k === 'Escape') return this._leave(this.escaped ? 'YOU GOT OUT OF THE HALL OF REFLECTIONS' : null);
         if (this.caught || this.escaped) { if (k === 'KeyR' || (this.escaped && k === 'Enter')) this.scene.restart({ zoom: this.zoom0 }); return; }
-        if (k === 'Space') { if (this.holding && !this.raised && !this.mapUp && this.armOut) return Sfx.play(this, 'deny'); if (this.holding && !this.raised && !this.mapUp) { this.raised = true; Sfx.play(this, 'hover'); this._shardAt(true, MirrorTrial.CFG.RAISE_MS); } return; }
+        if (k === 'Space') { if (e.repeat) return; if (this.holding && !this.raised && !this.mapUp && this.armOut) return Sfx.play(this, 'deny'); if (this.holding && !this.raised && !this.mapUp) { this.raised = true; Sfx.play(this, 'hover'); this._shardAt(true, MirrorTrial.CFG.RAISE_MS); } return; }
         if ((k === 'ShiftLeft' || k === 'ShiftRight') && e.repeat) return;   // (held: one dash)
         if (k === 'Tab') { this.mapUp = true; if (this.raised) { this.raised = false; this._shardAt(false, MirrorTrial.CFG.RAISE_MS); } return; }
         if (this.mapUp) return;   // (looking at the map: nothing else)
@@ -327,8 +328,9 @@ class MirrorTrial extends Phaser.Scene {
     }
     // Your stress: what their pranks left you with (for good) and your dread on top. Looking straight at one that's awake (not
     // in a reflection) builds the dread, faster the more of it fills your view; it ebbs when you stop. One that's just turned
-    // horrible stings the first time it's seen, anywhere. Full: you black out. The look of it: the edges darkening, cracks
-    // creeping in (as far as the pranks took them, they stay), the colour going, your heart.
+    // horrible stings the first time it's seen, anywhere. Full: you black out for a moment (and nothing watches them). The
+    // more their pranks have left you with, the less it takes. The look of it: the edges darkening, cracks creeping in (as
+    // far as the pranks took them, they stay), the colour going, your heart.
     _dread(now, delta) {
         const C = MirrorTrial.CFG, D = C.DREAD, W = this.scale.width, H = this.scale.height, g = this.dreadG, dt = delta / 1000;
         const direct = this.ents.reduce((a, e) => a + (e.pose >= 2 ? e.dpx || 0 : 0), 0);
@@ -340,12 +342,18 @@ class MirrorTrial extends Phaser.Scene {
             if (e.dpx) this.dread += D.STING;
             this.time.delayedCall(420, () => !this.caught && this._giggle(e, 1));   // (got you)
         }
-        if (this.caught) {}
+        if (this.caught || now < this.blackUntil) {}
         else if (direct >= C.SEEN_PX) { this.dread += (D.RISE + D.CLOSE * Math.min(1, direct / D.CLOSE_PX)) * dt; this.dreadAt = now; }
         else if (now - this.dreadAt > D.WAIT) this.dread = Math.max(0, this.dread - D.FALL * dt);
         this.dread = Math.min(this.dread, 1 - this.scarred);
+        if (this.scarred + this.dread >= 0.999 && !this.caught && now >= this.blackUntil) {
+            this.blackUntil = now + D.OUT_MS; this.dread = (1 - this.scarred) * D.AFTER; this.breaks++;
+            Sfx.play(this, 'hurt'); this.cameras.main.shake(300, 0.012);
+            this.tweens.killTweensOf(this.black);
+            this.tweens.chain({ targets: this.black, tweens: [{ alpha: 1, duration: 120 }, { alpha: 1, duration: D.OUT_MS - 520 }, { alpha: 0, duration: 400 }] });
+            this._note('YOU BLACK OUT. YOU CAN\'T BEAR IT.');
+        }
         const k = this.stress = this.scarred + this.dread;
-        if (k >= 0.999 && !this.caught) this._blackout();
         if (k > 0.2 && now - this.heartAt > 1000 - 650 * k) { this.heartAt = now; Sfx.play(this, 'heartbeat', { hard: k }); if (k > 0.7) this.cameras.main.shake(90, 0.003 * k); }
         g.clear();
         if (k < 0.02) return;
@@ -611,11 +619,14 @@ class MirrorTrial extends Phaser.Scene {
             this.arm -= delta / C.ARM.HOLD_MS;
             if (this.arm <= 0) { this.arm = 0; this.armOut = true; this.raised = false; this._shardAt(false, C.RAISE_MS); Sfx.play(this, 'deny'); this._note('YOUR ARM GIVES OUT.'); }
         } else if ((this.arm = Math.min(1, this.arm + delta / C.ARM.REST_MS)) >= C.ARM.BACK) this.armOut = false;
+        const ag = this.armG.clear(), aw = this.scale.width - 300, ah = 90, ay = this.scale.height - 165;   // (shown once it's tired; blinking while it can't)
+        if (this.holding && this.arm < 0.999) { ag.fillStyle(0x05030a, 0.7).fillRect(aw - 3, ay - 3, 14, ah + 6); ag.fillStyle(this.armOut ? 0x9a6a80 : 0xbfd8ff, this.armOut && Math.floor(now / 220) % 2 ? 0.35 : 0.9).fillRect(aw, ay + ah * (1 - this.arm), 8, ah * this.arm); }
         const tire = this.raised ? (1 - this.arm) ** 2 : 0;
         for (const c of this.shard.list) c.setPosition((Math.random() - 0.5) * 2.4 * tire, (Math.random() - 0.5) * 2.4 * tire + 5 * tire);
         this.front.cover = this.raised && this.shard;
         this._render(this.front, this.view.a, C.FOV * this.fovK, false, !this.mapUp);
         if (this.holding) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
+        if (now < this.blackUntil) for (const e of this.ents) e.seen = false;   // (blacked out: you hold nothing)
         this._dread(now, delta);
         this._wardsWatch(now);
         this._sentryWatch();
@@ -697,6 +708,7 @@ class MirrorTrial extends Phaser.Scene {
         line(H * 0.52, `GLORPS  +${this.gotGlorps}`, '18px', '#5dffb8');
         line(H * 0.52 + 30, this.pranks ? `THEY GOT YOU ${this.pranks} TIME${this.pranks > 1 ? 'S' : ''}` : 'THEY NEVER GOT YOU', '18px', '#f0ece0');
         line(H * 0.52 + 90, this.shattered ? `GLASS YOU SHATTERED  ${this.shattered}` : 'YOU NEVER SHATTERED THE GLASS', '18px', '#bfd8ff');
+        line(H * 0.52 + 120, this.breaks ? `YOU BLACKED OUT ${this.breaks} TIME${this.breaks > 1 ? 'S' : ''}` : 'YOU NEVER BLACKED OUT', '18px', '#f0ece0');
         line(H * 0.52 + 60, this.closest === Infinity ? 'NONE OF THEM GOT NEAR YOU' : `CLOSEST CALL  ${this.closest} TILE${this.closest > 1 ? 'S' : ''} AWAY`, '18px', '#ff9ab8');
         line(H * 0.8, 'ENTER  again        ESC  leave', '16px', '#8a7aa8');
     }
@@ -723,7 +735,7 @@ class MirrorTrial extends Phaser.Scene {
             this._note(`GOT YOU. IT\'S LAUGHING. (${this.pranks} OF ${Math.round(1 / C.STRESS.PRANK)})`);
         });
     }
-    // Too much: you black out, and they giggle all round you in the dark. Over
+    // Too much, for good (their last prank): you black out, and they giggle all round you in the dark. Over
     _blackout() {
         if (this.caught) return;
         const H = this.scale.height;
