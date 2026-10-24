@@ -56,24 +56,26 @@ class MirrorTrial extends Phaser.Scene {
         DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; full: you black out OUT_MS, back at AFTER
         STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good, your dread on top (full dread: a prank's worth); full: scared to death. After a prank, CALM_MS with none of them moving
     };
-    // # stone, P a pane (each a mirror or glass, at random), L R mirror stands at 45 degrees (L like /, R like \), O the way out
-    // (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a sentry slime, W one of them, @ you (facing north).
+    // # stone, P a pane (each a mirror or glass, at random; every one a window, open both sides), L R mirror stands at 45 degrees
+    // (L like /, R like \), O the way out (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a
+    // sentry slime, W one of them, @ you (facing north). An outer ring and an inner one, a glass gallery in the middle (two stands
+    // in it), closets off the sides; the inner ring's walls are windows onto the outer, the gallery's onto the inner.
     static MAP = [
-        '#################',
-        'Pg.....W#v.....gP',
-        '#.#P#P#.#.#P#P#.#',
-        '#.#..g..P..g..#.#',
-        '#.#.###...###.#.#',
-        '#g.n..#.#.#..d.g#',
-        '###.#.PPPPP.#.###',
-        '#..g#.Pg..P.#g..#',
-        '#.#.R.P...P.L.#.#',
-        '#W#...P..gP...#W#',
-        '#.###.PP.PP.###.#',
-        '#g...d..h......g#',
-        '#.#P#P#...#P#P#.#',
-        'Pv..g...@...g..nP',
-        '########O########',
+        '###################',
+        '#W...g...g...g...W#',
+        '#.#####P#.#P#####.#',
+        '#...P.........P...#',
+        '#.#W#.#P#.#P#.#v#g#',
+        '#.P.PgP....gPdP.P.#',
+        '#.###.#.L...#.###.#',
+        '#n....P.....P....n#',
+        '#.###.#...R.#.###.#',
+        '#.P.PdP..g..PgP.P.#',
+        '#g#v#.#P#.#P#.#W#.#',
+        '#.#.P....h....P.#.#',
+        '#.#.###P#.#P###.#.#',
+        '#..g.....@.....g..#',
+        '#########O#########',
     ];
     static DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_map', 'mt_items'];
