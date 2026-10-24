@@ -4,7 +4,7 @@
 // You step through a mirror into a hall and see through your slime's eyes, a step a tile and a quarter turn at a time. The
 // mirror breaks behind you, and the things in the hall take your powers the moment you're in: you can't fight them, only
 // get out. They're far beyond you, and you're a game to them: they don't want to hurt you, they want to scare you. They
-// sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane, a stand turned), and
+// sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane), and
 // every fragment of the way out you take wakes another. Awake, they're bigger than you and they move only while nothing
 // sees them, never while you watch, and only ever in still poses, a new one each step: asleep, looking like you; awake and
 // wrong, or toying with you (waving, peekaboo, up the wall, holding your decoy...); through a pane, up against the glass
@@ -24,10 +24,10 @@
 // through it. They can't hurt you, but they can scare you: one reaching you pranks you (a third of your stress, for good;
 // it goes back to sleep far off), and your dread from looking at them goes on top: full dread, you black out for a moment
 // (two pranks in, that does it; three, a moment's look); full stress, you're scared to death. The more they've got you, the
-// more your heart pounds and the dark pulses in. Hold one in a reflection (your shard, a stand) a while and it slinks off.
+// more your heart pounds and the dark pulses in. Hold one in your shard (a reflection) a while and it slinks off.
 // The shard: held up you see behind you, and the view ahead is unwatched behind it; your arm tires (the shard shakes and
-// sinks), and when it gives out the shard drops till it's rested a little. The mirror stands at the hall's corners (at 45
-// degrees: walk into one to turn it) do show you round them. You walk slowly. SHIFT drinks one of your vials of goo (up to
+// sinks), and when it gives out the shard drops till it's rested a little. (Stands, mirrors at 45 degrees you walk into to
+// turn, still work if a map has them: L R; this one doesn't.) You walk slowly. SHIFT drinks one of your vials of goo (up to
 // three, one a flask found; you come in with one; they fill back up slowly): a dash, a few tiles on in a flash, past one
 // of them if it's in the way (not through stone or glass), loud. Found in the hall: decoy slimes (Q, you in pink: set one
 // down and it stares the way you face for a while; they take it for you, and anything in its line holds) and sentry
@@ -55,14 +55,14 @@ class MirrorTrial extends Phaser.Scene {
         MIRRORS: 0.45, FRAGMENTS: 3, SHATTER: { WAKE: 7, LUNGE: 2 },     // a pane's odds of being a mirror; the way out's fragments (in mirrors); glass struck: sleepers this near wake, the awake lunge this many steps
         ECHO_MS: 300,                                                // how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
-        SHOO_MS: 2000,                                               // one held in a reflection (your shard, a stand) this long leaves: they don't like being caught there
+        SHOO_MS: 2000,                                               // one held in a reflection (your shard) this long leaves: they don't like being caught there
         DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; full: you black out OUT_MS, back at AFTER
         STRESS: { PRANK: 0.3, DREAD: 0.4, CALM_MS: 2000 },            // your stress: each prank of theirs adds PRANK for good, your dread on top (full: DREAD); 1: scared to death (two pranks and a full dread; three and a moment's). After a prank, CALM_MS with none of them moving
     };
     // # stone, P a pane (each a mirror or glass, at random; every one a window, open both sides), L R mirror stands at 45 degrees
     // (L like /, R like \), O the way out (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a
-    // sentry slime, W one of them, @ you (facing north). An outer ring and an inner one, a glass gallery in the middle (two stands
-    // in it), closets off the sides; the inner ring's walls are windows onto the outer, the gallery's onto the inner.
+    // sentry slime, W one of them, @ you (facing north). An outer ring and an inner one, a glass gallery in the middle, closets
+    // off the sides; the inner ring's walls are windows onto the outer, the gallery's onto the inner.
     static MAP = [
         '###################',
         '#W...g...g...g...W#',
@@ -70,9 +70,9 @@ class MirrorTrial extends Phaser.Scene {
         '#...P.........P...#',
         '#.#W#.#P#.#P#.#v#g#',
         '#.P.PgP....gPdP.P.#',
-        '#.###.#.L...#.###.#',
+        '#.###.#.....#.###.#',
         '#n....P.....P....n#',
-        '#.###.#...R.#.###.#',
+        '#.###.#.....#.###.#',
         '#.P.PdP..g..PgP.P.#',
         '#g#v#.#P#.#P#.#W#.#',
         '#.#.P....h....P.#.#',
@@ -202,7 +202,7 @@ class MirrorTrial extends Phaser.Scene {
     _hud() {
         const have = [this.holding && 'SPACE (hold) the shard · F (hold) wipe it', this.vials && 'SHIFT dash',
             (this.wards || this.placed.length) && `Q decoy slime (${this.wards})`, (this.sentryLeft || this.sentries.length) && `E set down / pick up a sentry (${this.sentryLeft})`].filter(Boolean);
-        this.keysTxt.setText(`W S step · A D turn · TAB (hold) the map · walk into a pane: chalk it · C mark it · a stand: turn it · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
+        this.keysTxt.setText(`W S step · A D turn · TAB (hold) the map · walk into a pane: chalk it · C mark it · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
         this.countTxt.setText(`FRAGMENTS OF THE WAY OUT  ${'◆ '.repeat(this.found)}${'◇ '.repeat(MirrorTrial.CFG.FRAGMENTS - this.found)}`.trim());
     }
     _say(a, b, col = '#d8c8ff', hold = 2600) {
