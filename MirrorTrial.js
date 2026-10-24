@@ -907,25 +907,81 @@ class MirrorTrial extends Phaser.Scene {
         line(H * 0.52 + 60, this.closest === Infinity ? 'NONE OF THEM GOT NEAR YOU' : `CLOSEST CALL  ${this.closest} TILE${this.closest > 1 ? 'S' : ''} AWAY`, '18px', '#ff9ab8');
         line(H * 0.88, 'ENTER  again        ESC  leave', '16px', '#8a7aa8');
     }
-    // One reached you: a prank, the biggest scare it has, slammed into your face; a beat, then it laughs, and it's gone (asleep
-    // again, far off). It stays with you: STRESS.PRANK more stress, for good. While you get your breath back, none of them moves
+    // One reached you: a prank, a different one each time (never the same twice running): BOO, its face slammed into yours; the
+    // lights out and its eyes opening in the dark, right in front of you; a splat, leapt onto your face; or grabbed and spun round,
+    // left facing the other way. A beat, then it laughs, and it's gone (asleep again, far off). It stays with you: STRESS.PRANK
+    // more stress, for good. While you get your breath back (and while it's at it), none of them moves
+    static PRANKS = { boo: '_boo', dark: '_lightsOut', splat: '_splat', spin: '_spin' };
     _prank(e) {
-        const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height, cam = this.cameras.main, now = this.time.now;
+        const C = MirrorTrial.CFG, now = this.time.now;
         if (now < this.calmUntil) return;
-        this.pranks++; this.scarred = Math.min(1, this.scarred + C.STRESS.PRANK); this.calmUntil = now + C.STRESS.CALM_MS;
+        this.pranks++; this.scarred = Math.min(1, this.scarred + C.STRESS.PRANK);
         if (this.raised) { this.raised = false; this._shardAt(false, C.RAISE_MS); }
+        const kind = this.lastPrank = Phaser.Utils.Array.GetRandom(Object.keys(MirrorTrial.PRANKS).filter(k => k !== this.lastPrank));
+        const laugh = this[MirrorTrial.PRANKS[kind]]();   // (how long till it laughs)
+        this.calmUntil = now + Math.max(C.STRESS.CALM_MS, laugh + 1100);
+        this._sendOff(e);
+        this.time.delayedCall(laugh, () => {
+            Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
+            if (this.scarred >= 0.999) return this._die();
+            this._note(this.scarred + C.STRESS.DREAD * 0.5 >= 1 ? 'GOT YOU. YOUR HEART CAN\'T TAKE MUCH MORE.' : 'GOT YOU. IT\'S LAUGHING.');
+        });
+    }
+    // BOO: the biggest scare it has, slammed into your face
+    _boo() {
+        const W = this.scale.width, H = this.scale.height, cam = this.cameras.main;
         Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'bosshit'); Sfx.play(this, 'whoosh');
         cam.shake(420, 0.02); this._punch(1.18, 60, 500);
         this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.7); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 600, ease: 'Quad.easeIn' });
         const fs = H * 1.15 / this.textures.get('mt_face').getSourceImage().height, face = this.add.image(W / 2, H / 2, 'mt_face').setScale(fs * 1.8).setDepth(5);   // (its own drawing, made for the whole screen)
         this.tweens.add({ targets: face, scale: fs, duration: 140, ease: 'Back.easeOut' });
         this.tweens.add({ targets: face, alpha: 0, delay: 900, duration: 350, onComplete: () => face.destroy() });
-        this._sendOff(e);
-        this.time.delayedCall(900, () => {
-            Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
-            if (this.scarred >= 0.999) return this._die();
-            this._note(this.scarred + C.STRESS.DREAD * 0.5 >= 1 ? 'GOT YOU. YOUR HEART CAN\'T TAKE MUCH MORE.' : 'GOT YOU. IT\'S LAUGHING.');
+        return 900;
+    }
+    // lights out: black, your heart; then its eyes snap open in the dark, right in front of you, and blink, slowly, before the
+    // light comes back (you hold nothing while it's dark: nothing builds your dread either)
+    _lightsOut() {
+        const W = this.scale.width, H = this.scale.height, cam = this.cameras.main, now = this.time.now;
+        this.tweens.killTweensOf(this.black); this.black.setAlpha(1); this.blackUntil = Math.max(this.blackUntil, now + 1750);
+        Sfx.play(this, 'heartbeat', { hard: 1 });
+        const sc = W * 0.62 / this.textures.get('mt_prank_eyes').getSourceImage().width, eyes = this.add.image(W / 2, H * 0.45, 'mt_prank_eyes_shut').setScale(sc).setDepth(5.6).setAlpha(0);
+        const at = (ms, key) => this.time.delayedCall(ms, () => eyes.active && eyes.setTexture(key));
+        this.time.delayedCall(560, () => { eyes.setAlpha(1); Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'whoosh'); cam.shake(260, 0.014); this._punch(1.12, 50, 380); });
+        at(560, 'mt_prank_eyes_half'); at(620, 'mt_prank_eyes'); at(1180, 'mt_prank_eyes_half'); at(1260, 'mt_prank_eyes_shut'); at(1360, 'mt_prank_eyes_half'); at(1430, 'mt_prank_eyes');
+        this.time.delayedCall(1750, () => {
+            this.tweens.add({ targets: eyes, alpha: 0, duration: 300, onComplete: () => eyes.destroy() });
+            if (!this.caught) this.tweens.add({ targets: this.black, alpha: 0, duration: 450 });
         });
+        return 1300;
+    }
+    // a splat: it's leapt onto your face, squashed flat on your view, grinning at you; then it slides off, slowly, down
+    _splat() {
+        const W = this.scale.width, H = this.scale.height, cam = this.cameras.main;
+        Sfx.play(this, 'split'); Sfx.play(this, 'kill'); Sfx.play(this, 'boom', { big: true });
+        cam.shake(320, 0.016); this._punch(1.15, 50, 450);
+        const sc = H * 1.3 / this.textures.get('mt_prank_splat').getSourceImage().height, g = this.add.image(W / 2, H * 0.52, 'mt_prank_splat').setScale(sc * 1.6).setDepth(5).setAngle(Phaser.Math.Between(-7, 7));
+        this.tweens.add({ targets: g, scale: sc, duration: 110, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: g, y: H * 1.45, scaleY: sc * 1.15, delay: 1000, duration: 1700, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
+        this.time.delayedCall(1000, () => Sfx.play(this, 'shift', { near: 1 }));
+        return 900;
+    }
+    // grabbed and spun round: its hands up out of the dark at you, and the hall goes round; you're left facing the other way
+    _spin() {
+        const W = this.scale.width, H = this.scale.height, cam = this.cameras.main, src = this.textures.get('mt_prank_hands').getSourceImage();
+        const sc = W * 0.8 / src.width, hands = this.add.image(W / 2, H + src.height * sc, 'mt_prank_hands').setOrigin(0.5, 1).setScale(sc).setDepth(5);
+        Sfx.play(this, 'whoosh'); Sfx.play(this, 'boom', { big: true }); cam.shake(200, 0.012);
+        this.tweens.add({ targets: hands, y: H + 12, duration: 150, ease: 'Back.easeOut' });
+        this.time.delayedCall(230, () => {
+            Sfx.play(this, 'whoosh'); this.time.delayedCall(250, () => Sfx.play(this, 'whoosh'));
+            this.tweens.add({ targets: cam, rotation: Math.PI * 2, duration: 800, ease: 'Cubic.easeInOut', onComplete: () => cam.setRotation(0) });
+            this.tweens.killTweensOf(this.view);   // (mid-step or mid-turn: where you were going, and facing what you'd turned to)
+            const base = (this.me.dir - 1) * Math.PI / 2;
+            Object.assign(this.view, { x: this.me.x + 0.5, y: this.me.y + 0.5, a: base + Math.round((this.view.a - base) / (Math.PI * 2)) * Math.PI * 2 });
+            this.me.dir = (this.me.dir + 2) % 4; this.moving = true;
+            this.tweens.add({ targets: this.view, a: this.view.a + Math.PI, duration: 800, ease: 'Cubic.easeInOut', onComplete: () => this._moved() });
+            this.tweens.add({ targets: hands, y: H + src.height * sc + 20, delay: 420, duration: 300, onComplete: () => hands.destroy() });
+        });
+        return 1000;
     }
     // its true face, seen straight on: what they really are (rare: the feat 'trueface', once); it keeps it till its next step
     _trueFace(e) {
