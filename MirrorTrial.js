@@ -20,8 +20,8 @@
 // fragment, if it holds one); glass shatters (a cross), and they hear it: the sleepers near wake, the awake lunge at you,
 // and the one behind it, if one was, is awake right there. All three fragments, and the way out is whole again: step back
 // through it. They can't hurt you, but they can scare you: one reaching you pranks you (a third of your stress, for good;
-// it goes back to sleep far off), and your dread from looking at them goes on top; full, you black out for a moment.
-// Their third prank, and you're out. Hold one in a reflection (your shard, a stand) a while and it slinks off.
+// it goes back to sleep far off), and your dread from looking at them goes on top: full dread, you black out for a moment
+// (and it counts a prank's worth); full stress, you're scared to death. Hold one in a reflection (your shard, a stand) a while and it slinks off.
 // The shard: held up you see behind you, and the view ahead is unwatched behind it; your arm tires (the shard shakes and
 // sinks), and when it gives out the shard drops till it's rested a little. The mirror stands at the hall's corners (at 45
 // degrees: walk into one to turn it) do show you round them. You walk slowly. SHIFT drinks one of your vials of goo (up to
@@ -39,7 +39,8 @@ class MirrorTrial extends Phaser.Scene {
         W: 256, H: 144, FOV: 0.66, FOG: 12, BOUNCES: 4, LEVELS: 11,   // the view, drawn this small; how wide; how far you see; mirrors deep; the dither
         BACK: { W: 96, H: 72, FOV: 0.5 },                           // the shard's view (the size of its art, mt_shard)
         STEP_MS: 340, TURN_MS: 160, RAISE_MS: 220,                   // your step, turn, and lifting the shard
-        ARM: { HOLD_MS: 6000, REST_MS: 4000, BACK: 0.35 },          // the shard held up: your arm gives out after HOLD_MS, rests in REST_MS, back up at BACK
+        ARM: { HOLD_MS: 4000, REST_MS: 10000, BACK: 0.35 },         // the shard held up: your arm gives out after HOLD_MS, rests in REST_MS, back up at BACK
+        BLUR: { GROW_MS: 25000, WIPE_MS: 1500, UP: 0.35 },           // the shard down, it fogs up (thick in GROW_MS); held up you see through it better (UP of it); F held wipes it clean in WIPE_MS
         GOO: { VIALS: 3, CHARGE_MS: 9000, FOV: 1.22 },              // your goo: at most this many vials (each a flask found), one back every CHARGE_MS; the view widened as you dash
         WARD_MS: 7000, WARD_RANGE: 8,                                // decoy slimes (found in the hall): how long one stares, how far
         DASH: { TILES: 3, COST: 1 },                                 // SHIFT: a dash, up to TILES on, for COST vials
@@ -52,8 +53,8 @@ class MirrorTrial extends Phaser.Scene {
         TWINS: 0.35, ECHO_MS: 300,                                   // a glass pane's odds of a twin behind it (in reflections, posed like you); how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         SHOO_MS: 2000,                                               // one held in a reflection (your shard, a stand) this long leaves: they don't like being caught there
-        DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; stress full: you black out OUT_MS, dread back to AFTER of what room it has
-        STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good (full: it's over); after one, CALM_MS with none of them moving
+        DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; full: you black out OUT_MS, back at AFTER
+        STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good, your dread on top (full dread: a prank's worth); full: scared to death. After a prank, CALM_MS with none of them moving
     };
     // # stone, P a pane (each a mirror or glass, at random), L R mirror stands at 45 degrees (L like /, R like \), O the way out
     // (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a sentry slime, W one of them, @ you (facing north).
@@ -125,7 +126,7 @@ class MirrorTrial extends Phaser.Scene {
         }));
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
             charges: 1, vials: 1, chargeT: 0, fovK: 1, gooK: 0, bubbles: [], drips: [], echoes: [], wards: 0, placed: [], labels: {}, marks: {}, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, pranks: 0, breaks: 0, closest: Infinity,
-            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, mapUp: false });
+            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, blur: 0, wiping: false, mapUp: false });
         // the dread's cracks: from the screen's edges in, a little further the more you dread (fixed, so they grow, not jump)
         let seed = 9; const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
         this.cracks = Array.from({ length: 12 }, (_, i) => {
@@ -153,7 +154,9 @@ class MirrorTrial extends Phaser.Scene {
         this.add.image(W / 2, H / 2, 'mt_view').setScale(Math.max(W / C.W, H / C.H));
         this.dim = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0);   // ahead, unwatched while you look in the shard
         this.shard = this.add.container(0, 0, [this.add.image(0, 0, 'mt_back'), this.add.image(0, 0, 'mt_shard')]).setVisible(false);
-        this.armG = this.add.graphics().setDepth(5);   // your arm's strength, by the shard
+        const at = this.textures.get('mt_arm');   // your arm's strength, by the shard: a tendril of your goo holding one, lit as far as it has left
+        if (!at.has('full')) { at.add('full', 0, 0, 0, 9, 30); at.add('spent', 0, 9, 0, 9, 30); }
+        this.arms = ['spent', 'full'].map(f => this.add.image(0, 0, 'mt_arm', f).setScale(Math.max(W / C.W, H / C.H)).setDepth(5).setVisible(false));
         this._shardAt(false, 0);
         // what's said, and the keys
         const T = (y, s, size, col) => this.add.text(W / 2, y, s, { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#05030a', strokeThickness: 5, align: 'center' }).setOrigin(0.5).setDepth(6);
@@ -195,7 +198,7 @@ class MirrorTrial extends Phaser.Scene {
     }
 
     _hud() {
-        const have = [this.holding && 'SPACE (hold) the shard', this.vials && 'SHIFT dash',
+        const have = [this.holding && 'SPACE (hold) the shard · F (hold) wipe it', this.vials && 'SHIFT dash',
             (this.wards || this.placed.length) && `Q decoy slime (${this.wards})`, (this.sentryLeft || this.sentries.length) && `E set down / pick up a sentry (${this.sentryLeft})`].filter(Boolean);
         this.keysTxt.setText(`W S step · A D turn · TAB (hold) the map · walk into a pane: chalk it · C mark it · a stand: turn it · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
         this.countTxt.setText(`FRAGMENTS OF THE WAY OUT  ${'◆ '.repeat(this.found)}${'◇ '.repeat(MirrorTrial.CFG.FRAGMENTS - this.found)}`.trim());
@@ -226,12 +229,14 @@ class MirrorTrial extends Phaser.Scene {
         if (k === 'KeyQ') return this._ward();
         if (k === 'KeyE') return this._sentry();
         if (k === 'KeyC') return this._mark();
+        if (k === 'KeyF') { if (!e.repeat && this.holding) this.wiping = true; return; }
         if (this.moving) { this.queued = k; return; }
         this._act(k);
     }
     _keyUp(e) {
         if (e.code === 'Space' && this.raised) { this.raised = false; this._shardAt(false, MirrorTrial.CFG.RAISE_MS); }
         if (e.code === 'Tab') this.mapUp = false;
+        if (e.code === 'KeyF') this.wiping = false;
     }
     // a click on a decoy (where the view drew it this frame): booped (Achievements.BOOPS), it squishes
     _boop(p) {
@@ -341,11 +346,11 @@ class MirrorTrial extends Phaser.Scene {
             }
         }
     }
-    // Your stress: what their pranks left you with (for good) and your dread on top. Looking straight at one that's awake (not
-    // in a reflection) builds the dread, faster the more of it fills your view; it ebbs when you stop. One that's just turned
-    // horrible stings the first time it's seen, anywhere. Full: you black out for a moment (and nothing watches them). The
-    // more their pranks have left you with, the less it takes. The look of it: the edges darkening, cracks creeping in (as
-    // far as the pranks took them, they stay), the colour going, your heart.
+    // Your dread: looking straight at one that's awake (not in a reflection) builds it, faster the more of it fills your view;
+    // it ebbs when you stop. One that's just turned horrible stings the first time it's seen, anywhere. Full: you black out for
+    // a moment (and nothing watches them). Your stress: what their pranks left you with, for good, and your dread on top (full
+    // dread, a prank's worth); full, you're scared to death. The look of it: the edges darkening, the colour going, your heart
+    // (your dread); cracks creeping in (your stress: as far as the pranks took them, they stay).
     _dread(now, delta) {
         const C = MirrorTrial.CFG, D = C.DREAD, W = this.scale.width, H = this.scale.height, g = this.dreadG, dt = delta / 1000;
         const direct = this.ents.reduce((a, e) => a + (e.pose >= 2 ? e.dpx || 0 : 0), 0);
@@ -360,28 +365,30 @@ class MirrorTrial extends Phaser.Scene {
         if (this.caught || now < this.blackUntil) {}
         else if (direct >= C.SEEN_PX) { this.dread += (D.RISE + D.CLOSE * Math.min(1, direct / D.CLOSE_PX)) * dt; this.dreadAt = now; }
         else if (now - this.dreadAt > D.WAIT) this.dread = Math.max(0, this.dread - D.FALL * dt);
-        this.dread = Math.min(this.dread, 1 - this.scarred);
-        if (this.scarred + this.dread >= 0.999 && !this.caught && now >= this.blackUntil) {
-            this.blackUntil = now + D.OUT_MS; this.dread = (1 - this.scarred) * D.AFTER; this.breaks++;
+        this.dread = Math.min(this.dread, 1);
+        this.stress = this.scarred + this.dread * C.STRESS.PRANK;
+        if (this.stress >= 0.999 && !this.caught) this._die();
+        if (this.dread >= 1 && !this.caught && now >= this.blackUntil) {
+            this.blackUntil = now + D.OUT_MS; this.dread = D.AFTER; this.breaks++;
             Sfx.play(this, 'hurt'); this.cameras.main.shake(300, 0.012);
             this.tweens.killTweensOf(this.black);
             this.tweens.chain({ targets: this.black, tweens: [{ alpha: 1, duration: 120 }, { alpha: 1, duration: D.OUT_MS - 520 }, { alpha: 0, duration: 400 }] });
             this._note('YOU BLACK OUT. YOU CAN\'T BEAR IT.');
         }
-        const k = this.stress = this.scarred + this.dread;
-        if (k > 0.2 && now - this.heartAt > 1000 - 650 * k) { this.heartAt = now; Sfx.play(this, 'heartbeat', { hard: k }); if (k > 0.7) this.cameras.main.shake(90, 0.003 * k); }
+        const k = this.dread, cs = this.stress;
+        if (k > 0.2 && !this.caught && now - this.heartAt > 1000 - 650 * k) { this.heartAt = now; Sfx.play(this, 'heartbeat', { hard: k }); if (k > 0.7) this.cameras.main.shake(90, 0.003 * k); }
         g.clear();
-        if (k < 0.02) return;
+        if (k < 0.02 && cs < 0.02) return;
         for (let i = 0; i < 9; i++) g.lineStyle(20, 0x000000, 0.1 * k).strokeRect(10 + i * 20, 10 + i * 20, W - 20 - i * 40, H - 20 - i * 40);
         const P = Math.max(W / C.W, H / C.H), snap = v => Math.floor(v / P) * P;   // (the cracks in the view's own chunky pixels)
         for (const pts of this.cracks) {
-            const n = Math.floor(pts.length * k);
+            const n = Math.floor(pts.length * cs);
             for (let i = 1; i < n; i++) {
                 const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], len = Math.hypot(x1 - x0, y1 - y0);
                 for (let t = 0; t <= len; t += P) {
                     const x = snap(x0 + (x1 - x0) * t / len), y = snap(y0 + (y1 - y0) * t / len);
-                    g.fillStyle(0x05030a, 0.8 * k).fillRect(x + P, y + P, P, P);
-                    g.fillStyle(0xe8e0ff, 0.55 * k).fillRect(x, y, P, P);
+                    g.fillStyle(0x05030a, 0.8 * cs).fillRect(x + P, y + P, P, P);
+                    g.fillStyle(0xe8e0ff, 0.55 * cs).fillRect(x, y, P, P);
                 }
             }
         }
@@ -642,10 +649,18 @@ class MirrorTrial extends Phaser.Scene {
             this.arm -= delta / C.ARM.HOLD_MS;
             if (this.arm <= 0) { this.arm = 0; this.armOut = true; this.raised = false; this._shardAt(false, C.RAISE_MS); Sfx.play(this, 'deny'); this._note('YOUR ARM GIVES OUT.'); }
         } else if ((this.arm = Math.min(1, this.arm + delta / C.ARM.REST_MS)) >= C.ARM.BACK) this.armOut = false;
-        const ag = this.armG.clear(), aw = this.scale.width - 300, ah = 90, ay = this.scale.height - 165;   // (shown once it's tired; blinking while it can't)
-        if (this.holding && this.arm < 0.999) { ag.fillStyle(0x05030a, 0.7).fillRect(aw - 3, ay - 3, 14, ah + 6); ag.fillStyle(this.armOut ? 0x9a6a80 : 0xbfd8ff, this.armOut && Math.floor(now / 220) % 2 ? 0.35 : 0.9).fillRect(aw, ay + ah * (1 - this.arm), 8, ah * this.arm); }
-        const tire = this.raised ? (1 - this.arm) ** 2 : 0;
-        for (const c of this.shard.list) c.setPosition((Math.random() - 0.5) * 2.4 * tire, (Math.random() - 0.5) * 2.4 * tire + 5 * tire);
+        const [spent, full] = this.arms, Wd = this.scale.width, Hd = this.scale.height, up = Math.max(0, Math.min(1, (this.shard.scaleX - 2.4) / 3.6)), rows = Math.round(30 * this.arm);   // (beside the shard, low or held up)
+        for (const a of this.arms) a.setVisible(this.holding).setPosition(Wd - 290 - 320 * up, Hd - 100 - (Hd / 2 - 130) * up);
+        full.setVisible(this.holding && rows > 0).setCrop(0, 30 - rows, 9, rows);
+        spent.setAlpha(this.armOut && Math.floor(now / 220) % 2 ? 0.45 : 1);
+        // the shard fogging up while it's down; F held rubs it clean
+        if (this.holding && !this.raised) {
+            if (this.wiping) { this.blur = Math.max(0, this.blur - delta / C.BLUR.WIPE_MS); if (now - (this.wipeAt || 0) > 260) { this.wipeAt = now; Sfx.play(this, 'hover'); } }
+            else this.blur = Math.min(1, this.blur + delta / C.BLUR.GROW_MS);
+            if (this.blur > 0.5 && !this.toldBlur) { this.toldBlur = true; this._note('YOUR SHARD\'S FOGGING UP. HOLD F TO WIPE IT.'); }
+        }
+        const tire = this.raised ? (1 - this.arm) ** 2 : 0, rub = this.wiping && !this.raised ? Math.sin(now / 40) * 2 : 0;
+        for (const c of this.shard.list) c.setPosition((Math.random() - 0.5) * 2.4 * tire + rub, (Math.random() - 0.5) * 2.4 * tire + 5 * tire);
         this.front.cover = this.raised && this.shard;
         this._render(this.front, this.view.a, C.FOV * this.fovK, false, !this.mapUp);
         if (this.holding) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
@@ -756,7 +771,7 @@ class MirrorTrial extends Phaser.Scene {
         this._sendOff(e);
         this.time.delayedCall(900, () => {
             Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
-            if (this.scarred >= 0.999) return this._blackout();
+            if (this.scarred >= 0.999) return this._die();
             this._note(`GOT YOU. IT\'S LAUGHING. (${this.pranks} OF ${Math.round(1 / C.STRESS.PRANK)})`);
         });
     }
@@ -774,18 +789,18 @@ class MirrorTrial extends Phaser.Scene {
         this._note('CAUGHT IN A REFLECTION. IT SLINKS OFF.');
         this._sendOff(e);
     }
-    // Too much, for good (their last prank): you black out, and they giggle all round you in the dark. Over
-    _blackout() {
+    // Your stress full: scared to death. Your heart, hard, twice, and then not; the dark; they giggle all round you. Over
+    _die() {
         if (this.caught) return;
         const H = this.scale.height;
         this.caught = true;
         if (this.raised) { this.raised = false; this._shardAt(false, MirrorTrial.CFG.RAISE_MS); }
-        Sfx.play(this, 'hurt'); this.cameras.main.shake(300, 0.012);
+        Sfx.play(this, 'heartbeat', { hard: 1 }); this.time.delayedCall(260, () => Sfx.play(this, 'heartbeat', { hard: 1 })); this.cameras.main.shake(300, 0.012);
         this.tweens.killTweensOf([this.black, this.noteTxt]); this.noteTxt.setAlpha(0);
         this.tweens.add({ targets: this.black, alpha: 1, duration: 900, ease: 'Quad.easeIn' });
         [-0.8, 0.7, 0].forEach((pan, i) => this.time.delayedCall(700 + i * 380, () => Sfx.play(this, 'hall_giggle', { pan, near: 0.7 - i * 0.15, n: i })));
         this.time.delayedCall(1500, () => {
-            this._say('YOU BLACKED OUT', `They got you ${this.pranks} time${this.pranks === 1 ? '' : 's'}. They'll want to play again.\nR  again        ESC  leave`, '#ff8aa0', 0);
+            this._say('SCARED TO DEATH', `They got you ${this.pranks} time${this.pranks === 1 ? '' : 's'}, and your heart gave out. They'll want to play again.\nR  again        ESC  leave`, '#ff8aa0', 0);
             this.title.setY(H * 0.42); this.sub.setY(H * 0.42 + 52);
         });
     }
@@ -921,8 +936,16 @@ class MirrorTrial extends Phaser.Scene {
         for (const e of this.ents) if (px0.get(e) >= (V === this.back ? C.SEEN_BACK : C.SEEN_PX)) { if (watch) e.seen = true; }
         // the dither (each channel to a few levels, a 4x4 Bayer pattern between them); flipped, for the shard; cut to its shape
         // (dashing, the view ahead: its colours pushed to your teal, and wobbling like jelly, row by row)
+        const fog = V === this.back ? this.blur * (this.raised ? C.BLUR.UP : 1) : 0;   // (the shard fogged up)
+        if (fog > 0.02) {
+            const r = Math.ceil(fog * 3), tmp = this._fogRow ||= new Float32Array(Math.max(W, H) * 3);
+            for (const [len, n, at] of [[W, H, (a, i) => (a * W + i) * 4], [H, W, (a, i) => (i * W + a) * 4]]) for (let a = 0; a < n; a++) {
+                for (let i = 0; i < len; i++) { let sr = 0, sg = 0, sb = 0, m = 0; for (let j = Math.max(0, i - r); j <= Math.min(len - 1, i + r); j++) { const q = at(a, j); sr += d[q]; sg += d[q + 1]; sb += d[q + 2]; m++; } tmp[i * 3] = sr / m; tmp[i * 3 + 1] = sg / m; tmp[i * 3 + 2] = sb / m; }
+                for (let i = 0; i < len; i++) { const q = at(a, i); d[q] = tmp[i * 3] + (120 - tmp[i * 3]) * fog * 0.3; d[q + 1] = tmp[i * 3 + 1] + (118 - tmp[i * 3 + 1]) * fog * 0.3; d[q + 2] = tmp[i * 3 + 2] + (140 - tmp[i * 3 + 2]) * fog * 0.3; }
+            }
+        }
         const L = C.LEVELS - 1, BAY = MirrorTrial.BAYER, cut = V === this.back ? this.tex.mt_shard.d : null, sk = V === this.front ? this.gooK : 0;
-        const grey = V === this.front ? this.stress * 0.75 : 0;
+        const grey = V === this.front ? this.dread * 0.75 : 0;
         const gain = [1 + 0.05 * sk, 1 + 0.55 * sk, 1 + 0.5 * sk], lift = 12 * sk, wob = 3 * sk, row = this._row ||= new Uint8ClampedArray(W * 4 + 8);
         for (let y = 0; y < H; y++) {
             if (flip) for (let x = 0; x < W / 2; x++) { const i = (y * W + x) * 4, j = (y * W + W - 1 - x) * 4; for (let c = 0; c < 4; c++) { const t = d[i + c]; d[i + c] = d[j + c]; d[j + c] = t; } }
