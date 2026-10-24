@@ -46,7 +46,7 @@ class GameScene extends Phaser.Scene {
         // without threading `data` down through every init helper.
         this._sceneData = data || {};
         this.tutorialStage = data?.tutorialStage ?? 0;
-        this.storyFloor = data?.floor || 1; this._floorExit = null;   // a story level in floors: the one you're on (LevelManager._floorPlan)
+        this.storyFloor = data?.floor || 1; this._floorExit = null; this._cells = null;   // a story level in floors: the one you're on (LevelManager._floorPlan)
         // Water lives on the scene object, which outlives a restart: the Cistern's (or a flooded
         // Tower floor's) tiles were still there, unseen, on the next level. Its pipes were too, still
         // refilling their old tiles on the new map and flinging water from mouths out in the void.
@@ -1590,6 +1590,11 @@ class GameScene extends Phaser.Scene {
     _floorArriveFx(...a) { return LevelManager.prototype._floorArriveFx.call(this, ...a); }
     _floorRain(...a) { return LevelManager.prototype._floorRain.call(this, ...a); }
     _floorNext(...a) { return LevelManager.prototype._floorNext.call(this, ...a); }
+    _floorPower(...a) { return LevelManager.prototype._floorPower.call(this, ...a); }
+    _cellDrop(...a) { return LevelManager.prototype._cellDrop.call(this, ...a); }
+    _cellTick(...a) { return LevelManager.prototype._cellTick.call(this, ...a); }
+    _cellTake(...a) { return LevelManager.prototype._cellTake.call(this, ...a); }
+    _cellLabel(...a) { return LevelManager.prototype._cellLabel.call(this, ...a); }
     _spawnLevel2ChestRooms(...a){ return LevelManager.prototype._spawnLevel2ChestRooms.call(this, ...a); }
     // Level 3 proxies
     updateLevel3(...a)           { return LevelManager.prototype.updateLevel3.call(this, ...a); }

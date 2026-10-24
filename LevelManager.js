@@ -1189,6 +1189,7 @@ class LevelManager {
             return;
         }
         this.spawnTutorialChest(roomIndex);
+        if (this._floorPlan()?.cells?.includes(roomIndex)) this._cellDrop(roomIndex, true);   // a storm cell, for the lift
         if (this._floorPlan()?.exit && roomIndex === this._floorPlan().path.length - 1) this._floorOpenExit(roomIndex);   // the floor's last room: the way up
     }
 
@@ -1215,7 +1216,13 @@ class LevelManager {
             if (c.el && c.el !== this.currentElement) this.switchToElement(c.el);
             this.updateHUD?.();
         }
-        this.time.delayedCall(n > 1 ? 1500 : 700, () => this._showRhythmSessionBanner(`${this.currentLevelIndex}-${n}  ·  ${F.name}`, '#ffe14a', `Floor ${n} of ${all}`));
+        const need = F.exit ? (F.cells || []).length : 0;
+        this._cells = { got: 0, need, items: [] };
+        if (need) {
+            for (const k of F.cells) if (typeof k === 'string') { const ri = this.rooms.findIndex(r => r.tpl === k); if (ri >= 0) this._cellDrop(ri); }
+            this._cellLabel();
+        }
+        this.time.delayedCall(n > 1 ? 1500 : 700, () => this._showRhythmSessionBanner(`${this.currentLevelIndex}-${n}  ·  ${F.name}`, '#ffe14a', `Floor ${n} of ${all}` + (need ? `  ·  find ${need} storm cells for the lift` : '')));
         if (n > 1) this._floorArriveFx();
     }
 
@@ -1223,35 +1230,51 @@ class LevelManager {
     _floorOpenExit(ri) {
         if (this._floorExit) return;
         const room = this.rooms[ri], cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2) - 3;
-        const ok = (x, y) => x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h && this.world[x]?.[y] === this.FLOOR
-            && !(this.tutorialChests || []).some(c => !c.opened && c.tileX === x && c.tileY === y);
+        const ok = (x, y) => x >= room.x && x < room.x + room.w && y >= room.y + 2 && y < room.y + room.h && [0, 1, 2].every(d => this.world[x]?.[y - d] === this.FLOOR)   // (open floor above: its cage stands up there)
+            && !(this.tutorialChests || []).some(c => !c.opened && c.tileX === x && c.tileY === y) && !this._cells?.items.some(c => !c.got && c.x === x && c.y === y);
         let spot = null;
         for (let r = 0; r < 8 && !spot; r++) for (let dx = -r; dx <= r && !spot; dx++) for (let dy = -r; dy <= r && !spot; dy++)
             if ((Math.abs(dx) === r || Math.abs(dy) === r) && ok(cx + dx, cy + dy)) spot = [cx + dx, cy + dy];
         if (!spot) return;
-        const E = this._floorExit = this._floorLift(spot[0], spot[1], true);
-        Sfx.play(this, 'surge');
+        const C = this._cells, live = !C?.need || C.got >= C.need, E = this._floorExit = this._floorLift(spot[0], spot[1], true, false);
+        if (live) this._floorPower(E, true);
+        else { Sfx.play(this, 'clink'); this.showStatusText?.(E.px, E.py - 56, 'THE LIFT HAS NO POWER', '#8fb8d8'); }
+    }
+
+    // The lift comes alive: charge in its coils, sparks, its glow (loud: you powered it just now)
+    _floorPower(E, loud) {
+        E.live = true;
+        E.plat.clearTint(); E.cageImg.clearTint();
+        E.caps.forEach(c => c.setAlpha(0.8));
+        this.tweens.add({ targets: E.caps, alpha: 0.35, duration: 120, yoyo: true, repeat: -1, repeatDelay: 300 });
+        this.tweens.add({ targets: E.glow, alpha: 0.45, duration: 250, onComplete: () => this.tweens.add({ targets: E.glow, alpha: 0.25, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }) });
+        E.tag?.setText('UP ▲').setColor('#bfeeff');
+        if (!loud) return;
+        Sfx.play(this, 'surge'); this.cameras.main.shake(120, 0.003);
+        VisualFX.ripple(this, E.px, E.py + 6, 8, 40, 0x4fc3ff, { depth: 0.97, duration: 600, alpha: 0.8 });
         this.showStatusText?.(E.px, E.py - 56, 'THE LIFT IS LIVE', '#bfeeff');
     }
 
     // The storm lift on tile (tx, ty): its platform under you, its cage in front of you (raised while it waits for you: `open`),
-    // charge flickering in the caps of its coils and sparks running up them
-    _floorLift(tx, ty, open) {
+    // and once it's live (_floorPower), charge flickering in the caps of its coils and sparks running up them
+    _floorLift(tx, ty, open, live = true) {
         const TS = this.TILE_SIZE, px = tx * TS + TS / 2, py = ty * TS + TS / 2, ADD = Phaser.BlendModes.ADD;
         const E = { x: tx, y: ty, px, py, down: py + 18 };
-        E.glow = this.add.image(px, py + 4, 'vfx_glow').setTint(0x4fc3ff).setBlendMode(ADD).setDepth(0.95).setScale(0.5).setAlpha(0.45);
+        E.glow = this.add.image(px, py + 4, 'vfx_glow').setTint(0x4fc3ff).setBlendMode(ADD).setDepth(0.95).setScale(0.5).setAlpha(0);
         E.plat = this.add.image(px, py + 6, 'lift_storm').setDepth(0.96);
-        const caps = [-19, 19].map(x => this.add.image(x, -55, 'vfx_glow').setTint(0x7fd8ff).setBlendMode(ADD).setScale(0.14).setAlpha(0.8));
-        E.cage = this.add.container(px, open ? E.down - 24 : E.down, [this.add.image(0, 0, 'lift_storm_cage').setOrigin(0.5, 1), ...caps]).setDepth(1.05);
-        this.tweens.add({ targets: caps, alpha: 0.35, duration: 120, yoyo: true, repeat: -1, repeatDelay: 300 });
-        this.tweens.add({ targets: E.glow, alpha: 0.25, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        E.caps = [-19, 19].map(x => this.add.image(x, -55, 'vfx_glow').setTint(0x7fd8ff).setBlendMode(ADD).setScale(0.14).setAlpha(0.1));
+        E.cageImg = this.add.image(0, 0, 'lift_storm_cage').setOrigin(0.5, 1);
+        E.cage = this.add.container(px, open ? E.down - 24 : E.down, [E.cageImg, ...E.caps]).setDepth(1.05);
+        for (const o of [E.plat, E.cageImg]) o.setTint(0x6a7080);   // no power: dull (_floorPower lights it)
         if (open) {
             this.tweens.add({ targets: E.cage, y: E.cage.y - 3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            E.tag = this.add.text(px, py - 70, 'UP ▲', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#bfeeff', stroke: '#05060a', strokeThickness: 3 }).setOrigin(0.5).setDepth(4);
+            const C = this._cells;
+            E.tag = this.add.text(px, py - 70, `STORM CELLS ${C?.got}/${C?.need}`, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#8fb8d8', stroke: '#05060a', strokeThickness: 3 }).setOrigin(0.5).setDepth(4);
             this.tweens.add({ targets: E.tag, y: py - 76, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         }
+        if (live) this._floorPower(E, false);
         E.timer = this.time.addEvent({ delay: 90, loop: true, callback: () => {
-            if (E.done || (!E.fast && Math.random() < 0.6)) return;
+            if (E.done || !E.live || (!E.fast && Math.random() < 0.6)) return;
             const d = this.add.image(E.cage.x + (Math.random() < 0.5 ? -19 : 19) + (Math.random() - 0.5) * 4, E.cage.y - 48 + Math.random() * 14, 'vfx_glow')
                 .setTint(Math.random() < 0.5 ? 0x4fc3ff : 0xffffff).setBlendMode(ADD).setDepth(1.06).setScale(0.04 + Math.random() * 0.05);
             this.tweens.add({ targets: d, y: d.y - 14 - Math.random() * 18, alpha: 0, duration: 260 + Math.random() * 240, onComplete: () => d.destroy() });
@@ -1259,10 +1282,56 @@ class LevelManager {
         return E;
     }
 
-    // Standing on the way up takes it
+    // Standing on the way up takes it, once it's live (else it says what it's missing); and walking onto a storm cell takes it
     _floorTick() {
+        this._cellTick();
         const E = this._floorExit;
-        if (E && !E.leaving && !this._bossIntroOn && this.playerX === E.x && this.playerY === E.y) { E.leaving = true; this._floorLeaveFx(E, () => this._floorNext()); }
+        if (!E || E.leaving || this._bossIntroOn || this.playerX !== E.x || this.playerY !== E.y) { if (E) E.on = false; return; }
+        if (E.live) { E.leaving = true; this._floorLeaveFx(E, () => this._floorNext()); }
+        else if (!E.on) { E.on = true; Sfx.play(this, 'deny'); this.showStatusText?.(E.px, E.py - 56, `FIND THE STORM CELLS  ${this._cells.got}/${this._cells.need}`, '#8fb8d8'); }
+    }
+
+    // A storm cell in room ri, beside its middle (where its chest is), bobbing in a glow of charge (fresh: it just dropped)
+    _cellDrop(ri, fresh) {
+        const room = this.rooms[ri], cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2), TS = this.TILE_SIZE, C = this._cells;
+        if (!C) return;
+        const ok = (x, y) => x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h && this.world[x]?.[y] === this.FLOOR
+            && !(this.tutorialChests || []).some(c => c.tileX === x && c.tileY === y) && !C.items.some(c => c.x === x && c.y === y) && !(this._floorExit?.x === x && this._floorExit?.y === y);
+        let spot = [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, 2], [2, -2], [-2, -2]].map(([dx, dy]) => [cx + dx, cy + dy]).find(([x, y]) => ok(x, y));
+        for (let r = 1; r < 8 && !spot; r++) for (let dx = -r; dx <= r && !spot; dx++) for (let dy = -r; dy <= r && !spot; dy++) if (ok(cx + dx, cy + dy)) spot = [cx + dx, cy + dy];
+        if (!spot) return;
+        const [x, y] = spot, px = x * TS + TS / 2, py = y * TS + TS / 2;
+        const glow = this.add.image(px, py + 2, 'vfx_glow').setTint(0x4fc3ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.97).setScale(0.35).setAlpha(0.6);
+        const img = this.add.image(px, py - 6, 'cell_storm').setDepth(0.98);
+        this.tweens.add({ targets: img, y: py - 10, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        this.tweens.add({ targets: glow, alpha: 0.3, scale: 0.42, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        if (fresh) {
+            img.setScale(0); this.tweens.add({ targets: img, scale: 1, duration: 380, ease: 'Back.easeOut' });
+            Sfx.play(this, 'pop'); this.showStatusText?.(px, py - 34, 'A STORM CELL', '#bfeeff');
+        }
+        C.items.push({ x, y, img, glow });
+    }
+    _cellTick() {
+        for (const c of this._cells?.items || []) if (!c.got && this.playerX === c.x && this.playerY === c.y) this._cellTake(c);
+    }
+    _cellTake(c) {
+        const C = this._cells;
+        c.got = true; C.got++;
+        Sfx.play(this, 'pickup');
+        this.tweens.killTweensOf([c.img, c.glow]); c.glow.destroy();
+        VisualFX.ripple(this, c.img.x, c.img.y + 8, 6, 30, 0x4fc3ff, { depth: 0.97, duration: 500, alpha: 0.8 });
+        this.tweens.add({ targets: c.img, y: c.img.y - 26, scale: 1.4, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => c.img.destroy() });
+        this.showStatusText?.(c.img.x, c.img.y - 30, `STORM CELL  ${C.got}/${C.need}`, '#bfeeff');
+        this._cellLabel(true);
+        const E = this._floorExit;
+        if (E) { E.tag?.setText(`STORM CELLS ${C.got}/${C.need}`); if (C.got >= C.need && !E.live) this._floorPower(E, true); }
+    }
+    // the count up top, under the clock (pop: one just came in)
+    _cellLabel(pop) {
+        const C = this._cells, done = C.got >= C.need;
+        C.label ||= this.add.text(this.scale.width / 2, 50, '', { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', stroke: '#05060a', strokeThickness: 4 }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(30);
+        C.label.setText(`STORM CELLS  ${'◆ '.repeat(C.got)}${'◇ '.repeat(C.need - C.got)}`.trim() + (done ? '  ·  TO THE LIFT' : '')).setColor(done ? '#bfeeff' : '#8fb8d8');
+        if (pop) { C.label.setScale(1.25); this.tweens.add({ targets: C.label, scale: 1, duration: 300, ease: 'Back.easeOut' }); }
     }
 
     // Up the storm lift: the cage drops round you with a clang, charge races up its coils and the hum climbs; it rises with you
@@ -1273,6 +1342,10 @@ class LevelManager {
         E.tag?.destroy(); E.fast = true;
         this.tweens.killTweensOf(E.cage);
         Sfx.play(this, 'switch');
+        for (let i = 0; i < (this._cells?.need || 0); i++) {   // the cells you found, into its coils
+            const c = this.add.image(this.player.x, this.player.y - 10, 'cell_storm').setDepth(1.07).setScale(0.8);
+            this.tweens.add({ targets: c, x: E.cage.x + (i % 2 ? 19 : -19), y: E.down - 50, scale: 0.4, alpha: 0.3, duration: 260, delay: i * 90, ease: 'Quad.easeIn', onComplete: () => { c.destroy(); Sfx.play(this, 'zap'); } });
+        }
         this.tweens.add({ targets: E.cage, y: E.down, duration: 280, ease: 'Bounce.easeOut', onComplete: () => { Sfx.play(this, 'clink'); cam.shake(140, 0.004); } });
         this.time.delayedCall(300, () => Sfx.play(this, 'e_riser'));
         this._floorRain(1, 1500);

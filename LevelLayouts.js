@@ -58,11 +58,13 @@ const LevelLayouts = {
     },
     // A story level's floors, by its levelIndex: each laid out as a recipe of its own, `story` naming each of its story rooms by
     // its number in the level as one map (the level's code knows its rooms by those; null: a room only the floors have), and the
-    // way on to the next (`exit`: GameScene._floorExit). You climb the Gauntlet's storm tower, the Voltslime on its roof.
+    // way on to the next (`exit`: GameScene._floorExit), and its storm cells (`cells`: the lift runs on them; a number: the story
+    // room on this floor whose clearing drops one, a template: the side room one waits in). You climb the Gauntlet's storm tower,
+    // the Voltslime on its roof.
     FLOORS: {
-        2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift' },
-            { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift' },
-            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1]], exit: 'lift' },
+        2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift', cells: [2, 'chest_s'] },
+            { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift', cells: [1, 'elite'] },
+            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1]], exit: 'lift', cells: [1, 'chest'] },
             { name: 'THE ROOF', path: ['g_landing', 'g_boss'], story: [null, 6] }],
     },
     // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'
