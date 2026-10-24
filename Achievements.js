@@ -30,6 +30,7 @@ const Achievements = {
         { id: 'bloom',     name: 'Wrong Kind of Gardener', tier: 1, stat: 'budFull', goal: 1, reward: { dust: 100 },              how: 'Let a Budding Slime grow a family of 8.',                  desc: 'You could have hit it. At any point.' },
         { id: 'angler',    name: 'Patient Angler',  tier: 1, stat: 'fish',        goal: 50,   reward: { dust: 200 },              how: 'Catch 50 fish.',                                           desc: 'The fish have started a support group.' },
         { id: 'boops',     name: 'Boop!',           tier: 1, stat: 'boops',       goal: 4,    reward: { glorps: 200 },            how: 'Boop every friendly slime that holds still for it.',      desc: 'Every last one. They all wiggled.' },
+        { id: 'trueface',  name: 'Beyond Comprehension', tier: 2, stat: 'trueFace', goal: 1, reward: { glorps: 500 },   how: 'In the Hall of Reflections, catch one of them showing what it really is. It never shows in a reflection.', desc: 'You were not supposed to see that.' },
         { id: 'collector', name: 'Armoury',         tier: 2, stat: 'weapons',     goal: 15,   reward: { glorps: 800 },            how: 'Own every weapon.',                                        desc: 'You can only hold four. You know that, right?' },
     ],
 
