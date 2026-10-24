@@ -16,10 +16,11 @@
 // they come back slowly, one at a time. Held, SHIFT spends two at once on a blink: a white flash and you're a few tiles on,
 // past one of them if it's in the way (not through stone or glass). Two sentry slimes (E sets one down where you stand, facing
 // your way, its line of sight lit on the floor; E again on it picks it up): they hold nothing, but hold F and you see through
-// one's eye (A D: the other), and while you do, nothing watches you. A map fills in as you see the hall (TAB, held: you
-// look down at it, and nothing watches them; small in a corner while you're seeing through a sentry): you, your sentries and
-// decoys and their lines, the panes you've chalked (M, G; ? not yet), shards and glorps you've seen, and them, red where
-// anything of yours sees them now, fading where they were last seen. Two decoy slimes (Q, you in pink): set one down and it stares the way you face for a while, and they take
+// one's eye (A D: the other), and while you do, nothing watches you. You carry a scrap of paper the hall draws itself on in
+// ink as you see it (TAB, held: you hold it up to your face, and nothing watches them; low in a corner while you're seeing
+// through a sentry): you, your sentries and decoys and their lines, the panes you've chalked (an eye a mirror, a cross glass,
+// dotted not yet), shards and glorps you've seen, and them: a red cross where anything of yours sees them now, fading where
+// they were last seen. Two decoy slimes (Q, you in pink): set one down and it stares the way you face for a while, and they take
 // it for you (anything in its line holds) till it pops. On the floor at your feet, a broken shard: hold it up (SPACE) and you see what's behind you, but the
 // view dives into the shard and everything in front of you goes unwatched. Find the three shards the way out is missing,
 // and it's whole again: step back through it. If one of them reaches you, it has you.
@@ -35,8 +36,8 @@ class MirrorTrial extends Phaser.Scene {
         WARDS: 2, WARD_MS: 7000, WARD_RANGE: 8,                      // decoy slimes: how many, how long one stares, how far
         BLINK: { HOLD_MS: 280, TILES: 3, COST: 2 },                  // SHIFT held this long: a blink, up to TILES on, for COST surges
         SENTRY: { N: 2, RANGE: 9, LIT_MS: 2500, SIGHT: 1.4 },
-        MAP: { SMALL: 12, BIG: 30, LAST_MS: 6000 },                  // the map: a tile's size in the corner, held up; how long a last sighting stays          // sentries: how many, how far one's line is lit, how bright just set down; how much further they see
-        ENT_MS: 900, ENT_SHARD: 90, ENT_MIN: 520, GRACE_MS: 3200,    // unseen this long, one moves (quicker by ENT_SHARD a shard found); none at first
+        MAP: { CELL: 5, BIG: 6, SMALL: 2.3, UP_MS: 230, LAST_MS: 6000 },   // the map: a tile's size in ink; how big held up, low in the corner; how long a last sighting stays          // sentries: how many, how far one's line is lit, how bright just set down; how much further they see
+        ENT_MS: 1600, ENT_SHARD: 120, ENT_MIN: 1000, GRACE_MS: 5000, // unseen this long, one moves (quicker by ENT_SHARD a shard found); none at first
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         DREAD: { RISE: 0.2, CLOSE: 1.3, CLOSE_PX: 3500, FALL: 0.3, WAIT: 500, OUT_MS: 1700, AFTER: 0.55, STING: 0.25 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; full, you look away OUT_MS, back at AFTER; the sting of one turning near
     };
@@ -60,7 +61,7 @@ class MirrorTrial extends Phaser.Scene {
         '########O########',
     ];
     static DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
-    static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp'];
+    static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_map'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
     // From the Training Ground: down into your slime's eyes, and through
@@ -148,8 +149,10 @@ class MirrorTrial extends Phaser.Scene {
         this.stingWash = this.add.rectangle(0, 0, W, H, 0xff1030).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(4.3);   // the sting: red over it, not hiding it
         this.linkG = this.add.graphics().setDepth(4.5);
         this.mapDim = this.add.rectangle(0, 0, W, H, 0x05030a).setOrigin(0).setAlpha(0).setDepth(6.4);
-        this.mapG = this.add.graphics().setDepth(6.5);   // the map (over everything said)
-        this.mapTxt = Array.from({ length: 40 }, () => this.add.text(0, 0, '', { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: '#f0ece0' }).setOrigin(0.5).setDepth(6.6).setVisible(false));   // (its M, G and ?)
+        this.mapCv = canvas('mt_mapview', this.tex.mt_map.w, this.tex.mt_map.h);   // the paper, inked each frame it's out
+        this.mapImg = this.add.image(W / 2, H + 400, 'mt_mapview').setDepth(6.5).setVisible(false);
+        this.mapHint = this.add.text(W / 2, H - 58, 'AN EYE: A MIRROR · A CROSS: GLASS · DOTTED: NOT TESTED · RED: THEM\nWHILE YOU LOOK AT IT, NOTHING WATCHES THEM', { fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d6c49a', stroke: '#05030a', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(6.6).setAlpha(0);
+        this.mapMode = null;
         this.input.keyboard.addCapture(Phaser.Input.Keyboard.KeyCodes.TAB);   // seeing through a sentry: scanlines, static, its frame
         this.linkTxt = this.add.text(24, 20, '', { fontSize: '15px', fontFamily: 'monospace', fontStyle: 'bold', color: '#8ff4dc', stroke: '#05030a', strokeThickness: 4 }).setDepth(6).setVisible(false);
         this.glorpTxt = this.add.text(W - 24, 20, '', { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#5dffb8', stroke: '#05030a', strokeThickness: 5 }).setOrigin(1, 0).setDepth(6);
@@ -328,46 +331,78 @@ class MirrorTrial extends Phaser.Scene {
             g.lineStyle(1.5, 0xe8e0ff, 0.6 * k); g.beginPath(); g.moveTo(...pts[0]); for (const p of pts.slice(1, n)) g.lineTo(...p); g.strokePath();
         }
     }
-    // The map, small in the corner (seeing through a sentry) or big (held up: TAB): what you've seen of the hall, you, your
-    // sentries and decoys and their lines, the panes you've chalked, shards and glorps, them where they were last seen
-    _map(now, mode) {
-        const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height, g = this.mapG, rows = this.map.length, cols = this.map[0].length;
-        g.clear(); this.mapTxt.forEach(t => t.setVisible(false));
-        this.mapDim.setAlpha(mode === 'big' ? 0.86 : 0);
-        if (!mode) return;
-        const T = mode === 'big' ? C.MAP.BIG : C.MAP.SMALL, ox = mode === 'big' ? (W - cols * T) / 2 : W - cols * T - 20, oy = mode === 'big' ? (H - rows * T) / 2 - 10 : H - rows * T - 110;
-        const at = (x, y) => [ox + x * T, oy + y * T], mid = (x, y) => [ox + (x + 0.5) * T, oy + (y + 0.5) * T];
-        g.fillStyle(0x05030a, 0.85).fillRect(ox - 8, oy - 8, cols * T + 16, rows * T + 16);
-        g.lineStyle(2, 0x8a7aa8, 0.8).strokeRect(ox - 8, oy - 8, cols * T + 16, rows * T + 16);
-        let ti = 0;
-        const label = (x, y, s, col) => { const t = this.mapTxt[ti++]; if (!t) return; const [cx, cy] = mid(x, y); t.setText(s).setColor(col).setFontSize(mode === 'big' ? 16 : 9).setPosition(cx, cy).setVisible(true); };
+    // The map out: held up to your face (TAB: it swings up from below), low in the corner (seeing through a sentry), or put away
+    _mapShow(mode) {
+        if (mode === this.mapMode) return;
+        const C = MirrorTrial.CFG.MAP, W = this.scale.width, H = this.scale.height, img = this.mapImg, prev = this.mapMode;
+        this.mapMode = mode;
+        this.tweens.killTweensOf([img, this.mapDim, this.mapHint, this.keysTxt]);
+        if (mode === 'big') {
+            img.setVisible(true);
+            if (prev !== 'small') img.setPosition(W / 2, H + 320).setAngle(-9).setScale(C.BIG);
+            Sfx.play(this, 'hover');
+            this.tweens.add({ targets: img, x: W / 2, y: H / 2 - 8, angle: -1.5, scale: C.BIG, duration: C.UP_MS, ease: 'Cubic.easeOut' });
+            this.tweens.add({ targets: this.mapDim, alpha: 0.6, duration: C.UP_MS });
+            this.tweens.add({ targets: this.mapHint, alpha: 1, duration: C.UP_MS });
+            this.tweens.add({ targets: this.keysTxt, alpha: 0, duration: C.UP_MS });   // (the hint where the keys were)
+        } else if (mode === 'small') {
+            img.setVisible(true).setPosition(W - 170, H - 200).setAngle(-4).setScale(C.SMALL);
+            this.mapDim.setAlpha(0); this.mapHint.setAlpha(0); this.keysTxt.setAlpha(1);
+        } else {
+            if (prev === 'big') this.tweens.add({ targets: img, y: H + 320, angle: -9, duration: 190, ease: 'Cubic.easeIn', onComplete: () => img.setVisible(false) });
+            else img.setVisible(false);
+            this.tweens.add({ targets: [this.mapDim, this.mapHint], alpha: 0, duration: 190 });
+            this.tweens.add({ targets: this.keysTxt, alpha: 1, duration: 190 });
+        }
+    }
+    // The hall in ink on the paper, a tile CELL pixels: what you've seen of it (stone hatched, panes as you've chalked them,
+    // stands, the way out), glorps and shards, your decoys and sentries and their lines dotted, them (a red cross: where
+    // anything of yours sees them now, blinking, or saw them last, fading), and you, an arrow
+    _mapInk(now) {
+        const C = MirrorTrial.CFG, V = this.mapCv, d = V.img.data, P = this.tex.mt_map.d, MW = V.W, MH = V.H, S = C.MAP.CELL;
+        const rows = this.map.length, cols = this.map[0].length, ox = Math.floor((MW - cols * S) / 2), oy = Math.floor((MH - 8 - rows * S) / 2);
+        d.set(P);
+        const ink = (x, y, hex, a = 1) => {   // (only on the paper)
+            x = Math.round(x); y = Math.round(y);
+            if (x < 0 || y < 0 || x >= MW || y >= MH) return;
+            const i = (y * MW + x) * 4;
+            if (!P[i + 3]) return;
+            d[i] += (((hex >> 16) & 255) - d[i]) * a; d[i + 1] += (((hex >> 8) & 255) - d[i + 1]) * a; d[i + 2] += ((hex & 255) - d[i + 2]) * a;
+        };
+        const cell = (cx, cy, fn) => { for (let v = 0; v < S; v++) for (let u = 0; u < S; u++) fn(ox + cx * S + u, oy + cy * S + v, u, v); };
+        const mid = (cx, cy) => [ox + cx * S + (S >> 1), oy + cy * S + (S >> 1)];
         for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
             if (!this.known.has(y * 64 + x)) continue;
-            const c = this.map[y][x], [px, py] = at(x, y);
-            if (c === '#') { g.fillStyle(0x3a3250, 1).fillRect(px, py, T, T); continue; }
-            g.fillStyle(0x1c1628, 1).fillRect(px, py, T, T);
-            if (c === 'M' || c === 'G') {   // a pane: what you've chalked it, or ?
-                const lab = this.labels[y * 64 + x];
-                g.fillStyle(lab === 'M' ? 0x9fb8e8 : lab === 'G' ? 0x5a7aa0 : 0x6a6a80, 1).fillRect(px + 1, py + 1, T - 2, T - 2);
-                label(x, y, lab || '?', lab ? '#05030a' : '#f0ece0');
-            } else if (c === 'L' || c === 'R') { g.lineStyle(mode === 'big' ? 4 : 2, 0xc8d8ff, 1); c === 'L' ? g.lineBetween(px, py + T, px + T, py) : g.lineBetween(px, py, px + T, py + T); }
-            else if (c === 'O' || c === 'Q') g.fillStyle(c === 'Q' ? 0xb890ff : 0x4a3a60, 1).fillRect(px + 1, py + 1, T - 2, T - 2);
+            const c = this.map[y][x], lab = this.labels[y * 64 + x];
+            if (c === '#') cell(x, y, (px, py) => ink(px, py, (px + py) % 2 ? 0x4a3418 : 0x6b4c28, 0.9));
+            else if (c === 'M' || c === 'G') cell(x, y, (px, py, u, v) => {
+                const edge = !u || !v || u === S - 1 || v === S - 1, m = S >> 1;
+                if (lab === 'M') ink(px, py, u === m && v === m ? 0xffffff : 0x5a7ab0, 0.95);                       // a mirror: filled, an eye
+                else if (lab === 'G') { if (edge || u === v || u + v === S - 1) ink(px, py, 0x5a7ab0, 0.9); }      // glass: framed, a cross
+                else if (edge && (u + v) % 2 === 0) ink(px, py, 0x7a6a4a, 0.9);                                    // not tested: dotted
+            });
+            else if (c === 'L' || c === 'R') cell(x, y, (px, py, u, v) => { if (c === 'L' ? u + v === S - 1 : u === v) ink(px, py, 0x606880, 1); });
+            else if (c === 'O' || c === 'Q') cell(x, y, (px, py, u, v) => ink(px, py, c === 'Q' ? (u === 2 && v === 2 ? 0xffffff : 0x9a6ad8) : 0x5a3a70, 0.9));
         }
-        const dot = (x, y, col, r, a = 1) => { const [cx, cy] = mid(x, y); g.fillStyle(col, a).fillCircle(cx, cy, r * T); };
-        const line = (o, col, range) => { const [dx, dy] = MirrorTrial.DIRS[o.dir], [x0, y0] = mid(o.x, o.y); let n = 0; for (let i = 1; i <= range; i++) { const c = this.map[o.y + dy * i]?.[o.x + dx * i]; if (c !== '.' && c !== 'G') break; n = i; } g.lineStyle(Math.max(2, T * 0.18), col, 0.45).lineBetween(x0, y0, x0 + dx * n * T, y0 + dy * n * T); };
-        for (const o of this.glorps) if (!o.got && this.known.has(o.y * 64 + o.x)) dot(o.x, o.y, 0x5dffb8, 0.16);
-        for (const o of this.shards) if (!o.got && this.known.has(o.y * 64 + o.x)) { const [cx, cy] = mid(o.x, o.y), r = T * 0.3; g.fillStyle(0xf0f6ff, 1).fillTriangle(cx, cy - r, cx + r, cy, cx - r, cy).fillTriangle(cx, cy + r, cx + r, cy, cx - r, cy); }
-        this.placed.forEach(w => { line(w, 0xff6ab0, C.WARD_RANGE); dot(w.x, w.y, 0xff6ab0, 0.28); });
-        this.sentries.forEach((o, i) => { line(o, 0x40d8b8, C.SENTRY.RANGE); dot(o.x, o.y, 0x40d8b8, this.linked && i === this.linkIdx ? 0.38 : 0.28); });
-        for (const [e, l] of this.lastSeen) {   // them: where anything of yours last saw them, fading; seen now, a pulse
+        for (const o of this.glorps) if (!o.got && this.known.has(o.y * 64 + o.x)) { const [x, y] = mid(o.x, o.y); for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) ink(x + a - 1, y + b, 0x1f9a5a); }
+        for (const o of this.shards) if (!o.got && this.known.has(o.y * 64 + o.x)) { const [x, y] = mid(o.x, o.y); for (const [a, b] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) ink(x + a, y + b, a || b ? 0x8a9ab8 : 0xffffff); }
+        const line = (o, col, range, live) => {
+            const [dx, dy] = MirrorTrial.DIRS[o.dir], [x0, y0] = mid(o.x, o.y);
+            for (let i = 1; i <= range; i++) { const c = this.map[o.y + dy * i]?.[o.x + dx * i]; if (c !== '.' && c !== 'G') break; for (let k = 0; k < S; k += 2) ink(x0 + dx * (i * S - k), y0 + dy * (i * S - k), col, 0.8); }
+            for (const [a, b] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) ink(x0 + a, y0 + b, col, live && Math.floor(now / 200) % 2 ? 0.4 : 1);
+        };
+        this.placed.forEach(w => line(w, 0xd0508a, C.WARD_RANGE));
+        this.sentries.forEach((o, i) => line(o, 0x1f8a78, C.SENTRY.RANGE, this.linked && i === this.linkIdx));
+        for (const [e, l] of this.lastSeen) {   // them
             const age = now - l.at; if (age > C.MAP.LAST_MS) continue;
-            const live = age < 50, a = live ? 0.75 + 0.25 * Math.sin(now / 90) : 0.8 * (1 - age / C.MAP.LAST_MS);
-            dot(l.x, l.y, 0xff2a48, live ? 0.4 : 0.32, a);
-            if (live) { const [cx, cy] = mid(l.x, l.y); g.lineStyle(2, 0xff2a48, 0.5 * a).strokeCircle(cx, cy, T * (0.5 + 0.15 * Math.sin(now / 90))); }
+            const live = age < 50; if (live && Math.floor(now / 160) % 3 === 2) continue;
+            const [x, y] = mid(l.x, l.y), a = live ? 1 : 0.9 * (1 - age / C.MAP.LAST_MS);
+            for (let k = -2; k <= 2; k++) { ink(x + k, y + k, 0xc01830, a); ink(x + k, y - k, 0xc01830, a); }
         }
-        const [cx, cy] = mid(this.me.x, this.me.y), [dx, dy] = MirrorTrial.DIRS[this.me.dir], r = T * 0.42;   // you: an arrow the way you face
-        g.fillStyle(0x8ff4dc, 1).fillTriangle(cx + dx * r, cy + dy * r, cx - dx * r * 0.6 - dy * r * 0.7, cy - dy * r * 0.6 + dx * r * 0.7, cx - dx * r * 0.6 + dy * r * 0.7, cy - dy * r * 0.6 - dx * r * 0.7);
-        if (mode === 'big') { const t = this.mapTxt[ti++]; t?.setText('THE MAP  ·  WHILE YOU LOOK AT IT, NOTHING WATCHES THEM').setColor('#a898c8').setFontSize(14).setPosition(W / 2, oy + rows * T + 26).setVisible(true); }
+        const [mx, my] = mid(this.me.x, this.me.y), [dx, dy] = MirrorTrial.DIRS[this.me.dir];   // you: an arrow the way you face
+        for (const [f, s2] of [[2, 0], [1, -1], [1, 0], [1, 1], [0, -2], [0, -1], [0, 0], [0, 1], [0, 2], [-1, 0], [-2, 0]]) ink(mx + dx * f - dy * s2, my + dy * f + dx * s2, 0x0e6a5c);
+        V.ctx.putImageData(V.img, 0, 0);
+        V.tex.refresh();
     }
     // seeing through a sentry: its frame, scanlines and static over the view, and the warning
     _linkFx(now, S) {
@@ -518,7 +553,8 @@ class MirrorTrial extends Phaser.Scene {
         this._wardsWatch(now);
         this._linkFx(now, S);
         for (const e of this.ents) if (e.spot) this.lastSeen.set(e, { x: e.x, y: e.y, at: now });   // (anything of yours saw it)
-        this._map(now, this.mapUp ? 'big' : S ? 'small' : null);
+        this._mapShow(this.mapUp ? 'big' : S ? 'small' : null);
+        if (this.mapImg.visible) this._mapInk(now);
         if (!this.caught && !this.leaving && now - this.t0 > C.GRACE_MS) {
             const ms = Math.max(C.ENT_MIN, C.ENT_MS - C.ENT_SHARD * this.found);
             for (const e of this.ents) {
