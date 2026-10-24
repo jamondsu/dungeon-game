@@ -31,7 +31,7 @@
 // three, one a flask found; you come in with one; they fill back up slowly): a dash, a few tiles on in a flash, past one
 // of them if it's in the way (not through stone or glass), loud. Found in the hall: decoy slimes (Q, you in pink: set one
 // down and it stares the way you face for a while; they take it for you, and anything in its line holds) and sentry
-// slimes (E sets one down: one of them coming within its reach, even a wall away, sets it off: it pings twice, each ping
+// slimes (E sets one down: one of them moving within its reach, even a wall away, or one asleep by it waking, sets it off: it pings twice, each ping
 // showing you where they are for a moment, then it's spent). Your map (TAB, held up to your face: nothing watches them) is
 // the whole hall: its panes as you've chalked or marked them, your decoys and sentries, you; them only as a ping shows.
 // Drawn small and scaled up: a ray a column through the tile map, off mirrors and through glass, shaded to black with
@@ -315,7 +315,7 @@ class MirrorTrial extends Phaser.Scene {
         else if (this.sentryLeft > 0) {
             const o = { x, y, at: this.time.now, pings: 0, next: 0, showUntil: 0, cells: [] };
             this.map.forEach((row, cy) => row.forEach((c, cx) => { if (c === '.' && this._inReach(o, cx, cy)) o.cells.push(cy * 64 + cx); }));
-            this.sentries.push(o); this.sentryLeft--; Sfx.play(this, 'pop'); this._note('A SENTRY. IF ONE OF THEM COMES NEAR IT, IT\'LL PING.');
+            this.sentries.push(o); this.sentryLeft--; Sfx.play(this, 'pop'); this._note('A SENTRY. IF ONE OF THEM MOVES NEAR IT, IT\'LL PING.');
         }
         else Sfx.play(this, 'deny');
         this._hud();
@@ -508,14 +508,15 @@ class MirrorTrial extends Phaser.Scene {
         flush();
         V.tex.refresh();
     }
-    // the sentries: one of them coming within reach sets one off. It pings, and again EVERY_MS on; each ping shows you where
-    // any of them in its reach are, live, for SHOW_MS (through the walls ahead of you, and on your map); then it's spent
+    // the sentries: one of them on the move within reach (awake and stepping, or just woken; a sleeper doesn't) sets one off,
+    // so one set down by a sleeper tells you when it wakes. It pings, and again EVERY_MS on; each ping shows you where any of
+    // them in its reach are, live, for SHOW_MS (through the walls ahead of you, and from above); then it's spent
     _sentryWatch(now) {
         const S = MirrorTrial.CFG.SENTRY;
         for (const e of this.ents) e.pinged = false;
         for (const o of this.sentries) {
             const near = this.ents.filter(e => this._inReach(o, e.x, e.y));
-            if (o.pings < S.PINGS && now >= o.next && (o.pings || near.length)) {
+            if (o.pings < S.PINGS && now >= o.next && (o.pings || near.some(e => e.awake && now - (e.movedAt ?? -1e9) < 400))) {
                 o.pings++; o.next = now + S.EVERY_MS; o.showUntil = now + S.SHOW_MS; o.pingAt = now;
                 Sfx.play(this, 'blip'); this.time.delayedCall(110, () => Sfx.play(this, 'blip'));
                 if (o.pings === 1) this._note('A SENTRY PINGS: ONE OF THEM IS NEAR IT.');
@@ -658,7 +659,7 @@ class MirrorTrial extends Phaser.Scene {
                 this.tweens.add({ targets: can.full, scale: can.P * 1.3, duration: 140, yoyo: true });
                 this._say('A FLASK OF YOUR GOO', this.vials === 1 ? 'SHIFT: a dash, a few tiles on in a flash, past one of them if it\'s in the way.\nLoud. It fills back up, slowly.' : this.vials === 2 ? 'Two now. They fill back up one at a time.' : 'A third.', '#8ff4dc', 3200);
             } else if (it.k === 'd') { this.wards++; this._say('A DECOY SLIME, ASLEEP', 'Q sets it down, staring the way you face.\nThey take it for you: whatever it stares at holds. It\'s made of reflection: a mirror shows it, even straight on.', '#ffaad2', 3600); }
-            else { this.sentryLeft++; this._say('A SENTRY SLIME, ASLEEP', 'E sets it down. When one of them comes near it (even a wall away), it pings twice:\neach ping shows you where they are. Then it\'s spent. It\'s made of reflection: a mirror shows it, even straight on.', '#8ff4dc', 3600); }
+            else { this.sentryLeft++; this._say('A SENTRY SLIME, ASLEEP', 'E sets it down. When one of them moves near it (even a wall away), or one asleep by it wakes, it pings twice:\neach ping shows you where they are. Then it\'s spent. It\'s made of reflection: a mirror shows it, even straight on.', '#8ff4dc', 3600); }
             this._hud();
         }
         if (gl) {
@@ -758,7 +759,7 @@ class MirrorTrial extends Phaser.Scene {
         while (from.get(key(...at))) { at = from.get(key(...at)); path.unshift(at); }
         const [nx, ny] = path[1];
         if (nx === me.x && ny === me.y) return this._prank(e);
-        e.x = nx; e.y = ny;
+        e.x = nx; e.y = ny; e.movedAt = this.time.now;
         this.closest = Math.min(this.closest, Math.abs(nx - me.x) + Math.abs(ny - me.y));
         // a new look for how near it is (never the one it had): right behind a pane between you, mostly up against the glass; else
         // by how many steps it has left (one: caught just before it got you); the ones holding a corridor's walls only in a
@@ -789,7 +790,7 @@ class MirrorTrial extends Phaser.Scene {
     // one wakes: its eyes open (seen as it happens: a jolt)
     _wake(e) {
         if (e.awake) return;
-        e.awake = true; e.pose = MirrorTrial.POSES.FAR[0]; e.lean = null; e.t = -MirrorTrial.CFG.WAKE.MS;   // (coming to: a moment before its first step, to see it coming)
+        e.awake = true; e.pose = MirrorTrial.POSES.FAR[0]; e.lean = null; e.t = -MirrorTrial.CFG.WAKE.MS; e.movedAt = this.time.now;   // (stirring: a sentry near it hears that)   // (coming to: a moment before its first step, to see it coming)
         Sfx.play(this, 'tell'); this.time.delayedCall(500, () => !this.caught && this._giggle(e));
         this._note('SOMETHING WOKE UP. IT WANTS TO PLAY.');
         if (e.seen) { this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.25); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 500 }); this.cameras.main.shake(140, 0.006); }
@@ -880,6 +881,7 @@ class MirrorTrial extends Phaser.Scene {
             if (!G) return;
             G.scene.resume();
             G._mirrorBusy = false;
+            Training.showPanel(G, true);   // (the Training panel back, as it was)
             G.cameras.main.setZoom(zoom); G.cameras.main.fadeIn(500, 8, 4, 16);
             G.updateHUD?.();   // (the glorps picked up in here)
             if (msg && G.player) G.showStatusText?.(G.player.x, G.player.y - 40, msg, '#d8c8ff');
