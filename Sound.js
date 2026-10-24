@@ -875,8 +875,8 @@ const Sfx = {
             const pan = ctx.createStereoPanner?.(), v = 0.03 + 0.09 * (o.near ?? 0.6), dull = o.muffled ? 0.5 : 1;   // o.muffled: through stone, o.n: longer)
             if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
             const out = pan || undefined;
-            for (let k = 0, n = 4 + (o.n || 0); k < n; k++) {
-                const at = t + k * 0.13, f = (560 - 38 * k) * j;
+            for (let k = 0, n = 4 + (o.n || 0), low = o.low ? 0.6 : 1; k < n; k++) {   // (o.low: lower and quicker: one starting to hunt)
+                const at = t + k * (o.low ? 0.085 : 0.13), f = (560 - 38 * k) * j * low;
                 this._noise(ctx, at, { filter: 'bandpass', f0: 2300 * dull, f1: 1500 * dull, q: 3, dur: 0.09, vol: v * 0.55, attack: 0.01, out, space: true });   // (the breath of it)
                 this._tone(ctx, at, { type: 'triangle', f0: f * 1.06, f1: f * 0.9, dur: 0.1, vol: v * 0.5 * dull, attack: 0.012, out, space: true });
             }
