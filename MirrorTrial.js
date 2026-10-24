@@ -12,8 +12,8 @@
 // walk into one to turn it) show you round them, so you can watch two ways at once. Glass you see through, and so do they
 // (it's in the way of nothing but walking). A pane of glass and a mirror look the same here, so a mirror can pass for a way
 // on: walk into one to tap it (a mirror rings, glass thuds) and you chalk it, an eye for a mirror, a cross for glass.
-// You walk slowly. SHIFT cracks open one of your three surges: a rush of speed for a moment, the screen fizzing with it;
-// they come back slowly, one at a time. Held, SHIFT spends two at once on a blink: a white flash and you're a few tiles on,
+// You walk slowly. SHIFT drinks one of your three vials of your own goo: a surge of speed for a moment, the view going
+// teal and wobbling like jelly, goo dripping down it; they fill back up slowly, one at a time (none while one's running). Held, SHIFT spends two at once on a blink: a white flash and you're a few tiles on,
 // past one of them if it's in the way (not through stone or glass). Two sentry slimes (E sets one down where you stand, facing
 // your way, its line of sight lit on the floor; E again on it picks it up): they hold nothing, but hold F and you see through
 // one's eye (A D: the other), and while you do, nothing watches you. You carry a scrap of paper the hall draws itself on in
@@ -32,7 +32,7 @@ class MirrorTrial extends Phaser.Scene {
         W: 256, H: 144, FOV: 0.66, FOG: 12, BOUNCES: 4, LEVELS: 11,   // the view, drawn this small; how wide; how far you see; mirrors deep; the dither
         BACK: { W: 96, H: 72, FOV: 0.5 },                           // the shard's view (the size of its art, mt_shard)
         STEP_MS: 340, BOOST_MS: 120, TURN_MS: 160, RAISE_MS: 220,    // your step (surging: BOOST_MS), turn, and lifting the shard
-        SURGE: { CHARGES: 3, CHARGE_MS: 9000, MS: 2200, FOV: 1.22, BEAT_MS: 420 },   // surges: how many, one back every CHARGE_MS, how long one lasts; the view widened; its heartbeat
+        SURGE: { CHARGES: 3, CHARGE_MS: 9000, MS: 2200, FOV: 1.22, BEAT_MS: 420 },   // surges (vials): how many, one back every CHARGE_MS, how long one lasts; the view widened; its pulse
         WARDS: 2, WARD_MS: 7000, WARD_RANGE: 8,                      // decoy slimes: how many, how long one stares, how far
         BLINK: { HOLD_MS: 280, TILES: 3, COST: 2 },                  // SHIFT held this long: a blink, up to TILES on, for COST surges
         SENTRY: { N: 2, RANGE: 9, LIT_MS: 2500, SIGHT: 1.4 },
@@ -133,17 +133,17 @@ class MirrorTrial extends Phaser.Scene {
         this.time.delayedCall(2300, () => Sfx.play(this, 'e_absorb'));
         this.tweens.add({ targets: [this.title, this.sub], alpha: 0, delay: C.GRACE_MS - 500, duration: 600 });
         this.keysTxt = this.add.text(W / 2, H - 30, '', { fontSize: '13px', fontFamily: 'monospace', align: 'center', lineSpacing: 4, color: '#8a7aa8', stroke: '#05030a', strokeThickness: 3 }).setOrigin(0.5).setDepth(6);
-        this.fx = this.add.graphics().setDepth(4);   // the surge's streaks, fizz and pulse
-        this.surgeGlow = this.add.rectangle(0, 0, W, H, 0x8cff3a).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(3);
-        // the surges: three cans, bottom left; an empty one fills back up from the bottom
+        this.fx = this.add.graphics().setDepth(4);   // the surge's streaks, goo and pulse
+        this.surgeGlow = this.add.rectangle(0, 0, W, H, 0x2fe8c8).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(3);
+        // the surges: three vials of goo, bottom left; an empty one fills back up from the bottom
         const ct = this.textures.get('mt_charge');
         if (!ct.has('full')) { ct.add('full', 0, 0, 0, 20, 36); ct.add('empty', 0, 20, 0, 20, 36); }
         this.cans = Array.from({ length: C.SURGE.CHARGES }, (_, i) => {
             const x = 40 + i * 50, y = H - 78;
-            return { glow: this.add.image(x, y, 'vfx_glow').setTint(0x8cff3a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.5).setAlpha(0.35).setDepth(5),
+            return { glow: this.add.image(x, y, 'vfx_glow').setTint(0x40d8b8).setBlendMode(Phaser.BlendModes.ADD).setScale(0.5).setAlpha(0.35).setDepth(5),
                      empty: this.add.image(x, y, 'mt_charge', 'empty').setScale(2).setDepth(5), full: this.add.image(x, y, 'mt_charge', 'full').setScale(2).setDepth(5) };
         });
-        this.surgeTxt = this.add.text(W / 2, H * 0.3, 'SURGE!', { fontSize: '54px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#c8ff3a', stroke: '#0d2a06', strokeThickness: 8 }).setOrigin(0.5).setDepth(6).setAlpha(0);
+        this.surgeTxt = this.add.text(W / 2, H * 0.3, 'SURGE!', { fontSize: '54px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#8ff4dc', stroke: '#063a32', strokeThickness: 8 }).setOrigin(0.5).setDepth(6).setAlpha(0);
         this.dreadG = this.add.graphics().setDepth(4.2);   // the dread: the edges darkening, the cracks
         this.black = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0).setDepth(4.9);   // looking away
         this.stingWash = this.add.rectangle(0, 0, W, H, 0xff1030).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(4.3);   // the sting: red over it, not hiding it
@@ -182,7 +182,7 @@ class MirrorTrial extends Phaser.Scene {
         this.tweens.killTweensOf([this.shard, this.dim]);
         if (!ms) { this.shard.setPosition(to.x, to.y).setScale(to.scale).setAngle(to.angle); return; }
         this.tweens.add({ targets: this.shard, ...to, duration: ms, ease: 'Cubic.easeOut' });
-        this.tweens.add({ targets: this.dim, alpha: up ? 0.95 : 0, duration: ms });
+        this.tweens.add({ targets: this.dim, alpha: up ? 0.35 : 0, duration: ms });   // (the hall round it still there, just not watched)
     }
 
     _key(e) {
@@ -228,29 +228,31 @@ class MirrorTrial extends Phaser.Scene {
             }
         }
     }
-    // SHIFT: a can cracked open, a surge (another while one runs adds to it)
+    // SHIFT: a vial drunk, a surge (not while one's running)
     _surgeGo() {
         const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height;
+        if (this.surging) return;
         if (this.charges <= 0 || this.caught || this.leaving) return this._noCans();
         const can = this.cans[--this.charges];
         this.surgeUntil = Math.max(this.surgeUntil, this.time.now) + C.SURGE.MS;
         if (!this.surging) this._surge(true);
-        Sfx.play(this, 'gulp'); this.time.delayedCall(110, () => Sfx.play(this, 'surge'));
-        this.cameras.main.flash(180, 150, 255, 70);
+        Sfx.play(this, 'gulp'); this.time.delayedCall(90, () => Sfx.play(this, 'bubbles')); this.time.delayedCall(140, () => Sfx.play(this, 'surge'));
+        this.cameras.main.flash(180, 60, 230, 200);
         this.tweens.killTweensOf(this.surgeTxt);
         this.surgeTxt.setAlpha(1).setScale(1.7).setAngle(-6 + Math.random() * 12);
         this.tweens.add({ targets: this.surgeTxt, scale: 1, duration: 260, ease: 'Back.easeOut' });
         this.tweens.add({ targets: this.surgeTxt, alpha: 0, delay: 450, duration: 400 });
         this.tweens.add({ targets: can.full, scale: 2.7, duration: 90, yoyo: true });
-        for (let n = 0; n < 40; n++) this.bubbles.push({ x: can.full.x + (Math.random() - 0.5) * 30, y: can.full.y - 30, vx: (Math.random() - 0.3) * 260, vy: -150 - Math.random() * 380, r: 2 + Math.random() * 5, life: 1 });   // the fizz, spraying out of it
+        for (let n = 0; n < 30; n++) this.bubbles.push({ x: can.full.x + (Math.random() - 0.5) * 30, y: can.full.y - 30, vx: (Math.random() - 0.3) * 260, vy: -150 - Math.random() * 380, r: 3 + Math.random() * 6, life: 1 });   // goo, splashing out of it
     }
     _noCans() {
         Sfx.play(this, 'deny');
         for (const c of this.cans) { this.tweens.killTweensOf(c.empty); this.tweens.add({ targets: c.empty, x: c.empty.x + 3, duration: 40, yoyo: true, repeat: 2 }); }
     }
-    // SHIFT held: two cans at once, a white flash, and you're a few tiles on (past one of them, not through stone or glass)
+    // SHIFT held: two vials at once, a white flash, and you're a few tiles on (past one of them, not through stone or glass)
     _blink() {
         const C = MirrorTrial.CFG, [dx, dy] = MirrorTrial.DIRS[this.me.dir];
+        if (this.surging) return Sfx.play(this, 'deny');   // (not while a surge runs)
         if (this.charges < C.BLINK.COST || this.moving || this.caught || this.leaving || this.linked) return this._noCans();
         let land = 0;
         for (let i = 1; i <= C.BLINK.TILES; i++) {
@@ -419,7 +421,7 @@ class MirrorTrial extends Phaser.Scene {
         this.noteTxt.setText(t).setAlpha(1);
         this.tweens.add({ targets: this.noteTxt, alpha: 0, delay: 1300, duration: 500 });
     }
-    // the surge on or off: the view widens, the screen fizzes
+    // the surge on or off: the view widens, the goo comes
     _surge(on) {
         const C = MirrorTrial.CFG;
         this.surging = on;
@@ -428,7 +430,8 @@ class MirrorTrial extends Phaser.Scene {
         if (on) this.cameras.main.shake(160, 0.005);
         else Sfx.play(this, 'hover');
     }
-    // every frame: the surge running out, the cans coming back; its heartbeat, streaks, fizz and the screen's edge pulsing
+    // every frame: the surge running out, the vials filling back; its pulse, streaks, goo dripping down the view and globs of it
+    // floating up, the screen's edge pulsing
     _surgeTick(now, delta) {
         const C = MirrorTrial.CFG, S = C.SURGE, W = this.scale.width, H = this.scale.height, g = this.fx, k = this.surgeK;
         if (this.surging && now >= this.surgeUntil) this._surge(false);
@@ -451,20 +454,30 @@ class MirrorTrial extends Phaser.Scene {
         if (k > 0.02) {
             for (let i = 0; i < 34; i++) {   // the world rushing past
                 const a = Math.random() * Math.PI * 2, r0 = H * (0.4 + Math.random() * 0.32), len = 40 + Math.random() * 160 * k;
-                g.lineStyle(1 + Math.random() * 2.5, Math.random() < 0.35 ? 0xffffff : Math.random() < 0.5 ? 0xc8ff3a : 0x5afff0, 0.4 * k);
+                g.lineStyle(1 + Math.random() * 2.5, Math.random() < 0.35 ? 0xffffff : Math.random() < 0.5 ? 0x8ff4dc : 0x2fe8c8, 0.4 * k);
                 g.lineBetween(W / 2 + Math.cos(a) * r0, H / 2 + Math.sin(a) * r0 * 0.7, W / 2 + Math.cos(a) * (r0 + len), H / 2 + Math.sin(a) * (r0 + len) * 0.7);
             }
             const edge = 6 + 14 * beat;   // the edge of the screen, pulsing with it
-            g.lineStyle(edge, 0x8cff3a, (0.25 + 0.35 * beat) * k).strokeRect(edge / 2, edge / 2, W - edge, H - edge);
-            for (let n = 0; n < 3; n++) this.bubbles.push({ x: Math.random() * W, y: H + 8, vx: (Math.random() - 0.5) * 30, vy: -120 - Math.random() * 240, r: 2 + Math.random() * 6, life: 1 });   // fizz rising up the screen
+            g.lineStyle(edge, 0x2fe8c8, (0.25 + 0.35 * beat) * k).strokeRect(edge / 2, edge / 2, W - edge, H - edge);
+            if (Math.random() < 0.5) this.bubbles.push({ x: Math.random() * W, y: H + 8, vx: (Math.random() - 0.5) * 30, vy: -90 - Math.random() * 160, r: 3 + Math.random() * 7, life: 1 });   // globs of goo floating up
+            if (Math.random() < 0.12) (this.drips ||= []).push({ x: Math.random() * W, y: -4, v: 30 + Math.random() * 60, r: 5 + Math.random() * 7, len: 0 });   // goo dripping down from the top
         }
         const dt = delta / 1000;
         this.bubbles = this.bubbles.filter(b => (b.life -= dt * 0.7) > 0 && b.y > -10);
-        for (const b of this.bubbles) {
+        for (const b of this.bubbles) {   // goo globs: wobbling as they go
             b.x += (b.vx + Math.sin((now + b.r * 200) / 160) * 40) * dt; b.y += b.vy * dt; b.vy *= 0.995;
-            g.lineStyle(1.5, b.r > 5 ? 0xffffff : 0xc8ff3a, 0.7 * b.life).strokeCircle(b.x, b.y, b.r);
-            if (b.r > 4) g.fillStyle(0xffffff, 0.6 * b.life).fillCircle(b.x - b.r * 0.35, b.y - b.r * 0.35, 1.2);
+            const sq = 1 + 0.15 * Math.sin(now / 70 + b.r);
+            g.fillStyle(0x2fb8a2, 0.55 * b.life).fillEllipse(b.x, b.y, b.r * 2 * sq, b.r * 2 / sq);
+            g.fillStyle(0x8ff4dc, 0.7 * b.life).fillCircle(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.3);
         }
+        this.drips = (this.drips || []).filter(p => p.y < H + 30);
+        for (const p of this.drips) {   // drips: a streak from the top, a drop at its end, sliding down and gone when the surge ends
+            p.v += 60 * dt; p.y += p.v * dt; p.len = Math.min(p.y, 140);
+            const a = 0.6 * Math.max(this.surgeK, 0.2);
+            g.fillStyle(0x2fb8a2, a).fillRect(p.x - p.r * 0.45, p.y - p.len, p.r * 0.9, p.len).fillCircle(p.x, p.y, p.r);
+            g.fillStyle(0x8ff4dc, a).fillCircle(p.x - p.r * 0.3, p.y - p.r * 0.2, p.r * 0.3);
+        }
+        if (this.surgeK <= 0.02) this.drips = [];
     }
     // walking into a pane: a mirror rings, glass thuds, and it's chalked (an eye, a cross)
     _tap(x, y, c) {
@@ -711,13 +724,14 @@ class MirrorTrial extends Phaser.Scene {
         }
         for (const e of this.ents) if (px0.get(e) >= (V === this.back ? C.SEEN_BACK : C.SEEN_PX)) { e.spot = true; if (watch) e.seen = true; }
         // the dither (each channel to a few levels, a 4x4 Bayer pattern between them); flipped, for the shard; cut to its shape
-        // (surging, the view ahead: its colours pushed toward neon, and split, red one way and blue the other)
+        // (surging, the view ahead: its colours pushed to your teal, and wobbling like jelly, row by row)
         const L = C.LEVELS - 1, BAY = MirrorTrial.BAYER, cut = V === this.back ? this.tex.mt_shard.d : null, sk = V === this.front ? this.surgeK : 0;
         const grey = V === this.front ? this.dread * 0.75 : 0;
-        const gain = [1 + 0.25 * sk, 1 + 0.7 * sk, 1 + 0.45 * sk], lift = 14 * sk, split = Math.round(3 * sk), row = this._row ||= new Uint8ClampedArray(W * 4 + 8);
+        const gain = [1 + 0.05 * sk, 1 + 0.55 * sk, 1 + 0.5 * sk], lift = 12 * sk, wob = 3 * sk, row = this._row ||= new Uint8ClampedArray(W * 4 + 8);
         for (let y = 0; y < H; y++) {
             if (flip) for (let x = 0; x < W / 2; x++) { const i = (y * W + x) * 4, j = (y * W + W - 1 - x) * 4; for (let c = 0; c < 4; c++) { const t = d[i + c]; d[i + c] = d[j + c]; d[j + c] = t; } }
-            if (split) { row.set(d.subarray(y * W * 4, (y + 1) * W * 4)); for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; d[i] = row[Math.max(0, x - split) * 4]; d[i + 2] = row[Math.min(W - 1, x + split) * 4 + 2]; } }
+            const sh = wob ? Math.round(Math.sin(y * 0.16 + now / 85) * wob) : 0;
+            if (sh) { row.set(d.subarray(y * W * 4, (y + 1) * W * 4)); for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, j = Math.max(0, Math.min(W - 1, x - sh)) * 4; d[i] = row[j]; d[i + 1] = row[j + 1]; d[i + 2] = row[j + 2]; } }
             for (let x = 0; x < W; x++) {
                 const i = (y * W + x) * 4, o = BAY[(y & 3) * 4 + (x & 3)];
                 if (grey) { const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; d[i] += (l - d[i]) * grey; d[i + 1] += (l - d[i + 1]) * grey; d[i + 2] += (l - d[i + 2]) * grey; }
