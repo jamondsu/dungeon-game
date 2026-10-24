@@ -1018,7 +1018,7 @@ class LevelSelectScene extends Phaser.Scene {
         kit(UIKit.overlay(this, { alpha: 0.7, depth: D }));
         const pw = 520, ph = 250, px = W / 2 - pw / 2, py = H / 2 - ph / 2;
         kit(UIKit.panel(this, { x: px, y: py, w: pw, h: ph, accent: P.accentGold, depth: D + 1, title: 'STRUGGLING?', titleSize: '20px' }));
-        objs.push(this.add.text(W / 2, py + 64, `${Progress.NAMES[id] || 'This level'} keeps beating you. Head to the Tower: every floor pays glorps, dust and books, and they all stay with you when you fall. Upgrade your weapons in the shop, then come back stronger.`,
+        objs.push(this.add.text(W / 2, py + 64, `${Progress.NAMES[id] || 'This level'} keeps beating you. Head to the Tower: every floor pays glorps and dust, books drop as you climb, and they all stay with you when you fall. Upgrade your weapons in the shop, then come back stronger.`,
             { fontSize: '14px', fontFamily: 'monospace', color: UIKit.CSS.textMid, align: 'center', lineSpacing: 5, wordWrap: { width: pw - 60 } }).setOrigin(0.5, 0).setDepth(D + 3).setScrollFactor(0));
         kit(UIKit.button(this, { x: W / 2 - 115, y: py + ph - 44, w: 200, h: 42, label: 'TO THE TOWER  ▸', accent: P.accentGold, depth: D + 4, fontSize: '15px', fireOn: 'down',
             onClick: () => close(() => this._towerGuide(() => TowerFloors.maxStart() > 1 ? this._openTowerStart() : this._climb(1))) }));
@@ -1029,11 +1029,11 @@ class LevelSelectScene extends Phaser.Scene {
     // Five pages, each a picture from the Tower (assets/tower_guide) and a few lines. Shown the
     // first time you go in (tower_guide_seen), and from 'how it works' on the start panel.
     static TOWER_GUIDE = [
-        ['CLIMB', 'Every floor is an arena. Enemies come in three waves, and a ring on the floor shows where each one lands. Clear every wave to finish the floor.'],
-        ['GO UP', 'A cleared floor pays glorps and heals you a little. Step into the rift to climb. Every floor up is tougher than the last. Scraps from kills buy a boon at the shrine.'],
+        ['CLIMB', 'Every floor is an arena. Enemies come in three waves (on a boss floor, just the boss), and a ring on the floor shows where each one lands. Clear every wave to finish the floor.'],
+        ['GO UP', 'Kills pay glorps as you go, and a cleared floor pays the rest, with some dust, and heals you a little. Step into the rift to climb. Every floor up is tougher than the last. Scraps from kills buy a boon at the shrine.'],
         ['PICK A BOON', 'Every third floor, and after every boss, pick one of three boons. They stack, and they last for this climb only.'],
-        ['BOSSES', 'Every tenth floor is a boss. Beat it for a big payout, sealed books and a garden seed.'],
-        ['FALLING', 'When you fall, the climb ends. You keep every glorp, book, seed and bit of dust you found; the boons are gone. Once you have climbed high enough, you can start further up for a fee.'],
+        ['BOSSES', 'Every tenth floor is a boss. Beat it for a big payout, a relic you don\'t have yet, sealed books and a garden seed.'],
+        ['FALLING', 'When you fall, the climb ends. You keep every glorp, book, seed and bit of dust you found; the boons and scraps are gone. Once your best is floor 5 or higher, you can start up to 3 floors below it, for a fee.'],
     ];
     _towerGuide(then, force = false) {
         this._guide({ id: 'tguide', dir: 'tower_guide', title: 'HOW THE TOWER WORKS', pages: LevelSelectScene.TOWER_GUIDE, seenKey: 'tower_guide_seen', then, force, end: 'TO THE TOWER  ▸' });
