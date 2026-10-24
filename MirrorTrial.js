@@ -42,7 +42,7 @@ class MirrorTrial extends Phaser.Scene {
         BACK: { W: 96, H: 72, FOV: 0.5 },                           // the shard's view (the size of its art, mt_shard)
         STEP_MS: 340, TURN_MS: 160, RAISE_MS: 220,                   // your step, turn, and lifting the shard
         ARM: { HOLD_MS: 4000, REST_MS: 10000, BACK: 0.35 },         // the shard held up: your arm gives out after HOLD_MS, rests in REST_MS, back up at BACK
-        BLUR: { GROW_MS: 25000, WIPE_MS: 1500, UP: 0.35 },           // the shard down, it fogs up (thick in GROW_MS); held up you see through it better (UP of it); F held wipes it clean in WIPE_MS
+        BLUR: { CLEAR_MS: [15000, 30000], STEP_MS: [8000, 18000], STEP: 0.34, FADE_MS: 2000, WIPE_MS: 1500, UP: 0.35 },   // the shard down, it fogs up: clear a while (CLEAR_MS, at random), then a smudge more every STEP_MS (fading in over FADE_MS); held up, you see through it better (UP of it); F held wipes it clean in WIPE_MS (your arm can't rest meanwhile)
         GOO: { VIALS: 3, CHARGE_MS: 9000, FOV: 1.22 },              // your goo: at most this many vials (each a flask found), one back every CHARGE_MS; the view widened as you dash
         WARD_MS: 7000, WARD_RANGE: 8,                                // decoy slimes (found in the hall): how long one stares, how far
         DASH: { TILES: 3, COST: 1 },                                 // SHIFT: a dash, up to TILES on, for COST vials
@@ -134,7 +134,7 @@ class MirrorTrial extends Phaser.Scene {
         }));
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
             charges: 1, vials: 1, chargeT: 0, fovK: 1, gooK: 0, bubbles: [], drips: [], echoes: [], wards: 0, placed: [], labels: {}, marks: {}, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, pranks: 0, breaks: 0, closest: Infinity,
-            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, blur: 0, wiping: false, mapUp: false });
+            dread: 0, dreadAt: 0, scarred: 0, stress: 0, calmUntil: 0, blackUntil: 0, heartAt: 0, arm: 1, armOut: false, blur: 0, blurTo: 0, blurAt: this.time.now + Phaser.Math.Between(...C.BLUR.CLEAR_MS), wiping: false, mapUp: false });
         // the dread's cracks: from the screen's edges in, a little further the more you dread (fixed, so they grow, not jump)
         let seed = 9; const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
         this.cracks = Array.from({ length: 12 }, (_, i) => {
@@ -660,17 +660,25 @@ class MirrorTrial extends Phaser.Scene {
         if (this.raised) {
             this.arm -= delta / C.ARM.HOLD_MS;
             if (this.arm <= 0) { this.arm = 0; this.armOut = true; this.raised = false; this._shardAt(false, C.RAISE_MS); Sfx.play(this, 'deny'); this._note('YOUR ARM GIVES OUT.'); }
-        } else if ((this.arm = Math.min(1, this.arm + delta / C.ARM.REST_MS)) >= C.ARM.BACK) this.armOut = false;
+        } else if (!this.wiping && (this.arm = Math.min(1, this.arm + delta / C.ARM.REST_MS)) >= C.ARM.BACK) this.armOut = false;   // (wiping, it's busy)
         const [spent, full] = this.arms, Wd = this.scale.width, Hd = this.scale.height, up = Math.max(0, Math.min(1, (this.shard.scaleX - 2.4) / 3.6)), rows = Math.round(30 * this.arm);   // (beside the shard, low or held up)
         for (const a of this.arms) a.setVisible(this.holding).setPosition(Wd - 290 - 320 * up, Hd - 100 - (Hd / 2 - 130) * up);
         full.setVisible(this.holding && rows > 0).setCrop(0, 30 - rows, 9, rows);
         spent.setAlpha(this.armOut && Math.floor(now / 220) % 2 ? 0.45 : 1);
-        // the shard fogging up while it's down; F held rubs it clean
+        // the shard fogging up while it's down: clear a while, then a smudge at a time, at random; F held rubs it clean (and, clean,
+        // it's clear a while again)
+        const B = C.BLUR;
         if (this.holding && !this.raised) {
-            if (this.wiping) { this.blur = Math.max(0, this.blur - delta / C.BLUR.WIPE_MS); if (now - (this.wipeAt || 0) > 260) { this.wipeAt = now; Sfx.play(this, 'hover'); } }
-            else this.blur = Math.min(1, this.blur + delta / C.BLUR.GROW_MS);
-            if (this.blur > 0.5 && !this.toldBlur) { this.toldBlur = true; this._note('YOUR SHARD\'S FOGGING UP. HOLD F TO WIPE IT.'); }
-        }
+            if (this.wiping) {
+                this.blur = this.blurTo = Math.max(0, this.blur - delta / B.WIPE_MS);
+                this.blurAt = now + Phaser.Math.Between(...(this.blur ? B.STEP_MS : B.CLEAR_MS));
+                if (now - (this.wipeAt || 0) > 260) { this.wipeAt = now; Sfx.play(this, 'hover'); }
+            } else if (now >= this.blurAt && this.blurTo < 1) {
+                this.blurTo = Math.min(1, this.blurTo + B.STEP); this.blurAt = now + Phaser.Math.Between(...B.STEP_MS);
+                if (!this.toldBlur) { this.toldBlur = true; this._note('YOUR SHARD\'S FOGGING UP. HOLD F TO WIPE IT.'); }
+            }
+        } else if (this.raised) this.blurAt += delta;   // (in use: it doesn't)
+        this.blur = Math.min(this.blurTo, this.blur + delta / B.FADE_MS);
         const tire = this.raised ? (1 - this.arm) ** 2 : 0, rub = this.wiping && !this.raised ? Math.sin(now / 40) * 2 : 0;
         for (const c of this.shard.list) c.setPosition((Math.random() - 0.5) * 2.4 * tire + rub, (Math.random() - 0.5) * 2.4 * tire + 5 * tire);
         this.front.cover = this.raised && this.shard;
