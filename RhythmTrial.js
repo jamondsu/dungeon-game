@@ -1342,9 +1342,12 @@ class RhythmTrial {
         st.figs = Array.from({ length: 40 }, () => keep(S.add.image(0, 0, '__DEFAULT').setDepth(D + 0.2).setVisible(false)));   // Easy's beat figures, a layer each (in order: drawn in order)
         st.rests = Array.from({ length: 24 }, () => keep(S.add.image(0, 0, 'fx_rt_r4').setTint(0xf0ecff).setDepth(D + 0.32).setVisible(false)));   // rest marks (on a dark disc: on the pale slab they were lost)
         st.marks = Array.from({ length: 6 }, () => keep(S.add.image(0, 0, 'fx_rt_mordent').setDepth(D + 0.25).setVisible(false)));   // ornament marks (mordent, accent, trill)
-        st.dirBack = keep(S.add.graphics().setDepth(D + 0.28));   // the discs under the route's arrows (over the notes: under them, between two cells they blurred in)
+        st.discs = Array.from({ length: 28 }, () => keep(S.add.image(0, 0, 'fx_rt_disc').setDepth(D + 0.28).setVisible(false)));   // the discs under the route's arrows (over the notes: under them, between two cells they blurred in)
         st.dirs = Array.from({ length: 4 }, () => keep(S.add.image(0, 0, 'fx_rt_arrow').setTint(C_ARROW).setDepth(D + 0.3).setVisible(false)));   // the arrows for the next steps
         st.chevs = Array.from({ length: 48 }, () => keep(S.add.image(0, 0, 'fx_rt_chev').setDepth(D + 0.12).setVisible(false)));   // a dash's gap: chevrons marching along it
+        st.badgeBacks = Array.from({ length: 6 }, () => keep(S.add.image(0, 0, 'fx_rt_badge').setDepth(D + 0.305).setVisible(false)));   // the badge, ringed in its element's colour
+        st.readies = Array.from({ length: 6 }, () => keep(S.add.image(0, 0, 'fx_rt_ready').setDepth(D + 0.305).setVisible(false)));   // and ringed green when you're on it
+        st.tips = Array.from({ length: 4 }, () => keep(S.add.image(0, 0, 'fx_rt_tip').setOrigin(0.05, 0.5).setDepth(D + 0.11).setVisible(false)));   // a quake path's arrowhead
         st.badges = Array.from({ length: 6 }, () => keep(S.add.image(0, 0, 'el_icon_fire').setDepth(D + 0.31).setVisible(false)));   // its element, on a badge
         st.glyphs = Array.from({ length: 12 }, () => pin(S.add.text(0, 0, '', { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#fff', stroke: '#07060a', strokeThickness: 5 }).setOrigin(0.5).setDepth(44).setVisible(false)));
         // the dashes coming, in order, over your element bar: each one's element, the key that switches to it, the beats till it
@@ -1366,7 +1369,7 @@ class RhythmTrial {
     static hud(S, now, dt) {
         const st = S._rtrial, C = RhythmTrial.C, W = S.scale.width, g = st.hud, T = S.TILE_SIZE;
         if (!g?.active) return;
-        g.clear(); st.fx.clear(); st.fxTop.clear(); st.dirBack.clear();
+        g.clear(); st.fx.clear(); st.fxTop.clear();
         st.pulse = Math.max(0, st.pulse - dt / 260); st.shake = Math.max(0, st.shake - dt / 300); st.flash = Math.max(0, st.flash - dt / 400);
         const N = st.R.length - 1, song = Phaser.Math.Clamp((now - st.times[0]) / (st.times[N] - st.times[0]), 0, 1);
         // the race, along the top (its frame flushing red on a miss, warm on the beat)
@@ -1418,7 +1421,7 @@ class RhythmTrial {
         // colour, glowing: they pop in, sway, and bounce on the beat. Two in one cell sit side by side; the one you're on is
         // under you, so not shown; a quake's rides the top of its jump loop. A little hand-drawn arrow between each cell and the
         // next says which way the route goes; a slur's arc spans its phrase.
-        let nn = 0, dd = 0, prev = [RhythmTrial.endX(st.R[st.i]) * T + T / 2, st.R[st.i].y * T + T / 2];
+        let nn = 0, dd = 0, dc = 0, prev = [RhythmTrial.endX(st.R[st.i]) * T + T / 2, st.R[st.i].y * T + T / 2];
         const show = [], per = new Map();
         if (!st.done) for (let k = st.i + 1; k <= N && show.length < st.notes.length; k++) {
             const m = st.R[k], left = st.times[k] - now, ahead = Phaser.Math.Clamp(m.beat * C.AHEAD_B, C.AHEAD[0], C.AHEAD[1]);
@@ -1440,7 +1443,7 @@ class RhythmTrial {
                     // one boldest, nudging the way it points on each beat
                     const ang = Math.atan2(cy - prev[1], cx - prev[0]), nudge = T * 0.12 * st.pulse, al = [1, 0.8, 0.6, 0.45][dd] * a, sz = T * (dd === 0 ? 0.66 : 0.56);
                     const ax = (prev[0] + cx) / 2 + Math.cos(ang) * nudge, ay = (prev[1] + cy) / 2 + Math.sin(ang) * nudge;
-                    st.dirBack.fillStyle(0x07060a, 0.6 * al).fillCircle(ax, ay, sz * 0.48);
+                    st.discs[dc++].setPosition(ax, ay).setDisplaySize(sz * 0.96, sz * 0.96).setAlpha(al).setVisible(true);
                     st.dirs[dd++].setPosition(ax, ay).setRotation(ang).setDisplaySize(sz, sz).setAlpha(al).setVisible(true);
                 }
                 prev = [RhythmTrial.endX(m) * T + T / 2, cy];
@@ -1458,7 +1461,7 @@ class RhythmTrial {
             rs.forEach((key, j) => {
                 if (rr >= st.rests.length) return;
                 const rx = nx + (j - (rs.length - 1) / 2) * T * 0.36, ry = ny + T * 0.34;
-                st.dirBack.fillStyle(0x07060a, 0.55 * a).fillCircle(rx, ry, T * 0.2 * pop);
+                st.discs[dc++].setPosition(rx, ry).setDisplaySize(T * 0.4 * pop, T * 0.4 * pop).setAlpha(a).setVisible(true);
                 st.rests[rr++].setTexture(key).setDisplaySize(T * 0.44 * pop, T * 0.44 * pop).setPosition(rx, ry).setAlpha(a).setVisible(true);
             });
             st.noteGlow[nn].setPosition(nx, ny).setTint(col).setScale(0.32 * pop * (1 + 0.3 * st.pulse)).setAlpha(0.45 * a).setVisible(true);
@@ -1474,6 +1477,7 @@ class RhythmTrial {
         for (; rr < st.rests.length; rr++) st.rests[rr].setVisible(false);
         for (; ff < st.figs.length; ff++) st.figs[ff].setVisible(false);
         for (; dd < st.dirs.length; dd++) st.dirs[dd].setVisible(false);
+        for (; dc < st.discs.length; dc++) st.discs[dc].setVisible(false);
         // slurs: an arc over each phrase showing (or under way)
         const slurs = new Set([st.R[st.i].slurEnd != null ? st.R[st.i].slurStart : null, ...show.map(o => o.m.slurStart)].filter(v => v != null));
         for (const s0 of slurs) {
@@ -1493,7 +1497,7 @@ class RhythmTrial {
         }
         // the arrows for what's coming: dashes, hops, jumps
         const G = st.fxTop;
-        let cv = 0, bb = 0;
+        let cv = 0, bb = 0, tp = 0;
         if (!st.done) for (let k = st.i + 1; k <= N; k++) {
             const m = st.R[k], left = st.times[k] - now;
             if (left > C.LEAD[1]) break;
@@ -1516,8 +1520,7 @@ class RhythmTrial {
                 line(7, col, 0.16 * a); line(4, 0x07060a, 0.55 * a);   // a glow under it, a dark edge
                 G.lineStyle(2.6, col, a); RhythmTrial.dashes(G, pts, 5, 3, -now / 25);
                 const [hx, hy] = pts[pts.length - 1], [qx, qy] = pts[pts.length - 2], hl = Math.hypot(hx - qx, hy - qy) || 1, ux = (hx - qx) / hl, uy = (hy - qy) / hl;
-                G.fillStyle(0x07060a, 0.6 * a).fillTriangle(hx + ux * 6.5, hy + uy * 6.5, hx - uy * 5.2, hy + ux * 5.2, hx + uy * 5.2, hy - ux * 5.2);
-                G.fillStyle(col, a).fillTriangle(hx + ux * 5, hy + uy * 5, hx - uy * 3.8, hy + ux * 3.8, hx + uy * 3.8, hy - ux * 3.8);
+                if (tp < st.tips.length) st.tips[tp++].setPosition(hx, hy).setRotation(Math.atan2(uy, ux)).setTint(col).setAlpha(a).setVisible(true);
             }
             else {   // a dash or a hop: chevrons in its element's colour marching along the gap, brightening toward the slab, on a soft glow
                 line(10, col, 0.1 * a);
@@ -1532,16 +1535,19 @@ class RhythmTrial {
             if (m.kind === 'quake') glyph(mx, my - T * 0.62 - 2 * Math.sin(now / 70) * u, 'JUMP', col, a);   // (over its note, at the loop's top)
             else {   // the element you'll need, on a badge: ringed green when you're on it (then just Shift), else its key, pulsing
                 const ready = S.currentElement === m.el;
-                G.fillStyle(0x07060a, 0.85 * a).fillCircle(mx, my, 8.5); G.lineStyle(1.4, col, a).strokeCircle(mx, my, 8.5);
-                if (bb < st.badges.length) st.badges[bb++].setTexture('el_icon_' + m.el).setPosition(mx, my).setDisplaySize(12, 12).setAlpha(a).setVisible(true);
-                if (ready) G.lineStyle(1.6, 0x7dff9a, a).strokeCircle(mx, my, 10.5);
+                if (bb < st.badges.length) {
+                    st.badgeBacks[bb].setPosition(mx, my).setTint(col).setAlpha(a).setVisible(true);
+                    st.readies[bb].setPosition(mx, my).setAlpha(a).setVisible(ready);
+                    st.badges[bb++].setTexture('el_icon_' + m.el).setPosition(mx, my).setDisplaySize(12, 12).setAlpha(a).setVisible(true);
+                }
                 glyph(mx, my - 14, ready ? '⇧' : Settings.label(Settings.key(m.el)), ready ? col : 0xffffff, a * (ready ? 1 : 0.6 + 0.4 * Math.abs(Math.sin(now / 120))));
             }
         }
         for (; sp < st.sparks.length; sp++) st.sparks[sp].setVisible(false);
         for (; gl < st.glyphs.length; gl++) st.glyphs[gl].setVisible(false);
         for (; cv < st.chevs.length; cv++) st.chevs[cv].setVisible(false);
-        for (; bb < st.badges.length; bb++) st.badges[bb].setVisible(false);
+        for (; bb < st.badges.length; bb++) [st.badges, st.badgeBacks, st.readies].forEach(p => p[bb].setVisible(false));
+        for (; tp < st.tips.length; tp++) st.tips[tp].setVisible(false);
         // the dashes coming: the next four, however far off (the first ringed green when you're on its element), right under you
         // (where your eyes are), or over you when the route's about to go down
         const QG = st.queueG, up = [], cam = S.cameras.main, Tz = T * cam.zoom, [px, py] = RhythmTrial.toScreen(S, S.player.x, S.player.y);
