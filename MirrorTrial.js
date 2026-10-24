@@ -61,8 +61,8 @@ class MirrorTrial extends Phaser.Scene {
     };
     // # stone, P a pane (each a mirror or glass, at random; every one a window, open both sides), L R mirror stands at 45 degrees
     // (L like /, R like \), O the way out (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a
-    // sentry slime, W one of them, @ you (facing north). An outer ring and an inner one, a glass gallery in the middle, closets
-    // off the sides; the inner ring's walls are windows onto the outer, the gallery's onto the inner.
+    // sentry slime, W one of them, @ you (facing north). An outer ring and an inner one, a glass gallery in the middle (four
+    // panes standing free in it, round its middle), closets off the sides; the inner ring's walls are windows onto the outer, the gallery's onto the inner.
     static MAP = [
         '###################',
         '#W...g...g...g...W#',
@@ -70,9 +70,9 @@ class MirrorTrial extends Phaser.Scene {
         '#...P.........P...#',
         '#.#W#.#P#.#P#.#v#g#',
         '#.P.PgP....gPdP.P.#',
-        '#.###.#.....#.###.#',
+        '#.###.#.P.P.#.###.#',
         '#n....P.....P....n#',
-        '#.###.#.....#.###.#',
+        '#.###.#.P.P.#.###.#',
         '#.P.PdP..g..PgP.P.#',
         '#g#v#.#P#.#P#.#W#.#',
         '#.#.P....h....P.#.#',
