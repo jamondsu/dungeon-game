@@ -71,7 +71,7 @@ class BootScene extends Phaser.Scene {
         const slime = this.add.sprite(W / 2, -60, 'slime_blue', 0)
             .setScale(3)
             .setDepth(5);
-        if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, slime, { mood: 'friend', look: 'pointer' });   // Creatures.js
+        if (typeof CreatureFX !== 'undefined') { CreatureFX.face(this, slime, { mood: 'friend', look: 'pointer' }); CreatureFX.boopable(this, slime, 'boot'); }   // Creatures.js (a boop: a secret)
         // A pool of its own light on the ground, growing as it falls (Visuals.js' soft glow)
         if (this.textures.exists('vfx_glow')) {
             const pool = this.add.image(W / 2, H * 0.58 + 44, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD)

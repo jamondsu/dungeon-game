@@ -130,7 +130,7 @@ class LevelSelectScene extends Phaser.Scene {
         const SLIME_DY = -52;      // stands on top of the medallion
         const BASE = 2.3;
         const slime = this.add.sprite(NODES[sel].x, NODES[sel].y + SLIME_DY, 'slime_blue', 0).setScale(BASE).setDepth(9);
-        if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, slime, { mood: 'friend', look: 'pointer' });
+        if (typeof CreatureFX !== 'undefined') { CreatureFX.face(this, slime, { mood: 'friend', look: 'pointer' }); CreatureFX.boopable(this, slime, 'hero'); }
         const shadow = this.add.ellipse(slime.x, NODES[sel].y - 24, 26, 7, 0x2a1a0c, 0.35).setDepth(8);
         const idle = () => this.tweens.add({ targets: slime, scaleY: BASE * 0.91, scaleX: BASE * 1.07, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         let idleTw = idle();

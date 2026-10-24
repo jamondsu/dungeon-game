@@ -736,6 +736,36 @@ class CreatureFX {
         return u;
     }
 
+    // A friendly slime that holds still for it: click it and it's booped (Achievements.BOOPS names them). Its click stops there
+    // (the loading screen's own click would start the game).
+    static boopable(scene, sprite, id) {
+        if (!sprite?.setInteractive) return;
+        sprite.setInteractive({ useHandCursor: true });
+        sprite.on('pointerdown', (p, lx, ly, ev) => {
+            ev?.stopPropagation?.();
+            const r = sprite.getBounds();   // (from its body: a slime's frame has room above it)
+            CreatureFX.boopFx(scene, r.centerX, r.y + r.height * 0.65, id, sprite.scrollFactorX);
+            if (sprite._booping) return;
+            sprite._booping = true;
+            const sx = sprite.scaleX, sy = sprite.scaleY;   // a squish, and it squints
+            scene.tweens.add({ targets: sprite, scaleX: sx * 1.25, scaleY: sy * 0.75, duration: 90, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { sprite.setScale(sx, sy); sprite._booping = false; } });
+            if (sprite._cfx) { sprite._cfx.expr = 'wince'; scene.time.delayedCall(350, () => { if (sprite._cfx) sprite._cfx.expr = null; }); }
+        });
+    }
+    // a boop at (x, y): a squeak, a heart popping up off it; the first time for this one, it counts
+    static boopFx(scene, x, y, id, sf = 0) {
+        if (typeof Sfx !== 'undefined') { Sfx.play(scene, 'pop'); scene.time.delayedCall(60, () => Sfx.play(scene, 'giggle')); }
+        const h = scene.add.text(x, y, '♥', { fontSize: '30px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ff7ac0', stroke: '#2a0a1a', strokeThickness: 5 })
+            .setOrigin(0.5).setDepth(100).setScrollFactor(sf);
+        scene.tweens.add({ targets: h, y: y - 50, scale: 1.4, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => h.destroy() });
+        if (typeof Achievements !== 'undefined' && Achievements.booped(id, scene)) {
+            const got = Achievements._read('boops', []).length, all = Achievements.BOOPS.length;
+            const t = scene.add.text(x, y - 30, got < all ? `BOOP! ${got}/${all}` : 'BOOP! EVERY ONE', { fontSize: '16px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ffd0ea', stroke: '#2a0a1a', strokeThickness: 4 })
+                .setOrigin(0.5).setDepth(100).setScrollFactor(sf);
+            scene.tweens.add({ targets: t, y: y - 80, alpha: 0, delay: 600, duration: 700, onComplete: () => t.destroy() });
+        }
+    }
+
     // The eyes an enemy wears, by what it does: carers look kind, the stubborn ones calm, the sneaky ones sly, the rest angry
     static MOODS = { healer: 'kind', tidecaller: 'kind', wishingwell: 'kind', cheer: 'kind',
         armored: 'calm', encased: 'calm', gem: 'calm', anchor: 'calm', shade: 'calm', frost: 'calm', tidalguard: 'calm', conduit: 'calm',

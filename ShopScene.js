@@ -201,7 +201,7 @@ class ShopScene extends Phaser.Scene {
         const gx = Math.max(110, S.x0 / 2);
         const glurp = this.add.sprite(gx, CT + 8, 'slime_green', 0).setOrigin(0.5, 1).setScale(6).setDepth(5);
         glurp.play('green_idle');
-        if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, glurp, { mood: 'friend', look: 'pointer' });
+        if (typeof CreatureFX !== 'undefined') { CreatureFX.face(this, glurp, { mood: 'friend', look: 'pointer' }); CreatureFX.boopable(this, glurp, 'glurp'); }
         this.tweens.add({ targets: glurp, scaleY: 5.6, scaleX: 6.3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         this.add.text(gx, CT + 40, 'GLURP · weapons dealer', {
             fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#e8c890',

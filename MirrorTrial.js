@@ -162,7 +162,8 @@ class MirrorTrial extends Phaser.Scene {
         this._hud();
         this.input.keyboard.on('keydown', this._key, this);
         this.input.keyboard.on('keyup', this._keyUp, this);
-        this.events.once('shutdown', () => { this.input.keyboard.off('keydown', this._key, this); this.input.keyboard.off('keyup', this._keyUp, this); });
+        this.input.on('pointerdown', this._boop, this);
+        this.events.once('shutdown', () => { this.input.keyboard.off('keydown', this._key, this); this.input.keyboard.off('keyup', this._keyUp, this); this.input.off('pointerdown', this._boop, this); });
         if (typeof Music !== 'undefined') Music.duck(true, 'mirror');
         this.cameras.main.fadeIn(700, 8, 4, 16);
     }
@@ -204,6 +205,14 @@ class MirrorTrial extends Phaser.Scene {
         if (e.code === 'Space' && this.raised) { this.raised = false; this._shardAt(false, MirrorTrial.CFG.RAISE_MS); }
         if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && this.shiftDown) { this.shiftDown = false; if (!this.blinked) this._surgeGo(); }
         if (e.code === 'Tab') this.mapUp = false;
+    }
+    // a click on a decoy (where the view drew it this frame): booped (Achievements.BOOPS), it squishes
+    _boop(p) {
+        const P = this.scale.width / this.front.W, x = Math.floor(p.x / P), y = Math.floor(p.y / P);
+        const hit = (this.front.picks || []).find(k => k.cols.has(x) && y >= k.top && y < k.bottom);
+        if (!hit) return;
+        hit.w.boopAt = this.time.now;
+        CreatureFX.boopFx(this, p.x, p.y, 'decoy');
     }
     // a decoy slime set down where you stand, staring the way you face
     _ward() {
@@ -714,7 +723,8 @@ class MirrorTrial extends Phaser.Scene {
         for (const w of this.placed) {   // the decoys, from whichever side you see them (its face, back, right, left), flickering as they give out
             if (w.until - now < 1500 && Math.floor(now / 90) % 2) continue;
             const [fx, fy] = MirrorTrial.DIRS[w.dir], vx = w.x + 0.5 - px, vy = w.y + 0.5 - py, n = Math.hypot(vx, vy) || 1, dot = (fx * vx + fy * vy) / n;
-            sprites.push({ x: w.x + 0.5, y: w.y + 0.5, k: 'mt_decoy', f: dot < -0.7 ? 0 : dot > 0.7 ? 1 : fx * -dy + fy * dx > 0 ? 2 : 3, glint: true });
+            const sq = Math.max(0, 1 - (now - (w.boopAt || -1e9)) / 260);   // (booped: a squish)
+            sprites.push({ x: w.x + 0.5, y: w.y + 0.5, k: 'mt_decoy', f: dot < -0.7 ? 0 : dot > 0.7 ? 1 : fx * -dy + fy * dx > 0 ? 2 : 3, glint: true, w, sq: 1 - 0.25 * sq, sw: 1 + 0.3 * sq });
         }
         for (const o of this.sentries) sprites.push({ x: o.x + 0.5, y: o.y + 0.5, k: 'mt_sentry', f: 0, glint: true });
         for (const o of this.glorps) if (!o.got) sprites.push({ x: o.x + 0.5, y: o.y + 0.5, k: 'mt_glorp', f: 0, glint: true });
@@ -725,14 +735,18 @@ class MirrorTrial extends Phaser.Scene {
             for (const e of this.ents) sprites.push({ ...m(e.x + 0.5, e.y + 0.5), k: 'mt_twin', f: e.pose, ent: e, big: C.BIG, in: g.key });
         }
         const inv = 1 / (plx * dy - dx * ply), per = Array.from({ length: W }, () => []);
+        if (V === this.front) V.picks = [];   // (the decoys as drawn, for a click: _boop)
         for (const s of sprites) {
             const rx = s.x - px, ry = s.y - py, tX = inv * (dy * rx - dx * ry), tY = inv * (-ply * rx + plx * ry);
             if (tY < 0.15) continue;
-            const sx = (W / 2) * (1 + tX / tY), h = H / tY * (s.big || 1), w = h * 0.75, x0 = Math.floor(sx - w / 2), x1 = Math.ceil(sx + w / 2);
+            const sx = (W / 2) * (1 + tX / tY), h = H / tY * (s.big || 1) * (s.sq || 1), w = h * 0.75 * (s.sw || 1) / (s.sq || 1), x0 = Math.floor(sx - w / 2), x1 = Math.ceil(sx + w / 2);
+            const pick = s.w && !s.in && V === this.front ? { w: s.w, cols: new Set(), top: Math.floor(H / 2 + H / tY / 2 - h), bottom: Math.ceil(H / 2 + H / tY / 2) } : null;
+            if (pick) V.picks.push(pick);
             for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) {
                 const col = V.cols[x];
                 if (s.in ? (col.mirror !== s.in || tY <= col.mz || tY >= col.after) : tY >= V.zbuf[x]) continue;
-                per[x].push({ s, z: tY, u: (x - (sx - w / 2)) / w });
+                per[x].push({ s, z: tY, u: (x - (sx - w / 2)) / w, h });
+                pick?.cols.add(x);
             }
         }
         const px0 = new Map(this.ents.map(e => [e, 0])), straight = watch && V === this.front;
@@ -740,7 +754,7 @@ class MirrorTrial extends Phaser.Scene {
             const col = V.cols[x], items = col.ov.map(o => ({ o, z: o.T * col.cos })).concat(per[x]).sort((p, q) => q.z - p.z);
             for (const it of items) {
                 if (it.o) { this._slice(V, x, it.z, it.o.k, it.o.u, lit(it.o.T), it.o.tint); continue; }
-                const b = lit(it.z / col.cos), n = this._sprite(V, x, it.z, it.s, it.u, it.s.glint ? Math.max(0.55, b) : b);
+                const b = lit(it.z / col.cos), n = this._sprite(V, x, it.z, it.s, it.u, it.s.glint ? Math.max(0.55, b) : b, it.h);
                 if (it.s.ent) { px0.set(it.s.ent, px0.get(it.s.ent) + n); if (straight && !it.s.in) it.s.ent.dpx += n; }   // (straight on, not in a mirror: the dread's)
             }
         }
@@ -809,8 +823,8 @@ class MirrorTrial extends Phaser.Scene {
         return u >= 0 && v >= 0 && u < T.w && v < T.h && T.d[(v * T.w + u) * 4 + 3] > 0;
     }
     // a sprite's column u (its pose f, in a strip), standing on the floor at depth z (s.big: taller); how many lit pixels it put down
-    _sprite(V, x, z, s, u, b) {
-        const C = MirrorTrial.CFG, W = V.W, H = V.H, tex = this.tex[s.k], fw = tex.fw || tex.w, d = V.img.data, h = H / z * (s.big || 1), top = H / 2 + H / z / 2 - h;
+    _sprite(V, x, z, s, u, b, sh) {
+        const C = MirrorTrial.CFG, W = V.W, H = V.H, tex = this.tex[s.k], fw = tex.fw || tex.w, d = V.img.data, h = sh || H / z * (s.big || 1), top = H / 2 + H / z / 2 - h;
         const tx = s.f * fw + Math.min(fw - 1, Math.max(0, Math.floor(u * fw)));
         let n = 0;
         for (let y = Math.max(0, Math.floor(top)), y1 = Math.min(H, Math.ceil(top + h)); y < y1; y++) {

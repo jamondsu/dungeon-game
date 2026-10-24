@@ -29,9 +29,20 @@ const Achievements = {
         { id: 'kingslayer', name: 'Kingslayer',     tier: 2, stat: 'towerBosses', goal: 5,    reward: { glorps: 500, books: 3 },  how: 'Beat 5 Tower bosses.',                                     desc: 'Crowns are heavier than they look.' },
         { id: 'bloom',     name: 'Wrong Kind of Gardener', tier: 1, stat: 'budFull', goal: 1, reward: { dust: 100 },              how: 'Let a Budding Slime grow a family of 8.',                  desc: 'You could have hit it. At any point.' },
         { id: 'angler',    name: 'Patient Angler',  tier: 1, stat: 'fish',        goal: 50,   reward: { dust: 200 },              how: 'Catch 50 fish.',                                           desc: 'The fish have started a support group.' },
+        { id: 'boops',     name: 'Boop!',           tier: 1, stat: 'boops',       goal: 4,    reward: { glorps: 200 },            how: 'Boop every friendly slime that holds still for it.',      desc: 'Every last one. They all wiggled.' },
         { id: 'collector', name: 'Armoury',         tier: 2, stat: 'weapons',     goal: 15,   reward: { glorps: 800 },            how: 'Own every weapon.',                                        desc: 'You can only hold four. You know that, right?' },
     ],
 
+    // the friendly slimes you can boop (CreatureFX.boop): the one on the loading screen, Glurp, you on the map, the decoy in
+    // the Hall of Reflections; booping each the first time counts toward 'boops'
+    BOOPS: ['boot', 'glurp', 'hero', 'decoy'],
+    booped(id, scene = null) {
+        const got = new Set(this._read('boops', []));
+        if (got.has(id) || !this.BOOPS.includes(id)) return false;
+        got.add(id); this._write('boops', [...got]);
+        this.bump('boops', got.size, scene, true);
+        return true;
+    },
     _read(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
     _write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
     stats() { return this._read('ach_stats', {}); },
