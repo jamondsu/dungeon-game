@@ -152,7 +152,7 @@ class MirrorTrial extends Phaser.Scene {
         };
         this.front = canvas('mt_view', C.W, C.H);
         this.back = canvas('mt_back', C.BACK.W, C.BACK.H);
-        this.add.image(W / 2, H / 2, 'mt_view').setScale(Math.max(W / C.W, H / C.H));
+        this.viewImg = this.add.image(W / 2, H / 2, 'mt_view').setScale(Math.max(W / C.W, H / C.H));
         this.dim = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0);   // ahead, unwatched while you look in the shard
         this.shard = this.add.container(0, 0, [this.add.image(0, 0, 'mt_back'), this.add.image(0, 0, 'mt_shard')]).setVisible(false);
         const at = this.textures.get('mt_arm');   // your arm's strength, by the shard: a tendril of your goo holding one, lit as far as it has left
@@ -380,6 +380,9 @@ class MirrorTrial extends Phaser.Scene {
         }
         const sp = Math.min(1, this.scarred / (3 * C.STRESS.PRANK)), hk = Math.max(this.dread, sp && 0.25 + 0.6 * sp), k = Math.max(this.dread, 0.7 * sp), cs = this.stress;   // (sp: how far their pranks have got you, 0-1 by the third)
         if (hk > 0.2 && !this.caught && now - this.heartAt > 1000 - 650 * hk) { this.heartAt = now; Sfx.play(this, 'heartbeat', { hard: hk }); if (hk > 0.7) this.cameras.main.shake(90, 0.003 * hk); }
+        // your stress in your sight: the view trembling, none at first, a little two pranks in, hard when you're nearly done for
+        const amp = this.caught ? 0 : cs < 0.45 ? 0 : cs < 0.85 ? 1 + 2.5 * (cs - 0.45) / 0.4 : 3.5 + 12 * ((cs - 0.85) / 0.15) ** 2, P0 = Math.max(W / C.W, H / C.H);
+        this.viewImg.setScale(P0 * (1 + 2.4 * amp / W)).setPosition(W / 2 + (Math.random() - 0.5) * 2 * amp, H / 2 + (Math.random() - 0.5) * 2 * amp);   // (a touch bigger: no edge showing)
         const per = 5000 - 2600 * sp, beat = sp && !this.caught ? Math.max(0, Math.sin((now % per) / per * Math.PI * 2)) ** 3 : 0;   // (the dark pulsing in)
         this.faint.setAlpha(beat * (0.12 + 0.5 * sp * sp));
         g.clear();
