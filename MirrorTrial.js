@@ -16,7 +16,7 @@
 // (it's in the way of nothing but walking). A pane of glass and a mirror look the same here, so a mirror can pass for a way
 // on: walk into one to tap it (a mirror rings, glass thuds) and you chalk it, an eye for a mirror, a cross for glass.
 // You walk slowly. SHIFT drinks one of your three vials of your own goo: a surge of speed for a moment, the view going
-// teal and wobbling like jelly, goo dripping down it; they fill back up slowly, one at a time (none while one's running). Held, SHIFT spends two at once on a blink: a white flash and you're a few tiles on,
+// teal and wobbling like jelly, goo dripping down it; they fill back up slowly, one at a time (none while one's running); you come in with one. Held, SHIFT spends two at once on a blink: a white flash and you're a few tiles on,
 // past one of them if it's in the way (not through stone or glass). Two sentry slimes (E sets one down where you stand, facing
 // your way, its line of sight lit on the floor; E again on it picks it up): they hold nothing, but when one of them comes into
 // a sentry's line it squeaks, and you know where. You carry a scrap of paper the hall draws itself on in ink as you see it
@@ -41,8 +41,8 @@ class MirrorTrial extends Phaser.Scene {
         BLINK: { HOLD_MS: 280, TILES: 3, COST: 2 },                  // SHIFT held this long: a blink, up to TILES on, for COST surges
         SENTRY: { RANGE: 9, LIT_MS: 2500 },                          // sentries (found in the hall): how far one sees (and its line's lit), how long bright just set down
         MAP: { CELL: 5, BIG: 6, UP_MS: 230, LAST_MS: 6000 },         // the map: a tile's size in ink; how big held up; how long a last sighting stays
-        ENT_MS: 320, ENT_SHARD: 15, ENT_MIN: 270, GRACE_MS: 5000,    // unseen this long, one moves (quicker by ENT_SHARD a shard found; quicker than your walk: you can't outrun one, only hold it); none at first
-        WAKE: { NEAR: 3, SURGE: 5, BLINK: 6, TAP: 4, TURN: 3 },      // asleep, one wakes: you this near (tiles), or a noise this near
+        ENT_MS: 600, ENT_SHARD: 30, ENT_MIN: 450, GRACE_MS: 5000,    // unseen this long, one moves (quicker by ENT_SHARD a shard found: not far off your walk, so you can't leave one be); none at first
+        WAKE: { NEAR: 2, SURGE: 5, BLINK: 6, TAP: 4, TURN: 3, MS: 1500 },   // asleep, one wakes: you this near (tiles), or a noise this near; it takes MS to come to
         HEAR: 10,                                                    // how far off you hear one move
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         DREAD: { RISE: 0.2, CLOSE: 1.3, CLOSE_PX: 3500, FALL: 0.3, WAIT: 500, OUT_MS: 1000, AFTER: 0.55, STING: 0.25 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; full, you look away OUT_MS, back at AFTER; the sting of one turning near
@@ -61,7 +61,7 @@ class MirrorTrial extends Phaser.Scene {
         '#.#.R.G.s.G.L.#.#',
         '#W#...G..gG...#W#',
         '#.###.GG.GG.###.#',
-        '#g...d..h..v...g#',
+        '#g...d..h......g#',
         '#.#####...#####.#',
         'Mv..g...P...g..nM',
         '########O########',
@@ -101,7 +101,7 @@ class MirrorTrial extends Phaser.Scene {
         }));
         this.view = { x: this.me.x + 0.5, y: this.me.y + 0.5, a: -Math.PI / 2 };
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
-            charges: 0, vials: 0, chargeT: 0, surging: false, surgeUntil: 0, beatAt: 0, fovK: 1, surgeK: 0, bubbles: [], wards: 0, placed: [], labels: {},
+            charges: 1, vials: 1, chargeT: 0, surging: false, surgeUntil: 0, beatAt: 0, fovK: 1, surgeK: 0, bubbles: [], wards: 0, placed: [], labels: {},
             shiftDown: false, shiftAt: 0, blinked: false, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, breaks: 0, closest: Infinity,
             dread: 0, dreadAt: 0, blackUntil: 0, heartAt: 0, mapUp: false, known: new Set(), lastSeen: new Map() });
         // the dread's cracks: from the screen's edges in, a little further the more you dread (fixed, so they grow, not jump)
@@ -654,7 +654,7 @@ class MirrorTrial extends Phaser.Scene {
     // one wakes: its eyes open (seen as it happens: a jolt)
     _wake(e) {
         if (e.awake) return;
-        e.awake = true; e.pose = 2; e.t = 0;
+        e.awake = true; e.pose = 2; e.t = -MirrorTrial.CFG.WAKE.MS;   // (coming to: a moment before its first step, to see it coming)
         Sfx.play(this, 'tell');
         this._note('SOMETHING WOKE UP.');
         if (e.seen) { this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.25); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 500 }); this.cameras.main.shake(140, 0.006); }
