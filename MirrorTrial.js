@@ -47,7 +47,7 @@ class MirrorTrial extends Phaser.Scene {
         WARD_MS: 7000, WARD_RANGE: 8,                                // decoy slimes (found in the hall): how long one stares, how far
         DASH: { TILES: 3, COST: 1 },                                 // SHIFT: a dash, up to TILES on, for COST vials
         SENTRY: { R: 3.5, WALLS: 1, PINGS: 2, EVERY_MS: 3000, SHOW_MS: 1000, LIT_MS: 2500 },   // sentries (found in the hall): their reach (a squircle, through WALLS of stone); set off, PINGS pings EVERY_MS apart, each showing them SHOW_MS; their reach lit, just set down
-        OVER: { UP_MS: 320, TILT: 0.68, WALL: 0.5, CELLS: 7.5, SEE: [1.4, 3.6] },   // the view from just above you (TAB): how long it takes to rise; how flat the floor; how tall the walls; how many tiles across; the dark (clear within SEE[0] tiles, black by SEE[1])
+        OVER: { UP_MS: 420, BACK: 2.4, HIGH: 3, PITCH: 0.74, F: 700, SEE: [2, 5.5] },   // the view from up behind you (TAB): how long the rise takes; how far back, how high (tiles), how steeply it looks down; its lens; the dark (clear within SEE[0] tiles, black by SEE[1])
         ENT_MS: 600, ENT_SHARD: 30, ENT_MIN: 450, GRACE_MS: 5000,    // unseen this long, one moves (quicker by ENT_SHARD a shard found: not far off your walk, so you can't leave one be); none at first
         WAKE: { NEAR: 2, DASH: 6, TAP: 4, TURN: 3, MS: 1500 },         // asleep, one wakes: you this near (tiles), or a noise this near; it takes MS to come to
         HEAR: 10,                                                    // how far off you hear one move
@@ -395,76 +395,92 @@ class MirrorTrial extends Phaser.Scene {
             }
         }
     }
-    // TAB: out of your own eyes, up a little, the hall round you from just above (it rises and turns as it comes), or back down
+    // TAB: out of your own eyes, back and up a little: the hall from up behind you, looking down ahead (the rise eased in and
+    // out of: overT, 0 your own eyes, 1 up behind you)
     _mapShow(mode) {
         if (mode === this.mapMode) return;
         const O = MirrorTrial.CFG.OVER, img = this.mapImg;
         this.mapMode = mode;
-        this.tweens.killTweensOf([img, this.mapDim, this.mapHint, this.keysTxt]);
+        this.tweens.killTweensOf([this, img, this.mapDim, this.mapHint, this.keysTxt]);
         if (mode === 'big') {
-            img.setVisible(true).setScale(2.4).setAngle(-10).setAlpha(0);
+            img.setVisible(true).setAlpha(1); this.overT = this.overT || 0;
             Sfx.play(this, 'whoosh');
-            this.tweens.add({ targets: img, scale: 1, angle: 0, alpha: 1, duration: O.UP_MS, ease: 'Cubic.easeOut' });
-            this.tweens.add({ targets: this.mapDim, alpha: 0.85, duration: O.UP_MS });
+            this.tweens.add({ targets: this, overT: 1, duration: O.UP_MS, ease: 'Cubic.easeOut' });
             this.tweens.add({ targets: this.mapHint, alpha: 1, duration: O.UP_MS });
             this.tweens.add({ targets: this.keysTxt, alpha: 0, duration: O.UP_MS });   // (the hint where the keys were)
         } else {
-            this.tweens.add({ targets: img, scale: 2.2, angle: 8, alpha: 0, duration: 180, ease: 'Cubic.easeIn', onComplete: () => img.setVisible(false) });
-            this.tweens.add({ targets: [this.mapDim, this.mapHint], alpha: 0, duration: 180 });
-            this.tweens.add({ targets: this.keysTxt, alpha: 1, duration: 180 });
+            this.tweens.add({ targets: this, overT: 0, duration: 200, ease: 'Cubic.easeIn', onComplete: () => img.setVisible(false) });
+            this.tweens.add({ targets: this.mapHint, alpha: 0, duration: 200 });
+            this.tweens.add({ targets: this.keysTxt, alpha: 1, duration: 200 });
         }
     }
-    // The hall round you from just above, at a slant, turned so the way you face is up, the dark closing in a few tiles off:
-    // stone in blocks, panes as glass blocks (chalked, marked, or nothing on them yet), the stands, the way out, the floor lit
-    // where a sentry reaches or a decoy stares; what's lying about; you, your decoys and sentries; them only where a ping shows
-    // them. The hall drawn far to near, so the nearer stand in front; then what stands in it, far to near, over it all (a short
-    // slime behind a wall would be lost)
+    // The hall from up behind you, looking down ahead (a camera BACK tiles behind, HIGH up, PITCH down; overT from your own eyes):
+    // stone in blocks (the ones between it and you see-through), panes as glass (chalked, or your mark faint on them), the stands,
+    // the way out, the floor lit where a sentry reaches or a decoy stares; what's lying about, your slimes, you; them only where a
+    // ping shows them. Far to near, a row at a time, what stands in a row after it; the dark closing in round you
     _overDraw(now) {
         const O = MirrorTrial.CFG.OVER, V = this.overCv, x = V.ctx, W = V.W, H = V.H, rows = this.map.length, cols = this.map[0].length;
-        const [fx, fy] = MirrorTrial.DIRS[this.me.dir], cx0 = this.me.x, cy0 = this.me.y;
-        const rot = (gx, gy) => [(gx - cx0) * -fy + (gy - cy0) * fx, -((gx - cx0) * fx + (gy - cy0) * fy)];   // (across the screen; down it)
-        const S = W / O.CELLS, T = S * O.TILT, Hh = S * O.WALL;
-        const at = (gx, gy) => { const [a, d] = rot(gx, gy); return [W / 2 + a * S, H / 2 + 50 + d * T]; };   // (a spot on the floor; you a little low, more of ahead)
+        const t = this.overT || 0, b = O.BACK * t, h = 0.5 + (O.HIGH - 0.5) * t, pc = Math.cos(O.PITCH * t), ps = Math.sin(O.PITCH * t);
+        const [fx, fy] = MirrorTrial.DIRS[this.me.dir], mx = this.me.x + 0.5, my = this.me.y + 0.5;
+        const rf = (px, py) => [(px - mx) * -fy + (py - my) * fx, (px - mx) * fx + (py - my) * fy];   // (a spot in the hall: right of you, ahead)
+        const pr = (r, f, u) => { const dz = f + b, dy = h - u, zc = dz * pc + dy * ps; if (zc < 0.08) return null; return [W / 2 + r * O.F / zc, H / 2 + (dy * pc - dz * ps) * O.F / zc, zc]; };
+        const quad = (pts, fill, edge) => { if (pts.some(p => !p)) return; x.beginPath(); x.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) x.lineTo(p[0], p[1]); x.closePath(); if (fill) { x.fillStyle = fill; x.fill(); } if (edge) { x.strokeStyle = edge; x.lineWidth = 1; x.stroke(); } };
+        const dim = (hex, k, a = 1) => { const n = parseInt(hex.slice(1), 16), m = 1 - k; return `rgba(${((n >> 16) & 255) * m | 0},${((n >> 8) & 255) * m | 0},${(n & 255) * m | 0},${a})`; };
         const src = k => this.textures.get(k).getSourceImage();
-        const sprite = (k, f, gx, gy, alpha = 1) => { const [sx, sy] = at(gx, gy), w = S * 0.95, h = w * 64 / 48; x.globalAlpha = alpha; x.drawImage(src(k), f * 48, 0, 48, 64, sx - w / 2, sy + T * 0.3 - h, w, h); x.globalAlpha = 1; };
-        x.clearRect(0, 0, W, H); x.imageSmoothingEnabled = false;
-        const order = []; for (let gy = 0; gy < rows; gy++) for (let gx = 0; gx < cols; gx++) { const [a, d] = rot(gx, gy); if (Math.abs(a) <= O.CELLS / 2 + 1 && Math.abs(d) <= O.SEE[1] + 1) order.push([gx, gy, d]); }
-        order.sort((p, q) => p[2] - q[2]);
+        x.fillStyle = '#07050c'; x.fillRect(0, 0, W, H); x.imageSmoothingEnabled = false;
+        const cells = [];
+        for (let gy = 0; gy < rows; gy++) for (let gx = 0; gx < cols; gx++) { const [r, f] = rf(gx + 0.5, gy + 0.5); if (f > -O.BACK - 1 && f < 10 && Math.abs(r) < 8) cells.push({ gx, gy, r, f }); }
+        cells.sort((p, q) => q.f - p.f || Math.abs(q.r) - Math.abs(p.r));
+        // what stands where: drawn after its row
         const who = new Map(), put = (gx, gy, draw) => { const k = gy * 64 + gx; (who.get(k) || who.set(k, []).get(k)).push(draw); };
+        const sprite = (k, f, gx, gy, alpha = 1) => {
+            const [r, ff] = rf(gx + 0.5, gy + 0.5), a = pr(r, ff, 0), top = pr(r, ff, 1.35); if (!a || !top) return;
+            const hgt = a[1] - top[1], w = 1.01 * O.F / a[2], dk = Math.max(0, Math.min(1, (Math.hypot(r, ff) - O.SEE[0]) / (O.SEE[1] - O.SEE[0])));
+            x.globalAlpha = alpha * (1 - dk); x.drawImage(src(k), f * 48, 0, 48, 64, a[0] - w / 2, top[1], w, hgt); x.globalAlpha = 1;
+        };
         for (const o of [...this.items, ...this.glorps]) if (!o.got) put(o.x, o.y, () => o.k ? sprite('mt_items', 'vdn'.indexOf(o.k), o.x, o.y) : sprite('mt_glorp', 0, o.x, o.y));
         if (this.hand) put(this.hand.x, this.hand.y, () => sprite('mt_pickup', 0, this.hand.x, this.hand.y));
         for (const w of this.placed) put(w.x, w.y, () => sprite('mt_decoy', 0, w.x, w.y));
         for (const o of this.sentries) put(o.x, o.y, () => sprite('mt_sentry', 0, o.x, o.y, now < o.showUntil && Math.floor(now / 200) % 2 ? 0.6 : 1));
-        for (const e of this.ents) if (e.pinged) put(e.x, e.y, () => { const [sx, sy] = at(e.x, e.y); x.fillStyle = 'rgba(143,244,220,0.35)'; x.beginPath(); x.ellipse(sx, sy, S * 0.55, T * 0.55, 0, 0, 7); x.fill(); sprite('mt_twin', e.pose, e.x, e.y, 0.8); });
-        put(this.me.x, this.me.y, () => { const [sx, sy] = at(this.me.x, this.me.y); x.fillStyle = `rgba(143,244,220,${0.25 + 0.15 * Math.sin(now / 250)})`; x.beginPath(); x.ellipse(sx, sy, S * 0.6, T * 0.6, 0, 0, 7); x.fill(); sprite('mt_self', this.raised ? 1 : 0, this.me.x, this.me.y); });   // (you, a ring under you)
-        for (const [gx, gy] of order) {
-            const c = this.map[gy][gx], [sx, sy] = at(gx, gy), l = sx - S / 2, t = sy - T / 2, k = gy * 64 + gx;
-            const block = (front, top, edge) => {   // (a block standing on the cell: its front, its top)
-                if (typeof front === 'string') { x.fillStyle = front; x.fillRect(l, t + T - Hh, S, Hh); } else x.drawImage(front, l, t + T - Hh, S, Hh);
-                x.fillStyle = top; x.fillRect(l, t - Hh, S, T);
-                if (edge) { x.strokeStyle = edge; x.lineWidth = 1; x.strokeRect(l + 0.5, t - Hh + 0.5, S - 1, T + Hh - 1); }
+        for (const e of this.ents) if (e.pinged) put(e.x, e.y, () => sprite('mt_twin', e.pose, e.x, e.y, 0.75));
+        put(this.me.x, this.me.y, () => sprite('mt_self', this.raised ? 1 : 0, this.me.x, this.me.y));
+        let row = null, pend = [];
+        const flush = () => { for (const d of pend) d(); pend = []; };
+        for (const cl of cells) {
+            if (row !== null && Math.round(cl.f) !== row) flush();
+            row = Math.round(cl.f);
+            const { gx, gy } = cl, c = this.map[gy][gx], k = gy * 64 + gx, dk = Math.max(0, Math.min(1, (Math.hypot(cl.r, cl.f) - O.SEE[0]) / (O.SEE[1] - O.SEE[0])));
+            if (dk >= 1) { pend.push(...(who.get(k) || [])); continue; }
+            // the cell's corners (right of you, ahead), near-left first, round
+            const cs = [[gx, gy], [gx + 1, gy], [gx + 1, gy + 1], [gx, gy + 1]].map(([px, py]) => rf(px, py));
+            const at = u => cs.map(([r, f]) => pr(r, f, u));
+            const floor = at(0);
+            const box = (hgt, side, top, edge, a = 1) => {   // its faces toward the camera, then its top
+                const up = at(hgt);
+                for (let i = 0; i < 4; i++) {
+                    const j = (i + 1) % 4, [r0, f0] = cs[i], [r1, f1] = cs[j], em = [(r0 + r1) / 2, (f0 + f1) / 2], out = [em[0] - cl.r, em[1] - cl.f];   // (an edge; out from the cell's middle)
+                    if (out[0] * (0 - em[0]) + out[1] * (-b - em[1]) <= 0) continue;   // (facing away from the camera)
+                    quad([floor[i], floor[j], up[j], up[i]], dim(side, dk, a), edge);
+                }
+                quad(up, dim(top, dk, a), edge);
             };
-            if (c === '#') { block(src('mt_wall'), '#41365e'); x.fillStyle = 'rgba(5,3,10,0.35)'; x.fillRect(l, t + T - Hh, S, Hh); }
-            else if (c === 'O' || c === 'Q') block(c === 'Q' ? '#7a4ad0' : src('mt_broken'), c === 'Q' ? '#b89aff' : '#3a2a50');
+            if (c === '#' || c === 'O' || c === 'Q') { const behind = cl.f < -0.2; box(1, c === 'Q' ? '#6a3ac0' : c === 'O' ? '#3a2a50' : '#2e2648', c === 'Q' ? '#b89aff' : '#43385f', null, behind ? 0.18 : 1); }
             else {
-                x.fillStyle = (gx + gy) % 2 ? '#2c2342' : '#30264a'; x.fillRect(l, t, S, T);
+                quad(floor, dim((gx + gy) % 2 ? '#2c2342' : '#30264a', dk), dim('#1e1830', dk));
                 const lt = this.lines.get(k);
-                if (lt > 0) { x.fillStyle = `rgba(80,220,190,${0.55 * lt})`; x.fillRect(l, t, S, T); } else if (lt < 0) { x.fillStyle = 'rgba(230,110,170,0.3)'; x.fillRect(l, t, S, T); }
+                if (lt > 0) quad(floor, `rgba(80,220,190,${0.5 * lt * (1 - dk)})`); else if (lt < 0) quad(floor, `rgba(230,110,170,${0.3 * (1 - dk)})`);
                 if (c === 'M' || c === 'G') {
-                    block('rgba(168,208,255,0.22)', 'rgba(205,232,255,0.42)', '#cfeaff');
-                    const lab = this.labels[k] || this.marks[k];
-                    if (lab) { x.globalAlpha = this.labels[k] ? 1 : 0.5; x.drawImage(src(lab === 'M' ? 'mt_mark_m' : 'mt_mark_g'), l + S * 0.15, t - Hh + T * 0.05 - S * 0.12, S * 0.7, S * 0.7); x.globalAlpha = 1; }
+                    box(1, '#a8d0ff', '#cde8ff', `rgba(207,234,255,${0.6 * (1 - dk)})`, 0.2);
+                    const lab = this.labels[k] || this.marks[k], mid = pr(cl.r, cl.f, 0.55);
+                    if (lab && mid) { const sz = 0.55 * O.F / mid[2]; x.globalAlpha = (this.labels[k] ? 1 : 0.5) * (1 - dk); x.drawImage(src(lab === 'M' ? 'mt_mark_m' : 'mt_mark_g'), mid[0] - sz / 2, mid[1] - sz / 2, sz, sz); x.globalAlpha = 1; }
                 } else if (c === 'L' || c === 'R') {   // a stand: its mirror on the diagonal, standing
-                    const [ax, ay] = c === 'L' ? at(gx - 0.5, gy + 0.5) : at(gx - 0.5, gy - 0.5), [bx, by] = c === 'L' ? at(gx + 0.5, gy - 0.5) : at(gx + 0.5, gy + 0.5);
-                    x.fillStyle = 'rgba(200,225,255,0.55)'; x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.lineTo(bx, by - Hh); x.lineTo(ax, ay - Hh); x.closePath(); x.fill();
-                    x.strokeStyle = '#e8f0ff'; x.stroke();
+                    const [p0, p1] = c === 'L' ? [cs[3], cs[1]] : [cs[0], cs[2]];
+                    quad([pr(p0[0], p0[1], 0), pr(p1[0], p1[1], 0), pr(p1[0], p1[1], 1), pr(p0[0], p0[1], 1)], `rgba(200,225,255,${0.5 * (1 - dk)})`, `rgba(232,240,255,${1 - dk})`);
                 }
             }
+            pend.push(...(who.get(k) || []));
         }
-        for (const [gx, gy] of order) for (const draw of who.get(gy * 64 + gx) || []) draw();
-        const [mx, my] = at(cx0, cy0), dark = x.createRadialGradient(0, 0, S * O.SEE[0], 0, 0, S * O.SEE[1]);   // (the dark round you, squashed as the floor is)
-        dark.addColorStop(0, 'rgba(5,3,10,0)'); dark.addColorStop(1, 'rgba(5,3,10,1)');
-        x.save(); x.translate(mx, my - Hh / 2); x.scale(1, O.TILT); x.fillStyle = dark; x.fillRect(-W, -H / O.TILT, 2 * W, 2 * H / O.TILT); x.restore();
+        flush();
         V.tex.refresh();
     }
     // the sentries: one of them coming within reach sets one off. It pings, and again EVERY_MS on; each ping shows you where
