@@ -7,7 +7,7 @@
 // sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane), and
 // every fragment of the way out you take wakes another. Awake, they're bigger than you and they move only while nothing
 // sees them, never while you watch, and only ever in still poses, a new one each step: asleep, looking like you; awake and
-// wrong, or toying with you (waving, peekaboo, up the wall, holding your decoy...); through a pane, up against the glass
+// wrong, or toying with you (waving, peekaboo, up the wall, splatted flat on the wall behind, holding your decoy...); through a pane, up against the glass
 // (squashing its face on it, a heart in its breath...); close, your own face, huge and much too near, dropped down from the
 // ceiling...; a step off, caught just before it got you (mid-reach, sneaking up, mid-BOO, going for a hug). They giggle (where they are, to your ears) when they wake
 // and after they've made you jump. Watching them holds them, but don't meet their eyes: looking straight at one that's
@@ -85,8 +85,9 @@ class MirrorTrial extends Phaser.Scene {
     // waving, peekaboo, on the ceiling, up the wall, holding your decoy...); right behind a pane between you, up against the glass
     // (face squashed on it, a heart in its breath, waving in, licking it, knocking); two away (your face, dropped down, peeking
     // in...); one away, caught in time just before it got you (mid-reach, sneaking, mid-BOO, going for a hug, BOO); FACE, the one
-    // a prank slams into you; CORRIDOR, the ones holding a corridor's walls (only where it runs toward you)
-    static POSES = { SLEEP: [0, 1], FAR: [2, 24], GLASS: [25, 29], NEAR: [30, 37], CLOSE: [38, 42], FACE: 30, CORRIDOR: [9, 10] };
+    // a prank slams into you; CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
+    // flat on the wall right behind them (only where there is one)
+    static POSES = { SLEEP: [0, 1], FAR: [2, 26], GLASS: [27, 31], NEAR: [32, 39], CLOSE: [40, 44], FACE: 32, CORRIDOR: [9, 10, 11], WALLED: [12] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
@@ -769,8 +770,9 @@ class MirrorTrial extends Phaser.Scene {
         const glass = (pane === 'M' || pane === 'G') && Math.abs(along ? me.x - nx : me.y - ny) >= 2 && Math.random() < 0.75;
         const [lo, hi] = glass ? P.GLASS : near >= 3 ? P.FAR : near === 2 ? P.NEAR : P.CLOSE;
         const walled = along ? !this._open(nx, ny - 1) && !this._open(nx, ny + 1) : !this._open(nx - 1, ny) && !this._open(nx + 1, ny);
-        const looks = []; for (let f = lo; f <= hi; f++) if (f !== was && (walled || !P.CORRIDOR.includes(f))) looks.push(f);
-        e.pose = looks[Math.floor(Math.random() * looks.length)]; e.lean = glass ? [sx, sy] : null;
+        const backed = (sx || sy) && !this._open(nx - sx, ny - sy) && !this.map[ny - sy]?.[nx - sx]?.match(/[MG]/);   // (stone right behind it, away from you)
+        const looks = []; for (let f = lo; f <= hi; f++) if (f !== was && (walled || !P.CORRIDOR.includes(f)) && (backed || !P.WALLED.includes(f))) looks.push(f);
+        e.pose = looks[Math.floor(Math.random() * looks.length)]; e.lean = glass ? [sx, sy] : P.WALLED.includes(e.pose) ? [-sx, -sy] : null;   // (up against the glass, or flat on the wall behind)
         if (was < P.NEAR[0] && e.pose >= P.NEAR[0]) e.fresh = true;   // (turned horrible: the first time you see it, the sting)
         this._hear(e);
     }
