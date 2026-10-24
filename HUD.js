@@ -1058,7 +1058,7 @@ class HUD {
         // Buttons, under the panel
         const btnY = Math.min(H - 40, py + ph + 52);
         [
-            { label: 'TRY AGAIN', accent: UIKit.PALETTE.accentRed, x: W / 2 - 125, action: () => { this.scene.start('Game', this.trainingRun ? { levelIndex: 98, training: true } : this.towerRun ? { levelIndex: 6, tower: TowerFloors.newRun() } : { levelIndex: this.currentLevelIndex, tutorialStage: this.tutorialStage }); } },
+            { label: 'TRY AGAIN', accent: UIKit.PALETTE.accentRed, x: W / 2 - 125, action: () => { this.scene.start('Game', this.trainingRun ? { levelIndex: 98, training: true } : this.towerRun ? { levelIndex: 6, tower: TowerFloors.newRun() } : { levelIndex: this.currentLevelIndex, tutorialStage: this.tutorialStage, ...(this._floorPlan?.() && this.storyFloor > 1 ? { floor: this.storyFloor, carry: this._sceneData.carry, continueRun: true } : {}) }); } },
             { label: 'MAIN MENU', accent: UIKit.PALETTE.accentGold, x: W / 2 + 125, action: () => this.scene.start('LevelSelect') },
         ].forEach((def, i) => {
             const b = UIKit.button(this, { x: def.x, y: btnY, w: 210, h: 44, label: def.label, accent: def.accent,

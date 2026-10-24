@@ -1111,6 +1111,7 @@ class LevelManager {
     // ─── LEVEL 2 UPDATE LOOP ──────────────────────────────────────────────
 
     updateLevel2(time) {
+        this._floorTick();
         const playerRoom = this.getCurrentPlayerRoom();
         if (playerRoom === -1) return;
 
@@ -1140,7 +1141,7 @@ class LevelManager {
                 this.unlockTutorialDoors(0);
             }
             // Boss room — activate Voltslime when player enters
-            const bossRoomIndex = 6;
+            const bossRoomIndex = this._storyRoom(6);
             if (playerRoom === bossRoomIndex && this.voltslimeBoss && !this.voltslimeBoss._activated) {
                 this.voltslimeBoss._activated = true;
                 this.voltslimeBoss.phase = 'idle';
@@ -1153,7 +1154,7 @@ class LevelManager {
             const roomEnemies = this.enemies.filter(e => e.tutorialRoomIndex === playerRoom);
             if (roomEnemies.length > 0) this._roomHadEnemies[playerRoom] = true;
             if (roomEnemies.length === 0 && this._roomHadEnemies[playerRoom]) {
-                const bossRoomIndex = 6;
+                const bossRoomIndex = this._storyRoom(6);
                 if (playerRoom === bossRoomIndex) {
                     if (!this.voltslimeBoss?.active) this._level2RoomClear(playerRoom);
                 } else {
@@ -1179,7 +1180,7 @@ class LevelManager {
     _level2RoomClear(roomIndex) {
         this.tutorialRoomCleared[roomIndex] = true;
         this.unlockTutorialDoors(roomIndex);
-        const bossRoomIndex = 6;
+        const bossRoomIndex = this._storyRoom(6);
         if (roomIndex === bossRoomIndex) {
             this.time.delayedCall(800, () => {
                 const chest = (this.tutorialChests || []).find(c => c.isFinalChest && !c.opened);
@@ -1188,6 +1189,158 @@ class LevelManager {
             return;
         }
         this.spawnTutorialChest(roomIndex);
+        if (this._floorPlan()?.exit && roomIndex === this._floorPlan().path.length - 1) this._floorOpenExit(roomIndex);   // the floor's last room: the way up
+    }
+
+    // ─── FLOORS ─────────────────────────────────────────────────────────────
+    // A story level in floors (LevelLayouts.FLOORS): each its own map, laid out when you reach it. Clear a floor's last room and
+    // the way on opens in it; take it and the scene starts again on the next floor with your health, ult gems, element and the
+    // run's tally carried (a death there retries that floor, as you came into it).
+
+    // the floor you're on (null: the level isn't in floors, or is on its one fixed map)
+    _floorPlan() {
+        const F = this.storyFloor && typeof LevelLayouts !== 'undefined' ? LevelLayouts.FLOORS[this.currentLevelIndex] : null;
+        return F?.[this.storyFloor - 1] || null;
+    }
+    // a story room's index on this floor, by its number in the level as one map (-1: it's on another floor)
+    _storyRoom(k) { return this.rooms ? this.rooms.findIndex(r => r.story === k) : -1; }
+
+    // A floor begins: what you carried up, its name, and the way you came in
+    _floorBegin() {
+        const F = this._floorPlan(), c = this._sceneData?.carry, n = this.storyFloor, all = LevelLayouts.FLOORS[this.currentLevelIndex].length;
+        if (c) {
+            if (c.hp != null) this.health = Math.max(1, Math.min(this.maxHealth, c.hp));
+            if (c.gems && this.ultGems) for (const k in c.gems) if (k in this.ultGems) this.ultGems[k] = Math.min(this.ultChargeMax, c.gems[k]);
+            if (c.stats && this._runStats) { const { ago, ...rest } = c.stats; Object.assign(this._runStats, rest, { t0: this.time.now - ago }); }
+            if (c.el && c.el !== this.currentElement) this.switchToElement(c.el);
+            this.updateHUD?.();
+        }
+        this.time.delayedCall(n > 1 ? 1500 : 700, () => this._showRhythmSessionBanner(`${this.currentLevelIndex}-${n}  ·  ${F.name}`, '#ffe14a', `Floor ${n} of ${all}`));
+        if (n > 1) this._floorArriveFx();
+    }
+
+    // The floor's last room is cleared: the way up opens in it, a little above the middle (where the room's chest goes)
+    _floorOpenExit(ri) {
+        if (this._floorExit) return;
+        const room = this.rooms[ri], cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2) - 3;
+        const ok = (x, y) => x >= room.x && x < room.x + room.w && y >= room.y && y < room.y + room.h && this.world[x]?.[y] === this.FLOOR
+            && !(this.tutorialChests || []).some(c => !c.opened && c.tileX === x && c.tileY === y);
+        let spot = null;
+        for (let r = 0; r < 8 && !spot; r++) for (let dx = -r; dx <= r && !spot; dx++) for (let dy = -r; dy <= r && !spot; dy++)
+            if ((Math.abs(dx) === r || Math.abs(dy) === r) && ok(cx + dx, cy + dy)) spot = [cx + dx, cy + dy];
+        if (!spot) return;
+        const E = this._floorExit = this._floorLift(spot[0], spot[1], true);
+        Sfx.play(this, 'surge');
+        this.showStatusText?.(E.px, E.py - 56, 'THE LIFT IS LIVE', '#bfeeff');
+    }
+
+    // The storm lift on tile (tx, ty): its platform under you, its cage in front of you (raised while it waits for you: `open`),
+    // charge flickering in the caps of its coils and sparks running up them
+    _floorLift(tx, ty, open) {
+        const TS = this.TILE_SIZE, px = tx * TS + TS / 2, py = ty * TS + TS / 2, ADD = Phaser.BlendModes.ADD;
+        const E = { x: tx, y: ty, px, py, down: py + 18 };
+        E.glow = this.add.image(px, py + 4, 'vfx_glow').setTint(0x4fc3ff).setBlendMode(ADD).setDepth(0.95).setScale(0.5).setAlpha(0.45);
+        E.plat = this.add.image(px, py + 6, 'lift_storm').setDepth(0.96);
+        const caps = [-19, 19].map(x => this.add.image(x, -55, 'vfx_glow').setTint(0x7fd8ff).setBlendMode(ADD).setScale(0.14).setAlpha(0.8));
+        E.cage = this.add.container(px, open ? E.down - 24 : E.down, [this.add.image(0, 0, 'lift_storm_cage').setOrigin(0.5, 1), ...caps]).setDepth(1.05);
+        this.tweens.add({ targets: caps, alpha: 0.35, duration: 120, yoyo: true, repeat: -1, repeatDelay: 300 });
+        this.tweens.add({ targets: E.glow, alpha: 0.25, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        if (open) {
+            this.tweens.add({ targets: E.cage, y: E.cage.y - 3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            E.tag = this.add.text(px, py - 70, 'UP ▲', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#bfeeff', stroke: '#05060a', strokeThickness: 3 }).setOrigin(0.5).setDepth(4);
+            this.tweens.add({ targets: E.tag, y: py - 76, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        }
+        E.timer = this.time.addEvent({ delay: 90, loop: true, callback: () => {
+            if (E.done || (!E.fast && Math.random() < 0.6)) return;
+            const d = this.add.image(E.cage.x + (Math.random() < 0.5 ? -19 : 19) + (Math.random() - 0.5) * 4, E.cage.y - 48 + Math.random() * 14, 'vfx_glow')
+                .setTint(Math.random() < 0.5 ? 0x4fc3ff : 0xffffff).setBlendMode(ADD).setDepth(1.06).setScale(0.04 + Math.random() * 0.05);
+            this.tweens.add({ targets: d, y: d.y - 14 - Math.random() * 18, alpha: 0, duration: 260 + Math.random() * 240, onComplete: () => d.destroy() });
+        } });
+        return E;
+    }
+
+    // Standing on the way up takes it
+    _floorTick() {
+        const E = this._floorExit;
+        if (E && !E.leaving && !this._bossIntroOn && this.playerX === E.x && this.playerY === E.y) { E.leaving = true; this._floorLeaveFx(E, () => this._floorNext()); }
+    }
+
+    // Up the storm lift: the cage drops round you with a clang, charge races up its coils and the hum climbs; it rises with you
+    // up out of the floor into the rain, a crack of lightning, and the dark
+    _floorLeaveFx(E, then) {
+        const cam = this.cameras.main, TS = this.TILE_SIZE;
+        this._lifting = true;
+        E.tag?.destroy(); E.fast = true;
+        this.tweens.killTweensOf(E.cage);
+        Sfx.play(this, 'switch');
+        this.tweens.add({ targets: E.cage, y: E.down, duration: 280, ease: 'Bounce.easeOut', onComplete: () => { Sfx.play(this, 'clink'); cam.shake(140, 0.004); } });
+        this.time.delayedCall(300, () => Sfx.play(this, 'e_riser'));
+        this._floorRain(1, 1500);
+        this.time.delayedCall(700, () => {
+            Sfx.play(this, 'zap');
+            this.tweens.add({ targets: [this.player, E.plat, E.cage, E.glow], y: `-=${TS * 4}`, duration: 1100, ease: 'Quad.easeIn' });
+        });
+        this.time.delayedCall(1250, () => { cam.flash(140, 235, 245, 255); Sfx.play(this, 'e_thunder'); });
+        this.time.delayedCall(1400, () => cam.fadeOut(450, 4, 6, 14));
+        this.time.delayedCall(1880, then);
+    }
+
+    // Up into this floor on the storm lift: it rises out of the dark and the rain into the landing with you in its cage, sets down
+    // with a thump and a ring of charge, and the cage lifts away (the platform stays, spent)
+    _floorArriveFx() {
+        const cam = this.cameras.main, D = this.TILE_SIZE * 3, E = this._floorLift(this.playerX, this.playerY, false);
+        const ride = [this.player, E.plat, E.cage, E.glow];
+        this._lifting = true;
+        E.fast = true;
+        for (const o of ride) o.y += D;
+        cam.fadeIn(500, 4, 6, 14);
+        this._floorRain(1, 1);
+        this.time.delayedCall(300, () => this._floorRain(0, 1400));
+        this.tweens.add({ targets: ride, y: `-=${D}`, duration: 950, ease: 'Cubic.easeOut', onComplete: () => {
+            Sfx.play(this, 'e_land'); cam.shake(160, 0.005);
+            VisualFX.ripple(this, E.px, E.py + 6, 8, 44, 0x4fc3ff, { depth: 0.97, duration: 600, alpha: 0.8 });
+            this.time.delayedCall(250, () => {
+                Sfx.play(this, 'switch');
+                E.done = true; E.timer.remove();
+                this.tweens.add({ targets: E.cage, y: E.cage.y - 30, alpha: 0, duration: 400, ease: 'Quad.easeIn', onComplete: () => E.cage.destroy() });
+                this.tweens.add({ targets: E.glow, alpha: 0, duration: 600 });
+                this._lifting = false;
+            });
+        } });
+    }
+
+    // rain across the screen (on the HUD camera), its strength eased to `to` (0 to 1) over `ms`
+    _floorRain(to, ms) {
+        let R = this._rain;
+        if (!R) {
+            const W = this.scale.width, H = this.scale.height, g = this.add.graphics().setScrollFactor(0).setDepth(20);
+            R = this._rain = { k: 0, drops: Array.from({ length: 160 }, () => ({ x: Math.random() * (W + 120), y: Math.random() * H, v: 0.9 + Math.random() * 0.6, l: 10 + Math.random() * 18 })) };
+            R.fn = (t, dt) => {
+                g.clear();
+                if (R.k <= 0.01) return;
+                g.lineStyle(1, 0xc8dcff, 0.25 + 0.3 * R.k);
+                for (let i = 0, n = Math.round(R.drops.length * R.k); i < n; i++) {
+                    const d = R.drops[i];
+                    d.y += d.v * dt * 1.5; d.x -= d.v * dt * 0.35;
+                    if (d.y > H) { d.y = -d.l; d.x = Math.random() * (W + 120); }
+                    g.lineBetween(d.x, d.y, d.x - d.l * 0.25, d.y + d.l);
+                }
+            };
+            this.events.on('update', R.fn);
+            this.events.once('shutdown', () => { this.events.off('update', R.fn); this._rain = null; });
+        }
+        this.tweens.killTweensOf(R);
+        this.tweens.add({ targets: R, k: to, duration: ms, ease: 'Sine.easeInOut' });
+        return R;
+    }
+
+    // Up to the next floor
+    _floorNext() {
+        const R = this._runStats;
+        this.saveScrapBank?.();
+        this.scene.restart({ levelIndex: this.currentLevelIndex, floor: this.storyFloor + 1, continueRun: true,
+            carry: { hp: this.health, gems: { ...(this.ultGems || {}) }, el: this.currentElement,
+                     stats: R ? { ago: this.time.now - R.t0, kills: R.kills, glorps0: R.glorps0, dmg: R.dmg, elTime: R.elTime } : null } });
     }
 
     // ─── LEVEL 2 ENEMY SPAWNING ───────────────────────────────────────────
@@ -1195,21 +1348,26 @@ class LevelManager {
     spawnLevel2Enemies() {
         // Positions as the fixed map placed them, each moved with its room (the map is laid out fresh: LevelLayouts):
         // O is where each story room stood on the fixed map
-        const O = [[4, 44], [20, 43], [42, 40], [64, 40], [65, 60], [36, 60], [4, 57]];
-        const at = (ri, x, y) => [this.rooms[ri].x + x - O[ri][0], this.rooms[ri].y + y - O[ri][1]];
-        const mob = (ri, x, y, hp) => { const e = this.createEnemy(...at(ri, x, y), hp); e.tutorialRoomIndex = ri; return e; };
-        const absorber = (ri, x, y, hp) => { const e = mob(ri, x, y, hp); e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); return e; };
+        // (a room by its number in the level as one map: L, its index on this floor, -1 when it's on another floor of it)
+        const O = [[4, 44], [20, 43], [42, 40], [64, 40], [65, 60], [36, 60], [4, 57]], L = k => this._storyRoom(k), here = k => L(k) >= 0;
+        const at = (k, x, y) => [this.rooms[L(k)].x + x - O[k][0], this.rooms[L(k)].y + y - O[k][1]];
+        const mob = (k, x, y, hp) => { const e = this.createEnemy(...at(k, x, y), hp); e.tutorialRoomIndex = L(k); return e; };
+        const absorber = (k, x, y, hp) => { const e = mob(k, x, y, hp); e.isUltAbsorber = true; TutorialManager.prototype._applyUltAbsorberVisual.call(this, e); return e; };
 
         // R1: pillar gauntlet, an ice elemental flanking
-        for (const [x, y] of [[23, 45], [23, 50], [34, 45], [34, 50]]) mob(1, x, y, 30);
-        this.createRangedEnemy(...at(1, 29, 47), 1);
-        this._tagResist(mob(1, 26, 47, 50), 'ice');
+        if (here(1)) {
+            for (const [x, y] of [[23, 45], [23, 50], [34, 45], [34, 50]]) mob(1, x, y, 30);
+            this.createRangedEnemy(...at(1, 29, 47), L(1));
+            this._tagResist(mob(1, 26, 47, 50), 'ice');
+        }
 
         // R2: wide brawl, an ult absorber healer at the back
-        for (const [x, y] of [[45, 43], [50, 54], [55, 43]]) mob(2, x, y, 35);
-        for (const [x, y] of [[47, 50], [54, 50]]) this._tagResist(mob(2, x, y, 35), 'fire');
-        this.createRangedEnemy(...at(2, 57, 43), 2);
-        absorber(2, 52, 47, 55);
+        if (here(2)) {
+            for (const [x, y] of [[45, 43], [50, 54], [55, 43]]) mob(2, x, y, 35);
+            for (const [x, y] of [[47, 50], [54, 50]]) this._tagResist(mob(2, x, y, 35), 'fire');
+            this.createRangedEnemy(...at(2, 57, 43), L(2));
+            absorber(2, 52, 47, 55);
+        }
 
         // the side rooms: chests, and the elite den's guards
         this._spawnLevel2ChestRooms();
@@ -1223,32 +1381,49 @@ class LevelManager {
         });
 
         // R3: L-shape, an ice elemental and an ult absorber
-        for (const [x, y] of [[76, 42], [79, 42], [82, 43]]) mob(3, x, y, 38);
-        for (const [x, y] of [[77, 51], [80, 52]]) this._tagResist(mob(3, x, y, 38), 'fire');
-        for (const [x, y] of [[78, 46], [82, 48]]) this._tagResist(mob(3, x, y, 55), 'ice');
-        absorber(3, 74, 50, 65);
+        if (here(3)) {
+            for (const [x, y] of [[76, 42], [79, 42], [82, 43]]) mob(3, x, y, 38);
+            for (const [x, y] of [[77, 51], [80, 52]]) this._tagResist(mob(3, x, y, 38), 'fire');
+            for (const [x, y] of [[78, 46], [82, 48]]) this._tagResist(mob(3, x, y, 55), 'ice');
+            absorber(3, 74, 50, 65);
+        }
 
         // R4: the lane maze (no traps: its walls are the puzzle)
-        for (const [x, y] of [[70, 62], [75, 69], [82, 65]]) mob(4, x, y, 40);
-        // FIRST RESISTANT ENEMY IN THE GAME. Room 4 of level 2, fire-resistant, answered by
-        // switching to ice. One enemy, late, so the aura is a curiosity rather than a wall.
-        this._tagResist(this.createRangedEnemy(...at(4, 78, 62), 4), 'fire');
-        for (const [x, y] of [[80, 62], [80, 68]]) this._tagResist(mob(4, x, y, 60), 'ice');
+        if (here(4)) {
+            for (const [x, y] of [[70, 62], [75, 69], [82, 65]]) mob(4, x, y, 40);
+            // FIRST RESISTANT ENEMY IN THE GAME. Room 4 of level 2, fire-resistant, answered by
+            // switching to ice. One enemy, late, so the aura is a curiosity rather than a wall.
+            this._tagResist(this.createRangedEnemy(...at(4, 78, 62), L(4)), 'fire');
+            for (const [x, y] of [[80, 62], [80, 68]]) this._tagResist(mob(4, x, y, 60), 'ice');
+        }
 
         // R5: ambush, an ult absorber and more ice elementals
-        for (const [x, y] of [[40, 63], [40, 70], [46, 67], [51, 63], [51, 71]]) mob(5, x, y, 40);
-        for (const [x, y] of [[45, 62], [53, 70]]) this._tagResist(mob(5, x, y, 40), 'fire');
-        // The mirror lesson one room later: ice-resistant, so the player learns the aura COLOUR
-        // names the refused element rather than remembering one enemy as "the tanky one".
-        this._tagResist(this.createRangedEnemy(...at(5, 55, 63), 5), 'ice'); this.createRangedEnemy(...at(5, 55, 70), 5);
-        for (const [x, y] of [[43, 65], [50, 67]]) this._tagResist(mob(5, x, y, 60), 'ice');
-        absorber(5, 47, 66, 75);
+        if (here(5)) {
+            for (const [x, y] of [[40, 63], [40, 70], [46, 67], [51, 63], [51, 71]]) mob(5, x, y, 40);
+            for (const [x, y] of [[45, 62], [53, 70]]) this._tagResist(mob(5, x, y, 40), 'fire');
+            // The mirror lesson one room later: ice-resistant, so the player learns the aura COLOUR
+            // names the refused element rather than remembering one enemy as "the tanky one".
+            this._tagResist(this.createRangedEnemy(...at(5, 55, 63), L(5)), 'ice'); this.createRangedEnemy(...at(5, 55, 70), L(5));
+            for (const [x, y] of [[43, 65], [50, 67]]) this._tagResist(mob(5, x, y, 60), 'ice');
+            absorber(5, 47, 66, 75);
+        }
+
+        // the Coil Hall (the third floor's own room, round its four coils): a short fight to the lift
+        const ci = this.rooms.findIndex(r => r.tpl === 'g_coil');
+        if (ci >= 0) {
+            const r = this.rooms[ci], m = (x, y, hp) => { const e = this.createEnemy(r.x + x, r.y + y, hp); e.tutorialRoomIndex = ci; return e; };
+            for (const [x, y] of [[2, 2], [15, 2], [2, 10], [15, 10]]) m(x, y, 42);
+            for (const [x, y] of [[8, 4], [9, 8]]) this._tagResist(m(x, y, 50), Math.random() < 0.5 ? 'fire' : 'ice');
+            this.createRangedEnemy(r.x + 9, r.y + 6, ci);
+        }
 
         // the boss arena: guards, the Voltslime, its chest
-        for (const [x, y] of [[8, 61], [24, 61], [8, 73], [24, 73]]) mob(6, x, y, 45);
-        this._tagResist(mob(6, 16, 62, 70), 'ice');
-        this.spawnVoltslimeBoss(...at(6, 16, 67));
-        this.spawnFinalLevelChest(...at(6, 16, 59), 'lightning');
+        if (here(6)) {
+            for (const [x, y] of [[8, 61], [24, 61], [8, 73], [24, 73]]) mob(6, x, y, 45);
+            this._tagResist(mob(6, 16, 62, 70), 'ice');
+            this.spawnVoltslimeBoss(...at(6, 16, 67));
+            this.spawnFinalLevelChest(...at(6, 16, 59), 'lightning');
+        }
     }
 
     _spawnLevel2ChestRooms() {

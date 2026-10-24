@@ -22,6 +22,8 @@ const LevelLayouts = {
         g_lanes:   { w: 20, h: 14, walls: [...Array.from({ length: 18 }, (_, i) => i + 1).filter(x => x !== 5 && x !== 6).map(x => [x, 3]),
                                            ...Array.from({ length: 18 }, (_, i) => i + 1).filter(x => x !== 12 && x !== 13).map(x => [x, 7])] },
         g_ambush:  { w: 22, h: 16, walls: [[3, 2], [3, 9], [14, 2], [14, 9], [8, 5]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]) },
+        g_landing: { w: 10, h: 8, name: 'Landing' },   // where a floor starts: the lift comes up here
+        g_coil:    { w: 18, h: 13, name: 'The Coil Hall', walls: [[4, 3], [13, 3], [4, 9], [13, 9]].flatMap(([x, y]) => [[x, y], [x, y + 1]]) },
         g_boss:    { w: 24, h: 22, walls: [...[[2, 2], [20, 2], [2, 17], [20, 17]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
                                            [11, 2], [12, 2], [11, 18], [12, 18], [2, 10], [2, 11], [21, 10], [21, 11]] },
         // ── the Void Rift's rooms ──
@@ -53,6 +55,15 @@ const LevelLayouts = {
         // the spawn a hub again: the crater and the sinkhole beyond it, the chain gang and the splitter farm beyond it, the trap gauntlet on to the Core
         fracture: { path: ['f_spawn', ['f_crater', 0], ['f_sinkhole', 1], ['f_chain', 0], ['f_splitter', 3], ['f_traps', 0], ['f_core', 5]], side: [['chest_s', 2]] },
         gauntlet: { path: ['g_start', 'g_pillars', 'g_brawl', 'g_choke', 'g_lanes', 'g_ambush', 'g_boss'], side: [['chest', 1], ['chest_s', 1], ['elite', 1]], loop: 0.5 },
+    },
+    // A story level's floors, by its levelIndex: each laid out as a recipe of its own, `story` naming each of its story rooms by
+    // its number in the level as one map (the level's code knows its rooms by those; null: a room only the floors have), and the
+    // way on to the next (`exit`: GameScene._floorExit). You climb the Gauntlet's storm tower, the Voltslime on its roof.
+    FLOORS: {
+        2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift' },
+            { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift' },
+            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1]], exit: 'lift' },
+            { name: 'THE ROOF', path: ['g_landing', 'g_boss'], story: [null, 6] }],
     },
     // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'
     DIRS: { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] },
@@ -122,12 +133,14 @@ const LevelLayouts = {
         // the side rooms, off story rooms between the start and the boss
         for (const [t, n] of recipe.side || []) for (let i = 0; i < n; i++) {
             const T = LevelLayouts.T[t], order = Array.from({ length: story - 2 }, (_, k) => k + 1).sort(() => R() - 0.5);   // every story room in turn till one has space
+            let placed = false;
             for (const pi of order) {
                 const r = attach(rooms[pi], t, Object.keys(LevelLayouts.DIRS), T.chest ? { isChestRoom: true, parentTag: 'r' + pi } : {});
                 if (!r) continue;
                 if (T.chest) r.entranceTiles = r.entryTiles;
-                break;
+                placed = true; break;
             }
+            if (!placed && recipe.story) return null;   // a floor's side rooms are part of it (FLOORS): lay it out again
         }
         // a loop: a side room's far side joined straight to another story room, if one lines up close enough
         if (R() < (recipe.loop || 0)) {

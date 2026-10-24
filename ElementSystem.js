@@ -5039,7 +5039,7 @@ class ElementSystem {
     playerDash(dirX, dirY) {
         const now = this.time.now;
         if (now < (this._dashReadyAt || 0) || (!dirX && !dirY)) return false;
-        if (this.thunderheadActive || this._playerRooted || this._deathScreenActive) return false;
+        if (this.thunderheadActive || this._playerRooted || this._lifting || this._deathScreenActive) return false;
         // each element dashes its own way (cosmic has its own dash, cosmicDash):
         //   fire       a flame streak: 4 tiles; it hits and staggers what it passes through, the tiles it crossed crack and
     //              0.6s later erupt in order (a burst of damage round each) into lava (0.7s: one burn stack)

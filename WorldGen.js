@@ -318,9 +318,11 @@ class WorldGen {
 
         // Laid out fresh each time (LevelLayouts: the same rooms, a different winding path, side rooms and maybe a loop);
         // the fixed map below if it can't fit them
-        const laid = typeof LevelLayouts !== 'undefined' && LevelLayouts.generate(this, world, LevelLayouts.RECIPES.gauntlet, Math.random);   // (not the level's seeded rng: a new shape every time)
-        if (laid) this.rooms = laid;
-        else this._gauntletFixed(world);
+        // (a floor of it, when it has them: LevelLayouts.FLOORS; the fixed map is the whole level again, on one floor)
+        const F = this._floorPlan(), recipe = F || LevelLayouts.RECIPES.gauntlet;
+        const laid = typeof LevelLayouts !== 'undefined' && LevelLayouts.generate(this, world, recipe, Math.random);   // (not the level's seeded rng: a new shape every time)
+        if (laid) { this.rooms = laid; laid.forEach((r, i) => { if (i < recipe.path.length) r.story = F ? F.story[i] : i; }); }
+        else { this._gauntletFixed(world); this.storyFloor = 0; this.rooms.forEach((r, i) => { if (i < 7) r.story = i; }); }
         this.addWalls(world);
 
         // Level 2 is a real dungeon — NOT isTutorial
@@ -340,8 +342,8 @@ class WorldGen {
         });
         this.tutorialRoomCleared[0] = true;
 
-        const boss = this.rooms[6];
-        this._dressRooms(world, 'gauntlet', [], [[boss.x + 12, boss.y + 10]]);   // the Voltslime's room left clear
+        const boss = this.rooms[this._storyRoom(6)];
+        this._dressRooms(world, 'gauntlet', [], boss ? [[boss.x + 12, boss.y + 10]] : []);   // the Voltslime's room left clear
         return world;
     }
 

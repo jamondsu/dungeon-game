@@ -46,6 +46,7 @@ class GameScene extends Phaser.Scene {
         // without threading `data` down through every init helper.
         this._sceneData = data || {};
         this.tutorialStage = data?.tutorialStage ?? 0;
+        this.storyFloor = data?.floor || 1; this._floorExit = null;   // a story level in floors: the one you're on (LevelManager._floorPlan)
         // Water lives on the scene object, which outlives a restart: the Cistern's (or a flooded
         // Tower floor's) tiles were still there, unseen, on the next level. Its pipes were too, still
         // refilling their old tiles on the new map and flinging water from mouths out in the void.
@@ -79,6 +80,7 @@ class GameScene extends Phaser.Scene {
         this.playerPoisoned = false; this._poisonTickCount = 0; this._elStolen = null;
         this._poisonUntil = 0; this._bleedUntil = 0; this._pBurnUntil = 0; this._pBurn = 0; this._absHexUntil = 0; this._drippingUntil = 0; this._playerRooted = false; this._hurtTotal = 0;   // (the scene object outlives a restart: what was on you mustn't come with it)
         this._playerRooted  = false; this._playerRootUntil = 0; this._ccImmuneUntil = 0;
+        this._lifting = false;   // riding between a story level's floors (LevelManager._floorLeaveFx): no steps, no dashes
 
         // Remove any extra cameras added by the death screen
         this.cameras.cameras.slice(1).forEach(c => this.cameras.remove(c));
@@ -1004,6 +1006,7 @@ class GameScene extends Phaser.Scene {
         this._bfxInit();   // Bosses.js: the bosses, their attacks, every enemy shot
         if (this.towerRun) this._towerBegin();   // Tower.js: the floor's waves, label and carried HP
         if (this.trainingRun) Training.begin(this);   // Training.js: the arena, its panel
+        if (this._floorPlan()) this._floorBegin();   // a story level's floor: what you carried up, its name, the way you came in
     }
 
     // Cosmic's dash toward (dirX, dirY), and the bookkeeping that rides on it: each tile
@@ -1064,7 +1067,7 @@ class GameScene extends Phaser.Scene {
 
     _cosmicDashToward() {
         const now = this.time.now, HOP_GAP = 400;
-        if (this._cosmicHops || now - (this.lastCosmicDashTime || 0) < this.cosmicDashCooldown) return;
+        if (this._lifting || this._cosmicHops || now - (this.lastCosmicDashTime || 0) < this.cosmicDashCooldown) return;
         if (!this._stamSpend()) return;
         this._cosmicHops = true;
         this._glideUntil = now + HOP_GAP + 150;   // the catch: you can't walk during it, from the first hop until just after the second
@@ -1211,7 +1214,7 @@ class GameScene extends Phaser.Scene {
         }
         const stepMs = this.moveCooldown * _waterMult * (this._csMoveMult?.() ?? 1) * (this._frostHazeMult || 1) * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]) * (this._chaosMove?.() ?? 1) * this._ultMoveMult();
         this._stepMul = stepMs / (200 * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]));   // how much slower or faster than usual right now (relics and books aside): LevelManager._updateSpeedMarks
-        if (time - this.lastMoveTime >= stepMs && this.time.now >= (this._staggerUntil || 0) && this.time.now >= (this._glideUntil || 0)) {   // (scene clock, not the loop's `time`: they part after a pause)   // Leaden: a corrupted book's curse; the Wheel of Fate; Double or Nothing's stagger
+        if (time - this.lastMoveTime >= stepMs && this.time.now >= (this._staggerUntil || 0) && this.time.now >= (this._glideUntil || 0) && !this._lifting) {   // (scene clock, not the loop's `time`: they part after a pause)   // Leaden: a corrupted book's curse; the Wheel of Fate; Double or Nothing's stagger
             let dx = 0, dy = 0;
 
             const isCosmicCharging = this.currentElement === 'cosmic' && this.cosmicCharging;
@@ -1577,6 +1580,16 @@ class GameScene extends Phaser.Scene {
     _energizeFlash(...a) { return LevelManager.prototype._energizeFlash.call(this, ...a); }
     _level2RoomClear(...a)      { return LevelManager.prototype._level2RoomClear.call(this, ...a); }
     spawnLevel2Enemies(...a)    { return LevelManager.prototype.spawnLevel2Enemies.call(this, ...a); }
+    _floorPlan(...a) { return LevelManager.prototype._floorPlan.call(this, ...a); }
+    _storyRoom(...a) { return LevelManager.prototype._storyRoom.call(this, ...a); }
+    _floorBegin(...a) { return LevelManager.prototype._floorBegin.call(this, ...a); }
+    _floorOpenExit(...a) { return LevelManager.prototype._floorOpenExit.call(this, ...a); }
+    _floorLift(...a) { return LevelManager.prototype._floorLift.call(this, ...a); }
+    _floorTick(...a) { return LevelManager.prototype._floorTick.call(this, ...a); }
+    _floorLeaveFx(...a) { return LevelManager.prototype._floorLeaveFx.call(this, ...a); }
+    _floorArriveFx(...a) { return LevelManager.prototype._floorArriveFx.call(this, ...a); }
+    _floorRain(...a) { return LevelManager.prototype._floorRain.call(this, ...a); }
+    _floorNext(...a) { return LevelManager.prototype._floorNext.call(this, ...a); }
     _spawnLevel2ChestRooms(...a){ return LevelManager.prototype._spawnLevel2ChestRooms.call(this, ...a); }
     // Level 3 proxies
     updateLevel3(...a)           { return LevelManager.prototype.updateLevel3.call(this, ...a); }
@@ -2822,7 +2835,7 @@ class GameScene extends Phaser.Scene {
         else                      nameMap = level1Names;
 
         const roomObj = this.rooms?.[room];
-        const name = roomObj?.name ?? nameMap[room] ?? (roomObj?.isChestRoom ? 'Chest Room' : null);   // (a laid-out side room carries its own)
+        const name = roomObj?.name ?? nameMap[roomObj?.story ?? room] ?? (roomObj?.isChestRoom ? 'Chest Room' : null);   // (a floor's rooms by their number in the level as one map)   // (a laid-out side room carries its own)
         if (name) this.showRoomName(name);
     }
 
