@@ -21,7 +21,8 @@
 // and the one behind it, if one was, is awake right there. All three fragments, and the way out is whole again: step back
 // through it. They can't hurt you, but they can scare you: one reaching you pranks you (a third of your stress, for good;
 // it goes back to sleep far off), and your dread from looking at them goes on top: full dread, you black out for a moment
-// (and it counts a prank's worth); full stress, you're scared to death. Hold one in a reflection (your shard, a stand) a while and it slinks off.
+// (two pranks in, that does it; three, a moment's look); full stress, you're scared to death. The more they've got you, the
+// more your heart pounds and the dark pulses in. Hold one in a reflection (your shard, a stand) a while and it slinks off.
 // The shard: held up you see behind you, and the view ahead is unwatched behind it; your arm tires (the shard shakes and
 // sinks), and when it gives out the shard drops till it's rested a little. The mirror stands at the hall's corners (at 45
 // degrees: walk into one to turn it) do show you round them. You walk slowly. SHIFT drinks one of your vials of goo (up to
@@ -54,7 +55,7 @@ class MirrorTrial extends Phaser.Scene {
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         SHOO_MS: 2000,                                               // one held in a reflection (your shard, a stand) this long leaves: they don't like being caught there
         DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; full: you black out OUT_MS, back at AFTER
-        STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good, your dread on top (full dread: a prank's worth); full: scared to death. After a prank, CALM_MS with none of them moving
+        STRESS: { PRANK: 0.3, DREAD: 0.4, CALM_MS: 2000 },            // your stress: each prank of theirs adds PRANK for good, your dread on top (full: DREAD); 1: scared to death (two pranks and a full dread; three and a moment's). After a prank, CALM_MS with none of them moving
     };
     // # stone, P a pane (each a mirror or glass, at random; every one a window, open both sides), L R mirror stands at 45 degrees
     // (L like /, R like \), O the way out (broken), h the shard for your hand, g glorps, v a flask of goo, d a decoy slime, n a
@@ -179,7 +180,8 @@ class MirrorTrial extends Phaser.Scene {
                      empty: this.add.image(x, y, 'mt_charge', 'empty').setScale(P).setDepth(5), full: this.add.image(x, y, 'mt_charge', 'full').setScale(P).setDepth(5), P };
         });
         this.dreadG = this.add.graphics().setDepth(4.2);   // the dread: the edges darkening, the cracks
-        this.black = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0).setDepth(5.5);   // blacking out (over a prank's face)
+        this.black = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0).setDepth(5.5);
+        this.faint = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0).setDepth(5.4);   // (stressed: the dark pulsing in)   // blacking out (over a prank's face)
         this.stingWash = this.add.rectangle(0, 0, W, H, 0xffffff).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(4.3);   // the shock: a flash over it, not hiding it
         this.mapDim = this.add.rectangle(0, 0, W, H, 0x05030a).setOrigin(0).setAlpha(0).setDepth(6.4);
         this.mapCv = canvas('mt_mapview', this.tex.mt_map.w, this.tex.mt_map.h);   // the paper, inked each frame it's out
@@ -350,9 +352,10 @@ class MirrorTrial extends Phaser.Scene {
     }
     // Your dread: looking straight at one that's awake (not in a reflection) builds it, faster the more of it fills your view;
     // it ebbs when you stop. One that's just turned horrible stings the first time it's seen, anywhere. Full: you black out for
-    // a moment (and nothing watches them). Your stress: what their pranks left you with, for good, and your dread on top (full
-    // dread, a prank's worth); full, you're scared to death. The look of it: the edges darkening, the colour going, your heart
-    // (your dread); cracks creeping in (your stress: as far as the pranks took them, they stay).
+    // a moment (and nothing watches them). Your stress: what their pranks left you with, for good, and your dread on top; full,
+    // you're scared to death (two pranks in, a full dread does it; three, a moment's). The look of it: the edges darkening, the
+    // colour going (your dread); cracks creeping in (your stress: as far as the pranks took them, they stay); and once they've
+    // got you, your heart going all the time and the dark pulsing in, like you're about to faint, worse with every prank.
     _dread(now, delta) {
         const C = MirrorTrial.CFG, D = C.DREAD, W = this.scale.width, H = this.scale.height, g = this.dreadG, dt = delta / 1000;
         const direct = this.ents.reduce((a, e) => a + (e.pose >= 2 ? e.dpx || 0 : 0), 0);
@@ -368,7 +371,7 @@ class MirrorTrial extends Phaser.Scene {
         else if (direct >= C.SEEN_PX) { this.dread += (D.RISE + D.CLOSE * Math.min(1, direct / D.CLOSE_PX)) * dt; this.dreadAt = now; }
         else if (now - this.dreadAt > D.WAIT) this.dread = Math.max(0, this.dread - D.FALL * dt);
         this.dread = Math.min(this.dread, 1);
-        this.stress = this.scarred + this.dread * C.STRESS.PRANK;
+        this.stress = this.scarred + this.dread * C.STRESS.DREAD;
         if (this.stress >= 0.999 && !this.caught) this._die();
         if (this.dread >= 1 && !this.caught && now >= this.blackUntil) {
             this.blackUntil = now + D.OUT_MS; this.dread = D.AFTER; this.breaks++;
@@ -377,8 +380,10 @@ class MirrorTrial extends Phaser.Scene {
             this.tweens.chain({ targets: this.black, tweens: [{ alpha: 1, duration: 120 }, { alpha: 1, duration: D.OUT_MS - 520 }, { alpha: 0, duration: 400 }] });
             this._note('YOU BLACK OUT. YOU CAN\'T BEAR IT.');
         }
-        const k = this.dread, cs = this.stress;
-        if (k > 0.2 && !this.caught && now - this.heartAt > 1000 - 650 * k) { this.heartAt = now; Sfx.play(this, 'heartbeat', { hard: k }); if (k > 0.7) this.cameras.main.shake(90, 0.003 * k); }
+        const sp = Math.min(1, this.scarred / (3 * C.STRESS.PRANK)), hk = Math.max(this.dread, sp && 0.25 + 0.6 * sp), k = Math.max(this.dread, 0.7 * sp), cs = this.stress;   // (sp: how far their pranks have got you, 0-1 by the third)
+        if (hk > 0.2 && !this.caught && now - this.heartAt > 1000 - 650 * hk) { this.heartAt = now; Sfx.play(this, 'heartbeat', { hard: hk }); if (hk > 0.7) this.cameras.main.shake(90, 0.003 * hk); }
+        const per = 5000 - 2600 * sp, beat = sp && !this.caught ? Math.max(0, Math.sin((now % per) / per * Math.PI * 2)) ** 3 : 0;   // (the dark pulsing in)
+        this.faint.setAlpha(beat * (0.12 + 0.5 * sp * sp));
         g.clear();
         if (k < 0.02 && cs < 0.02) return;
         for (let i = 0; i < 9; i++) g.lineStyle(20, 0x000000, 0.1 * k).strokeRect(10 + i * 20, 10 + i * 20, W - 20 - i * 40, H - 20 - i * 40);
@@ -774,7 +779,7 @@ class MirrorTrial extends Phaser.Scene {
         this.time.delayedCall(900, () => {
             Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
             if (this.scarred >= 0.999) return this._die();
-            this._note(`GOT YOU. IT\'S LAUGHING. (${this.pranks} OF ${Math.round(1 / C.STRESS.PRANK)})`);
+            this._note(this.scarred + C.STRESS.DREAD * 0.5 >= 1 ? 'GOT YOU. YOUR HEART CAN\'T TAKE MUCH MORE.' : 'GOT YOU. IT\'S LAUGHING.');
         });
     }
     // one of them off: asleep again, anywhere open far from you that nobody's in
