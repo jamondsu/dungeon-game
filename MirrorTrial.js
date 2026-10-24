@@ -7,7 +7,9 @@
 // sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane), and
 // every fragment of the way out you take wakes another. Awake, they're bigger than you and they move only while nothing
 // sees them, never while you watch, and only ever in still poses, a new one each step: asleep, looking like you; awake and
-// wrong, or toying with you (waving, peekaboo, up the wall, splatted flat on the wall behind, holding your decoy...); through a pane, up against the glass
+// wrong, or toying with you, by their mood: calm and slow (reading, juggling your gems, whistling...) once they've had their
+// fun, playful (waving, peekaboo...) woken by you coming near, hunting and quick (staring, up the walls...) woken or riled by a
+// noise or a fragment taken, wearing off to playful; through a pane, up against the glass
 // (squashing its face on it, a heart in its breath...); close, your own face, huge and much too near, dropped down from the
 // ceiling...; a step off, caught just before it got you (mid-reach, sneaking up, mid-BOO, going for a hug). They giggle (where they are, to your ears) when they wake
 // and after they've made you jump. Watching them holds them, but don't meet their eyes: looking straight at one that's
@@ -49,6 +51,7 @@ class MirrorTrial extends Phaser.Scene {
         DASH: { TILES: 3, COST: 1 },                                 // SHIFT: a dash, up to TILES on, for COST vials
         SENTRY: { R: 3.5, WALLS: 1, PINGS: 2, EVERY_MS: 3000, SHOW_MS: 1000, LIT_MS: 2500 },   // sentries (found in the hall): their reach (a squircle, through WALLS of stone); set off, PINGS pings EVERY_MS apart, each showing them SHOW_MS; their reach lit, just set down
         OVER: { UP_MS: 420, BACK: 2.4, HIGH: 3, PITCH: 0.74, YAW: 0.5, F: 700, SEE: [2, 5.5] },   // the view from up behind you (TAB): how long the rise takes; how far back, how high (tiles), how steeply it looks down; how far it swings round toward the middle of the hall; its lens; the dark (clear within SEE[0] tiles, black by SEE[1])
+        MOOD: { calm: 1.5, play: 1, hunt: 0.72, HUNT_MS: 12000, CALM_MS: 20000 },   // how long a step takes in each mood (x ENT_MS); a hunt, and a calm, wear off to playful after this long
         ENT_MS: 600, ENT_SHARD: 30, ENT_MIN: 450, GRACE_MS: 5000,    // unseen this long, one moves (quicker by ENT_SHARD a shard found: not far off your walk, so you can't leave one be); none at first
         WAKE: { NEAR: 2, DASH: 6, TAP: 4, TURN: 3, MS: 1500 },         // asleep, one wakes: you this near (tiles), or a noise this near; it takes MS to come to
         HEAR: 10,                                                    // how far off you hear one move
@@ -94,13 +97,14 @@ class MirrorTrial extends Phaser.Scene {
         ['WHAT YOU\'LL FIND', 'Flasks of your goo: SHIFT dashes you three tiles on, past one of them, loudly. Decoys (Q): they take it for you, and whatever it stares at holds. Sentries (E): one of them moving near it, even a wall away, or waking beside it, sets it off, and two pings show you where they are. Glorps go into your purse.'],
         ['LOOKING FROM ABOVE', 'Hold TAB to step out of your own eyes, up behind yourself: you, the panes round you with your chalk and marks, your slimes. You never see them this way, except where a sentry pings, and while you\'re out of your eyes nothing watches them. W S step, A D turn, ESC leaves the hall.'],
     ];
-    // their looks (mt_twin, a strip: scratchpad art states.mjs --game): asleep; seen from afar (awake and wrong, or toying with you:
-    // waving, peekaboo, on the ceiling, up the wall, holding your decoy...); right behind a pane between you, up against the glass
+    // their looks (mt_twin, a strip: scratchpad art states.mjs --game): asleep; seen from afar, by their mood: calm (reading in
+    // glasses, juggling your gems, whistling, counting glorps, lounging...), playful (waving, peekaboo, copying you...), hunting
+    // (staring, up the walls, splatted on one, weeping...); right behind a pane between you, up against the glass
     // (face squashed on it, a heart in its breath, waving in, licking it, knocking); two away (your face, dropped down, peeking
     // in...); one away, caught in time just before it got you (mid-reach, sneaking, mid-BOO, going for a hug, BOO); FACE, the one
     // a prank slams into you; CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
-    static POSES = { SLEEP: [0, 1], FAR: [2, 26], GLASS: [27, 31], NEAR: [32, 39], CLOSE: [40, 44], FACE: 32, CORRIDOR: [9, 10, 11], WALLED: [12] };
+    static POSES = { SLEEP: [0, 1], calm: [2, 13], play: [14, 22], hunt: [23, 30], GLASS: [31, 35], NEAR: [36, 42], CLOSE: [43, 47], FACE: 36, CORRIDOR: [26, 27, 28], WALLED: [29] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
@@ -234,7 +238,7 @@ class MirrorTrial extends Phaser.Scene {
         for (const k of ['t0', 'calmUntil', 'blurAt', 'blackUntil', 'dreadAt', 'heartAt', 'wipeAt']) if (this[k] != null) this[k] += dt;
         for (const w of this.placed) { w.at += dt; w.until += dt; }
         for (const o of this.sentries) for (const k of ['at', 'next', 'showUntil', 'pingAt']) if (o[k] != null) o[k] += dt;
-        for (const e of this.ents) if (e.movedAt != null) e.movedAt += dt;
+        for (const e of this.ents) { if (e.movedAt != null) e.movedAt += dt; if (e.moodUntil != null) e.moodUntil += dt; }
     }
 
     _hud() {
@@ -639,7 +643,7 @@ class MirrorTrial extends Phaser.Scene {
         this.frags.delete(key); this.found++;
         Sfx.play(this, 'pickup'); this.time.delayedCall(120, () => Sfx.play(this, 'ready')); this.cameras.main.flash(260, 200, 220, 255);
         const sleepers = this.ents.filter(e => !e.awake).sort((a, b) => (Math.abs(a.x - x) + Math.abs(a.y - y)) - (Math.abs(b.x - x) + Math.abs(b.y - y)));   // (each fragment wakes the nearest still asleep)
-        if (sleepers[0]) this._wake(sleepers[0]);
+        if (sleepers[0]) this._wake(sleepers[0], 'hunt');
         if (this.found < C.FRAGMENTS) this._say(`A FRAGMENT OF THE WAY OUT  ${this.found}/${C.FRAGMENTS}`, 'It comes out of the mirror into your hand. They\'re getting restless.', '#bfd8ff', 2400);
         else {
             this.done = true;
@@ -656,7 +660,7 @@ class MirrorTrial extends Phaser.Scene {
         Sfx.play(this, 'shatter'); Sfx.play(this, 'boom', { big: true }); this.cameras.main.shake(320, 0.012);
         this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.3); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 400 });
         this._note('GLASS. IT SHATTERS. THEY HEARD THAT.');
-        for (const e of this.ents) if (e.awake) for (let k = 0; k < C.SHATTER.LUNGE && !this.caught; k++) this._entStep(e);
+        for (const e of this.ents) if (e.awake) { e.mood = 'hunt'; e.moodUntil = this.time.now + C.MOOD.HUNT_MS; for (let k = 0; k < C.SHATTER.LUNGE && !this.caught; k++) this._entStep(e); }   // (and they're hunting)
         if (!this.caught) this._noise(x, y, C.SHATTER.WAKE);
     }
     _act(k) {
@@ -774,9 +778,10 @@ class MirrorTrial extends Phaser.Scene {
         if (!this.caught && !this.escaped && !this.leaving && now - this.t0 > C.GRACE_MS && now >= this.calmUntil) {
             const ms = Math.max(C.ENT_MIN, C.ENT_MS - C.ENT_SHARD * this.found);
             for (const e of this.ents) {
-                if (!e.awake) { if (Math.abs(e.x - this.me.x) + Math.abs(e.y - this.me.y) <= C.WAKE.NEAR) this._wake(e); continue; }   // (asleep: still, till you come too near)
+                if (!e.awake) { if (Math.abs(e.x - this.me.x) + Math.abs(e.y - this.me.y) <= C.WAKE.NEAR) this._wake(e, 'play'); continue; }   // (asleep: still, till you come too near)
+                if (e.moodUntil < now) { e.mood = 'play'; e.moodUntil = Infinity; }   // (a hunt, or a calm, worn off)
                 if (e.seen) e.t = 0;
-                else if ((e.t += delta) >= ms * (0.85 + 0.3 * ((e.x * 7 + e.y * 3) % 5) / 4)) { e.t = 0; this._entStep(e); if (this.caught) break; }   // (not all in step)
+                else if ((e.t += delta) >= ms * C.MOOD[e.mood || 'play'] * (0.85 + 0.3 * ((e.x * 7 + e.y * 3) % 5) / 4)) { e.t = 0; this._entStep(e); if (this.caught) break; }   // (not all in step)
             }
         }
     }
@@ -807,7 +812,7 @@ class MirrorTrial extends Phaser.Scene {
         const P = MirrorTrial.POSES, near = path.length - 2, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y), was = e.pose;
         const sx = along ? Math.sign(me.x - nx) : 0, sy = along ? 0 : Math.sign(me.y - ny), pane = this.map[ny + sy]?.[nx + sx];
         const glass = (pane === 'M' || pane === 'G') && Math.abs(along ? me.x - nx : me.y - ny) >= 2 && Math.random() < 0.75;
-        const [lo, hi] = glass ? P.GLASS : near >= 3 ? P.FAR : near === 2 ? P.NEAR : P.CLOSE;
+        const [lo, hi] = glass ? P.GLASS : near >= 3 ? P[e.mood || 'play'] : near === 2 ? P.NEAR : P.CLOSE;
         const walled = along ? !this._open(nx, ny - 1) && !this._open(nx, ny + 1) : !this._open(nx - 1, ny) && !this._open(nx + 1, ny);
         const backed = (sx || sy) && !this._open(nx - sx, ny - sy) && !this.map[ny - sy]?.[nx - sx]?.match(/[MG]/);   // (stone right behind it, away from you)
         const looks = []; for (let f = lo; f <= hi; f++) if (f !== was && (walled || !P.CORRIDOR.includes(f)) && (backed || !P.WALLED.includes(f))) looks.push(f);
@@ -828,16 +833,25 @@ class MirrorTrial extends Phaser.Scene {
     _hear(e) { const w = this._where(e); if (w) Sfx.play(this, 'shift', w); }
     // one giggling (far off: faint, from nowhere you can tell)
     _giggle(e, n = 0) { Sfx.play(this, 'hall_giggle', { ...(this._where(e) || { near: 0.1, muffled: true }), n }); }
-    // one wakes: its eyes open (seen as it happens: a jolt)
-    _wake(e) {
+    // one wakes, in a mood: hunting (a noise woke it, or a fragment taken), playful (you came too near), or calm, if it's been
+    // sent off before and nothing's riled it (it's had its fun); its eyes open (seen as it happens: a jolt)
+    _wake(e, mood = 'play') {
         if (e.awake) return;
-        e.awake = true; e.pose = MirrorTrial.POSES.FAR[0]; e.lean = null; e.t = -MirrorTrial.CFG.WAKE.MS; e.movedAt = this.time.now;   // (stirring: a sentry near it hears that)   // (coming to: a moment before its first step, to see it coming)
+        const C = MirrorTrial.CFG;
+        e.mood = mood === 'hunt' ? 'hunt' : e.calmed ? 'calm' : 'play'; e.calmed = false;
+        e.moodUntil = this.time.now + (e.mood === 'hunt' ? C.MOOD.HUNT_MS : e.mood === 'calm' ? C.MOOD.CALM_MS : Infinity);
+        e.awake = true; e.pose = MirrorTrial.POSES[e.mood][0]; e.lean = null; e.t = -MirrorTrial.CFG.WAKE.MS; e.movedAt = this.time.now;   // (stirring: a sentry near it hears that)   // (coming to: a moment before its first step, to see it coming)
         Sfx.play(this, 'tell'); this.time.delayedCall(500, () => !this.caught && this._giggle(e));
         this._note('SOMETHING WOKE UP. IT WANTS TO PLAY.');
         if (e.seen) { this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.25); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 500 }); this.cameras.main.shake(140, 0.006); }
     }
-    // a noise at (x, y): any asleep within r tiles wakes
-    _noise(x, y, r) { for (const e of this.ents) if (!e.awake && Math.abs(e.x - x) + Math.abs(e.y - y) <= r) this._wake(e); }
+    // a noise at (x, y): any asleep within r tiles wakes, and any awake there's riled: hunting
+    _noise(x, y, r) {
+        for (const e of this.ents) if (Math.abs(e.x - x) + Math.abs(e.y - y) <= r) {
+            if (!e.awake) this._wake(e, 'hunt');
+            else { e.mood = 'hunt'; e.moodUntil = this.time.now + MirrorTrial.CFG.MOOD.HUNT_MS; }
+        }
+    }
     // Out: how it went (your time and your best, the glorps, how often they got you, how close they came)
     _escape() {
         if (this.escaped) return;
@@ -886,7 +900,7 @@ class MirrorTrial extends Phaser.Scene {
         const far = [];
         this.map.forEach((row, y) => row.forEach((c, x) => { if (c === '.' && Math.abs(x - this.me.x) + Math.abs(y - this.me.y) >= 8 && !this.ents.some(o => o.x === x && o.y === y)) far.push([x, y]); }));
         if (far.length) [e.x, e.y] = far[Math.floor(Math.random() * far.length)];
-        Object.assign(e, { awake: false, pose: Math.random() < 0.5 ? 0 : 1, t: 0, fresh: false, shy: 0, lean: null });
+        Object.assign(e, { awake: false, pose: Math.random() < 0.5 ? 0 : 1, t: 0, fresh: false, shy: 0, lean: null, mood: null, moodUntil: Infinity, calmed: true });   // (it's had its fun: calm, next time it wakes)
     }
     // held in a reflection long enough: it doesn't like being caught there, and slinks off
     _shoo(e) {
