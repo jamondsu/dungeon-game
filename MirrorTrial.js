@@ -202,7 +202,7 @@ class MirrorTrial extends Phaser.Scene {
     _hud() {
         const have = [this.holding && 'SPACE (hold) the shard · F (hold) wipe it', this.vials && 'SHIFT dash',
             (this.wards || this.placed.length) && `Q decoy slime (${this.wards})`, (this.sentryLeft || this.sentries.length) && `E set down / pick up a sentry (${this.sentryLeft})`].filter(Boolean);
-        this.keysTxt.setText(`W S step · A D turn · TAB (hold) the map · walk into a pane: chalk it · C mark it · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
+        this.keysTxt.setText(`W S step · A D turn · TAB (hold) look from above · walk into a pane: chalk it · C mark it · ESC leave` + (have.length ? '\n' + have.join(' · ') : ''));   // (only what you've found)
         this.countTxt.setText(`FRAGMENTS OF THE WAY OUT  ${'◆ '.repeat(this.found)}${'◇ '.repeat(MirrorTrial.CFG.FRAGMENTS - this.found)}`.trim());
     }
     _say(a, b, col = '#d8c8ff', hold = 2600) {
