@@ -6,7 +6,8 @@
 // get out. They sleep at first, and stay asleep till you come too near or make a noise (a surge, a blink, a knock on a pane,
 // a stand turned), and every shard of the way out you take wakes another. Awake, they're bigger than you and they move only
 // while nothing sees them, never while you watch, and only ever in
-// still poses: far off, asleep, looking like you; nearer, awake and wrong; close, all mouth and eyes. Watching them holds
+// still poses: far off, asleep, looking like you; nearer, awake and wrong; close, your own face, huge and much too near, then
+// pouncing. Watching them holds
 // them, but don't meet their eyes: looking straight at one that's awake fills you with dread (the screen darkens, cracks,
 // your heart pounds) till you can't bear it and look away, and for a moment nothing watches them. In a mirror they can't
 // reach you that way: watch them there. The hall's mirrors see for
@@ -148,7 +149,7 @@ class MirrorTrial extends Phaser.Scene {
         this.surgeTxt = this.add.text(W / 2, H * 0.3, 'SURGE!', { fontSize: '54px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#8ff4dc', stroke: '#063a32', strokeThickness: 8 }).setOrigin(0.5).setDepth(6).setAlpha(0);
         this.dreadG = this.add.graphics().setDepth(4.2);   // the dread: the edges darkening, the cracks
         this.black = this.add.rectangle(0, 0, W, H, 0x000000).setOrigin(0).setAlpha(0).setDepth(4.9);   // looking away
-        this.stingWash = this.add.rectangle(0, 0, W, H, 0xff1030).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(4.3);   // the sting: red over it, not hiding it
+        this.stingWash = this.add.rectangle(0, 0, W, H, 0xffffff).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(4.3);   // the shock: a flash over it, not hiding it
         this.mapDim = this.add.rectangle(0, 0, W, H, 0x05030a).setOrigin(0).setAlpha(0).setDepth(6.4);
         this.mapCv = canvas('mt_mapview', this.tex.mt_map.w, this.tex.mt_map.h);   // the paper, inked each frame it's out
         this.mapImg = this.add.image(W / 2, H + 400, 'mt_mapview').setDepth(6.5).setVisible(false);
@@ -304,9 +305,9 @@ class MirrorTrial extends Phaser.Scene {
         const direct = this.ents.reduce((a, e) => a + (e.pose >= 2 ? e.dpx || 0 : 0), 0);
         for (const e of this.ents) if (e.fresh && e.seen) {
             e.fresh = false;
-            Sfx.play(this, 'stinger', { big: true }); this.cameras.main.shake(260, 0.01);
-            this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.45); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 650, ease: 'Quad.easeIn' });
-            this.cameras.main.zoomTo(1.08, 60, 'Quad.easeOut', true, (c, p) => p === 1 && c.zoomTo(1, 400));   // (it lunges at the screen)
+            Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'whoosh'); this.cameras.main.shake(260, 0.012);
+            this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.5); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 450, ease: 'Quad.easeIn' });
+            this.cameras.main.zoomTo(1.12, 50, 'Quad.easeOut', true, (c, p) => p === 1 && c.zoomTo(1, 380));   // (it jumps at the screen)
             if (e.dpx) this.dread = Math.min(1, this.dread + D.STING);
         }
         if (now < this.blackUntil) {}
