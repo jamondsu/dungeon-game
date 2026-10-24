@@ -4439,11 +4439,9 @@ class LevelManager {
         if (this._frostPinned()) this._applyGlu(150);
         const p = this.player, on = this._glued() && p?.active;
         if (!on) { if (this._gluFx) { this._gluFx.destroy(); this._gluFx = null; } return; }
-        const g = this._gluFx?.active ? this._gluFx : (this._gluFx = this.add.graphics()), t = this.time.now;
-        g.clear().setPosition(p.x, p.y + 6).setDepth((p.depth ?? 2) - 0.05);
-        g.fillStyle(0xb88a28, 0.6).fillEllipse(0, 0, 30 + Math.sin(t * 0.006) * 2, 10);
-        g.fillStyle(0xf0d060, 0.6).fillEllipse(-4, -1, 12, 4);
-        for (let k = 0; k < 3; k++) { const a = k / 3 * Math.PI * 2 + t * 0.002; g.fillStyle(0xb88a28, 0.75).fillCircle(Math.cos(a) * 12, Math.sin(a) * 3 - 1, 2); }   // strings of it
+        const g = this._gluFx?.active ? this._gluFx : (this._gluFx = this.add.image(0, 0, 'fx_glu').setOrigin(0.5, 0.75).setAlpha(0.9)), t = this.time.now;
+        const k = Math.abs(p.scaleX || 1);   // (where your shadow sits: at your feet, not the middle of your frame; Visuals._vfxUpdateShadows)
+        g.setPosition(p.x, p.y - (this.SLIME_Y_OFFSET || 0) + 7).setDepth(0.96).setScale(k * (1 + Math.sin(t * 0.006) * 0.05), k * (1 - Math.sin(t * 0.006) * 0.05));
     }
     // Inside a Frost Slime's lit grid (its square, while the telegraph runs): no dashing out of it (a Glu, _updateGlu)
     _frostPinned() {
