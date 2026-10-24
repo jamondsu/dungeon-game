@@ -104,10 +104,10 @@ class MirrorTrial extends Phaser.Scene {
     // glasses, juggling your gems, whistling, counting glorps, a baby with a pacifier, lounging...), playful (waving, peekaboo, copying you...), hunting
     // (staring, up the walls, splatted on one, weeping...); right behind a pane between you, up against the glass
     // (face squashed on it, a heart in its breath, waving in, licking it, knocking); two away (your face, dropped down, peeking
-    // in...); one away, caught in time just before it got you (mid-reach, sneaking, mid-BOO, going for a hug, BOO); FACE, the one
-    // a prank slams into you; TRUE, what they really are (rare, and only ever seen straight on); CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
+    // in...); one away, caught in time just before it got you (mid-reach, sneaking, mid-BOO, going for a hug, BOO); (a prank's
+    // face is its own drawing, mt_face); TRUE, what they really are (rare, and only ever seen straight on); CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
-    static POSES = { SLEEP: [0, 1], calm: [2, 14], play: [15, 23], hunt: [24, 31], GLASS: [32, 36], NEAR: [37, 43], CLOSE: [44, 48], FACE: 37, TRUE: 49, CORRIDOR: [27, 28, 29], WALLED: [30] };
+    static POSES = { SLEEP: [0, 1], calm: [2, 14], play: [15, 23], hunt: [24, 31], GLASS: [32, 36], NEAR: [37, 43], CLOSE: [44, 48], TRUE: 49, CORRIDOR: [27, 28, 29], WALLED: [30] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
@@ -168,7 +168,6 @@ class MirrorTrial extends Phaser.Scene {
             this.tex[k] = { w: src.width, h: src.height, d: x.getImageData(0, 0, src.width, src.height).data };
         }
         this.tex.mt_twin.fw = this.tex.mt_decoy.fw = this.tex.mt_items.fw = this.tex.mt_self.fw = 48;   // strips: its poses, the decoy's four sides, things to find, you (the shard down, up)
-        if (!this.textures.get('mt_twin').has('face')) this.textures.get('mt_twin').add('face', 0, MirrorTrial.POSES.FACE * 48, 0, 48, 64);
         // the two views: ahead (the screen), and the shard's (behind you), each a canvas drawn every frame
         const canvas = (key, w, h) => {
             const t = this.textures.exists(key) ? this.textures.get(key) : this.textures.createCanvas(key, w, h), ctx = t.getContext();
@@ -911,15 +910,15 @@ class MirrorTrial extends Phaser.Scene {
     // One reached you: a prank, the biggest scare it has, slammed into your face; a beat, then it laughs, and it's gone (asleep
     // again, far off). It stays with you: STRESS.PRANK more stress, for good. While you get your breath back, none of them moves
     _prank(e) {
-        const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height, cam = this.cameras.main, s = H / 64 * 1.3, now = this.time.now;
+        const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height, cam = this.cameras.main, now = this.time.now;
         if (now < this.calmUntil) return;
         this.pranks++; this.scarred = Math.min(1, this.scarred + C.STRESS.PRANK); this.calmUntil = now + C.STRESS.CALM_MS;
         if (this.raised) { this.raised = false; this._shardAt(false, C.RAISE_MS); }
         Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'bosshit'); Sfx.play(this, 'whoosh');
         cam.shake(420, 0.02); this._punch(1.18, 60, 500);
         this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.7); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 600, ease: 'Quad.easeIn' });
-        const face = this.add.image(W / 2, H / 2 + H * 0.1, 'mt_twin', 'face').setScale(s * 1.8).setDepth(5);
-        this.tweens.add({ targets: face, scale: s, duration: 140, ease: 'Back.easeOut' });
+        const fs = H * 1.15 / this.textures.get('mt_face').getSourceImage().height, face = this.add.image(W / 2, H / 2, 'mt_face').setScale(fs * 1.8).setDepth(5);   // (its own drawing, made for the whole screen)
+        this.tweens.add({ targets: face, scale: fs, duration: 140, ease: 'Back.easeOut' });
         this.tweens.add({ targets: face, alpha: 0, delay: 900, duration: 350, onComplete: () => face.destroy() });
         this._sendOff(e);
         this.time.delayedCall(900, () => {
