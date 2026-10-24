@@ -1157,6 +1157,30 @@ class MenuArt {
         return { objs, destroy: () => life.destroy() };
     }
 
+    // ── THE GAUNTLET'S ROOF, UNDER THE MAP ───────────────────────────────────
+    // The top of the storm tower is open to the sky: past its edge, storm cloud far below and all round, two layers drifting
+    // with the wind at their own depths (parallax off the camera), over the dark. LevelManager._stormFlash lights them up.
+    static stormSky(scene) {
+        const W = scene.scale.width, H = scene.scale.height, objs = [], cam = scene.cameras.main;
+        const Z = (typeof VisualFX !== 'undefined' ? VisualFX.worldZoom(scene) : 0) || cam.zoom || 1;   // (the zoom it will have: see cistern)
+        const X0 = W / 2 - W / (2 * Z), Y0 = H / 2 - H / (2 * Z), VW = W / Z, VH = H / Z;
+        const pin = o => { objs.push(o); return o.setScrollFactor(0); };
+        pin(scene.add.rectangle(X0, Y0, VW, VH, 0x070910).setOrigin(0).setDepth(-19));
+        const far = pin(scene.add.tileSprite(X0, Y0, VW, VH, 'sky_storm').setOrigin(0).setDepth(-18.9).setTileScale(2.2 / Z).setAlpha(0.5).setTint(0x6a7690));
+        const near = pin(scene.add.tileSprite(X0, Y0, VW, VH, 'sky_storm').setOrigin(0).setDepth(-18.8).setTileScale(3.6 / Z).setAlpha(0.75).setTint(0x9aa6c0));
+        far._tint = 0x6a7690; near._tint = 0x9aa6c0;
+        let t = 0;
+        const tick = (now, dt) => {
+            t += dt / 1000;
+            far.setTilePosition((cam.scrollX * 0.12 + t * 6) / far.tileScaleX, cam.scrollY * 0.12 / far.tileScaleY);
+            near.setTilePosition((cam.scrollX * 0.3 + t * 18) / near.tileScaleX, (cam.scrollY * 0.3 + t * 4) / near.tileScaleY);
+        };
+        tick(0, 0);
+        const life = MenuArt._life(scene, objs, tick);
+        scene._vfxVoidVeil = { key: MenuArt.voidMask(scene), alpha: 0.75 };   // the dark lifted over the drop
+        return { objs, layers: [far, near], destroy: () => life.destroy() };
+    }
+
     // The map's void as a mask, one pixel a tile, softened a tile's width: Visuals.js erases
     // that much of the darkness over it, so a backdrop can show in the dark. A wall is only its
     // line now, so a wall with void beside it is open water past the line (less of it lifted,

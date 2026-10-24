@@ -327,6 +327,8 @@ class GameScene extends Phaser.Scene {
             this._atmoObjs = MenuArt.cistern(this);   // Menus.js: a drowned hall, caustics, light
         } else if (this.isLevel6 && typeof Transitions !== 'undefined' && Transitions.atmosphere) {
             this._atmoObjs = Transitions.atmosphere(this, 'flood', 0x3fb6e8);
+        } else if (this._floorPlan()?.sky && typeof MenuArt !== 'undefined') {
+            this._atmoObjs = MenuArt.stormSky(this);   // Menus.js: the Gauntlet's roof, open to the storm
         }
         this.placePlayer();
 
@@ -1597,6 +1599,8 @@ class GameScene extends Phaser.Scene {
     _cellTick(...a) { return LevelManager.prototype._cellTick.call(this, ...a); }
     _cellTake(...a) { return LevelManager.prototype._cellTake.call(this, ...a); }
     _cellLabel(...a) { return LevelManager.prototype._cellLabel.call(this, ...a); }
+    _stormBegin(...a) { return LevelManager.prototype._stormBegin.call(this, ...a); }
+    _stormFlash(...a) { return LevelManager.prototype._stormFlash.call(this, ...a); }
     _circuitCfg(...a) { return LevelManager.prototype._circuitCfg.call(this, ...a); }
     _circuitBuild(...a) { return LevelManager.prototype._circuitBuild.call(this, ...a); }
     _circuitBump(...a) { return LevelManager.prototype._circuitBump.call(this, ...a); }

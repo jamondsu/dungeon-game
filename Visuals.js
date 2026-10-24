@@ -931,8 +931,9 @@ void main() {
         // mostly pebbles and bones; a skull is rarer (it catches the eye)
         const DECAL_PICK = ['dc_pebbles', 'dc_pebbles', 'dc_pebbles', 'dc_bones', 'dc_bones', 'dc_pebbles', 'dc_bones', 'dc_skull'];
         // The Cistern's space between rooms is open deep water (MenuArt.cistern: the drowned hall
-        // and what swims in it), not rock: leave it unpainted there so the backdrop shows.
-        const openWater = !!this.isLevel6;
+        // and what swims in it), not rock: leave it unpainted there so the backdrop shows. The same
+        // on a floor open to the sky (the Gauntlet's roof: MenuArt.stormSky).
+        const openWater = !!this.isLevel6 || !!this._floorPlan?.()?.sky;
         for (let x = 0; x < ww; x++) {
             for (let y = 0; y < wh; y++) {
                 const fr = this._vfxTileFrame(x, y), h = fr.h, m = fr.m;
@@ -1437,7 +1438,7 @@ void main() {
         const C = this._vfxCfg(), cam = this.cameras.main, W = this.scale.width, H = this.scale.height;
         // Past the map's edge: the same rock as between the rooms (_vfxRenderWorld paints that).
         // Not in the Cistern, where it's open water and the deep-sea backdrop fills it.
-        if (!this.isLevel6) cam.setBackgroundColor(C.WALL.rock);
+        if (!this.isLevel6 && !this._floorPlan?.()?.sky) cam.setBackgroundColor(C.WALL.rock);
         // Dust in the light around you.
         if (this.player && this.add.particles && !(typeof Settings !== 'undefined' && Settings.low())) {   // (not on low graphics)
             this._dust = this.add.particles(0, 0, 'vfx_dot', {

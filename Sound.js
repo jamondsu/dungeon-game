@@ -863,6 +863,11 @@ const Sfx = {
             this._tone(ctx, t + 0.17, { type: 'sine', f0: 62, f1: 34, dur: 0.2, vol: v * 0.8 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 220, dur: 0.1, vol: v * 0.4 });
         },
+        thunder_far(ctx, t, o) {          // a storm outside: no crack, a long low roll (o.near, 0-1: the nearer, the louder)
+            const v = 0.1 + 0.16 * (o.near || 0);
+            this._noise(ctx, t, { filter: 'lowpass', f0: 360, f1: 55, dur: 1.9, vol: v, space: true });
+            this._tone(ctx, t + 0.12, { type: 'triangle', f0: 68, f1: 26, dur: 1.5, vol: v * 0.6 });
+        },
         e_thunder(ctx, t) {                // lightning on the altar: a sharp crack, then a rolling rumble
             this._noise(ctx, t, { filter: 'highpass', f0: 3000, f1: 900, dur: 0.12, vol: 0.32 });
             this._noise(ctx, t + 0.05, { filter: 'lowpass', f0: 600, f1: 90, dur: 1.1, vol: 0.28, space: true });

@@ -62,12 +62,13 @@ const LevelLayouts = {
     // way on to the next (`exit`: GameScene._floorExit), and its storm cells (`cells`: the lift runs on them; a number: the story
     // room on this floor whose clearing drops one, a template: the side room one waits in). You climb the Gauntlet's storm tower,
     // the Voltslime on its roof. (`need`: how many of them the lift wants, when there are more; a side room [template, how many,
-    // the story rooms it may hang off, the ways it may go from one]: the circuit's way in is on its west, its vault on the east.)
+    // the story rooms it may hang off, the ways it may go from one]: the circuit's way in is on its west, its vault on the east.
+    // `storm`, 0 to 1: the lightning, LevelManager._stormFlash; `sky`: open to it, MenuArt.stormSky under the map; `rain`: how hard.)
     FLOORS: {
-        2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift', cells: [2, 'chest_s'] },
-            { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift', cells: [1, 'elite'] },
-            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1], ['g_circuit', 1, [1, 2], ['east']]], exit: 'lift', cells: [1, 'chest', 'g_circuit'], need: 2 },
-            { name: 'THE ROOF', path: ['g_landing', 'g_boss'], story: [null, 6] }],
+        2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift', cells: [2, 'chest_s'], storm: 0.15 },
+            { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift', cells: [1, 'elite'], storm: 0.4 },
+            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1], ['g_circuit', 1, [1, 2], ['east']]], exit: 'lift', cells: [1, 'chest', 'g_circuit'], need: 2, storm: 0.7 },
+            { name: 'THE ROOF', path: ['g_landing', 'g_boss'], story: [null, 6], storm: 1, sky: true, rain: 0.7 }],
     },
     // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'
     DIRS: { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] },

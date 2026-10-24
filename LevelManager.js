@@ -1226,6 +1226,49 @@ class LevelManager {
         }
         this.time.delayedCall(n > 1 ? 1500 : 700, () => this._showRhythmSessionBanner(`${this.currentLevelIndex}-${n}  ·  ${F.name}`, '#ffe14a', `Floor ${n} of ${all}` + (need ? `  ·  find ${need} storm cells for the lift` : '')));
         if (n > 1) this._floorArriveFx();
+        this._stormBegin();
+    }
+
+    // ─── THE STORM ──────────────────────────────────────────────────────────
+    // A floor's storm (FLOORS `storm`, 0 to 1, stronger the higher you climb): lightning now and then, more often, brighter and
+    // its thunder sooner the stronger it is. Out on the roof (`sky`) it strikes past the edge, lighting the clouds, in the rain.
+    _stormBegin() {
+        const F = this._floorPlan();
+        if (!F?.storm) return;
+        if (F.rain && this.storyFloor === 1) this._floorRain(F.rain, 1500);   // (up the lift, its arrival eases the rain to this)
+        this.time.delayedCall(2500 + Math.random() * 3000, () => this._stormFlash());
+    }
+    _stormFlash() {
+        const F = this._floorPlan(), k = F.storm, cam = this.cameras.main, v = cam.worldView, ADD = Phaser.BlendModes.ADD;
+        this.time.delayedCall((24000 - 19000 * k) * (0.7 + 0.6 * Math.random()), () => this._stormFlash());
+        if (!this.player?.active || this._deathScreenActive) return;
+        // the light: a cold wash over the floor and walls, twice, quick (over the dark: Visuals.js SHADE_DEPTH)
+        const wash = this.add.rectangle(v.x - v.width / 2, v.y - v.height / 2, v.width * 2, v.height * 2, 0x8fb0e8).setOrigin(0).setDepth(0.32).setBlendMode(ADD).setAlpha(0);
+        const peak = 0.06 + 0.2 * k;
+        this.tweens.chain({ targets: wash, tweens: [{ alpha: peak, duration: 40 }, { alpha: peak * 0.2, duration: 90 }, { alpha: peak * 0.8, duration: 40 }, { alpha: 0, duration: 420 }], onComplete: () => wash.destroy() });
+        for (const L of this._atmoObjs?.layers || []) { L.setTint(0xe0e8ff); this.time.delayedCall(200, () => L.active && L.setTint(L._tint)); }
+        if (!F.sky) { this.time.delayedCall((1 - k) * 1600, () => Sfx.play(this, 'thunder_far', { near: k })); return; }
+        // the roof: a bolt down into the drop past its edge, somewhere you can see
+        let at = null;
+        for (let i = 0; i < 30 && !at; i++) {
+            const x = v.x + v.width * (0.1 + 0.8 * Math.random()), y = v.y + v.height * (0.3 + 0.6 * Math.random()), tx = Math.floor(x / this.TILE_SIZE), ty = Math.floor(y / this.TILE_SIZE);
+            if (this.world[tx]?.[ty] !== this.FLOOR && this.world[tx]?.[ty] !== this.WALL) at = [x, y];
+        }
+        Sfx.play(this, 'e_thunder'); cam.shake(140, 0.003);
+        if (!at) return;
+        const g = this.add.graphics().setDepth(-18.7).setBlendMode(ADD), top = v.y - 20;
+        const fork = (x0, y0, x1, y1, w, n) => {
+            const pts = [[x0, y0]];
+            for (let i = 1; i < n; i++) { const t = i / n; pts.push([x0 + (x1 - x0) * t + (Math.random() - 0.5) * 26, y0 + (y1 - y0) * t]); }
+            pts.push([x1, y1]);
+            for (const [lw, col, a] of [[w * 3, 0x4f7fff, 0.35], [w, 0xf0f6ff, 1]]) { g.lineStyle(lw, col, a); g.beginPath(); g.moveTo(...pts[0]); for (const p of pts.slice(1)) g.lineTo(...p); g.strokePath(); }
+            return pts;
+        };
+        const main = fork(at[0] + (Math.random() - 0.5) * 80, top, at[0], at[1], 2, 9);
+        const b = main[3 + Math.floor(Math.random() * 3)];
+        fork(b[0], b[1], b[0] + (Math.random() - 0.5) * 90, b[1] + 40 + Math.random() * 40, 1, 4);
+        const glow = this.add.image(at[0], at[1], 'vfx_glow').setTint(0xbfd8ff).setBlendMode(ADD).setDepth(-18.69).setScale(0.9).setAlpha(0.9);
+        this.tweens.add({ targets: [g, glow], alpha: 0, duration: 320, delay: 60, onComplete: () => { g.destroy(); glow.destroy(); } });
     }
 
     // The floor's last room is cleared: the way up opens in it, a little above the middle (where the room's chest goes)
@@ -1371,7 +1414,7 @@ class LevelManager {
         for (const o of ride) o.y += D;
         cam.fadeIn(500, 4, 6, 14);
         this._floorRain(1, 1);
-        this.time.delayedCall(300, () => this._floorRain(0, 1400));
+        this.time.delayedCall(300, () => this._floorRain(this._floorPlan()?.rain || 0, 1400));
         this.tweens.add({ targets: ride, y: `-=${D}`, duration: 950, ease: 'Cubic.easeOut', onComplete: () => {
             Sfx.play(this, 'e_land'); cam.shake(160, 0.005);
             VisualFX.ripple(this, E.px, E.py + 6, 8, 44, 0x4fc3ff, { depth: 0.97, duration: 600, alpha: 0.8 });
