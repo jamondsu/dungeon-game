@@ -41,6 +41,7 @@ class MirrorTrial extends Phaser.Scene {
         MAP: { CELL: 5, BIG: 6, UP_MS: 230, LAST_MS: 6000 },         // the map: a tile's size in ink; how big held up; how long a last sighting stays
         ENT_MS: 2200, ENT_SHARD: 150, ENT_MIN: 1400, GRACE_MS: 5000, // unseen this long, one moves (quicker by ENT_SHARD a shard found); none at first
         WAKE: { NEAR: 3, SURGE: 5, BLINK: 6, TAP: 4, TURN: 3 },      // asleep, one wakes: you this near (tiles), or a noise this near
+        HEAR: 10,                                                    // how far off you hear one move
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         DREAD: { RISE: 0.2, CLOSE: 1.3, CLOSE_PX: 3500, FALL: 0.3, WAIT: 500, OUT_MS: 1700, AFTER: 0.55, STING: 0.25 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; full, you look away OUT_MS, back at AFTER; the sting of one turning near
     };
@@ -622,7 +623,16 @@ class MirrorTrial extends Phaser.Scene {
         const near = path.length - 2, pick = near >= 3 ? [2, 3] : [4, 5];
         if (near <= 2 && e.pose < 4) e.fresh = true;   // (turned horrible: the first time you see it, the sting)
         e.pose = pick[0] === e.pose ? pick[1] : pick[1] === e.pose ? pick[0] : pick[Math.random() < 0.5 ? 0 : 1];
-        if (near <= 5) Sfx.play(this, 'snap');
+        this._hear(e);
+    }
+    // one moving, heard: from where it is, left or right of the way you face, louder the nearer, dull through stone
+    _hear(e) {
+        const dx = e.x - this.me.x, dy = e.y - this.me.y, d = Math.hypot(dx, dy);
+        if (d > MirrorTrial.CFG.HEAR) return;
+        const a = this.view.a, pan = (dx * -Math.sin(a) + dy * Math.cos(a)) / (d || 1);
+        let muffled = false;
+        for (let i = 1, n = Math.ceil(d * 2); i < n && !muffled; i++) { const c = this.map[Math.floor(this.me.y + 0.5 + dy * i / n)]?.[Math.floor(this.me.x + 0.5 + dx * i / n)]; muffled = c === '#' || c === 'O' || c === 'Q'; }
+        Sfx.play(this, 'shift', { pan, near: Math.max(0, 1 - d / MirrorTrial.CFG.HEAR), muffled });
     }
     // one wakes: its eyes open (seen as it happens: a jolt)
     _wake(e) {
