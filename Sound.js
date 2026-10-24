@@ -863,6 +863,10 @@ const Sfx = {
             this._tone(ctx, t + 0.17, { type: 'sine', f0: 62, f1: 34, dur: 0.2, vol: v * 0.8 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 220, dur: 0.1, vol: v * 0.4 });
         },
+        heartbeat(ctx, t, o) {            // your heart: lub-dub, low (o.hard, 0-1: harder)
+            const v = 0.12 + 0.14 * (o.hard || 0);
+            for (const [at, f, k] of [[0, 62, 1], [0.16, 52, 0.75]]) this._tone(ctx, t + at, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.14, vol: v * k });
+        },
         thunder_far(ctx, t, o) {          // a storm outside: no crack, a long low roll (o.near, 0-1: the nearer, the louder)
             const v = 0.1 + 0.16 * (o.near || 0);
             this._noise(ctx, t, { filter: 'lowpass', f0: 360, f1: 55, dur: 1.9, vol: v, space: true });
