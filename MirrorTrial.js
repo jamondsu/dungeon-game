@@ -10,8 +10,11 @@
 // (it's in the way of nothing but walking). A pane of glass and a mirror look the same here, so a mirror can pass for a way
 // on: walk into one to tap it (a mirror rings, glass thuds) and you chalk it, an eye for a mirror, a cross for glass.
 // You walk slowly. SHIFT cracks open one of your three surges: a rush of speed for a moment, the screen fizzing with it;
-// they come back slowly, one at a time. Two decoy wards (Q): set one down and it stares the way you face for a while, and they take it for an
-// eye (anything in its line holds) till it burns out. On the floor at your feet, a broken shard: hold it up (SPACE) and you see what's behind you, but the
+// they come back slowly, one at a time. Held, SHIFT spends two at once on a blink: a white flash and you're a few tiles on,
+// past one of them if it's in the way (not through stone or glass). Two sentry slimes (E sets one down where you stand, facing
+// your way, its line of sight lit on the floor; E again on it picks it up): they hold nothing, but hold F and you see through
+// one's eye (A D: the other), and while you do, nothing watches you. Two decoy slimes (Q, you in pink): set one down and it stares the way you face for a while, and they take
+// it for you (anything in its line holds) till it pops. On the floor at your feet, a broken shard: hold it up (SPACE) and you see what's behind you, but the
 // view dives into the shard and everything in front of you goes unwatched. Find the three shards the way out is missing,
 // and it's whole again: step back through it. If one of them reaches you, it has you.
 // Drawn small and scaled up: a ray a column through the tile map, off mirrors and through glass, shaded to black with
@@ -23,31 +26,33 @@ class MirrorTrial extends Phaser.Scene {
         BACK: { W: 96, H: 72, FOV: 0.5 },                           // the shard's view (the size of its art, mt_shard)
         STEP_MS: 340, BOOST_MS: 120, TURN_MS: 160, RAISE_MS: 220,    // your step (surging: BOOST_MS), turn, and lifting the shard
         SURGE: { CHARGES: 3, CHARGE_MS: 9000, MS: 2200, FOV: 1.22, BEAT_MS: 420 },   // surges: how many, one back every CHARGE_MS, how long one lasts; the view widened; its heartbeat
-        WARDS: 2, WARD_MS: 7000, WARD_RANGE: 8,                      // decoy wards: how many, how long one stares, how far
+        WARDS: 2, WARD_MS: 7000, WARD_RANGE: 8,                      // decoy slimes: how many, how long one stares, how far
+        BLINK: { HOLD_MS: 280, TILES: 3, COST: 2 },                  // SHIFT held this long: a blink, up to TILES on, for COST surges
+        SENTRY: { N: 2, RANGE: 9, LIT_MS: 2500, SIGHT: 1.4 },          // sentries: how many, how far one's line is lit, how bright just set down; how much further they see
         ENT_MS: 900, ENT_SHARD: 90, ENT_MIN: 520, GRACE_MS: 3200,    // unseen this long, one moves (quicker by ENT_SHARD a shard found); none at first
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
     };
     // # stone, G glass, M mirror, L R mirror stands at 45 degrees (L like /, R like \), O the way out (broken), s a missing shard,
-    // h the shard for your hand, W one of them, P you (facing north). The corridors end in mirrors; the middle's a room of glass.
+    // h the shard for your hand, g glorps, W one of them, P you (facing north). The corridors end in mirrors; the middle's a room of glass.
     static MAP = [
         '#################',
-        'M......W#.......M',
+        'Mg.....W#......gM',
         '#.#####.#.#####.#',
-        '#.#s....#....s#.#',
+        '#.#s.g..#..g.s#.#',
         '#.#.###...###.#.#',
-        '#.....#.#.#.....#',
+        '#g....#.#.#....g#',
         '###.#.GGGGG.#.###',
-        '#...#.G...G.#...#',
+        '#..g#.Gg..G.#g..#',
         '#.#.R.G.s.G.L.#.#',
-        '#W#...G...G...#W#',
+        '#W#...G..gG...#W#',
         '#.###.GG.GG.###.#',
-        '#.......h.......#',
+        '#g......h......g#',
         '#.#####...#####.#',
-        'M.......P.......M',
+        'M...g...P...g...M',
         '########O########',
     ];
     static DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
-    static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_ward', 'mt_mark_m', 'mt_mark_g'];
+    static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
     // From the Training Ground: down into your slime's eyes, and through
@@ -68,18 +73,20 @@ class MirrorTrial extends Phaser.Scene {
         const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height;
         this.zoom0 = data?.zoom || 1;
         this.map = MirrorTrial.MAP.map(r => r.split(''));
-        this.ents = []; this.shards = []; this.hand = null;
+        this.ents = []; this.shards = []; this.glorps = []; this.hand = null; this.gotGlorps = 0;
         this.map.forEach((row, y) => row.forEach((c, x) => {
             if (c === 'P') this.me = { x, y, dir: 0 };
             else if (c === 'W') this.ents.push({ x, y, pose: 0, t: 0, seen: false });
             else if (c === 's') this.shards.push({ x, y });
             else if (c === 'h') this.hand = { x, y };
+            else if (c === 'g') this.glorps.push({ x, y, n: 3 + Math.floor(Math.random() * 4) });
             else return;
             row[x] = '.';
         }));
         this.view = { x: this.me.x + 0.5, y: this.me.y + 0.5, a: -Math.PI / 2 };
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
-            charges: C.SURGE.CHARGES, chargeT: 0, surging: false, surgeUntil: 0, beatAt: 0, fovK: 1, surgeK: 0, bubbles: [], wards: C.WARDS, placed: [], labels: {} });
+            charges: C.SURGE.CHARGES, chargeT: 0, surging: false, surgeUntil: 0, beatAt: 0, fovK: 1, surgeK: 0, bubbles: [], wards: C.WARDS, placed: [], labels: {},
+            shiftDown: false, shiftAt: 0, blinked: false, sentries: [], sentryLeft: C.SENTRY.N, linked: false, linkIdx: 0, lines: new Map() });
         // the textures, as pixels to read
         this.tex = {};
         for (const k of MirrorTrial.TEX) {
@@ -88,7 +95,7 @@ class MirrorTrial extends Phaser.Scene {
             const x = c.getContext('2d'); x.drawImage(src, 0, 0);
             this.tex[k] = { w: src.width, h: src.height, d: x.getImageData(0, 0, src.width, src.height).data };
         }
-        this.tex.mt_twin.fw = 48;   // a strip of poses, 48 wide each
+        this.tex.mt_twin.fw = this.tex.mt_decoy.fw = 48;   // strips: its poses, the decoy's four sides
         if (!this.textures.get('mt_twin').has('face')) this.textures.get('mt_twin').add('face', 0, 4 * 48, 0, 48, 64);
         // the two views: ahead (the screen), and the shard's (behind you), each a canvas drawn every frame
         const canvas = (key, w, h) => {
@@ -108,7 +115,7 @@ class MirrorTrial extends Phaser.Scene {
         this.time.delayedCall(1300, () => { Sfx.play(this, 'shatter'); this.cameras.main.shake(200, 0.006); });
         this.time.delayedCall(2300, () => Sfx.play(this, 'e_absorb'));
         this.tweens.add({ targets: [this.title, this.sub], alpha: 0, delay: C.GRACE_MS - 500, duration: 600 });
-        this.keysTxt = this.add.text(W / 2, H - 24, '', { fontSize: '13px', fontFamily: 'monospace', color: '#8a7aa8', stroke: '#05030a', strokeThickness: 3 }).setOrigin(0.5).setDepth(6);
+        this.keysTxt = this.add.text(W / 2, H - 30, '', { fontSize: '13px', fontFamily: 'monospace', align: 'center', lineSpacing: 4, color: '#8a7aa8', stroke: '#05030a', strokeThickness: 3 }).setOrigin(0.5).setDepth(6);
         this.fx = this.add.graphics().setDepth(4);   // the surge's streaks, fizz and pulse
         this.surgeGlow = this.add.rectangle(0, 0, W, H, 0x8cff3a).setOrigin(0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(3);
         // the surges: three cans, bottom left; an empty one fills back up from the bottom
@@ -120,6 +127,9 @@ class MirrorTrial extends Phaser.Scene {
                      empty: this.add.image(x, y, 'mt_charge', 'empty').setScale(2).setDepth(5), full: this.add.image(x, y, 'mt_charge', 'full').setScale(2).setDepth(5) };
         });
         this.surgeTxt = this.add.text(W / 2, H * 0.3, 'SURGE!', { fontSize: '54px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#c8ff3a', stroke: '#0d2a06', strokeThickness: 8 }).setOrigin(0.5).setDepth(6).setAlpha(0);
+        this.linkG = this.add.graphics().setDepth(4.5);   // seeing through a sentry: scanlines, static, its frame
+        this.linkTxt = this.add.text(24, 20, '', { fontSize: '15px', fontFamily: 'monospace', fontStyle: 'bold', color: '#8ff4dc', stroke: '#05030a', strokeThickness: 4 }).setDepth(6).setVisible(false);
+        this.glorpTxt = this.add.text(W - 24, 20, '', { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#5dffb8', stroke: '#05030a', strokeThickness: 5 }).setOrigin(1, 0).setDepth(6);
         this.noteTxt = this.add.text(W / 2, H * 0.72, '', { fontSize: '18px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f0ece0', stroke: '#05030a', strokeThickness: 5 }).setOrigin(0.5).setDepth(6).setAlpha(0);
         this.countTxt = this.add.text(W / 2, 22, '', { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#bfd8ff', stroke: '#05030a', strokeThickness: 4 }).setOrigin(0.5).setDepth(6);
         this._hud();
@@ -131,7 +141,8 @@ class MirrorTrial extends Phaser.Scene {
     }
 
     _hud() {
-        this.keysTxt.setText(`W S step · A D turn · SHIFT surge${this.holding ? ' · SPACE (hold) the shard' : ''} · Q decoy ward (${this.wards}) · walk into a pane: tap it · into a stand: turn it · ESC leave`);
+        this.keysTxt.setText(`W S step · A D turn · SHIFT tap: surge, hold: blink (2)${this.holding ? ' · SPACE (hold) the shard' : ''} · walk into a pane: tap it, a stand: turn it\n`
+            + `Q decoy slime (${this.wards}) · E set down / pick up a sentry (${this.sentryLeft}) · F (hold) see through it, A D the other · ESC leave`);
         this.countTxt.setText(this.holding ? `SHARDS OF THE WAY OUT  ${'◆ '.repeat(this.found)}${'◇ '.repeat(this.shards.length - this.found)}`.trim() : '');
     }
     _say(a, b, col = '#d8c8ff', hold = 2600) {
@@ -153,21 +164,26 @@ class MirrorTrial extends Phaser.Scene {
         const k = e.code;
         if (k === 'Escape') return this._leave();
         if (this.caught) { if (k === 'KeyR') this.scene.restart({ zoom: this.zoom0 }); return; }
-        if (k === 'Space') { if (this.holding && !this.raised) { this.raised = true; Sfx.play(this, 'hover'); this._shardAt(true, MirrorTrial.CFG.RAISE_MS); } return; }
-        if (k === 'ShiftLeft' || k === 'ShiftRight') { if (!e.repeat) this._surgeGo(); return; }
+        if (k === 'Space') { if (this.holding && !this.raised && !this.linked) { this.raised = true; Sfx.play(this, 'hover'); this._shardAt(true, MirrorTrial.CFG.RAISE_MS); } return; }
+        if (k === 'ShiftLeft' || k === 'ShiftRight') { if (!e.repeat) { this.shiftDown = true; this.shiftAt = this.time.now; this.blinked = false; } return; }   // (let go soon: a surge; held: a blink, in update)
+        if (k === 'KeyF') { if (!e.repeat && this.sentries.length) { this.linked = true; this.linkIdx = Math.min(this.linkIdx, this.sentries.length - 1); this.shard.setVisible(false); Sfx.play(this, 'e_bind'); } return; }
+        if (this.linked) { if (k === 'KeyA' || k === 'KeyD' || k === 'ArrowLeft' || k === 'ArrowRight') { this.linkIdx = (this.linkIdx + 1) % this.sentries.length; Sfx.play(this, 'blip'); } return; }   // (in a trance: only the other sentry)
         if (k === 'KeyQ') return this._ward();
+        if (k === 'KeyE') return this._sentry();
         if (this.moving) { this.queued = k; return; }
         this._act(k);
     }
     _keyUp(e) {
         if (e.code === 'Space' && this.raised) { this.raised = false; this._shardAt(false, MirrorTrial.CFG.RAISE_MS); }
+        if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && this.shiftDown) { this.shiftDown = false; if (!this.blinked) this._surgeGo(); }
+        if (e.code === 'KeyF' && this.linked) { this.linked = false; this.shard.setVisible(this.holding); }
     }
-    // a decoy ward set down where you stand, staring the way you face
+    // a decoy slime set down where you stand, staring the way you face
     _ward() {
         const C = MirrorTrial.CFG, { x, y, dir } = this.me;
         if (this.wards <= 0 || this.placed.some(w => w.x === x && w.y === y)) return Sfx.play(this, 'deny');
-        this.wards--; this.placed.push({ x, y, dir, until: this.time.now + C.WARD_MS });
-        Sfx.play(this, 'ready');
+        this.wards--; this.placed.push({ x, y, dir, at: this.time.now, until: this.time.now + C.WARD_MS });
+        Sfx.play(this, 'ready'); this._note('A DECOY: YOU, IN PINK, STARING THAT WAY. THEY\'LL TAKE IT FOR YOU.');
         this._hud();
     }
     // the wards' stares: along the way each faces, through glass, to the first thing in the way; burnt out, gone
@@ -186,11 +202,7 @@ class MirrorTrial extends Phaser.Scene {
     // SHIFT: a can cracked open, a surge (another while one runs adds to it)
     _surgeGo() {
         const C = MirrorTrial.CFG, W = this.scale.width, H = this.scale.height;
-        if (this.charges <= 0 || this.caught || this.leaving) {
-            Sfx.play(this, 'deny');
-            for (const c of this.cans) { this.tweens.killTweensOf(c.empty); this.tweens.add({ targets: c.empty, x: c.empty.x + 3, duration: 40, yoyo: true, repeat: 2 }); }
-            return;
-        }
+        if (this.charges <= 0 || this.caught || this.leaving) return this._noCans();
         const can = this.cans[--this.charges];
         this.surgeUntil = Math.max(this.surgeUntil, this.time.now) + C.SURGE.MS;
         if (!this.surging) this._surge(true);
@@ -202,6 +214,72 @@ class MirrorTrial extends Phaser.Scene {
         this.tweens.add({ targets: this.surgeTxt, alpha: 0, delay: 450, duration: 400 });
         this.tweens.add({ targets: can.full, scale: 2.7, duration: 90, yoyo: true });
         for (let n = 0; n < 40; n++) this.bubbles.push({ x: can.full.x + (Math.random() - 0.5) * 30, y: can.full.y - 30, vx: (Math.random() - 0.3) * 260, vy: -150 - Math.random() * 380, r: 2 + Math.random() * 5, life: 1 });   // the fizz, spraying out of it
+    }
+    _noCans() {
+        Sfx.play(this, 'deny');
+        for (const c of this.cans) { this.tweens.killTweensOf(c.empty); this.tweens.add({ targets: c.empty, x: c.empty.x + 3, duration: 40, yoyo: true, repeat: 2 }); }
+    }
+    // SHIFT held: two cans at once, a white flash, and you're a few tiles on (past one of them, not through stone or glass)
+    _blink() {
+        const C = MirrorTrial.CFG, [dx, dy] = MirrorTrial.DIRS[this.me.dir];
+        if (this.charges < C.BLINK.COST || this.moving || this.caught || this.leaving || this.linked) return this._noCans();
+        let land = 0;
+        for (let i = 1; i <= C.BLINK.TILES; i++) {
+            const x = this.me.x + dx * i, y = this.me.y + dy * i;
+            if (!this._open(x, y)) break;
+            if (!this.ents.some(e => e.x === x && e.y === y)) land = i;
+        }
+        if (!land) return this._noCans();
+        for (let n = 0; n < C.BLINK.COST; n++) { const can = this.cans[--this.charges]; this.tweens.add({ targets: can.full, scale: 2.7, duration: 90, yoyo: true }); }
+        const x = this.me.x + dx * land, y = this.me.y + dy * land;
+        this.me.x = x; this.me.y = y; this.moving = true;
+        this.cameras.main.flash(280, 255, 255, 255); this.cameras.main.shake(120, 0.006);
+        Sfx.play(this, 'dash'); Sfx.play(this, 'whoosh');
+        this.tweens.add({ targets: this.view, x: x + 0.5, y: y + 0.5, duration: 90, ease: 'Quad.easeOut', onComplete: () => this._moved() });
+    }
+    // E: a sentry set down where you stand, facing your way; or, standing on one, picked back up
+    _sentry() {
+        const { x, y, dir } = this.me, i = this.sentries.findIndex(o => o.x === x && o.y === y);
+        if (i >= 0) { this.sentries.splice(i, 1); this.sentryLeft++; Sfx.play(this, 'pickup'); this._note('SENTRY PICKED UP'); }
+        else if (this.sentryLeft > 0) { this.sentries.push({ x, y, dir, at: this.time.now }); this.sentryLeft--; Sfx.play(this, 'pop'); this._note('A SENTRY, LOOKING THAT WAY. HOLD F TO SEE WHAT IT SEES.'); }
+        else Sfx.play(this, 'deny');
+        this._hud();
+    }
+    // the sentries' lines of sight (lit on the floor, brighter just set down): cell -> how bright
+    _sentryLines(now) {
+        const C = MirrorTrial.CFG, L = this.lines;
+        L.clear();
+        for (const o of this.sentries) {
+            const [dx, dy] = MirrorTrial.DIRS[o.dir], k = 0.22 + 0.55 * Math.max(0, 1 - (now - o.at) / C.SENTRY.LIT_MS);
+            for (let i = 1; i <= C.SENTRY.RANGE; i++) {
+                const x = o.x + dx * i, y = o.y + dy * i, c = this.map[y]?.[x];
+                if (c !== '.' && c !== 'G') break;
+                if (c === '.') L.set(y * 64 + x, Math.max(L.get(y * 64 + x) || 0, k));
+            }
+        }
+        for (const w of this.placed) {   // a decoy's stare, in pink (negative: lines' values; its own colour on the floor)
+            const [dx, dy] = MirrorTrial.DIRS[w.dir];
+            for (let i = 1; i <= C.WARD_RANGE; i++) {
+                const x = w.x + dx * i, y = w.y + dy * i, c = this.map[y]?.[x];
+                if (c !== '.' && c !== 'G') break;
+                if (c === '.') L.set(y * 64 + x, -0.35);
+            }
+        }
+    }
+    // seeing through a sentry: its frame, scanlines and static over the view, and the warning
+    _linkFx(now, S) {
+        const W = this.scale.width, H = this.scale.height, g = this.linkG;
+        g.clear(); this.linkTxt.setVisible(!!S);
+        if (!S) return;
+        for (let y = 0; y < H; y += 4) g.fillStyle(0x000000, 0.22).fillRect(0, y, W, 2);
+        for (let n = 0; n < 70; n++) g.fillStyle(0xc8fff0, Math.random() * 0.25).fillRect(Math.random() * W, Math.random() * H, 3, 2);
+        g.lineStyle(10, 0x40d8b8, 0.3 + 0.2 * Math.sin(now / 110)).strokeRect(5, 5, W - 10, H - 10);
+        this.linkTxt.setText(`SENTRY ${this.linkIdx + 1} OF ${this.sentries.length}      NOTHING IS WATCHING YOU`);
+    }
+    _note(t) {
+        this.tweens.killTweensOf(this.noteTxt);
+        this.noteTxt.setText(t).setAlpha(1);
+        this.tweens.add({ targets: this.noteTxt, alpha: 0, delay: 1300, duration: 500 });
     }
     // the surge on or off: the view widens, the screen fizzes
     _surge(on) {
@@ -255,9 +333,7 @@ class MirrorTrial extends Phaser.Scene {
         this.labels[y * 64 + x] = c;
         Sfx.play(this, c === 'M' ? 'clink' : 'bonk');
         this.cameras.main.shake(60, 0.002);
-        this.tweens.killTweensOf(this.noteTxt);
-        this.noteTxt.setText(c === 'M' ? 'IT RINGS: A MIRROR. CHALKED.' : 'A DULL KNOCK: GLASS. CHALKED.').setAlpha(1);
-        this.tweens.add({ targets: this.noteTxt, alpha: 0, delay: 1100, duration: 500 });
+        this._note(c === 'M' ? 'IT RINGS: A MIRROR. CHALKED.' : 'A DULL KNOCK: GLASS. CHALKED.');
     }
     _act(k) {
         if (k === 'KeyW' || k === 'ArrowUp') this._step(1);
@@ -286,9 +362,21 @@ class MirrorTrial extends Phaser.Scene {
         const q = this.queued; this.queued = null;
         if (q && !this.caught && !this.leaving) this._act(q);
     }
-    // standing on a shard: the one for your hand, or one of the way out's (all three: it's whole)
+    // standing on a shard: the one for your hand, or one of the way out's (all three: it's whole); on glorps: yours (the purse
+    // you came in with)
     _pickUp() {
-        const { x, y } = this.me;
+        const { x, y } = this.me, gl = this.glorps.find(o => !o.got && o.x === x && o.y === y);
+        if (gl) {
+            const G = this.scene.get('Game'), W = this.scale.width, H = this.scale.height;
+            gl.got = true; this.gotGlorps += gl.n;
+            if (G) { G.totalGlorps = (G.totalGlorps || 0) + gl.n; try { localStorage.setItem('glorps', G.totalGlorps); } catch (e) {} }
+            Sfx.play(this, 'coin'); this.time.delayedCall(70, () => Sfx.play(this, 'pickup'));
+            this.glorpTxt.setText(`✦ ${this.gotGlorps}`).setScale(1.5);
+            this.tweens.add({ targets: this.glorpTxt, scale: 1, duration: 260, ease: 'Back.easeOut' });
+            const pop = this.add.text(W / 2, H * 0.62, `+${gl.n}`, { fontSize: '40px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#5dffb8', stroke: '#05030a', strokeThickness: 6 }).setOrigin(0.5).setDepth(6);
+            this.tweens.add({ targets: pop, y: pop.y - 70, alpha: 0, scale: 1.3, duration: 700, ease: 'Quad.easeOut', onComplete: () => pop.destroy() });
+            this.cameras.main.flash(90, 60, 200, 120);
+        }
         if (this.hand && this.hand.x === x && this.hand.y === y) {
             this.hand = null; this.holding = true; this.shard.setVisible(true);
             Sfx.play(this, 'pickup');
@@ -313,10 +401,17 @@ class MirrorTrial extends Phaser.Scene {
     update(time, delta) {
         const C = MirrorTrial.CFG, now = this.time.now;
         this._surgeTick(now, delta);
-        // ahead (watching, unless the shard is up), and the shard's view: behind you, flipped as a mirror shows it; the wards' stares
-        this._render(this.front, this.view.a, C.FOV * this.fovK, false, !this.raised);
-        if (this.holding) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
+        if (this.shiftDown && !this.blinked && now - this.shiftAt >= C.BLINK.HOLD_MS) { this.blinked = true; this._blink(); }
+        // ahead (watching, unless the shard is up), and the shard's view: behind you, flipped as a mirror shows it; or, linked, a
+        // sentry's (watching nothing); the wards' stares
+        for (const e of this.ents) e.seen = false;
+        this._sentryLines(now);
+        const S = this.linked && this.sentries[this.linkIdx];
+        if (S) this._render(this.front, (S.dir - 1) * Math.PI / 2, C.FOV, false, false, { x: S.x + 0.5, y: S.y + 0.5 });
+        else this._render(this.front, this.view.a, C.FOV * this.fovK, false, !this.raised);
+        if (this.holding && !S) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
         this._wardsWatch(now);
+        this._linkFx(now, S);
         if (!this.caught && !this.leaving && now - this.t0 > C.GRACE_MS) {
             const ms = Math.max(C.ENT_MIN, C.ENT_MS - C.ENT_SHARD * this.found);
             for (const e of this.ents) {
@@ -370,6 +465,7 @@ class MirrorTrial extends Phaser.Scene {
             G.scene.resume();
             G._mirrorBusy = false;
             G.cameras.main.setZoom(zoom); G.cameras.main.fadeIn(500, 8, 4, 16);
+            G.updateHUD?.();   // (the glorps picked up in here)
             if (msg && G.player) G.showStatusText?.(G.player.x, G.player.y - 40, msg, '#d8c8ff');
         });
     }
@@ -379,11 +475,14 @@ class MirrorTrial extends Phaser.Scene {
     // over what's behind), off up to BOUNCES mirrors (their frames kept the same way), on to stone or the way out. Then, column
     // by column, far to near: the sheets and frames, and what stands there: them and the shards (in front of the first mirror
     // or wall), and in the first mirror you and them again (mirrored across its face, behind it and in front of what it shows
-    // next). flip: drawn left to right reversed (the shard's). watch: the ones it shows are seen (held).
-    _render(V, a, fov, flip, watch) {
-        const C = MirrorTrial.CFG, W = V.W, H = V.H, d = V.img.data;
-        const px = this.view.x, py = this.view.y, dx = Math.cos(a), dy = Math.sin(a), plx = -dy * fov, ply = dx * fov;
-        const lit = t => { const k = Math.max(0, 1 - t / C.FOG); return Math.min(1, k * k * 1.15); };
+    // next). flip: drawn left to right reversed (the shard's). watch: the ones it shows are seen (held). eye: a sentry's, seen
+    // from instead of you (further, in its own colours, them picked out red; you in a mirror not drawn).
+    _render(V, a, fov, flip, watch, eye) {
+        const C = MirrorTrial.CFG, W = V.W, H = V.H, d = V.img.data, fog = C.FOG * (eye ? C.SENTRY.SIGHT : 1);
+        const px = eye ? eye.x : this.view.x, py = eye ? eye.y : this.view.y, dx = Math.cos(a), dy = Math.sin(a), plx = -dy * fov, ply = dx * fov;
+        const lit = t => { const k = Math.max(0, 1 - t / fog); return Math.min(1, k * k * 1.15); };
+        const lines = !eye && V === this.front && this.lines.size ? this.lines : null, red = V.red ||= new Uint8Array(W * H);
+        V.eye = !!eye; if (eye) red.fill(0);
         // the floor (its flagstones' joints, for knowing where you are) and the dark above
         const r0x = dx - plx, r0y = dy - ply, r1x = dx + plx, r1y = dy + ply;
         for (let y = 0; y < H; y++) {
@@ -393,7 +492,11 @@ class MirrorTrial extends Phaser.Scene {
             for (let x = 0; x < W; x++, fx += sx, fy += sy) {
                 const i = (y * W + x) * 4;
                 let r = 14, g = 10, bl = 22;
-                if (below) { const ex = fx - Math.floor(fx), ey = fy - Math.floor(fy), joint = ex < 0.04 || ex > 0.96 || ey < 0.04 || ey > 0.96; r = joint ? 16 : 46; g = joint ? 11 : 36; bl = joint ? 26 : 62; }
+                if (below) {
+                    const ex = fx - Math.floor(fx), ey = fy - Math.floor(fy), joint = ex < 0.04 || ex > 0.96 || ey < 0.04 || ey > 0.96; r = joint ? 16 : 46; g = joint ? 11 : 36; bl = joint ? 26 : 62;
+                    const hl = lines && lines.get(Math.floor(fy) * 64 + Math.floor(fx));   // a sentry's line of sight
+                    if (hl > 0 && !joint) { g += 70 * hl; bl += 60 * hl; } else if (hl < 0 && !joint) { r -= 140 * hl; bl -= 70 * hl; }   // (teal: a sentry's; pink: a decoy's)
+                }
                 d[i] = r * b; d[i + 1] = g * b; d[i + 2] = bl * b; d[i + 3] = 255;
             }
         }
@@ -429,12 +532,18 @@ class MirrorTrial extends Phaser.Scene {
         for (const s of this.shards) if (!s.got) sprites.push({ x: s.x + 0.5, y: s.y + 0.5, k: 'mt_pickup', f: 0, glint: true });
         if (this.hand) sprites.push({ x: this.hand.x + 0.5, y: this.hand.y + 0.5, k: 'mt_pickup', f: 0, glint: true });
         const now = this.time.now;
-        for (const w of this.placed) if (w.until - now > 1500 || Math.floor(now / 90) % 2) sprites.push({ x: w.x + 0.5, y: w.y + 0.5, k: 'mt_ward', f: 0, glint: true });   // (flickering as it burns out)
+        for (const w of this.placed) {   // the decoys, from whichever side you see them (its face, back, right, left), flickering as they give out
+            if (w.until - now < 1500 && Math.floor(now / 90) % 2) continue;
+            const [fx, fy] = MirrorTrial.DIRS[w.dir], vx = w.x + 0.5 - px, vy = w.y + 0.5 - py, n = Math.hypot(vx, vy) || 1, dot = (fx * vx + fy * vy) / n;
+            sprites.push({ x: w.x + 0.5, y: w.y + 0.5, k: 'mt_decoy', f: dot < -0.7 ? 0 : dot > 0.7 ? 1 : fx * -dy + fy * dx > 0 ? 2 : 3, glint: true });
+        }
+        for (const o of this.sentries) if (!eye || o.x + 0.5 !== px || o.y + 0.5 !== py) sprites.push({ x: o.x + 0.5, y: o.y + 0.5, k: 'mt_sentry', f: 0, glint: true });
+        for (const o of this.glorps) if (!o.got) sprites.push({ x: o.x + 0.5, y: o.y + 0.5, k: 'mt_glorp', f: 0, glint: true });
         for (const g of groups.values()) {
             const m = (vx, vy) => g.diag === 'L' ? { x: g.k - vy, y: g.k - vx } : g.diag === 'R' ? { x: vy + g.k, y: vx - g.k }
                 : g.side === 0 ? { x: 2 * g.plane - vx, y: vy } : { x: vx, y: 2 * g.plane - vy };
-            sprites.push({ ...m(px, py), k: 'mt_self', f: 0, in: g.key });
-            for (const e of this.ents) sprites.push({ ...m(e.x + 0.5, e.y + 0.5), k: 'mt_twin', f: (e.pose + 1) % 6, ent: e, big: C.BIG, in: g.key });
+            if (!eye) sprites.push({ ...m(px, py), k: 'mt_self', f: 0, in: g.key });
+            for (const e of this.ents) sprites.push({ ...m(e.x + 0.5, e.y + 0.5), k: 'mt_twin', f: e.pose, ent: e, big: C.BIG, in: g.key });
         }
         const inv = 1 / (plx * dy - dx * ply), per = Array.from({ length: W }, () => []);
         for (const s of sprites) {
@@ -452,11 +561,11 @@ class MirrorTrial extends Phaser.Scene {
             const col = V.cols[x], items = col.ov.map(o => ({ o, z: o.T * col.cos })).concat(per[x]).sort((p, q) => q.z - p.z);
             for (const it of items) {
                 if (it.o) { this._slice(V, x, it.z, it.o.k, it.o.u, lit(it.o.T), it.o.tint); continue; }
-                const b = lit(it.z / col.cos), n = this._sprite(V, x, it.z, it.s, it.u, it.s.glint ? Math.max(0.55, b) : b);
+                const b = lit(it.z / col.cos), n = this._sprite(V, x, it.z, it.s, it.u, it.s.glint ? Math.max(0.55, b) : eye && it.s.ent ? Math.max(0.6, b) : b);
                 if (it.s.ent) px0.set(it.s.ent, px0.get(it.s.ent) + n);
             }
         }
-        if (watch) for (const e of this.ents) e.seen = px0.get(e) >= (V === this.back ? C.SEEN_BACK : C.SEEN_PX);
+        if (watch) for (const e of this.ents) if (px0.get(e) >= (V === this.back ? C.SEEN_BACK : C.SEEN_PX)) e.seen = true;
         // the dither (each channel to a few levels, a 4x4 Bayer pattern between them); flipped, for the shard; cut to its shape
         // (surging, the view ahead: its colours pushed toward neon, and split, red one way and blue the other)
         const L = C.LEVELS - 1, BAY = MirrorTrial.BAYER, cut = V === this.back ? this.tex.mt_shard.d : null, sk = V === this.front ? this.surgeK : 0;
@@ -466,6 +575,7 @@ class MirrorTrial extends Phaser.Scene {
             if (split) { row.set(d.subarray(y * W * 4, (y + 1) * W * 4)); for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; d[i] = row[Math.max(0, x - split) * 4]; d[i + 2] = row[Math.min(W - 1, x + split) * 4 + 2]; } }
             for (let x = 0; x < W; x++) {
                 const i = (y * W + x) * 4, o = BAY[(y & 3) * 4 + (x & 3)];
+                if (eye && !red[y * W + x]) { const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; d[i] = l * 0.35; d[i + 1] = l * 1.1; d[i + 2] = l * 0.95; }   // (a sentry's eye: its own colours; them, red)
                 for (let c = 0; c < 3; c++) d[i + c] = Math.max(0, Math.min(L, Math.round((d[i + c] * gain[c] + lift) / 255 * L + o))) * 255 / L;
                 if (cut) d[i + 3] = cut[i + 3] ? 255 : 0;
             }
@@ -519,7 +629,8 @@ class MirrorTrial extends Phaser.Scene {
             const j = (Math.min(tex.h - 1, Math.floor((y - top) / h * tex.h)) * tex.w + tx) * 4, al = tex.d[j + 3] / 255;
             if (al < 0.5) continue;
             const i = (y * W + x) * 4;
-            for (let c = 0; c < 3; c++) d[i + c] = tex.d[j + c] * b + 30 * b * (c === 2);
+            if (V.eye && s.ent) { const l = (tex.d[j] + tex.d[j + 1] + tex.d[j + 2]) / 765; d[i] = 255 * b; d[i + 1] = (50 + 200 * l) * b; d[i + 2] = (70 + 180 * l) * b; V.red[y * W + x] = 1; }
+            else for (let c = 0; c < 3; c++) d[i + c] = tex.d[j + c] * b + 30 * b * (c === 2);
             if (b >= C.LIT) n++;
         }
         return n;
