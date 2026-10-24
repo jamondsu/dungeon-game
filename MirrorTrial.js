@@ -48,6 +48,7 @@ class MirrorTrial extends Phaser.Scene {
         MIRRORS: 0.45, FRAGMENTS: 3, SHATTER: { WAKE: 7, LUNGE: 2 },     // a pane's odds of being a mirror; the way out's fragments (in mirrors); glass struck: sleepers this near wake, the awake lunge this many steps
         TWINS: 0.35, ECHO_MS: 300,                                   // a glass pane's odds of a twin behind it (in reflections, posed like you); how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
+        SHOO_MS: 2000,                                               // one held in a reflection (your shard, a stand) this long leaves: they don't like being caught there
         DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; stress full: you black out OUT_MS, dread back to AFTER of what room it has
         STRESS: { PRANK: 1 / 3, CALM_MS: 2000 },                     // your stress: each prank of theirs adds PRANK for good (full: it's over); after one, CALM_MS with none of them moving
     };
@@ -598,7 +599,7 @@ class MirrorTrial extends Phaser.Scene {
         if (this.hand && this.hand.x === x && this.hand.y === y) {
             this.hand = null; this.holding = true; this.shard.setVisible(true);
             Sfx.play(this, 'pickup');
-            this._say('A SHARD OF MIRROR', 'Hold SPACE to see what\'s behind you, while your arm holds out.\nThe mirrors here only show you in it. And not everything that looks like you is you.', '#bfd8ff', 4200);
+            this._say('A SHARD OF MIRROR', 'Hold SPACE to see what\'s behind you, while your arm holds out.\nThe mirrors here only show you in it. And not everything that looks like you is you.\nHold one of them in it a while: they don\'t like being caught in a reflection.', '#bfd8ff', 5200);
             this._hud();
             return;
         }
@@ -612,7 +613,7 @@ class MirrorTrial extends Phaser.Scene {
         while (this.echoes.length > 1 && now - this.echoes[1].at >= C.ECHO_MS) this.echoes.shift();
         // ahead (watching, the shard held up covering some of it), and the shard's view: behind you, flipped as a mirror shows it;
         // the wards' stares; the sentries' lines
-        for (const e of this.ents) { e.seen = false; e.dpx = 0; }
+        for (const e of this.ents) { e.seen = false; e.dpx = 0; e.rpx = 0; }
         this._sentryLines(now);
         // the shard held up: your arm tiring (the shard shaking, sinking) till it gives out and drops it; down, resting
         if (this.raised) {
@@ -628,6 +629,11 @@ class MirrorTrial extends Phaser.Scene {
         if (this.holding) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
         if (now < this.blackUntil) for (const e of this.ents) e.seen = false;   // (blacked out: you hold nothing)
         this._dread(now, delta);
+        // one caught in a reflection, held there: it fades and, long enough, leaves
+        for (const e of this.ents) {
+            if (e.awake && e.rpx >= C.SEEN_BACK && now >= this.blackUntil && !this.caught) { if ((e.shy = (e.shy || 0) + delta) >= C.SHOO_MS) this._shoo(e); }
+            else e.shy = Math.max(0, (e.shy || 0) - delta);
+        }
         this._wardsWatch(now);
         this._sentryWatch();
         this._mapShow(this.mapUp ? 'big' : null);
@@ -708,6 +714,7 @@ class MirrorTrial extends Phaser.Scene {
         line(H * 0.52, `GLORPS  +${this.gotGlorps}`, '18px', '#5dffb8');
         line(H * 0.52 + 30, this.pranks ? `THEY GOT YOU ${this.pranks} TIME${this.pranks > 1 ? 'S' : ''}` : 'THEY NEVER GOT YOU', '18px', '#f0ece0');
         line(H * 0.52 + 90, this.shattered ? `GLASS YOU SHATTERED  ${this.shattered}` : 'YOU NEVER SHATTERED THE GLASS', '18px', '#bfd8ff');
+        line(H * 0.52 + 150, this.shooed ? `YOU SENT ${this.shooed} OF THEM OFF` : 'YOU NEVER SENT ONE OFF', '18px', '#8ff4dc');
         line(H * 0.52 + 120, this.breaks ? `YOU BLACKED OUT ${this.breaks} TIME${this.breaks > 1 ? 'S' : ''}` : 'YOU NEVER BLACKED OUT', '18px', '#f0ece0');
         line(H * 0.52 + 60, this.closest === Infinity ? 'NONE OF THEM GOT NEAR YOU' : `CLOSEST CALL  ${this.closest} TILE${this.closest > 1 ? 'S' : ''} AWAY`, '18px', '#ff9ab8');
         line(H * 0.8, 'ENTER  again        ESC  leave', '16px', '#8a7aa8');
@@ -725,15 +732,26 @@ class MirrorTrial extends Phaser.Scene {
         const face = this.add.image(W / 2, H / 2 + H * 0.1, 'mt_twin', 'face').setScale(s * 1.8).setDepth(5);
         this.tweens.add({ targets: face, scale: s, duration: 140, ease: 'Back.easeOut' });
         this.tweens.add({ targets: face, alpha: 0, delay: 900, duration: 350, onComplete: () => face.destroy() });
-        const far = [];   // (where it goes: anywhere open, far from you, nobody there)
-        this.map.forEach((row, y) => row.forEach((c, x) => { if (c === '.' && Math.abs(x - this.me.x) + Math.abs(y - this.me.y) >= 8 && !this.ents.some(o => o.x === x && o.y === y)) far.push([x, y]); }));
-        if (far.length) [e.x, e.y] = far[Math.floor(Math.random() * far.length)];
-        Object.assign(e, { awake: false, pose: Math.random() < 0.5 ? 0 : 1, t: 0, fresh: false });
+        this._sendOff(e);
         this.time.delayedCall(900, () => {
             Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
             if (this.scarred >= 0.999) return this._blackout();
             this._note(`GOT YOU. IT\'S LAUGHING. (${this.pranks} OF ${Math.round(1 / C.STRESS.PRANK)})`);
         });
+    }
+    // one of them off: asleep again, anywhere open far from you that nobody's in
+    _sendOff(e) {
+        const far = [];
+        this.map.forEach((row, y) => row.forEach((c, x) => { if (c === '.' && Math.abs(x - this.me.x) + Math.abs(y - this.me.y) >= 8 && !this.ents.some(o => o.x === x && o.y === y)) far.push([x, y]); }));
+        if (far.length) [e.x, e.y] = far[Math.floor(Math.random() * far.length)];
+        Object.assign(e, { awake: false, pose: Math.random() < 0.5 ? 0 : 1, t: 0, fresh: false, shy: 0 });
+    }
+    // held in a reflection long enough: it doesn't like being caught there, and slinks off
+    _shoo(e) {
+        this._giggle(e); Sfx.play(this, 'whoosh');
+        this.shooed = (this.shooed || 0) + 1;
+        this._note('CAUGHT IN A REFLECTION. IT SLINKS OFF.');
+        this._sendOff(e);
     }
     // Too much, for good (their last prank): you black out, and they giggle all round you in the dark. Over
     _blackout() {
@@ -875,7 +893,7 @@ class MirrorTrial extends Phaser.Scene {
             for (const it of items) {
                 if (it.o) { this._slice(V, x, it.z, it.o.k, it.o.u, lit(it.o.T), it.o.tint); continue; }
                 const b = lit(it.z / col.cos), n = this._sprite(V, x, it.z, it.s, it.u, it.s.glint ? Math.max(0.55, b) : b, it.h);
-                if (it.s.ent) { px0.set(it.s.ent, px0.get(it.s.ent) + n); if (straight && !it.s.in) it.s.ent.dpx += n; }   // (straight on, not in a mirror: the dread's)
+                if (it.s.ent) { px0.set(it.s.ent, px0.get(it.s.ent) + n); if (straight && !it.s.in) it.s.ent.dpx += n; if (watch && (V === this.back || it.s.in)) it.s.ent.rpx += n; }   // (straight on, not in a mirror: the dread's; in a reflection: the shoo's)
             }
         }
         for (const e of this.ents) if (px0.get(e) >= (V === this.back ? C.SEEN_BACK : C.SEEN_PX)) { if (watch) e.seen = true; }
@@ -950,14 +968,15 @@ class MirrorTrial extends Phaser.Scene {
     // a sprite's column u (its pose f, in a strip), standing on the floor at depth z (s.big: taller); how many lit pixels it put down
     _sprite(V, x, z, s, u, b, sh) {
         const C = MirrorTrial.CFG, W = V.W, H = V.H, tex = this.tex[s.k], fw = tex.fw || tex.w, d = V.img.data, h = sh || H / z * (s.big || 1), top = H / 2 + H / z / 2 - h;
-        const tx = s.f * fw + Math.min(fw - 1, Math.max(0, Math.floor(u * fw)));
+        const tx = s.f * fw + Math.min(fw - 1, Math.max(0, Math.floor(u * fw))), fade = s.ent?.shy ? 0.8 * s.ent.shy / C.SHOO_MS : 0;
         let n = 0;
         for (let y = Math.max(0, Math.floor(top)), y1 = Math.min(H, Math.ceil(top + h)); y < y1; y++) {
             const j = (Math.max(0, Math.min(tex.h - 1, Math.floor((y - top) / h * tex.h))) * tex.w + tx) * 4, al = tex.d[j + 3] / 255;
             if (al < 0.5) continue;
             const i = (y * W + x) * 4;
-            for (let c = 0; c < 3; c++) d[i + c] = tex.d[j + c] * b + 30 * b * (c === 2);
             if (b >= C.LIT && !(V.cover && this._covered(V, x, y))) n++;
+            if (fade && Math.random() < fade) continue;   // (being shooed: coming apart)
+            for (let c = 0; c < 3; c++) d[i + c] = tex.d[j + c] * b + 30 * b * (c === 2);
         }
         return n;
     }
