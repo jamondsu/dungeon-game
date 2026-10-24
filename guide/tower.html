@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Tower · Dungeon Roguelike</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg class="defs" aria-hidden="true"><filter id="chalk" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="2.6"/></filter></svg>
+<main class="page">
+  <a class="back" href="index.html">◂ All guides</a>
+  <div class="eyebrow">Dungeon Roguelike · Beyond the story</div>
+  <h1>The Tower</h1>
+  <p class="lede">An endless climb. Every floor is one arena: clear its waves, take the pay, step into the rift and go up. Every third floor gives you a boon, every tenth is a boss, and when you fall, everything you found stays with you. This page has every rule and every number.</p>
+  <ul class="toc">
+    <li><a href="#glance">At a glance</a></li>
+    <li><a href="#climb">Climb</a></li>
+    <li><a href="#scaling">How floors get harder</a></li>
+    <li><a href="#twists">Twist floors</a></li>
+    <li><a href="#up">Go up</a></li>
+    <li><a href="#shrine">Scraps and the shrine</a></li>
+    <li><a href="#boons">Pick a boon</a></li>
+    <li><a href="#bosses">Bosses</a></li>
+    <li><a href="#falling">Falling</a></li>
+    <li><a href="#skip">Starting further up</a></li>
+    <li><a href="#blessings">Garden blessings</a></li>
+    <li><a href="#best">Your best floor</a></li>
+    <li><a href="#tips">Tips</a></li>
+  </ul>
+
+  <h2 id="glance">At a glance</h2>
+  <p>The Tower opens once you've finished the tutorial, alongside the story. It sits at the end of the path on the map, marked <strong>∞</strong>. The first time you go in, the game shows its own five-page guide. You can read it again from the little <strong>?</strong> beside the Tower on the map, or from <em>how it works</em> on the Tower's start panel.</p>
+  <div class="cards">
+    <div><b>Every floor</b>Three waves of enemies in one arena. Clear them for <span class="gold">glorps</span>, <span class="cosmic">dust</span> and a little health back.</div>
+    <div><b>Every third floor</b>Choose one of three boons. They stack, and they last for this climb.</div>
+    <div><b>Every tenth floor</b>A boss. It pays five times as much, plus books, a seed and a relic.</div>
+    <div><b>Floors 5, 9, 13...</b>A twist floor bends one rule and pays 25% more glorps.</div>
+    <div><b>When you fall</b>The climb ends. You keep the glorps, dust, books, seeds and relics. The boons and scraps are gone.</div>
+  </div>
+  <p>If a story level keeps beating you, the Tower is where to get stronger. After two deaths in a row on a story level, the map suggests it too.</p>
+
+  <h2 id="climb">Climb</h2>
+  <figure>
+    <div class="shot"><img src="../assets/tower_guide/1.jpg" width="640" height="360" alt="Floor 6 of the Tower: a dark stone arena with your teal slime in the middle and a few enemies around it. At the top, FLOOR 6 and the line WAVE 1 / 3, 3 left, best 24. Chalk arrows point at that line and at the scraps bar in the top left corner.">
+    <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+      <path d="M452 92 C 438 74, 414 56, 388 45"/><path d="M386 44 l 14 -1 M386 44 l 7 12"/>
+      <text x="428" y="114">how many left</text>
+      <g class="y"><path d="M86 112 C 80 94, 76 70, 74 50"/><path d="M74 48 l -7 12 M74 48 l 8 11"/>
+      <text x="40" y="134">your scraps</text></g>
+    </svg></div>
+    <figcaption>Floor 6, first wave. The line under the floor number tells you which wave this is, how many enemies are left in it, and your best floor. Scraps fill the bar in the top left.</figcaption>
+  </figure>
+  <p>You arrive at the bottom of the arena and the floor's name flashes up: <strong>FLOOR 12</strong>, and after it the floor's plan or twist if it has one, like <strong>FLOOR 12 · A SWARM</strong>. A moment later the first wave comes.</p>
+  <p>A normal floor has <strong>three waves</strong>. Before each enemy appears, a <span class="term">landing ring</span> shows up on the floor and shrinks over the spot where it will land. That gives you a little under a second, a touch more for each later enemy in the same wave. Rings are always placed at least 5 tiles from where you stand when the wave is drawn. If you, or another enemy, are on the spot when the ring closes, the enemy lands somewhere else instead.</p>
+  <p>When everything in a wave is dead (anything it split into or summoned too), the next wave's rings appear 1.2 seconds later, with a <strong>WAVE 2</strong> banner. Clear the third wave and the floor is done.</p>
+  <p>Your health and your ult gems carry over from floor to floor. Nothing refills them between floors except the heal you get for each clear, so a hurt slime stays hurt.</p>
+
+  <h3>How many come</h3>
+  <p>Floors 1 to 3 send seven enemies each: two, two, then three. From floor 4 a floor holds about 8, one more every four floors, up to 24. The count wobbles by up to a fifth either way, the waves are split unevenly, and the last wave always gets one extra. The floor's plan can raise or lower it.</p>
+  <p>Each wave also has a points budget that grows with the floor, and the stronger kinds cost more of it. That's why the heavy hitters turn up more and more often as you climb. From floor 4, the last wave always opens with its <span class="term">headliner</span>: the most expensive kind it can afford.</p>
+  <p>A floor never holds more than one of each elite (The Gem, the Frost Slime, the Slime CEO, the Adaptive Shade), or more than two of any of the other heavy kinds.</p>
+
+  <h3>Who you meet</h3>
+  <p>The Tower brings in the story's enemies in the order the story introduces them. A kind can appear from the floor shown here onward.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>From floor</th><th>Kind</th><th>Sort</th></tr>
+    <tr><td class="n">1</td><td>Slime</td><td>Melee</td></tr>
+    <tr><td class="n">2</td><td>Spitter</td><td>Ranged</td></tr>
+    <tr><td class="n">3</td><td>Berserker</td><td>Melee</td></tr>
+    <tr><td class="n">4</td><td>Splitter</td><td>Melee</td></tr>
+    <tr><td class="n">6</td><td>Mortar</td><td>Ranged</td></tr>
+    <tr><td class="n">7</td><td>Rooter, Leech</td><td>Ranged</td></tr>
+    <tr><td class="n">8</td><td>Healer Slime · Armored Slime · Storm Elemental</td><td>Support · Melee · Ranged</td></tr>
+    <tr><td class="n">9</td><td>Torpedo Diver · Void Sniper · Cheerleader Slime</td><td>Ranged · Ranged · Support</td></tr>
+    <tr><td class="n">10</td><td>Budding Slime</td><td>Melee</td></tr>
+    <tr><td class="n">11</td><td>Hunter Slime, Singularity Slime</td><td>Melee</td></tr>
+    <tr><td class="n">12</td><td>Anchor Slime, Wraith</td><td>Support</td></tr>
+    <tr><td class="n">13</td><td>Encased Slime</td><td>Ranged</td></tr>
+    <tr><td class="n">14</td><td>The Gem · a tougher Void Sniper with a gold scope</td><td>Elite · Ranged</td></tr>
+    <tr><td class="n">15</td><td>Frost Slime · Drowner<span class="cyan">*</span> · Ripplerunner<span class="cyan">*</span></td><td>Elite · Melee · Ranged</td></tr>
+    <tr><td class="n">16</td><td>Slime CEO</td><td>Elite</td></tr>
+    <tr><td class="n">17</td><td>Tidecaller<span class="cyan">*</span> · Wave Rider<span class="cyan">*</span></td><td>Support · Melee</td></tr>
+    <tr><td class="n">18</td><td>Adaptive Shade</td><td>Elite</td></tr>
+    <tr><td class="n">19</td><td>Tidal Guard<span class="cyan">*</span> · Wishing Well<span class="cyan">*</span></td><td>Ranged · Support</td></tr>
+    <tr><td class="n">20</td><td>Conduit<span class="cyan">*</span></td><td>Ranged</td></tr>
+  </table></div>
+  <p><span class="cyan">*</span> Water kinds only come when there's a fair amount of water on the floor as the wave is drawn, which mostly means the Pools layout or a Flooded floor. Only one Gem can be out at a time; if one is already there, a plain Slime comes in its place. The book of enemies on the map describes every kind.</p>
+
+  <h3>The plan</h3>
+  <p>From floor 4, each normal floor rolls a <span class="term">plan</span>. It changes how many come, how strong each one can be, which sort is likelier, and which layouts the arena can have. Its name is in the floor's banner.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Plan</th><th>Chance</th><th>What changes</th><th>Layouts</th></tr>
+    <tr><td>(no name)</td><td class="n">35%</td><td>A plain mix.</td><td>Any</td></tr>
+    <tr><td>A SWARM</td><td class="n">17%</td><td>Half again as many, but cheaper kinds. Melee kinds likelier.</td><td>Lanes, Cross, Ring</td></tr>
+    <tr><td>ELITES</td><td class="n">13%</td><td>About half as many, with over twice the budget. Elites four times as likely, and the dearest kinds favoured.</td><td>Ring, Pillars</td></tr>
+    <tr><td>SNIPERS' NEST</td><td class="n">13%</td><td>Ranged kinds three times as likely.</td><td>Columns, Bunkers</td></tr>
+    <tr><td>A BRAWL</td><td class="n">13%</td><td>15% more of them. Melee kinds three times as likely.</td><td>Pillars, Cross, Pools</td></tr>
+    <tr><td>THE COURT</td><td class="n">9%</td><td>A few fewer, each a little stronger. Support kinds three times as likely, elites half again.</td><td>Ring, Bunkers, Pools</td></tr>
+  </table></div>
+
+  <h3>Layouts</h3>
+  <p>Each floor's arena is built fresh for each climb, so the same floor number looks different next time. A normal arena is 24 to 33 tiles wide and 17 to 23 tall; a boss arena is always 32 by 24. Floors 1 to 3 use Pillars, Bunkers or Cross. Every layout is mirrored left to right, the middle always stays open (that's where the rift will open), and no cover ever walls off part of the room.</p>
+  <div class="cards">
+    <div><b>Pillars</b>Heavy blocks of cover to fight round.</div>
+    <div><b>Bunkers</b>L-shaped cover in each quarter, open toward the middle. Shelter from shooters.</div>
+    <div><b>Cross</b>Arms reaching in from the walls: four quarters joined through gaps.</div>
+    <div><b>Ring</b>A wall round the middle with four doors. Inside or outside.</div>
+    <div><b>Columns</b>Rows of columns that break sight lines, so shooters have to come round.</div>
+    <div><b>Lanes</b>Two long walls with gaps: three lanes and the doors between them.</div>
+    <div><b>Pools</b>Light cover and mirrored pools of <span class="ice">water</span>. Fire dries them; some slimes love them.</div>
+  </div>
+
+  <h3>Resistances</h3>
+  <p>From floor 4, some enemies arrive <span class="term">resisting</span> an element, shown by a coloured ring under them. A resisted hit does 40% of its damage, so switch. The chance for each enemy is 12% plus 1.2% per floor, up to half of them from floor 32.</p>
+  <p>Most resist one element. About one in seven resisters resists two. From floor 15, one in twenty-five resists all three of fire, ice and lightning. Cosmic is never resisted.</p>
+
+  <h2 id="scaling">How floors get harder</h2>
+  <p>Every floor past the fifth gives enemies <strong>8% more health</strong> and <strong>7% more damage</strong> than the floor below, and it compounds. The first five floors are eased in: floor 1 is at 45% of its full strength, then 60%, 72%, 84% and 93%. Floor 6 is the first at full strength.</p>
+  <p>The table shows an enemy's health and damage as a multiple of its strength in the tutorial. For comparison, the story's levels are at: the Gauntlet ×1.15 health and ×1.09 damage, the Void Rift ×1.32 and ×1.19, the Fracture ×1.52 and ×1.30, the Cistern ×1.75 and ×1.41. So by floor 4 the Tower's enemies are already tougher than the Cistern's, and hit about as hard.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Floor</th><th>Enemy health</th><th>Enemy damage</th></tr>
+    <tr><td class="n">1</td><td class="n">×1.0</td><td class="n">×0.6</td></tr>
+    <tr><td class="n">2</td><td class="n">×1.4</td><td class="n">×0.9</td></tr>
+    <tr><td class="n">3</td><td class="n">×1.9</td><td class="n">×1.2</td></tr>
+    <tr><td class="n">4</td><td class="n">×2.3</td><td class="n">×1.5</td></tr>
+    <tr><td class="n">5</td><td class="n">×2.8</td><td class="n">×1.7</td></tr>
+    <tr><td class="n">6</td><td class="n">×3.2</td><td class="n">×2.0</td></tr>
+    <tr><td class="n">10</td><td class="n">×4.4</td><td class="n">×2.6</td></tr>
+    <tr><td class="n">15</td><td class="n">×6.5</td><td class="n">×3.6</td></tr>
+    <tr><td class="n">20</td><td class="n">×9.5</td><td class="n">×5.1</td></tr>
+    <tr><td class="n">25</td><td class="n">×14</td><td class="n">×7.2</td></tr>
+    <tr><td class="n">30</td><td class="n">×21</td><td class="n">×10</td></tr>
+    <tr><td class="n">40</td><td class="n">×44</td><td class="n">×20</td></tr>
+    <tr><td class="n">50</td><td class="n">×96</td><td class="n">×39</td></tr>
+  </table></div>
+  <div class="note"><p>Health outgrows damage. High up, the problem is less that they hit hard and more that they take forever to kill, so damage boons, reactions and resisted-element switching matter more the higher you go.</p></div>
+  <p>The Training Ground on the map can set its enemies to any Tower floor's strength with its <strong>FLOOR</strong> setting, if you want to practise against the floor that stopped you.</p>
+
+  <h2 id="twists">Twist floors</h2>
+  <p>Every fourth floor from floor 5 (5, 9, 13, 17, 21 and so on) is a <span class="term">twist floor</span>: it bends one rule. Its banner shows in blue, like <strong>FLOOR 13 · WARDED</strong>, and a line over your head says what changed. Which twist you get is random each climb, from the ones that can appear that high. A twist floor pays <strong>25% more glorps</strong>.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Twist</th><th>From floor</th><th>What it does</th></tr>
+    <tr><td>FLOODED</td><td class="n">5</td><td>"The floor is water. Ice runs on it, lightning loves it." Pools spread across the arena, which also lets water kinds come (from floor 15).</td></tr>
+    <tr><td>SWARM</td><td class="n">5</td><td>Every wave is half again as big, and each enemy has 70% of its usual health.</td></tr>
+    <tr><td>SHIFTING</td><td class="n">5</td><td>Between waves the cover crumbles and a different layout rises (<strong>THE WALLS SHIFT</strong>). Nothing living is ever walled in, and you get an extra moment to find new cover.</td></tr>
+    <tr><td>FRENZY</td><td class="n">9</td><td>Enemies move about a third faster.</td></tr>
+    <tr><td>WARDED</td><td class="n">13</td><td>Every enemy resists an element. Switch.</td></tr>
+  </table></div>
+
+  <h2 id="up">Go up</h2>
+  <figure>
+    <div class="shot"><img src="../assets/tower_guide/2.jpg" width="640" height="360" alt="A cleared floor: your slime stands below a stone dais with gold light spiralling into it, the way up, while +5 DUST floats above. To the left a small shrine with a glowing crystal is tagged BOON 15. Chalk arrows point at the shrine and at the rift.">
+    <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+      <path d="M104 176 C 128 160, 152 140, 174 120"/><path d="M176 118 l -14 3 M176 118 l -2 14"/>
+      <text x="38" y="200">the shrine</text>
+      <g class="y"><path d="M470 176 C 446 160, 410 146, 376 130"/><path d="M374 129 l 14 -2 M374 129 l 9 11"/>
+      <text x="438" y="200">the way up</text></g>
+    </svg></div>
+    <figcaption>A cleared floor. The rift (marked <strong>UP ▲</strong> in the game) opens in the middle; on a floor without a boon pick, the shrine stands beside it. The floor's last dust has just flown in.</figcaption>
+  </figure>
+  <p>The moment the last enemy of the third wave dies, the floor is cleared: <strong>FLOOR 6 CLEARED</strong>, and the floor's pay over your head.</p>
+  <h3>What a floor pays</h3>
+  <ul>
+    <li><span class="gold">Glorps.</span> 10 on floor 1, then 12% more for each floor up, and five times as much on a boss floor. 60% of it comes off the enemies as they die, the coins flying up to your counter; the rest comes on the clear. Every coin is yours the moment it's paid, even if you fall a second later.</li>
+    <li><span class="cosmic">Dust</span> for the Enchanter's Isle. 6 plus half the floor number (60 plus half on a boss floor). Half comes off the kills, the rest streams out of the last enemy to fall.</li>
+    <li><span class="cosmic">A sealed book</span>, sometimes. The chance is 2.6% on floor 1 and grows by 0.6% a floor, up to 30% from floor 47. It's rolled on the kills, so the book pops out of an enemy. Boss floors give three instead.</li>
+    <li><span class="green">A garden seed</span>, about one floor in five, also from a kill. Every boss gives one.</li>
+    <li><span class="red">Health back:</span> 15% of your max HP. Second Wind and some garden blessings add to it.</li>
+  </ul>
+  <p>The usual drops still happen too. An enemy from a wave has a 12% chance to drop a 5-glorp coin and an 8% chance to drop a health potion (+25 HP). Anything an enemy splits into or summons drops neither.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Floor</th><th>Glorps</th><th>Dust</th><th>Sealed book</th></tr>
+    <tr><td class="n">1</td><td class="n">10</td><td class="n">6</td><td class="n">2.6%</td></tr>
+    <tr><td class="n">2</td><td class="n">11</td><td class="n">7</td><td class="n">3.2%</td></tr>
+    <tr><td class="n">4</td><td class="n">14</td><td class="n">8</td><td class="n">4.4%</td></tr>
+    <tr><td class="n">6</td><td class="n">18</td><td class="n">9</td><td class="n">5.6%</td></tr>
+    <tr><td class="n">8</td><td class="n">22</td><td class="n">10</td><td class="n">6.8%</td></tr>
+    <tr><td class="n">10 · boss</td><td class="n">139</td><td class="n">65</td><td class="n">3 books</td></tr>
+    <tr><td class="n">12</td><td class="n">35</td><td class="n">12</td><td class="n">9.2%</td></tr>
+    <tr><td class="n">16</td><td class="n">55</td><td class="n">14</td><td class="n">11.6%</td></tr>
+    <tr><td class="n">20 · boss</td><td class="n">431</td><td class="n">70</td><td class="n">3 books</td></tr>
+    <tr><td class="n">24</td><td class="n">136</td><td class="n">18</td><td class="n">16.4%</td></tr>
+    <tr><td class="n">30 · boss</td><td class="n">1,337</td><td class="n">75</td><td class="n">3 books</td></tr>
+    <tr><td class="n">40 · boss</td><td class="n">4,154</td><td class="n">80</td><td class="n">3 books</td></tr>
+    <tr><td class="n">50 · boss</td><td class="n">12,902</td><td class="n">85</td><td class="n">3 books</td></tr>
+  </table></div>
+  <p>These are the base glorps. A twist floor pays 25% more. The Greed boon, some garden blessings and the relics that change your glorp income all count, multiplied together.</p>
+
+  <h3>The rift</h3>
+  <p>The way up opens in the middle of the arena: a stone dais with gold light spiralling into it, marked <strong>UP ▲</strong>. Step onto it and the floor falls away under you, and you rise to the next one. There's no timer, so take your time. Anything still lying on the floor when you leave is gone: coins, potions and, most of all, scraps.</p>
+  <p>On a floor that gives a boon (every third floor and every boss), the boon screen comes up first, and the rift opens once you've chosen. On every other floor, the rift opens straight away, with the shrine a few steps to one side of it.</p>
+
+  <h2 id="shrine">Scraps and the shrine</h2>
+  <p><span class="cyan">Scraps</span> only drop in the Tower. A little over half of your kills drop one, a small green orb. Walk within 3 tiles and it flies to you. The bar in the top left counts them. You can carry at most <strong>40</strong>, and they last for this climb only: a new climb starts at none. The Void Sovereign scatters 8 more when it dies.</p>
+  <p>Scraps buy two things:</p>
+  <table class="keys">
+    <tr><td><span class="cyan">⚙ 15</span> <span class="when">the shrine</span></td><td>On a floor with no boon pick, a small shrine with a turning crystal stands beside the rift, tagged <strong>BOON ⚙15</strong>. Step onto it with 15 scraps and you get a boon pick, the same screen as any other. One per floor. Without enough, it tells you how many it needs.</td></tr>
+    <tr><td><span class="cyan">⚙ 4, 6, 8...</span> <span class="when">a reroll</span></td><td>On any boon screen, <strong>REROLL</strong> swaps all three cards for three new ones. The first costs 4 scraps, and each reroll after it costs 2 more, for the rest of the climb.</td></tr>
+  </table>
+  <div class="note"><p>A full bar wastes every scrap after it. With 15 or more, buy at the shrine before you step into the rift.</p></div>
+
+  <h2 id="boons">Pick a boon</h2>
+  <figure>
+    <div class="shot"><img src="../assets/tower_guide/3.jpg" width="640" height="360" loading="lazy" alt="The CHOOSE A BOON screen after floor 3: three cards, Whetstone (+8% damage), Catalyst (reactions charge 25% more) and Starlit (your first 3 hits after switching to cosmic deal +12%), each with a TAKE button, and a REROLL button costing 4 scraps underneath. Chalk arrows point at Whetstone's row of tier pips and at the reroll button.">
+    <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+      <path d="M86 186 C 110 178, 140 166, 164 156"/><path d="M166 155 l -14 -1 M166 155 l -8 11"/>
+      <text x="40" y="212">its tiers</text>
+      <g class="y"><path d="M486 292 C 456 276, 420 258, 388 244"/><path d="M386 243 l 14 -1 M386 243 l 8 11"/>
+      <text x="448" y="318">costs scraps</text></g>
+    </svg></div>
+    <figcaption>After floor 3: three boons, each showing what the next tier gives. The diamonds under the name are its tiers: filled for the ones you have, white for the one this card adds.</figcaption>
+  </figure>
+  <p>You choose a boon after every <strong>third floor</strong> (3, 6, 9...), after every <strong>boss</strong>, at a <strong>shrine</strong>, and as <strong>catch-up boons</strong> when you start further up. Each time you get three cards, drawn at random from the boons you haven't maxed. Element boons only come up for elements you've unlocked. Take one by its <strong>TAKE</strong> button, or reroll. There's no skipping.</p>
+  <p>A boon lasts for this climb only. Taking the same boon again raises it a tier, up to its maximum, and its button says how far along you are (<strong>TAKE · 2/5</strong>); once it's maxed it stops showing up.</p>
+  <h3>Every boon</h3>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Boon</th><th>Each tier</th><th>Tiers</th><th>At the top</th></tr>
+    <tr><td><span class="gold">Whetstone</span></td><td>+8% damage</td><td class="n">5</td><td class="n">+40%</td></tr>
+    <tr><td><span class="red">Thick Skin</span></td><td>+15 max HP (and the HP itself, right away)</td><td class="n">5</td><td class="n">+75 HP</td></tr>
+    <tr><td>Hardened</td><td>7% less damage taken, multiplied each tier: 7%, 14%, 20%, 25%, 30%</td><td class="n">5</td><td class="n">30% less</td></tr>
+    <tr><td><span class="fire">Kindled</span></td><td>your first 3 hits after switching to fire deal +12%</td><td class="n">5</td><td class="n">+60%</td></tr>
+    <tr><td><span class="ice">Frostbitten</span></td><td>your first 3 hits after switching to ice deal +12%</td><td class="n">5</td><td class="n">+60%</td></tr>
+    <tr><td><span class="bolt">Overcharged</span></td><td>your first 3 hits after switching to lightning deal +12%</td><td class="n">5</td><td class="n">+60%</td></tr>
+    <tr><td><span class="cosmic">Starlit</span></td><td>your first 3 hits after switching to cosmic deal +12%</td><td class="n">5</td><td class="n">+60%</td></tr>
+    <tr><td><span class="cosmic">Fusion</span></td><td>reactions deal +10% damage</td><td class="n">3</td><td class="n">+30%</td></tr>
+    <tr><td><span class="cosmic">Quick Gems</span></td><td>ults charge 12% faster</td><td class="n">5</td><td class="n">60% faster</td></tr>
+    <tr><td><span class="cosmic">Crescendo</span></td><td>ults deal +10% damage</td><td class="n">5</td><td class="n">+50%</td></tr>
+    <tr><td><span class="cyan">Catalyst</span></td><td>reactions charge your gems 25% more</td><td class="n">3</td><td class="n">75% more</td></tr>
+    <tr><td><span class="green">Light Feet</span></td><td>each step takes 7% less time, multiplied each tier</td><td class="n">3</td><td class="n">steps take 80% as long</td></tr>
+    <tr><td><span class="red">Leech</span></td><td>every kill heals 1 HP</td><td class="n">5</td><td class="n">5 HP a kill</td></tr>
+    <tr><td>Spiked Hide</td><td>a melee hit on you deals 5 damage back</td><td class="n">5</td><td class="n">25 back</td></tr>
+    <tr><td><span class="gold">Greed</span></td><td>floors pay 15% more glorps</td><td class="n">5</td><td class="n">+75%</td></tr>
+    <tr><td><span class="green">Second Wind</span></td><td>a cleared floor heals 10% of max HP more</td><td class="n">3</td><td class="n">45% a floor in all</td></tr>
+    <tr><td><span class="gold">Keen Edge</span></td><td>5% of your hits crit, for ×1.5 damage</td><td class="n">5</td><td class="n">25% of hits</td></tr>
+  </table></div>
+  <h3>How they stack</h3>
+  <ul>
+    <li>Different boons all work at once. Within one boon, the tiers add up (Whetstone at 5 is +40%), except Hardened and Light Feet, whose tiers multiply.</li>
+    <li>Boons, the relics you wear and your garden blessings all count together. Percentages multiply with each other, and flat amounts (max HP, crit chance, health per kill) add. Crit chance tops out at 50% however you get it.</li>
+    <li>The four element boons pay for switching <em>into</em> their element, not for staying on it. The bonus covers your first three hits after the switch; switch away and back to get it again.</li>
+  </ul>
+
+  <h2 id="bosses">Bosses</h2>
+  <figure>
+    <div class="shot"><img src="../assets/tower_guide/4.jpg" width="640" height="360" loading="lazy" alt="A Tower boss floor: the Voltslime, a huge glowing blue slime with a gold crown, looms at the top of the arena with your small slime below it."></div>
+    <figcaption>Floor 10: the Voltslime. Each boss gets a bar across the top of the screen.</figcaption>
+  </figure>
+  <p>Every tenth floor is a boss. A boss floor is a single wave: a roar, a big red ring at the top of the arena, and the boss lands. Then the fight holds for a moment while the camera swoops in on it and its name slams in. The floor is cleared once the boss, and everything it brought with it, is dead.</p>
+  <p>Bosses come round in order, then start again: floor 50 is the Voltslime again, 60 the Void Sovereign, and so on.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Floor</th><th>Boss</th><th>What to expect</th></tr>
+    <tr><td class="n">10, 50, 90</td><td><span class="cyan">The Voltslime</span><br><span class="when">the storm that walks</span></td><td>A slam between attacks, then volleys of bolts: scattered, homing, in a spiral, and bolts that bounce off the walls.</td></tr>
+    <tr><td class="n">20, 60, 100</td><td><span class="cosmic">The Void Sovereign</span><br><span class="when">ruler of the dark between stars</span></td><td>Void mines that fill up like a clock and then go off, and a gravity well that drags you a tile closer every 0.8 seconds while you're within 6 tiles of it. A second phase at 60% health and a third at 30%, each faster than the last. It scatters 8 scraps when it dies.</td></tr>
+    <tr><td class="n">30, 70, 110</td><td><span class="red">Two Queen Slimes</span><br><span class="when">mother of the brood</span></td><td>Two queens at once, one on each side, breeding slimes all fight long. Each queen has two and a half times the health the floor would give her. Her bar shows her brood charges.</td></tr>
+    <tr><td class="n">40, 80, 120</td><td><span class="fire">The Geode</span><br><span class="when">the stone that remembers fire</span></td><td>A crystal heart in a shell of stone plates. Plates take half damage. Heat a plate with fire (two hits), then hit it with ice and it shatters. With every plate gone, its heart is exposed for a while. Fault lines erupt across the room; later, rifts split the floor (they burn, so dash across) and Encased Slimes come out of the walls; in its last third it sinks and surfaces somewhere else.</td></tr>
+  </table></div>
+  <h3>How tough</h3>
+  <p>A Tower boss has its story health, multiplied by the floor's growth: about ×2 on floor 10, ×4.3 on 20, ×9.3 on 30, ×20 on 40 and ×43 on 50.</p>
+  <h3>Half health</h3>
+  <p>When a boss falls to half its health, its arena changes shape: a flash, the cover crumbles, and a different layout rises (<strong>THE WALLS SHIFT</strong>). With two Queen Slimes, it's when the pair of them together are down to half. It happens once per boss.</p>
+  <h3>What a boss pays</h3>
+  <div class="cards">
+    <div><b>Glorps</b>Five times the floor's pay: 139 on floor 10, 431 on 20, 1,337 on 30.</div>
+    <div><b>Dust</b>60 plus half the floor: 65 on floor 10.</div>
+    <div><b>3 sealed books</b>Every boss, every time.</div>
+    <div><b>A garden seed</b>Always one. Better seeds the higher you are.</div>
+    <div><b>A relic</b>One you don't own yet, yours for good.</div>
+    <div><b>A sapling</b>From floor 20, about one boss in three.</div>
+    <div><b>A boon</b>The boon screen, before the rift opens.</div>
+  </div>
+  <p>The relic's tier depends on the floor. If you already own every relic of those tiers, you get one of any tier you're missing. Once you own every relic, a boss drops none.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Boss floor</th><th>Relic tier</th></tr>
+    <tr><td class="n">10 to 19</td><td>Novice or Adept</td></tr>
+    <tr><td class="n">20 to 39</td><td>Adept or Legend</td></tr>
+    <tr><td class="n">40 and up</td><td>Legend</td></tr>
+  </table></div>
+  <p>Saplings are trees for the orchard in Starfall Grove. The higher the boss, the rarer the trees it can drop: Voidpine and Nebula Palm from floor 20, the Halo Tree from 30, the Eclipse Fig from 40 and the Tendril Heart from 50. The Halo Tree, Eclipse Fig and Tendril Heart can't be found anywhere else.</p>
+  <p>Tower bosses don't pay ult fragments; those come from the story.</p>
+
+  <h2 id="falling">Falling</h2>
+  <p>When your health runs out, the climb ends. The death screen sums it up: the floor you reached, your best floor (with <strong>NEW BEST</strong> if you beat it), the climb's time, boons taken, relics and books found, slimes slain and glorps earned.</p>
+  <div class="two">
+    <div class="note good"><p><strong>You keep</strong><br>Every glorp, including the coins paid off kills on the floor you fell on. All your dust, sealed books, seeds, saplings and relics. Your best floor, and your achievement progress.</p></div>
+    <div class="note warn"><p><strong>You lose</strong><br>Every boon. Every scrap. The garden blessings you took into the climb. The reroll price goes back to 4.</p></div>
+  </div>
+  <p><strong>TRY AGAIN</strong> on the death screen, like <strong>RESTART</strong> in the pause menu, starts a new climb from floor 1, free. To start further up, go back to the map and choose the Tower there. Leaving mid-climb through <strong>MAIN MENU</strong> ends the climb the same way a fall does, and you keep what you found.</p>
+
+  <h2 id="skip">Starting further up</h2>
+  <figure>
+    <div class="shot"><img src="../assets/tower_guide/5.jpg" width="640" height="360" loading="lazy" alt="The Tower's start panel over the map: Your best: floor 24, START ON FLOOR 21 with minus 5, minus, plus and plus 5 buttons, the line fee 192, 8 catch-up boons, you have 2627, and a CLIMB button costing 192."></div>
+    <figcaption>With a best of 24, you can start as high as floor 21: 192 glorps, and eight catch-up boons to make up for the floors you skip.</figcaption>
+  </figure>
+  <p>Once your best floor is 5 or more, choosing the Tower on the map opens a start panel. You can start on any floor from 1 up to <strong>three below your best</strong>. It opens on the highest you can pick; the <strong>−</strong> and <strong>+</strong> buttons move it by one, <strong>−5</strong> and <strong>+5</strong> by five.</p>
+  <ul>
+    <li><strong>The fee</strong> is twice what that floor normally pays (without a boss floor's bonus), taken from your glorps when you press <strong>CLIMB</strong>. Floor 1 is always free. Short of glorps, the button says so.</li>
+    <li><strong>Catch-up boons</strong>: you get one boon pick for every boon the floors below would have given you, every third floor and every boss. You choose them one screen at a time (<strong>Catch-up boon 1 of 8</strong>) before the first wave lands.</li>
+  </ul>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Start on floor</th><th>Fee</th><th>Catch-up boons</th></tr>
+    <tr><td class="n">5</td><td class="n">32</td><td class="n">1</td></tr>
+    <tr><td class="n">10</td><td class="n">56</td><td class="n">3</td></tr>
+    <tr><td class="n">15</td><td class="n">98</td><td class="n">5</td></tr>
+    <tr><td class="n">20</td><td class="n">172</td><td class="n">7</td></tr>
+    <tr><td class="n">21</td><td class="n">192</td><td class="n">8</td></tr>
+    <tr><td class="n">25</td><td class="n">304</td><td class="n">10</td></tr>
+    <tr><td class="n">30</td><td class="n">534</td><td class="n">11</td></tr>
+    <tr><td class="n">40</td><td class="n">1,662</td><td class="n">15</td></tr>
+    <tr><td class="n">50</td><td class="n">5,160</td><td class="n">19</td></tr>
+  </table></div>
+  <div class="note"><p>The fee is small next to what the skipped floors pay: floors 1 to 20 pay 1,179 glorps between them. What a skip really costs you is their loot: the books, seeds and dust, the shrine boons, and the relics of the bosses you skip.</p></div>
+
+  <h2 id="blessings">Garden blessings</h2>
+  <p>On the Enchanter's Isle, a ripe crop in the Dust Garden gives dust and banks its <span class="term">blessing</span>. Every banked blessing goes with the next climb you start, for the whole climb, and leaves the bank. A banner names them as you land on your first floor: <strong>BLESSED: SHARP, HARDY</strong>.</p>
+  <ul>
+    <li>Different blessings stack. The same one can't be banked twice.</li>
+    <li>The garden's rake tier caps how many you can bank at once: 1, then 2, then 3.</li>
+    <li>Blessings count together with your boons and relics, the same way boons do.</li>
+    <li>They're spent the moment a climb starts, even one that ends on floor 1. A restart starts with none, so harvest before you go up.</li>
+  </ul>
+  <p>The Tower drops these seeds. A seed is never used up: planting one puts a copy to work, and harvesting gives it back. A copy past the number of plots your rake gives turns into dust instead (15, 30 or 60, by tier). Which tier drops depends on the floor: only tier 1 below floor 10; from 10, tier 2 one time in three; from 25, tier 3 two times in five.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Seed</th><th>Tier</th><th>Blessing</th><th>For the climb</th></tr>
+    <tr><td>Dust Sprout</td><td class="n">1</td><td>Sharp</td><td>+3% damage</td></tr>
+    <tr><td>Glowroot</td><td class="n">1</td><td>Hardy</td><td>+10 max HP</td></tr>
+    <tr><td>Mossbell</td><td class="n">1</td><td>Mending</td><td>cleared floors heal 5% more</td></tr>
+    <tr><td>Puffcap</td><td class="n">1</td><td>Padded</td><td>take 2% less damage</td></tr>
+    <tr><td>Twinkle Grass</td><td class="n">1</td><td>Glinting</td><td>+1.5% crit chance</td></tr>
+    <tr><td>Starbloom</td><td class="n">2</td><td>Lucky</td><td>+2% crit chance</td></tr>
+    <tr><td>Frostfern</td><td class="n">2</td><td>Quickened</td><td>ults charge 6% faster</td></tr>
+    <tr><td>Sunpetal</td><td class="n">2</td><td>Kindled</td><td>reactions charge 8% more</td></tr>
+    <tr><td>Bubblewort</td><td class="n">2</td><td>Buoyant</td><td>move 3% faster</td></tr>
+    <tr><td>Pinwheel Poppy</td><td class="n">2</td><td>Whirling</td><td>ults charge 5% faster</td></tr>
+    <tr><td>Ember Pepper</td><td class="n">2</td><td>Spicy</td><td>+2% damage, reactions charge 3% more</td></tr>
+    <tr><td>Emberheart</td><td class="n">3</td><td>Fleet</td><td>move 4% faster</td></tr>
+    <tr><td>Void Lily</td><td class="n">3</td><td>Prosperous</td><td>Tower floors pay 5% more</td></tr>
+    <tr><td>Nebula Orchid</td><td class="n">3</td><td>Thunderous</td><td>ults deal 5% more damage</td></tr>
+    <tr><td>Eyestalk</td><td class="n">3</td><td>Watchful</td><td>+2.5% crit chance</td></tr>
+    <tr><td>Galaxy Gourd</td><td class="n">3</td><td>Spiralled</td><td>ults deal 4% more and charge 3% faster</td></tr>
+  </table></div>
+  <p>Fishing, the orchard's trees and a couple of achievements give blessings of their own, and they bank the same way.</p>
+
+  <h2 id="best">Your best floor</h2>
+  <p>Your <span class="term">best floor</span> is the highest floor you've cleared. It's saved the moment you clear it, so it counts even if you fall on the next one. You see it on the line under the floor number, on the start panel, and on the death screen. It opens things all over the game.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Best floor</th><th>What it opens</th></tr>
+    <tr><td class="n">1</td><td>With the tutorial done: the relic shelf and the ULTS tab in Glurp's shop, and your first relic slot.</td></tr>
+    <tr><td class="n">5</td><td>A second relic slot. Starting further up. In the garden shop: the rake's second tier, the Silver Can and the Crystal Rod.</td></tr>
+    <tr><td class="n">10</td><td>The lake on the Isle, and a fifth orchard plot to clear.</td></tr>
+    <tr><td class="n">15</td><td>A third relic slot. Legend relics in Glurp's daily stock. The rake's third tier, the Crystal Can and the Starweave Rod.</td></tr>
+    <tr><td class="n">20</td><td>The trampoline bounces you up to the Cloud Sea. A sixth orchard plot.</td></tr>
+    <tr><td class="n">30</td><td>A fourth relic slot. The rake's last tier, the Starwell Can and the Voidcaster.</td></tr>
+    <tr><td class="n">35</td><td>A seventh orchard plot.</td></tr>
+    <tr><td class="n">40</td><td>The moonwell stops just staring back.</td></tr>
+    <tr><td class="n">50</td><td>A fifth relic slot, and an eighth orchard plot.</td></tr>
+  </table></div>
+  <p>The garden and orchard upgrades still cost glorps; your best floor only puts them on sale.</p>
+  <h3>Achievements</h3>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Achievement</th><th>How</th><th>Reward</th></tr>
+    <tr><td>First Steps</td><td>Clear floor 10.</td><td>200 glorps</td></tr>
+    <tr><td>Halfway Up</td><td>Clear floor 25.</td><td>600 glorps, 200 dust</td></tr>
+    <tr><td>Summit</td><td>Clear floor 50.</td><td>1,500 glorps and the Summit Edelweiss seed (Lofty: Tower floors pay 6% more, +2% damage)</td></tr>
+    <tr><td>Untouchable</td><td>Clear a floor from 10 up without taking a hit.</td><td>300 glorps</td></tr>
+    <tr><td>Kingslayer</td><td>Beat 5 Tower bosses.</td><td>500 glorps, 3 sealed books</td></tr>
+  </table></div>
+
+  <h2 id="tips">Tips</h2>
+  <ul>
+    <li>Sweep the floor before you step into the rift. Scraps, coins and potions left behind are lost.</li>
+    <li>Spend your scraps. The bar stops at 40, a shrine boon is 15, and the first reroll is only 4.</li>
+    <li>Switch elements. From floor 4 more and more enemies resist one, a Warded floor resists everything, and the element boons pay you for every switch.</li>
+    <li>Use the rings. Everything in a wave lands at least 5 tiles from you, and you see where before it arrives.</li>
+    <li>Watch your health between floors. A clear only gives back 15%, so Thick Skin, Leech and Second Wind are worth more the longer you climb.</li>
+    <li>For the Geode, bring fire and ice: two fire hits on a plate, then ice.</li>
+    <li>Harvest your garden before a climb, and don't start a throwaway climb while blessings are banked.</li>
+    <li>When you want loot rather than height, start low. Every boss on the way up drops a relic you don't own yet.</li>
+  </ul>
+
+  <p class="foot">The Tower guide. Numbers are for the current version of the game.</p>
+</main>
+</body>
+</html>

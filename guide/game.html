@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Guide · Dungeon Roguelike</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg class="defs" aria-hidden="true"><filter id="chalk" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="2.6"/></filter></svg>
+<main class="page">
+  <a class="back" href="index.html">◂ All guides</a>
+  <div class="eyebrow">Dungeon Roguelike · The guide</div>
+  <h1>The guide</h1>
+  <p class="lede">The same pages as the guide behind the scrawled <strong>?</strong> on the map, with room to spare: every number, every rule, and what to do about them.</p>
+  <ul class="toc">
+    <li><a href="#keys">Keys</a></li>
+    <li><a href="#elements">The four elements</a></li>
+    <li><a href="#dashes">Dashes</a></li>
+    <li><a href="#reactions">Reactions and residue</a></li>
+    <li><a href="#resistance">Resistance</a></li>
+    <li><a href="#statuses">What you do to them</a></li>
+    <li><a href="#on-you">What they do to you</a></li>
+    <li><a href="#ground">The ground</a></li>
+    <li><a href="#water">Water</a></li>
+    <li><a href="#cast">The cast</a></li>
+    <li><a href="#types">Enemy types</a></li>
+    <li><a href="#attacks">Reading attacks</a></li>
+    <li><a href="#bosses">Bosses</a></li>
+    <li><a href="#ults">Ults and signatures</a></li>
+    <li><a href="#scorch">Scorch</a></li>
+    <li><a href="#blizzard">Blizzard</a></li>
+    <li><a href="#fork">Fork</a></li>
+    <li><a href="#ascend">Ascend</a></li>
+    <li><a href="#gadgets">Gadgets</a></li>
+    <li><a href="#upgrades">Ult upgrades</a></li>
+    <li><a href="#relics">Relics</a></li>
+    <li><a href="#enchanting">Enchanting</a></li>
+    <li><a href="#reforge">Reforge, combine, reseal</a></li>
+    <li><a href="#garden">The Dust Garden</a></li>
+  </ul>
+
+  <!-- ───────────────────────────── KEYS ───────────────────────────── -->
+  <h2 id="keys">Keys</h2>
+  <p>These are the defaults. You can rebind any of them in <strong>Settings</strong> on the map. Give an action a key something else already has, and that other action takes your old key, so no two ever share one.</p>
+  <table class="keys">
+    <tr><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td><td>Move, a tile at a time.</td></tr>
+    <tr><td>Left click</td><td>Attack with the weapon you hold, toward the cursor.</td></tr>
+    <tr><td><kbd>Space</kbd></td><td>Dash, toward the cursor (the nearest of up, down, left and right). Holding cosmic, it's cosmic's two hops instead.</td></tr>
+    <tr><td><kbd>Shift</kbd></td><td>Dash as well. Holding cosmic: two hops straight at the cursor, at any angle.</td></tr>
+    <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Switch to fire, ice, lightning or cosmic. <span class="when">once a second at most</span></td></tr>
+    <tr><td><kbd>E</kbd></td><td>The ult of the element you hold.</td></tr>
+    <tr><td><kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd></td><td>The fire, ice, lightning or cosmic ult, whatever you're holding. From cosmic's stage II, <kbd>V</kbd> can be held.</td></tr>
+    <tr><td><kbd>Q</kbd> <kbd>F</kbd></td><td>Throw your first or second gadget at the cursor.</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Your weapon's ability, on the weapons that have one.</td></tr>
+    <tr><td><kbd>G</kbd></td><td>Your weapon's second ability: Ignition's Detonate, the Circuit Breaker's clamps.</td></tr>
+    <tr><td><kbd>T</kbd></td><td>Riyal's Call, once she's free.</td></tr>
+    <tr><td><kbd>M</kbd></td><td>Mute everything.</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Pause. It also skips a boss's entrance.</td></tr>
+  </table>
+
+  <!-- ───────────────────────────── ELEMENTS ───────────────────────────── -->
+  <h2 id="elements">The four elements</h2>
+  <p>You fight with four elements and carry one weapon for each. Fire and ice are yours from the tutorial. Lightning opens when you clear <strong>the Gauntlet</strong>, cosmic when you clear <strong>the Void Rift</strong>. Each one plays differently, and the game is built around switching between them.</p>
+  <div class="cards">
+    <div><b class="fire">Fire</b>Hits one thing hard. Leaves <span class="term">Burn</span>, which stacks and ticks. Dries water into fog.</div>
+    <div><b class="ice">Ice</b>Builds <span class="term">Chill</span> until the enemy becomes an <span class="term">ice cube</span>. Sets things up for the other three.</div>
+    <div><b class="bolt">Lightning</b>Chains and forks from enemy to enemy and leaves them <span class="term">Amped</span>. Loves water.</div>
+    <div><b class="cosmic">Cosmic</b>Mostly buffs you cast and then switch away from. Its mark is <span class="term">Hex</span>. Nothing resists it.</div>
+  </div>
+  <figure id="fig-gems">
+    <div class="shot"><img src="../assets/guide/1.jpg" width="640" height="360" alt="A fight in the Training Ground holding fire. Along the bottom of the screen are two gadget slots (Q and F), then four round gems: fire (the big one, keys E and Z), ice (X), lightning (C) and cosmic (V), and the cosmic weapon's panel. Chalk arrows point at the gadgets and at the gems.">
+      <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+        <path d="M165 304 C 171 317, 186 325, 199 327"/><path d="M199 327 l -12.2 4.4 M199 327 l -8.1 -7.4"/>
+        <text x="92" y="300">gadgets</text>
+        <path d="M330 296 C 318 300, 310 314, 308 325"/><path d="M308 325 l -4.2 -12.3 M308 325 l 7.5 -8.0"/>
+        <text x="290" y="290">your four gems</text>
+      </svg></div>
+    <figcaption>The bottom of the screen: your two gadgets, then a gem for each element with its ult key under it. The one you're holding is the big one. A ring fills round each gem as it charges.</figcaption>
+  </figure>
+  <h3>The gems</h3>
+  <p>Each element has a <span class="term">gem</span>. A full gem is an ult, ready to cast (see <a href="#ults">Ults and signatures</a>). Fire, ice and lightning gems fill as you land hits with that element. What counts is the element that dealt the hit, not the one you're holding: a Burn tick charges fire even while you hold ice.</p>
+  <p>The cosmic gem fills another way. Every fire, ice and lightning hit you land also charges it, by a quarter more than it gives its own gem. Cosmic weapons' own hits charge nothing at all, with one exception: each star you collect from the Astrolabe fills about a sixth of the cosmic gem.</p>
+  <h3>The weapons</h3>
+  <p>Glurp sells them in the WEAPONS tab of his shop. The starters are free.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Element</th><th>Weapons, cheapest first (glorps)</th></tr>
+      <tr><td class="fire">Fire</td><td>Flame Fists (starter), Flame Sword 150, Magma Staff 400, Ignition 700</td></tr>
+      <tr><td class="ice">Ice</td><td>Ice Fists (starter), Icicle Cannon 400, Fractal Shard 700</td></tr>
+      <tr><td class="bolt">Lightning</td><td>Storm Fists (starter), Orb Emitter 150, Ball Lightning 400, Circuit Breaker 700</td></tr>
+      <tr><td class="cosmic">Cosmic</td><td>Void Fists (starter), Barrier Staff 150, Astrolabe 200, Singularity 250, Void Blade 300</td></tr>
+    </table>
+  </div>
+  <h3>Cosmic's boons</h3>
+  <p>A cosmic weapon does little damage itself. What it gives you is a <span class="term">boon</span> that keeps working after you switch back to fire, ice or lightning. Switch to cosmic, cast, switch away.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Weapon</th><th>What it gives you</th><th>Cooldown</th></tr>
+      <tr><td>Void Fists</td><td>Every punch that lands, and every dash, is a stack of <span class="term">Momentum</span>, up to 3. Each is +7% damage with every element and +8% move speed, for 8s after the last.</td><td class="n">0.45s a punch</td></tr>
+      <tr><td>Barrier Staff</td><td>4 wards orbit you for 10s. Each eats one enemy shot, Hexes whoever fired it for 5s and shoves enemies within 2.5 tiles 2 tiles back. Recast before they run out to top them up.</td><td class="n">9s</td></tr>
+      <tr><td>Astrolabe</td><td>Starfall, in a room with enemies: stars crash round the room, dazing where they land. Pick them up within 5s. Each one marks 2 enemies (10 at most). Hitting a mark pops it for 6% of the gem of the element you hold and 2% of each other one.</td><td class="n">40s</td></tr>
+      <tr><td>Singularity</td><td>A well at the cursor pulls enemies in for 5s, adding a Hex stack every 2s they stay inside. While it's out and for 5s after, you take 30% less damage.</td><td class="n">12s</td></tr>
+      <tr><td>Void Blade</td><td>Hold to charge (up to 3.5s), let go to slash: 3 to 18 tiles long, stunning for 0.6 to 3.5s, leaving cosmic fluid whose Hex lasts 6 to 14s, longer than any other. The longer the charge, the more of all of it.</td><td class="n">12s</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Rotate.</strong> Hitting an enemy that carries another element's status charges three times as fast as camping one element. See <a href="#reactions">Reactions</a>.</li>
+    <li><strong>Cosmic first.</strong> Open a fight on cosmic, cast its boon, then switch to your damage. The boon rides along.</li>
+    <li><strong>The cosmic gem fills itself</strong> while you play the other three, so you rarely need to stand on cosmic to charge it.</li>
+  </ul>
+
+  <!-- ───────────────────────────── DASHES ───────────────────────────── -->
+  <h2 id="dashes">Dashes</h2>
+  <p>Every dash makes you <strong>untouchable for its first 0.22 seconds</strong>. It goes toward the cursor, to the nearest of up, down, left and right (with no cursor, the way you're moving). It passes through enemies but never lands on one, and it stops at anything you couldn't step onto. Each element dashes its own way.</p>
+  <div class="grid">
+    <figure><img src="../assets/guide/2a.jpg" width="640" height="360" alt="A fire dash: two cracked tiles behind the slime glowing orange as they erupt, damage numbers 45 and 14 over the enemies it passed." loading="lazy"><figcaption><span class="fire">Fire.</span> The tiles behind you erupt in turn.</figcaption></figure>
+    <figure><img src="../assets/guide/2b.jpg" width="640" height="360" alt="An ice dash: a strip of frozen tiles three wide behind the slime, the enemies along it showing chill bars." loading="lazy"><figcaption><span class="ice">Ice.</span> A strip three wide, chilling everything in it.</figcaption></figure>
+    <figure><img src="../assets/guide/2c.jpg" width="640" height="360" alt="A lightning dash: the slime landed among four enemies, all dazed, with the words DAZED times 4 overhead and a lit square of floor around it." loading="lazy"><figcaption><span class="bolt">Lightning.</span> A blink, and a daze where you land.</figcaption></figure>
+    <figure><img src="../assets/guide/2d.jpg" width="640" height="360" alt="A cosmic dash: a trail of purple cosmic fluid behind the slime and the word HEXED over an enemy standing in it." loading="lazy"><figcaption><span class="cosmic">Cosmic.</span> Two hops, leaving fluid behind.</figcaption></figure>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Dash</th><th>Reach</th><th>Recovery</th><th>What it does</th></tr>
+      <tr><td class="fire">Fire</td><td class="n">4 tiles (6 in Scorch)</td><td class="n">0.7s</td><td>Hits each enemy you pass through for 12 and staggers it 0.3s. The tiles you crossed crack, then 0.6s later erupt one after another: 16 to anything on or beside each tile (once a dash per enemy), lava for 0.7s, and the water round them boiled into fog.</td></tr>
+      <tr><td class="ice">Ice</td><td class="n">6 tiles, 3 wide</td><td class="n">1.3s</td><td>A glide, the slowest dash (0.6s). Everything in the strip takes a sixth of a chill bar, each enemy at most once every 3s.</td></tr>
+      <tr><td class="bolt">Lightning</td><td class="n">3 tiles</td><td class="n">0.8s</td><td>An instant blink. A daze goes out in rings from where you land and catches the 5 by 5 square round you, for 0.8s.</td></tr>
+      <tr><td class="cosmic">Cosmic</td><td class="n">2 hops of about 3 tiles</td><td class="n">1s after the second</td><td>Each hop goes to the open tile nearest the cursor, at any angle, through enemies. The second aims again, so you can bend the pair, but you can't walk between them. Every tile crossed gets cosmic fluid for 1.8s (a Hex that lasts 3s).</td></tr>
+    </table>
+  </div>
+  <h3>Stamina</h3>
+  <p>Dashes also cost <span class="term">stamina</span>. You hold 150 and each dash costs 30 (cosmic's pair counts as one), so five in a row empties you. It refills at 20 a second once you've gone 2 seconds without dashing. Run dry and you'll see <strong>OUT OF STAMINA</strong>. The bar sits under your health.</p>
+  <ul>
+    <li><strong>Dash through, not away.</strong> You're untouchable going in, and fire's rush and lightning's daze both reward landing among them.</li>
+    <li><strong>Fire's eruptions trail you.</strong> Dash across a pack, not along a wall, so the cracked tiles end up under enemies.</li>
+    <li><strong>Keep one dash spare.</strong> An empty bar takes about 10 seconds to fill again.</li>
+    <li>You can't dash while <strong>Rooted</strong>, or while <strong>GLU</strong> holds you (see <a href="#on-you">What they do to you</a>).</li>
+  </ul>
+
+  <!-- ───────────────────────────── REACTIONS ───────────────────────────── -->
+  <h2 id="reactions">Reactions and residue</h2>
+  <p>A <span class="term">reaction</span> is a hit on an enemy that carries <em>another</em> element's status. It charges the hitting element's gem <strong>three times</strong> as much as a plain hit, and that gem flashes <strong>×3</strong>.</p>
+  <figure>
+    <img src="../assets/guide/3.jpg" width="640" height="360" alt="The slime holding fire hits an enemy frozen in an ice cube for 37. Above it, in orange: REACTION times 3." loading="lazy">
+    <figcaption>Fire on an ice cube: a reaction. Fire's gem charges three times as fast.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>The enemy carries</th><th>Which is</th><th>A reaction for hits by</th></tr>
+      <tr><td>Burn (any stacks)</td><td class="fire">fire's status</td><td>ice, lightning</td></tr>
+      <tr><td>Chill (a sixth of the bar or more), an ice cube, or frozen</td><td class="ice">ice's status</td><td>fire, lightning</td></tr>
+      <tr><td>Amped</td><td class="bolt">lightning's status</td><td>fire, ice</td></tr>
+      <tr><td>Hex</td><td class="cosmic">cosmic's status</td><td>fire, ice, lightning</td></tr>
+    </table>
+  </div>
+  <p><span class="term">Residue</span> is the weaker cousin: a hit on an enemy that another element <em>hit</em> in the last 1.5 seconds but left no status on. It charges <strong>1.75 times</strong> as much. Ticks (Burn and the like) never count for residue.</p>
+  <div class="note"><p>Reactions are about charge, not damage. They make your ults come round far sooner; they don't make the hit itself bigger. (A few relics and books add a burst to them.)</p></div>
+  <ul>
+    <li><strong>Status first, then swap.</strong> Lay Burn or Chill, switch, and every hit after is a reaction until the status wears off.</li>
+    <li><strong>Burn is the easiest opener.</strong> It holds for at least four seconds, plenty of time to switch and cash in.</li>
+    <li><strong>Hex helps everyone.</strong> A hexed enemy is a reaction for all three other elements at once, and it takes more damage too.</li>
+  </ul>
+
+  <!-- ───────────────────────────── RESISTANCE ───────────────────────────── -->
+  <h2 id="resistance">Resistance</h2>
+  <p>A ring under an enemy in an element's colour means it <span class="term">resists</span> that element: those hits do <strong>40%</strong>. Orange is fire, blue is ice, yellow is lightning. A ring split into two colours resists two elements, and one split into three resists all three.</p>
+  <figure id="fig-rings">
+    <div class="shot"><img src="../assets/guide/4.jpg" width="640" height="320" alt="Four enemies in a row over the slime, each with a ring under it: orange, blue, half yellow and half orange, half yellow and half blue. Chalk arrows label the orange ring as resisting fire and the yellow and orange one as resisting two elements." loading="lazy">
+      <svg class="ink" viewBox="0 0 640 320" aria-hidden="true">
+        <path d="M88 220 C 100 213, 107 198, 108 186"/><path d="M108 186 l 5.1 11.9 M108 186 l -6.9 8.6"/>
+        <text x="30" y="238">resists fire</text>
+        <path d="M424 222 C 410 217, 399 202, 396 189"/><path d="M396 189 l 8.8 9.6 M396 189 l -3.7 10.4"/>
+        <text x="400" y="240">resists two</text>
+      </svg></div>
+    <figcaption>Left to right: resists fire; resists ice; resists lightning and fire; resists lightning and ice.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Cosmic is never resisted.</strong> A cosmic hit lands the same on an enemy with a ring as on one without.</li>
+    <li><strong>Grounding Spike</strong> turns every ring within 3 tiles grey for 6 seconds. While it's grey, the enemy resists nothing.</li>
+    <li>A few enemies in the story are <strong>IMMUNE</strong> to an element instead, and say so when you hit them. The Spike doesn't lift that. Cosmic still hurts them, a little less than usual; a fire-immune one still takes Burn ticks, and an ice-immune one can still be chilled into a cube that shatters.</li>
+    <li>In the Tower, a <strong>WARDED</strong> floor gives every enemy a resistance.</li>
+  </ul>
+  <p>Switching to an element they don't resist is nearly always the answer. A 40% hit takes two and a half times as long to kill with.</p>
+
+  <!-- ───────────────────────────── STATUSES ───────────────────────────── -->
+  <h2 id="statuses">What you do to them</h2>
+  <figure>
+    <img src="../assets/guide/5.jpg" width="640" height="231" alt="Seven enemies showing statuses. Top row, left to right: one burning with four flame pips over its health bar and a 13 above; one chilled, with a blue bar and snowflakes; one frozen in an ice cube with a down chevron; one Amped, with a white arc over its head; one Hexed, glowing pink. Bottom row: two dazed, with yellow sparkles over them." loading="lazy">
+    <figcaption>Top, left to right: Burn (the flame pips are its stacks), Chill (the blue bar), an ice cube, Amped, Hex. Bottom: Dazed.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Status</th><th>What it does</th><th>How long</th></tr>
+      <tr><td class="fire">Burn</td><td>Stacks up to 5 and ticks every half second. Per second: 2, 4.5, 8, 13 or 20 damage at 1 to 5 stacks, plus 0.2% to 1% of the enemy's max HP (bosses take a quarter of that share). Every fire weapon feeds it; lava adds a stack every 0.8s to anything standing in it.</td><td>Holds 4s after the last stack, then loses one a second</td></tr>
+      <tr><td class="fire">Super Burn</td><td>Scorch's burn. Up to 3 stacks, ticking five times a second: at 3 stacks, 30 a second plus 2.5% of max HP. Only the fire ult adds stacks, but any Burn landing on it keeps it alight.</td><td>Holds 8s, then loses one every 2.5s</td></tr>
+      <tr><td class="ice">Chill</td><td>Fills a bar. A direct ice hit fills about a fifth of it, so about five hits fill it.</td><td>Holds 5s after the last hit, then drains (a full bar in 5s)</td></tr>
+      <tr><td class="ice">Ice cube</td><td>What a full chill bar makes. It moves at about half speed and is <span class="term">Brittle</span>: 20% of its max HP is cut off at once (6% on bosses; never enough to kill). Then it shatters by itself for 10, plus 28% of whatever the other elements dealt it while it held, and leaves a small puddle of water for 6s.</td><td class="n">3.5s</td></tr>
+      <tr><td class="bolt">Amped</td><td>Lightning chains and forks further from it. The Orb Emitter's forks, Ball Lightning and the Circuit Breaker give it.</td><td class="n">5s</td></tr>
+      <tr><td class="cosmic">Hex</td><td>Up to 3 stacks: it takes +10%, +25% or +45% damage from everything, and moves 40% slower.</td><td>Depends on the source; when it runs out, a stack falls off every second</td></tr>
+      <tr><td>Dazed, Stunned</td><td>Can't move or attack. A daze does no damage by itself.</td><td>A moment: 0.35s from Fork's thumps, 2s from a Smite Charge</td></tr>
+    </table>
+  </div>
+  <h3>Brittle, and why you swap</h3>
+  <p>The health a cube cuts off isn't gone for good. When the cube shatters, what's still owed waits 5 seconds and then grows back over 3. <strong>Damage from fire, lightning or cosmic while it's a cube locks that much of the cut in for good</strong>, and feeds the shatter too. Ice hitting its own cube does neither. Kill it before the cube ends and the cut simply stays gone.</p>
+  <ul>
+    <li><strong>Cube, swap, pour it in.</strong> You have 3.5 seconds. Every hit is a reaction, locks in Brittle and grows the shatter.</li>
+    <li><strong>A cube can't be re-cubed.</strong> Chill stops building on it until it shatters, so don't keep spraying ice at it.</li>
+    <li><strong>Hex the big ones.</strong> +45% from everything, and it slows them while you do it.</li>
+    <li><strong>The shatter makes water.</strong> Lightning hits on wet enemies hit harder (see <a href="#water">Water</a>).</li>
+  </ul>
+
+  <!-- ───────────────────────────── ON YOU ───────────────────────────── -->
+  <h2 id="on-you">What they do to you</h2>
+  <p>What's on you shows as a row of small icons over your head, left to right, each with its time running down in a bar under it.</p>
+  <figure id="fig-onyou">
+    <div class="shot"><img src="../assets/guide/6.jpg" width="640" height="362" alt="The slime covered in statuses: four icons over its head (a blue drop, a red drop, a green flask and brown roots), each with a bar under it; purple roots round its body, green bubbles rising, and down-pointing chevrons over it. Chalk arrows point at the first icon's bar, labelled time left, and at the chevrons, labelled slowed." loading="lazy">
+      <svg class="ink" viewBox="0 0 640 362" aria-hidden="true">
+        <path d="M160 124 C 177 103, 208 92, 232 91"/><path d="M232 91 l -11.2 6.6 M232 91 l -9.4 -5.7"/>
+        <text x="80" y="140">time left</text>
+        <path d="M410 176 C 393 158, 362 151, 340 152"/><path d="M340 152 l 11.1 -6.7 M340 152 l 9.4 5.7"/>
+        <text x="400" y="194">slowed</text>
+      </svg></div>
+    <figcaption>Dripping, Bleed, Poison and Rooted at once, and chevrons pointing down: you're slower than usual.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>On you</th><th>What it does</th><th>How long</th></tr>
+      <tr><td>Dripping</td><td>Every tile you step on turns to water, and stays water until fire dries it. It doesn't hurt; it just floods the floor for the water enemies.</td><td class="n">8s</td></tr>
+      <tr><td>Bleed</td><td>Every tile you move costs health: 2 a tile at first, more on harder floors, and half that per tile in a dash. Standing still costs nothing. From a Hunter Slime's slashes and a Torpedo Diver.</td><td class="n">6s</td></tr>
+      <tr><td>Poison</td><td>Damage every 0.6s, and any healing you get is cut by 60%. One dose at a time: a new one restarts the clock, it never stacks.</td><td>4s from the last dose</td></tr>
+      <tr><td>Rooted</td><td>You can't move or dash. You can still attack.</td><td>A moment</td></tr>
+      <tr><td>Burning</td><td>1 damage a second for each stack, up to 5. From an Ult Absorber's stolen fire.</td><td class="n">3s</td></tr>
+      <tr><td>Hexed</td><td>You take 1.5 times damage. From an Ult Absorber's stolen cosmic.</td><td class="n">4s</td></tr>
+    </table>
+  </div>
+  <p><span class="term">Chevrons</span> over you or an enemy show it moving faster (pointing up) or slower (pointing down) than usual. <strong>GLU</strong> pops up when something stops you dashing for a while: a Frost Slime's lit tiles while you stand in them, or an Ult Absorber's stolen lightning.</p>
+  <div class="note good"><p>After you've been rooted (or held some other way), you shrug off the next one for 1.2 seconds after it ends. You'll see <strong>RESISTED</strong>.</p></div>
+  <ul>
+    <li><strong>Bleeding? Stop.</strong> Fight from where you stand until it runs out; every tile costs you.</li>
+    <li><strong>Poisoned? Don't count on healing.</strong> Mend Totem and the rest only do 40% while it lasts.</li>
+    <li><strong>Dripping near water enemies</strong> is worse than it looks. Stand still, or walk where you want the water to be.</li>
+  </ul>
+
+  <!-- ───────────────────────────── GROUND ───────────────────────────── -->
+  <h2 id="ground">The ground</h2>
+  <figure>
+    <img src="../assets/guide/7.jpg" width="640" height="173" alt="Five patches of floor in a row over the slime: dark blue water, grey swirling fog, orange lava, a ring of green poison pool tiles, and purple cosmic fluid." loading="lazy">
+    <figcaption>Left to right: water, fog, lava, a poison pool, cosmic fluid.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Ground</th><th>Where it comes from</th><th>What it does</th></tr>
+      <tr><td>Water</td><td>The level, the water enemies, Dripping, a shattered ice cube</td><td>Slows you a little: each step in it slows you for 1.5s. Holding ice you're <em>faster</em> on it than on dry floor, and holding cosmic it doesn't slow you at all. Other enemies are slowed by it too. See <a href="#water">Water</a>.</td></tr>
+      <tr><td>Fog</td><td>Water your fire dried</td><td>Holds for 15s. Nothing can turn it back into water until it clears.</td></tr>
+      <tr><td class="fire">Lava</td><td>Fire weapons, the fire dash, Scorch</td><td>Deals no damage itself: it gives a Burn stack to an enemy standing on it every 0.8s.</td></tr>
+      <tr><td class="green">Poison pool</td><td>Rooters and Budding Slimes, in a ring round them</td><td>Doses you with Poison while you stand in it. Gone after 12s.</td></tr>
+      <tr><td class="cosmic">Cosmic fluid</td><td>The cosmic dash, the Void Blade, Ascend</td><td>Gives Hex to enemies standing in it, the moment they step in and every 2s after. How long the fluid and its Hex last depends on what left it: a fully charged Void Blade's lasts longest.</td></tr>
+    </table>
+  </div>
+
+  <!-- ───────────────────────────── WATER ───────────────────────────── -->
+  <h2 id="water">Water</h2>
+  <p>Water powers up the enemies that live in it, and slows down the ones that don't.</p>
+  <ul>
+    <li>A <strong>Wave Rider</strong> in water winds up its charge faster.</li>
+    <li><strong>Ripplerunners</strong> are quick on water and sluggish on dry stone.</li>
+    <li>A <strong>Tidal Guard</strong> aims faster standing in water, and its hit then pins you and leaves you dripping.</li>
+    <li>A <strong>Drowner</strong> that strikes while you're in water lands at once and holds you under. On dry ground you get a moment to step off the mark.</li>
+    <li>A <strong>Tidecaller</strong> makes every enemy near it attack faster: a little on dry floor, far faster standing in water.</li>
+    <li>Everything else is slowed by it: its steps take a quarter longer.</li>
+  </ul>
+  <figure>
+    <img src="../assets/guide/8.jpg" width="640" height="360" alt="The slime holding the Magma Staff, with SURGE R over its head, on the edge of a pool. The left part of the pool has been dried into grey fog; the right part is still blue water." loading="lazy">
+    <figcaption>Fire has dried the left of this pool into fog. <strong>SURGE [R]</strong> over you means the Magma Staff's Surge is ready.</figcaption>
+  </figure>
+  <h3>What the elements do with it</h3>
+  <ul>
+    <li><span class="bolt">Lightning</span> does <strong>1.5 times</strong> damage to an enemy standing in water, and a hit on a wet enemy runs through the whole connected pool, hitting everything in it however far away.</li>
+    <li><span class="fire">Fire</span> dries it. Each tile takes a few hits to boil away, and becomes <span class="term">fog</span> for 15 seconds.</li>
+    <li><span class="ice">Ice</span> skates on it: holding ice, you move faster in water than out of it.</li>
+  </ul>
+  <ul>
+    <li><strong>Burn a dry path</strong> round a Tidecaller or Conduit before you fight near it, or kill it first.</li>
+    <li><strong>Fight Drowners on dry ground.</strong></li>
+    <li><strong>On a flooded floor, lightning is king.</strong> One hit in a pool reaches every enemy standing in it.</li>
+  </ul>
+
+  <!-- ───────────────────────────── CAST ───────────────────────────── -->
+  <h2 id="cast">The cast</h2>
+  <p>Each enemy wears something that shows what it does: horns on the Berserker, the spout on the Spitter, a trident on the Tidal Guard. The first time you walk into a room with one you've never met, the fight holds and a card explains it. That happens once per kind, ever.</p>
+  <figure>
+    <img src="../assets/guide/9.jpg" width="640" height="234" alt="Two rows of enemies of many kinds, each a slime with its own colour and something on its head: horns, a stone shell, a crown, a spout, a sprout, a trident, a flower." loading="lazy">
+    <figcaption>Some of the cast. What each one wears is a clue to what it does.</figcaption>
+  </figure>
+  <p>The <strong>book of enemies</strong> on the map lists every one, as it looks in a fight, with its card. Use the chips along the top to show one type at a time.</p>
+  <figure>
+    <img src="../assets/guide/10.jpg" width="640" height="360" alt="The enemies book open on the WATER filter: a grid of water enemies on the left, and on the right the Tidal Guard's model and card with its types and description." loading="lazy">
+    <figcaption>The book of enemies, filtered to WATER, with the Tidal Guard's card open.</figcaption>
+  </figure>
+  <p>A few to learn early:</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Enemy</th><th>What to know</th></tr>
+      <tr><td>Berserker</td><td>Winds up when you get close, then swings a wide arc and knocks you back. Get behind it or out of reach during the wind-up.</td></tr>
+      <tr><td>Spitter</td><td>Keeps its distance and aims a beam at you, then fires down it. The aim locks just before it fires: step off the line.</td></tr>
+      <tr><td>Healer Slime</td><td>Heals everything near it, past full. Kill it first.</td></tr>
+      <tr><td>Anchor Slime</td><td>Pulses now and then: its allies speed up, you slow down. Kill it first.</td></tr>
+      <tr><td>Splitter</td><td>Bursts when it dies and splits into smaller, faster copies, twice over. Kill it where you have room.</td></tr>
+      <tr><td>Mortar</td><td>Lobs shells over walls at where you stand. Inside its glow you're safe.</td></tr>
+      <tr><td>Armored Slime</td><td>Plated on three sides that never turn. One side is open and glows when you stand on it. Go round.</td></tr>
+      <tr><td>Leech</td><td>Picks one of your elements and steals that gem if you're still holding it when its ring closes. Kill it to get the gem back.</td></tr>
+      <tr><td>Adaptive Shade</td><td>Turns into whatever element hits it and barely feels it after. Hex slides off it. Keep swapping.</td></tr>
+    </table>
+  </div>
+
+  <!-- ───────────────────────────── TYPES ───────────────────────────── -->
+  <h2 id="types">Enemy types</h2>
+  <p>The book of enemies sorts them into seven types, and one enemy can be several at once (a Torpedo Diver is an aggressor, a controller and a water enemy).</p>
+  <div class="cards">
+    <div><b class="red">Aggressors</b>Come at you directly: contact, charges, lunges.</div>
+    <div><b class="gold">Controllers</b>Take space from range with shots, lanes and lit tiles.</div>
+    <div><b class="green">Buffers</b>Make the enemies round them stronger.</div>
+    <div><b class="ice">Water</b>Make water, live in it, or use it.</div>
+    <div><b class="green">Multipliers</b>Turn one into many.</div>
+    <div><b>Tough</b>Armour, a second life or a lot of health.</div>
+    <div><b class="cosmic">Tricksters</b>Hide, steal or ambush.</div>
+  </div>
+  <ul>
+    <li><strong>Buffers first.</strong> A Healer, Anchor, Tidecaller or Cheerleader makes the whole room harder for as long as it lives.</li>
+    <li><strong>Controllers decide where you can stand.</strong> Watch their tells and keep moving.</li>
+    <li><strong>Multipliers get worse the longer you wait.</strong> A Budding Slime buds a copy every ten seconds, hit or not.</li>
+  </ul>
+
+  <!-- ───────────────────────────── ATTACKS ───────────────────────────── -->
+  <h2 id="attacks">Reading attacks</h2>
+  <p>Almost every attack shows you where it will land before it does. The marks on the floor are exactly the tiles that get hit.</p>
+  <ul>
+    <li>A <strong>ring on the floor</strong> marks where something will land.</li>
+    <li><strong>Lit squares</strong> mark an area about to go off. Look for the gaps: they stay safe.</li>
+    <li>A <strong>lit lane</strong> marks a line something is about to shoot or charge down. Step out of it sideways.</li>
+    <li>A <strong>glass dome</strong> is a safe zone from the Gem (below).</li>
+    <li>A <strong>red zone</strong> round an enemy blocks ults: you can't cast one inside it (<strong>ULT BLOCKED!</strong>).</li>
+    <li>A <strong>violet zone</strong> belongs to an Ult Absorber. You can't cast inside it either, and while you're in it, every 7 seconds it tears a quarter of a gem out of your fullest one, heals the enemies near it, and throws a weak copy of that ult back at you.</li>
+  </ul>
+  <figure id="fig-zones">
+    <div class="shot"><img src="../assets/guide/11.jpg" width="640" height="360" alt="An arena: a large soft red circle round an enemy at the top left, two yellow glass domes on the floor, a big yellow gem falling over the slime in a lane of water, and a smaller glowing yellow crystal at the top right. Chalk arrows label the red circle blocks ults, a dome safe dome, and the crystal the Gem." loading="lazy">
+      <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+        <path d="M62 48 C 84 52, 105 71, 116 88"/><path d="M116 88 l -11.2 -6.6 M116 88 l 0.5 -11.0"/>
+        <text x="6" y="42">blocks ults</text>
+        <path d="M92 250 C 114 245, 131 225, 138 206"/><path d="M138 206 l 1.7 12.9 M138 206 l -9.0 6.4"/>
+        <text x="40" y="268">safe dome</text>
+        <path d="M500 38 C 484 40, 467 54, 459 66"/><path d="M459 66 l 1.3 -12.9 M459 66 l 10.2 -4.2"/>
+        <text x="500" y="34">the Gem</text>
+      </svg></div>
+    <figcaption>A red zone, two yellow domes, and the Gem. A yellow gem is falling over you: get into a dome holding lightning.</figcaption>
+  </figure>
+  <h3>The Gem</h3>
+  <p>The Gem is a crystal that can't be hurt and never moves. It breaks by itself once everything else is dead. Every 22 seconds, a gem in one element's colour starts falling on you from high up, and three glass domes of that colour open on the floor. You have 5 seconds. When it lands, you must be <strong>inside a dome and holding that element</strong>, or it bursts on you for 38.</p>
+  <ul>
+    <li><strong>The colour is the element.</strong> A yellow gem wants lightning in your hand, blue wants ice, and so on.</li>
+    <li><strong>Ults and red zones:</strong> step out before you cast. Kill the inhibitor and its zone goes with it.</li>
+    <li><strong>Absorbers punish a full gem.</strong> Spend it before you walk into violet, or stay out of it.</li>
+  </ul>
+
+  <!-- ───────────────────────────── BOSSES ───────────────────────────── -->
+  <h2 id="bosses">Bosses</h2>
+  <p>A boss has a health bar across the top of the screen, and each boss in reach gets its own. Every attack has a tell first: bolt volleys, stomps that ring outward, ripples, waves of minions. A boss makes an entrance; <kbd>Esc</kbd> skips it.</p>
+  <figure>
+    <img src="../assets/guide/12.jpg" width="640" height="360" alt="Floor 10 of the Tower: a big blue crowned slime crackling with lightning in the middle of the arena. Across the top, the bar labelled FLOOR 10, THE VOLTSLIME is circled in red with the note the boss bar." loading="lazy">
+    <figcaption>The Voltslime on floor 10 of the Tower, and its bar.</figcaption>
+  </figure>
+  <p>In the Tower, <strong>every tenth floor is a boss</strong>: the Voltslime on floor 10, the Void Sovereign on floor 20, others above, and then they come round again. When a Tower boss falls to half health, the arena changes shape round you. Beating one pays five times a normal floor, plus 3 sealed books, a garden seed and a relic you don't own yet. Tower bosses don't give fragments; story bosses do (see <a href="#upgrades">Ult upgrades</a>). The Tower has <a href="tower.html">its own guide</a>.</p>
+  <ul>
+    <li><strong>Watch the tell, not the boss.</strong> The floor marks are exactly where the hit lands.</li>
+    <li><strong>Save an ult for the second half.</strong> The arena reshapes at half health, and that's when you'll want room.</li>
+  </ul>
+
+  <!-- ───────────────────────────── ULTS ───────────────────────────── -->
+  <h2 id="ults">Ults and signatures</h2>
+  <p>Each element's <span class="term">ult</span> goes off when its gem is full. <kbd>E</kbd> casts the ult of the element you hold; <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd> cast fire's, ice's, lightning's and cosmic's from whatever you hold.</p>
+  <figure>
+    <img src="../assets/guide/13.jpg" width="640" height="360" alt="Scorch at work: meteors crashing all over the room, glowing craters, damage numbers over a crowd of enemies, the words METEOR STRIKE over the slime, and its health at 101 of 100." loading="lazy">
+    <figcaption>An ult running: Scorch, with Meteor Strike under your click.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>A shared cooldown.</strong> After any ult, the others wait 5 seconds (you'll see <strong>ULT READY IN 3s</strong> and the like). Ascend is the exception: it ignores that wait and doesn't start it, so it can open a combo.</li>
+    <li><strong>No refilling itself.</strong> While an ult (or what it leaves behind) is still working, its own gem doesn't charge. A white ring runs down on that gem.</li>
+    <li><strong>Overflow.</strong> Charge that comes in past a full gem isn't lost. Up to another whole gem's worth is kept, and it makes that element's next ult hit harder: up to +50% at a whole extra gem.</li>
+    <li><strong>Zones.</strong> You can't cast inside a red or violet zone (see <a href="#attacks">Reading attacks</a>).</li>
+  </ul>
+  <h3>Signature abilities</h3>
+  <p>Several weapons also have a <span class="term">signature</span> ability on <kbd>R</kbd>. Most show a bar over you while you hold them.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Weapon</th><th>Ability</th><th>Ready when</th><th>What it does</th></tr>
+      <tr><td>Icicle Cannon</td><td>Frost Shield</td><td>28 icicles have hit</td><td>5s of 35% less damage taken, and whoever hits you is chilled.</td></tr>
+      <tr><td>Magma Staff</td><td>Magma Surge</td><td>The staff has heat, from fireballs that land</td><td>Dumps the heat: everything round you is thrown back and set burning, and a ring of lava rolls out. More heat, bigger: 2 to 5 tiles, 1 to 3 tiles of knockback, 1 to 3 Burn stacks. The staff drops back to its first tier.</td></tr>
+      <tr><td>Ignition</td><td>Blue Flame</td><td>16s after you last used it</td><td>5s of blue-hot flame: it ticks half again as fast, ignores resistance, and now and then lays a <span class="term">Blue Burn</span> stack that bursts later for 25 plus 2% of max HP.</td></tr>
+      <tr><td>Fractal Shard</td><td>The gamble</td><td>5 fan shards have hit enemies its spikes marked</td><td>6s of one of two: <strong>Deadly Accuracy</strong> (five shards circle you; click and they converge on the spot and fly on through, every hit a crit) or <strong>Shard Storm</strong> (heals 10% of your max HP, doubles ice ult charge, every shot a wide fan of chip shards).</td></tr>
+      <tr><td>Circuit Breaker</td><td>Current</td><td>Any time you have a wire on an enemy</td><td>Turns the current on: down the wire nearest your aim, again each time it's ready, until you press <kbd>R</kbd> again or no wire is left.</td></tr>
+    </table>
+  </div>
+
+  <!-- ───────────────────────────── SCORCH ───────────────────────────── -->
+  <h2 id="scorch">Scorch <span class="fire">· fire</span></h2>
+  <p>Eight seconds. You laugh, and meteors of molten rock rain down across the room. After the opening volley your attack becomes <span class="term">Meteor Strike</span>. You can't switch away from fire until it ends.</p>
+  <figure>
+    <img src="../assets/guide/14.jpg" width="640" height="360" alt="Scorch: meteors embedded in glowing craters round the room, METEOR STRIKE over the slime, big yellow damage numbers over a pack of enemies, and the slime's health at 107 of 100." loading="lazy">
+    <figcaption>Your health reads 107/100: Scorch's burn ticks can heal you past full.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Part</th><th>What it does</th></tr>
+      <tr><td>The rain</td><td>An opening volley of 4 to 7 meteors (about one for every 50 floor tiles of the room), then 2 or 3 every 1.5 to 3s. Each hits everything within 2.2 to 3.2 tiles (bigger rocks reach further) for 12 to 26, dazes it 1s and adds a <span class="term">Super Burn</span> stack. Each leaves white-hot lava for 1.5s that Super Burns whatever stands in it.</td></tr>
+      <tr><td>Meteor Strike</td><td>Your click: 4 or 5 heavy meteors land at random within about 3 tiles of the spot, once every 0.9s. Each hits everything within 1.8 tiles, about 40 at the middle and less toward the edge, and dazes it a moment. Only the enemy with the most HP that each one hits gets a Super Burn stack.</td></tr>
+      <tr><td>The aura</td><td>6 tiles round you. Every second, one enemy inside takes a Super Burn stack, the ones with the most HP likeliest.</td></tr>
+      <tr><td>Your dash</td><td>Goes 6 tiles, and dashing straight through an enemy gives it a Super Burn stack.</td></tr>
+      <tr><td>Healing</td><td>Every burn tick heals you 0.25% of your max HP: at most 3% a second and 20% over the whole ult. It can take you up to 20% past full.</td></tr>
+      <tr><td>Speed</td><td>You move about twice as fast.</td></tr>
+    </table>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Stage</th><th>Cost</th><th>Adds</th></tr>
+      <tr><td>I</td><td class="n">with fire</td><td>All of the above.</td></tr>
+      <tr><td>II</td><td class="n">5 fragments, 20 glorps</td><td>Every meteor of the rain also lights a <strong>Supernova fuse</strong> on what it hits: 2s later it explodes for 15, and 70% of that (plus a Burn stack) to everything within 2.5 tiles, passing the fuse on to them. A neighbour's blast can light each enemy twice at most.</td></tr>
+      <tr><td>III</td><td>not yet</td><td>The shop lists it as not ready.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Cast it in a crowd.</strong> The rain and the aura spread Super Burn round the whole room.</li>
+    <li><strong>Click the big ones.</strong> Meteor Strike's Super Burn goes to whichever enemy it hits with the most HP.</li>
+    <li><strong>Dash through things.</strong> It's free Super Burn, and you're untouchable as you go.</li>
+  </ul>
+
+  <!-- ───────────────────────────── BLIZZARD ───────────────────────────── -->
+  <h2 id="blizzard">Blizzard <span class="ice">· ice</span></h2>
+  <p>Twenty seconds of deadly cold, and you can switch elements all through it. It hits hard, but it costs you.</p>
+  <figure>
+    <img src="../assets/guide/15.jpg" width="640" height="360" alt="Blizzard: the whole room iced over, frost creeping in at the screen's corners, and a towering white ice tornado in the middle with enemies round it." loading="lazy">
+    <figcaption>Gale Storm: a tornado forming round you, about to be sent after them.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Part</th><th>What it does</th></tr>
+      <tr><td>Deep Freeze</td><td>It opens with a wave out to 18 tiles. Everything it reaches is frozen solid. Fire, lightning and cosmic do double damage to it; ice does 1.2 times. About 3s in, it all shatters by itself: 100 plus 15% of each enemy's current HP (a boss takes the 100), plus 30% of what the other elements dealt it while it was frozen.</td></tr>
+      <tr><td>The freezing ring</td><td>7 tiles round you, for the whole ult. Inside it, a third of a chill bar makes an ice cube, and cubes shatter after just 1.2s, for 25 plus 3% of current HP.</td></tr>
+      <tr><td>Gale Storm</td><td>Every 5s a tornado gathers round you, then is sent toward the crosshair and hunts enemies for 7s, chilling and chipping what it holds. It grows with every enemy it catches (from 1.5 tiles round to 4), sees further and turns harder the bigger it gets, and the next one forms at the biggest yet.</td></tr>
+      <tr><td>The price</td><td>You take 1.5 times damage the whole time. You start out slowed to about half speed, and that wears off over 5s.</td></tr>
+      <tr><td>The end</td><td>You're frozen solid for 3s: nothing can hurt you, but you can't move or act. Press <kbd>X</kbd> again (or <kbd>E</kbd> holding ice) to end it early, straight into the ice (not in its first second).</td></tr>
+    </table>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Stage</th><th>Cost</th><th>Adds</th></tr>
+      <tr><td>I</td><td class="n">with ice</td><td>All of the above.</td></tr>
+      <tr><td>II</td><td class="n">5 fragments, 20 glorps</td><td>The Deep Freeze shatter hits half again as hard: 150 plus 22.5% of current HP.</td></tr>
+      <tr><td>III</td><td>not yet</td><td>The shop lists it as not ready.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Swap during the Deep Freeze.</strong> Fire, lightning and cosmic do double, and add to the shatter.</li>
+    <li><strong>Mind the 1.5 times damage.</strong> Twenty seconds is a long time to be fragile. End it early if it turns on you.</li>
+    <li><strong>Stay near them.</strong> The ring only cubes what's within 7 tiles of you.</li>
+  </ul>
+
+  <!-- ───────────────────────────── FORK ───────────────────────────── -->
+  <h2 id="fork">Fork <span class="bolt">· lightning</span></h2>
+  <p>Time stops. You become a bolt that streaks to the nearest enemy, then at random through every other one in the room, counting a combo over each, and back to you. A snap, and the whole web ignites.</p>
+  <figure>
+    <img src="../assets/guide/16.jpg" width="640" height="360" alt="Fork: the room tinted yellow, a jagged bolt running from the slime through several enemies, with x2 and x1 combo counts over the ones it passed." loading="lazy">
+    <figcaption>The bolt's path, with the combo count over each enemy it went through.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Part</th><th>What it does</th></tr>
+      <tr><td>The bolt</td><td>Goes through every enemy in your room once (30 at most): the nearest first, then the rest in random order, each hop quicker than the last. The combo counts up over each one, x1, x2, x3 and on.</td></tr>
+      <tr><td>The ignition</td><td>Each enemy it went through takes 18 plus 1.2% of its max HP (bosses a quarter of that share), and 4% more for each step of its combo count: the tenth takes 36% more than the first. Anything else the path crosses takes 8. All of it is multiplied by the crowd: +16% for each enemy past the first, up to 4.5 times.</td></tr>
+      <tr><td>The aftermath</td><td>For 12s, 40% of any damage to any enemy forks to every enemy within 2.5 tiles of it (at most 30 a hit).</td></tr>
+      <tr><td>Your steps</td><td>You move twice as fast, and every step thumps the floor round you (the 5 by 5 square, corners off), dazing what's on it, and zaps everything within 5 tiles for 5 plus 0.5% of max HP. Each zap forks to 2 more enemies at half.</td></tr>
+    </table>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Stage</th><th>Cost</th><th>Adds</th></tr>
+      <tr><td>I</td><td class="n">with lightning</td><td>All of the above.</td></tr>
+      <tr><td>II</td><td class="n">5 fragments, 20 glorps</td><td>The aftermath lasts 16s and forks reach 3 tiles.</td></tr>
+      <tr><td>III</td><td>not yet</td><td>The shop lists it as not ready.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Wait for a crowd.</strong> Fork is weak on two enemies and ruinous on twenty.</li>
+    <li><strong>Walk through them after.</strong> The aftermath turns every step into a daze and a zap, and every hit you land splashes.</li>
+  </ul>
+
+  <!-- ───────────────────────────── ASCEND ───────────────────────────── -->
+  <h2 id="ascend">Ascend <span class="cosmic">· cosmic</span></h2>
+  <p>Ten seconds, and you can switch elements freely, with no wait between switches. It ignores the shared ult cooldown and doesn't start it.</p>
+  <figure id="fig-ascend">
+    <div class="shot"><img src="../assets/guide/17.jpg" width="640" height="360" alt="Ascend: the room flooded with purple cosmic fluid, pink glows on the hexed enemies, the health bar at the top left reading 125 of 125, and an ASCEND bar beside the gems at the bottom. Chalk arrows point at the health, labelled plus 25% max HP, and at the Ascend bar." loading="lazy">
+      <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+        <path d="M112 56 C 111 42, 121 29, 131 22"/><path d="M131 22 l -6.4 11.3 M131 22 l -11.0 -0.3"/>
+        <text x="60" y="74">+25% max HP</text>
+        <path d="M482 304 C 472 321, 451 332, 434 336"/><path d="M434 336 l 10.0 -8.3 M434 336 l 10.2 4.2"/>
+        <text x="470" y="298">Ascend's time</text>
+      </svg></div>
+    <figcaption>Ascend: 125 out of a usual 100 health, the floor awash with fluid, and its time running down by the gems.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Part</th><th>What it does</th></tr>
+      <tr><td>You</td><td>+25% max HP, and you move 1.35 times as fast.</td></tr>
+      <tr><td>Your boon, at full strength</td><td>Void Fists: full Momentum. Barrier Staff: wards up, and they don't break when they eat a shot. Astrolabe: its marks pop for double. Singularity: Event Horizon (30% less damage taken) the whole time. Void Blade: <span class="term">Retribution</span> the whole time: every hit you take Hexes everything within 3 tiles.</td></tr>
+      <tr><td>Fluid</td><td>A wave of cosmic fluid cascades out from you (7 tiles) as it starts and again as it ends. You leave a trail of it. Every 3s a wave 7 tiles wide rolls toward your crosshair. This fluid lasts 2s, and its Hex lasts 6s.</td></tr>
+      <tr><td>Supernova</td><td>When it ends, everything within 4 tiles takes 12, plus 8 for every Hex stack it carries.</td></tr>
+    </table>
+  </div>
+  <h3>Stages II and III: layers and Constellation</h3>
+  <p>From stage II, the cosmic gem holds <span class="term">layers</span>: two at stage II, three at stage III. Each fills after the one before it is full. With one layer, <kbd>V</kbd> is Ascend as before. With two or more, holding <kbd>V</kbd> fills a bar over the gems, and letting go decides: before the halfway mark, Ascend (one layer); past it, <span class="term">Constellation</span> (two). At stage III with three layers, holding to the very end sets off <strong>Constellation+</strong> by itself.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th></th><th>Constellation <span class="when">(two layers)</span></th><th>Constellation+ <span class="when">(three)</span></th></tr>
+      <tr><td>Going in</td><td>1.5s turning, rooted (you can be hit). Then pick where to drop, within 14 tiles: click, or wait 3s.</td><td>The same, but nothing can hurt you from the hold to the slam.</td></tr>
+      <tr><td>The slam</td><td>2.5 tiles round where you land: 20 damage and a 2s slow.</td><td>3 tiles: 30 damage, and Dazed for 1.5s.</td></tr>
+      <tr><td>Your attack</td><td><span class="term">Twin Collapse</span>: click to place the anchor (right-click moves it); every click after throws a pair of stars and its mirror, 4 in all, rushing together where you clicked, pulling enemies in and Hexing what they pass. The farther from the anchor, the harder.</td><td>8 stars a throw, crashing in through walls, dragging what they pierce and Hexing what they hit.</td></tr>
+      <tr><td>Allies</td><td>2 <span class="term">voidlets</span>, a warrior and a voidbeam. They draw enemies off you and stay until they fall.</td><td>5 voidlets: 3 warriors and 2 voidbeams.</td></tr>
+      <tr><td>How long</td><td>9s, plus 0.5s for each collapse that lands (1s if it hits three or more), 16s at most. No switching elements.</td><td>11s, up to 18s, and you regenerate 1.6% of your max HP a second.</td></tr>
+    </table>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Stage</th><th>Cost</th><th>Adds</th></tr>
+      <tr><td>I</td><td class="n">with cosmic</td><td>Ascend.</td></tr>
+      <tr><td>II</td><td class="n">5 fragments, 20 glorps</td><td>Two layers. Ascend now also cuts the damage you take by 20%. Hold past halfway: Constellation.</td></tr>
+      <tr><td>III</td><td class="n">15 fragments, 80 glorps</td><td>Three layers. Hold to the end: Constellation+.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Hex before it ends.</strong> The supernova pays 8 for every stack in reach, and Ascend's own fluid is the easiest way to lay them.</li>
+    <li><strong>Ascend first, then the rest.</strong> It doesn't start the shared cooldown, so cast it and follow straight up with another ult.</li>
+    <li><strong>Switch freely while it runs.</strong> No wait between elements means reactions on every hit.</li>
+  </ul>
+
+  <!-- ───────────────────────────── GADGETS ───────────────────────────── -->
+  <h2 id="gadgets">Gadgets</h2>
+  <p>You carry two gadgets, on <kbd>Q</kbd> and <kbd>F</kbd>, each on its own cooldown. They're thrown at the cursor, up to 7 tiles, and lobbed over walls (the EMP goes off where you stand). The cooldown starts when it leaves your hand, and every gadget is ready again at the start of a level. They work the same whatever element you hold.</p>
+  <div class="two">
+    <figure id="fig-gadgets">
+      <div class="shot"><img src="../assets/guide/18a.jpg" width="640" height="360" alt="The GADGETS tab of Glurp's shop: seven gadgets on a shelf, two tags marked Q and F under the first two, and Smite Charge's card on the right. Chalk arrows point at the Q and F tags, labelled two slots." loading="lazy">
+        <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+          <path d="M168 214 C 175 206, 175 194, 172 185"/><path d="M172 185 l 9.7 8.6 M172 185 l -2.6 10.7"/>
+          <path d="M206 214 C 202 204, 205 192, 211 185"/><path d="M211 185 l -2.2 12.8 M211 185 l -10.5 3.4"/>
+          <text x="150" y="232">two slots</text>
+        </svg></div>
+      <figcaption>The GADGETS tab. Pick a gadget, press <kbd>Q</kbd> or <kbd>F</kbd> to choose its slot.</figcaption>
+    </figure>
+    <figure>
+      <img src="../assets/guide/18b.jpg" width="640" height="360" alt="A Smite Charge going off: bolts of lightning striking three enemies at once, with damage numbers 29 and 14." loading="lazy">
+      <figcaption>A Smite Charge landing on a pack.</figcaption>
+    </figure>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Gadget</th><th>Glorps</th><th>Cooldown</th><th>What it does</th></tr>
+      <tr><td>Smite Charge</td><td class="n">free</td><td class="n">16s</td><td>Lightning strikes everything within 2.5 tiles of where it lands for 14 and stuns it 2s. It's physical, so no resistance blunts it.</td></tr>
+      <tr><td>EMP Pulse</td><td class="n">120</td><td class="n">30s</td><td>From where you stand, no throw: everything within 8 tiles is slowed hard (three and a half times slower), easing off over 6s.</td></tr>
+      <tr><td>Displacer</td><td class="n">180</td><td class="n">24s</td><td>Catches up to 6 enemies within 4 tiles of where it lands. Click within 2s to set them down anywhere within 10 tiles of you, or they're flung off further.</td></tr>
+      <tr><td>Grounding Spike</td><td class="n">240</td><td class="n">20s</td><td>Strips resistance from everything within 3 tiles for 6s. Their rings turn grey.</td></tr>
+      <tr><td>Mend Totem</td><td class="n">150</td><td class="n">35s</td><td>Planted where it lands. Stand within 2.5 tiles to heal 2% of your max HP a second for 6s (12% in all). Your only carried healing.</td></tr>
+      <tr><td>Bulwark</td><td class="n">200</td><td class="n">26s</td><td>Three tiles of wall across the line you threw it on, for 4s. Enemies have to go round, and it stops shots. It never lands on anyone.</td></tr>
+      <tr><td>Decoy Slime</td><td class="n">220</td><td class="n">28s</td><td>A pink copy of you. Enemies within 5 tiles go for it instead of you for 3s. It has 40 HP, so heavy hitters break it early, and it pops for 8 when it goes.</td></tr>
+    </table>
+  </div>
+  <p>You buy them and choose your two in the <strong>GADGETS</strong> tab of the shop. Smite Charge is yours from the start.</p>
+  <ul>
+    <li><strong>Smite plus a swap</strong> is two seconds of free hits: perfect for cubing a pack and cashing in.</li>
+    <li><strong>EMP is the panic button.</strong> No throw, no flight time: it goes off the moment you press.</li>
+    <li><strong>Grounding Spike answers elites.</strong> Bring it to floors where everything wears a ring.</li>
+    <li><strong>Displacer into a cluster</strong>, then Fork or Smite. Put them where your ult wants them.</li>
+  </ul>
+
+  <!-- ───────────────────────────── ULT UPGRADES ───────────────────────────── -->
+  <h2 id="upgrades">Ult upgrades</h2>
+  <p>Each ult has stages that add to it, bought in the shop's <strong>ULTS</strong> tab with <span class="term">fragments</span> (◈) and glorps. Stage I comes with the element. The tab opens once you've finished the tutorial and cleared the first floor of the Tower, and lightning's and cosmic's stages open with their elements.</p>
+  <figure>
+    <img src="../assets/guide/19.jpg" width="640" height="360" alt="The ULTS tab of Glurp's shop: four banners (FIRE, ICE, BOLT, VOID) over a shelf, and a card for Scorch, stage II, describing the Supernova fuse, costing 5 fragments and 20 glorps." loading="lazy">
+    <figcaption>The ULTS tab: Scorch's stage II, for 5 fragments and 20 glorps.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Stage</th><th>Fragments</th><th>Glorps</th><th>Which ults</th></tr>
+      <tr><td>II</td><td class="n">5</td><td class="n">20</td><td>All four</td></tr>
+      <tr><td>III</td><td class="n">15</td><td class="n">80</td><td>Cosmic only, for now</td></tr>
+    </table>
+  </div>
+  <h3>Where fragments come from</h3>
+  <p>Fragments come from the story levels: the first clear of each, and its boss. The first time you beat a boss pays the most; every later kill of it pays 1 more. Tower bosses don't pay fragments.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Level</th><th>First clear</th><th>Its boss, first time</th></tr>
+      <tr><td>The Gauntlet</td><td class="n">3</td><td class="n">2</td></tr>
+      <tr><td>The Void Rift</td><td class="n">4</td><td class="n">2</td></tr>
+      <tr><td>The Fracture</td><td class="n">5</td><td class="n">3</td></tr>
+      <tr><td>Eng. Defense</td><td class="n">5</td><td class="n">none</td></tr>
+      <tr><td>The Cistern</td><td class="n">8</td><td class="n">3</td></tr>
+    </table>
+  </div>
+  <div class="note good"><p>That's 35 fragments in all from first clears and first boss kills: exactly enough for all four stage IIs (20) and cosmic's stage III (15).</p></div>
+
+  <!-- ───────────────────────────── RELICS ───────────────────────────── -->
+  <h2 id="relics">Relics</h2>
+  <p>Relics are trinkets you keep for good. They work in every level, story and Tower alike. Most trade a strength for a weakness. They're sorted onto <strong>shelves</strong> by the kind of play they suit, and each shelf has three tiers.</p>
+  <figure id="fig-relics">
+    <div class="shot"><img src="../assets/guide/20.jpg" width="640" height="360" alt="The RELICS tab of Glurp's shop: three shelves labelled III LEGEND, II ADEPT and I NOVICE, the PRECISION shelf named below them, and the card for Keen Eye (+5% crit chance) showing slots 2 of 4 worn. Chalk arrows point at the tier labels, labelled three tiers, and at the slots line, labelled relic slots." loading="lazy">
+      <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+        <path d="M112 106 C 133 108, 151 126, 158 143"/><path d="M158 143 l -10.1 -8.2 M158 143 l 2.1 -10.8"/>
+        <text x="16" y="100">three tiers</text>
+        <path d="M528 190 C 552 191, 576 174, 588 157"/><path d="M588 157 l -1.7 12.9 M588 157 l -10.3 3.9"/>
+        <text x="478" y="210">relic slots</text>
+      </svg></div>
+    <figcaption>The RELICS tab, on the PRECISION shelf. The banners along the top are your slots: two worn (Keen Eye in the first), two empty, and the fifth waiting for floor 50.</figcaption>
+  </figure>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Tier</th><th>Glorps</th><th>In Glurp's stock each day</th></tr>
+      <tr><td>I · Novice</td><td class="n">150 to 400</td><td class="n">3</td></tr>
+      <tr><td>II · Adept</td><td class="n">400 to 700</td><td class="n">2</td></tr>
+      <tr><td>III · Legend</td><td class="n">1,600 to 2,400</td><td>1, once your best Tower floor is 15 or more</td></tr>
+    </table>
+  </div>
+  <p>Glurp's stock changes each day and only ever shows relics you don't own. Every <strong>Tower boss</strong> also drops one you don't have: Novice or Adept on floor 10, Adept or Legend on floors 20 and 30, Legend from floor 40 (any tier, if those have run out).</p>
+  <h3>The shelves</h3>
+  <div class="cards">
+    <div><b class="gold">Precision</b>Crits.</div>
+    <div><b class="fire">Ember</b>Fire and Burn.</div>
+    <div><b class="ice">Rime</b>Ice and Chill.</div>
+    <div><b class="bolt">Tempest</b>Lightning and water.</div>
+    <div><b class="cosmic">Void</b>Cosmic and Hex.</div>
+    <div><b class="cosmic">Resonance</b>Ults and reactions.</div>
+    <div><b>Bastion</b>Toughness and thorns.</div>
+    <div><b class="red">Blood</b>Healing.</div>
+    <div><b class="green">Zephyr</b>Speed.</div>
+    <div><b class="gold">Fortune</b>Glorps.</div>
+    <div><b>Hunter</b>Bosses and finishing blows.</div>
+    <div><b class="red">Carnage</b>Crowds and kill bursts.</div>
+    <div><b class="green">Chaos</b>Luck and big swings.</div>
+    <div><b class="green">Corrupted</b>Ones you make yourself (below).</div>
+  </div>
+  <p>A few, as the shop words them: <strong>Keen Eye</strong>, +5% crit chance. <strong>Glass Fang</strong>, +25% damage, but -20 max HP. <strong>Tinker's Gloves</strong>, gadgets recharge 40% faster, but take 10% more damage. <strong>Titan's Heart</strong>, +80 max HP, but move 15% slower, -10% damage.</p>
+  <h3>Slots</h3>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Slot</th><th>Opens when</th></tr>
+      <tr><td class="n">1</td><td>You've finished the tutorial and cleared the Tower's first floor</td></tr>
+      <tr><td class="n">2</td><td>Your best Tower floor is 5</td></tr>
+      <tr><td class="n">3</td><td>Floor 15</td></tr>
+      <tr><td class="n">4</td><td>Floor 30</td></tr>
+      <tr><td class="n">5</td><td>Floor 50</td></tr>
+    </table>
+  </div>
+  <h3>Siphoning</h3>
+  <p><strong>SIPHON</strong> fuses two relics you own into one <span class="term">Corrupted</span> relic. It keeps half of each one's upsides and none of their downsides, but gains a small curse of its own: ults charge 10% slower, or you take 8% more damage, move 5% slower, have 10 less max HP, or Tower floors pay 10% less. The two you fused are gone for good, and you can wear only one Corrupted relic at a time.</p>
+  <ul>
+    <li><strong>Match your relics to your elements.</strong> An Ember relic does nothing for a lightning player.</li>
+    <li><strong>Read the downside twice.</strong> -30 max HP is a lot on the early Tower floors.</li>
+    <li><strong>Siphon the ones you've outgrown</strong> into a Corrupted relic with only the good halves.</li>
+  </ul>
+
+  <!-- ───────────────────────────── ENCHANTING ───────────────────────────── -->
+  <h2 id="enchanting">Enchanting</h2>
+  <p><span class="term">Sealed books</span> drop in the Tower: 3 from every boss, and now and then from a normal floor's kills (likelier the higher you climb). You open them at the <strong>Enchanter's Isle</strong> with <span class="term">dust</span>, which comes from Tower floors and kills, the Dust Garden, and salvaging books you don't want.</p>
+  <div class="two">
+    <figure id="fig-isle">
+      <div class="shot"><img src="../assets/guide/21a.jpg" width="640" height="360" alt="The Enchanter's Isle: a floating island at night with waterfalls, the menu down the left (BIND, REFORGE, COMBINE, RESEAL, GARDEN), and at the bottom a panel showing 12 sealed books and 5000 dust, the UNSEAL and UNSEAL 10 buttons, and the pity counts. Chalk arrows point at the sealed books count and at the pity counts." loading="lazy">
+        <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+          <path d="M110 268 C 131 290, 168 299, 195 298"/><path d="M195 298 l -11.2 6.6 M195 298 l -9.4 -5.8"/>
+          <text x="40" y="262">sealed books</text>
+          <path d="M490 268 C 479 283, 458 292, 441 294"/><path d="M441 294 l 10.8 -7.3 M441 294 l 9.7 5.2"/>
+          <text x="470" y="262">pity count</text>
+        </svg></div>
+      <figcaption>The Isle. Unseal one book for 40 dust, or ten for 400.</figcaption>
+    </figure>
+    <figure>
+      <img src="../assets/guide/21b.jpg" width="640" height="360" alt="The Binding Ring: a circle of standing stones on grass, and the BIND panel on the right with the Flame Fists chosen, one empty slot and two crossed-out ones, and the book collection listed below." loading="lazy">
+      <figcaption>The Binding Ring. The Flame Fists hold one book; the crossed-out slots are for better weapons.</figcaption>
+    </figure>
+  </div>
+  <h3>Unsealing</h3>
+  <p>Unsealing costs <strong>40 dust</strong> and one sealed book, and gives a random enchant at a random rarity, level and quality. The panel keeps your <span class="term">pity</span> count: an <strong>Epic or better is guaranteed within 25 unseals</strong>, and a <strong>Legendary or better within 80</strong>. On the 25th unseal without an Epic, it's Epic (70%) or Legendary (30%). On the 80th without a Legendary, it's Legendary (88%) or Mythic (12%).</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Rarity</th><th>Chance an unseal</th><th>Bind, glorps</th><th>Reforge, dust</th><th>Combine, dust</th><th>Reseal, dust</th></tr>
+      <tr><td>Common</td><td class="n">58%</td><td class="n">80</td><td class="n">30</td><td class="n">20</td><td class="n">20</td></tr>
+      <tr><td class="ice">Rare</td><td class="n">27%</td><td class="n">160</td><td class="n">60</td><td class="n">40</td><td class="n">35</td></tr>
+      <tr><td class="cosmic">Epic</td><td class="n">11%</td><td class="n">300</td><td class="n">120</td><td class="n">80</td><td class="n">60</td></tr>
+      <tr><td class="gold">Legendary</td><td class="n">3.5%</td><td class="n">500</td><td class="n">250</td><td class="n">160</td><td class="n">100</td></tr>
+      <tr><td class="red">Mythic</td><td class="n">0.5%</td><td class="n">900</td><td class="n">500</td><td class="n">320</td><td class="n">160</td></tr>
+      <tr><td class="green">Corrupted</td><td class="n">about 1 in 5,000</td><td class="n">2,000</td><td>can't</td><td>can't</td><td class="n">250</td></tr>
+    </table>
+  </div>
+  <p>Binding costs a quarter more for each level past I. A <strong>level</strong> starts at I, with a 40% chance at each step to go one higher, up to the enchant's top level. A <strong>Mythic</strong> book carries a special and two ordinary properties. A <strong>Corrupted</strong> one carries a special, three properties and a curse, its quality can run past 100, and a weapon can hold only one. Corrupted books get a little likelier after 600 unseals without one.</p>
+  <h3>Quality</h3>
+  <p>Every book has a <span class="term">quality</span> from 0 to 100. It scales the book's effect from 70% (at 0) through 100% (at 50) to 130% (at 100). High rolls are rare:</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Grade</th><th>Quality</th><th>Chance on a roll</th></tr>
+      <tr><td>Flawed</td><td class="n">0 to 24</td><td class="n">63%</td></tr>
+      <tr><td>Fine</td><td class="n">25 to 59</td><td class="n">21%</td></tr>
+      <tr><td class="cyan">Superior</td><td class="n">60 to 84</td><td class="n">10%</td></tr>
+      <tr><td class="gold">Pristine</td><td class="n">85 to 97</td><td class="n">4.6%</td></tr>
+      <tr><td class="cosmic">Perfect</td><td class="n">98 to 100</td><td class="n">1%</td></tr>
+    </table>
+  </div>
+  <h3>Binding</h3>
+  <p><strong>BIND</strong> puts a book into one of a weapon's slots for glorps (the table above). Better weapons have more slots, a weapon can't hold the same enchant twice, and some enchants only fit some weapons: an element's own (Kindling on fire, Frostbite on ice), weapons with spread (True Aim), or any weapon that deals damage, which leaves out the cosmic boon weapons.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Slots</th><th>Weapons</th></tr>
+      <tr><td class="n">1</td><td>Flame Fists, Ice Fists, Void Fists, Barrier Staff</td></tr>
+      <tr><td class="n">2</td><td>Flame Sword, Magma Staff, Icicle Cannon, Storm Fists, Orb Emitter, Astrolabe, Singularity, Void Blade</td></tr>
+      <tr><td class="n">3</td><td>Ignition, Fractal Shard, Ball Lightning, Circuit Breaker</td></tr>
+    </table>
+  </div>
+  <div class="note warn"><p>Taking a book back out isn't free. <strong>Unbinding</strong> costs twice what binding it did, in glorps, and the book itself is gone: what comes out is a fresh sealed book and the dust salvaging it would have given.</p></div>
+
+  <!-- ───────────────────────────── REFORGE ───────────────────────────── -->
+  <h2 id="reforge">Reforge, combine, reseal</h2>
+  <p>Three more places on the Isle work on the books you hold.</p>
+  <div class="grid">
+    <figure><img src="../assets/guide/22a.jpg" width="640" height="360" alt="The Crucible: a cauldron of violet fire ringed by tall purple crystals, with the line Drop a book in the fire. Its quality comes out new, better or worse." loading="lazy"><figcaption><strong>The Crucible</strong>: REFORGE.</figcaption></figure>
+    <figure><img src="../assets/guide/22b.jpg" width="640" height="360" alt="The Twin Pools: two round pools side by side on a stone terrace, and the COMBINE panel listing your books, with the line Two or more copies of one book. More quality, better odds. A miss costs a copy." loading="lazy"><figcaption><strong>The Twin Pools</strong>: COMBINE.</figcaption></figure>
+    <figure><img src="../assets/guide/22c.jpg" width="640" height="360" alt="The Chain Shrine: a stone lectern hung with chains and ringed by candles, and the RESEAL panel with RESEAL and SALVAGE buttons and a SALVAGE COMMONS UNDER 30% button at the bottom." loading="lazy"><figcaption><strong>The Chain Shrine</strong>: RESEAL and SALVAGE.</figcaption></figure>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Where</th><th>What it does</th></tr>
+      <tr><td>REFORGE</td><td>Rolls a book's quality again, for dust. The new roll <strong>replaces the old one even when it's worse</strong>, and rolls are low far more often than high. Corrupted books can't be reforged.</td></tr>
+      <tr><td>COMBINE</td><td>Takes two or more copies of the same book at the same level and tries to raise it a level. The chance is 15% plus the copies' total quality divided by 250, at most 95% (two at 50: 55%; two at 100: 95%; three at 50: 75%). It takes: one book a level up, at the best quality of them. It misses: the worst copy is lost and the rest come back. The dust is spent either way. Corrupted books can't be combined.</td></tr>
+      <tr><td>RESEAL</td><td>Turns a book back into a sealed one, for a fresh unseal later (you'll pay the 40 to open it again).</td></tr>
+      <tr><td>SALVAGE</td><td>Grinds a book into dust: more for rarer books, higher levels and better quality. <strong>SALVAGE COMMONS UNDER 30%</strong> clears out the junk in one go.</td></tr>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Don't reforge a good book.</strong> Most rolls land under 25. Reforge Flawed books, not Superior ones.</li>
+    <li><strong>Feed combines quality.</strong> Three copies at 50 beat two, and two near-perfect copies reach the 95% cap.</li>
+    <li><strong>Reseal instead of salvaging</strong> when you'd rather have another pull than the dust.</li>
+  </ul>
+
+  <!-- ───────────────────────────── GARDEN ───────────────────────────── -->
+  <h2 id="garden">The Dust Garden</h2>
+  <p>The garden is on the Enchanter's Isle. Walk with <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, and press <kbd>E</kbd> to tend, fish or rest (hold <kbd>E</kbd> to reel in).</p>
+  <figure id="fig-garden">
+    <div class="shot"><img src="../assets/guide/23.jpg" width="640" height="360" alt="The Dust Garden by day: three tilled beds at the top, three overgrown ones below with the note overgrown: the rake (tier III) clears it, a river across the bottom, a seed stall at the top right under DAY, nightfall in 7m, and a panel at the top left reading BLESSINGS FOR YOUR NEXT CLIMB 0 of 1. A chalk arrow points at that panel, labelled banked blessings." loading="lazy">
+      <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
+        <path d="M178 116 C 171 94, 148 79, 128 74"/><path d="M128 74 l 12.6 -3.1 M128 74 l 7.3 8.2"/>
+        <text x="150" y="134">banked blessings</text>
+      </svg></div>
+    <figcaption>The garden at tier I: three beds open, three still overgrown, and room to bank one blessing.</figcaption>
+  </figure>
+  <h3>Seeds</h3>
+  <p>Seeds drop in the Tower: every boss gives one, and a normal floor sometimes does. Higher floors drop better seeds: only tier 1 below floor 10, some tier 2 from floor 10, and tier 3 from floor 25. A seed is <strong>never used up</strong>. Planting one puts a copy to work, and harvesting gives it back. A second copy lets you grow two beds of it at once; copies past your number of beds turn into dust.</p>
+  <p>A planted seed waits until you <strong>water</strong> it. Then it grows, and the can you watered it with decides how fast. Nothing withers: a ripe crop just waits for you.</p>
+  <h3>Day and night</h3>
+  <p>A garden day lasts 20 minutes of real time, and about 7 of them are night. Some crops grow only by day, some only by night: they pause the rest of the time, but in real time they take about as long as any other. The top right of the screen tells you which it is and how long until it changes.</p>
+  <h3>Harvest and blessings</h3>
+  <p>A ripe crop gives dust and <strong>banks its blessing</strong> for your next Tower climb. Different blessings stack; the same one twice doesn't. The garden's tier caps how many you can bank, and starting a climb takes them all with you.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Seed</th><th>Tier</th><th>Grows</th><th>Hours</th><th>Dust</th><th>Blessing</th></tr>
+      <tr><td>Dust Sprout</td><td class="n">1</td><td>any time</td><td class="n">0.25</td><td class="n">12</td><td>Sharp: +3% damage</td></tr>
+      <tr><td>Glowroot</td><td class="n">1</td><td>any time</td><td class="n">0.25</td><td class="n">12</td><td>Hardy: +10 max HP</td></tr>
+      <tr><td>Puffcap</td><td class="n">1</td><td>any time</td><td class="n">0.25</td><td class="n">13</td><td>Padded: take 2% less damage</td></tr>
+      <tr><td>Mossbell</td><td class="n">1</td><td>day</td><td class="n">0.4</td><td class="n">14</td><td>Mending: cleared floors heal 5% more</td></tr>
+      <tr><td>Twinkle Grass</td><td class="n">1</td><td>night</td><td class="n">0.4</td><td class="n">14</td><td>Glinting: +1.5% crit chance</td></tr>
+      <tr><td>Starbloom</td><td class="n">2</td><td>night</td><td class="n">1</td><td class="n">45</td><td>Lucky: +2% crit chance</td></tr>
+      <tr><td>Frostfern</td><td class="n">2</td><td>night</td><td class="n">1</td><td class="n">45</td><td>Quickened: ults charge 6% faster</td></tr>
+      <tr><td>Bubblewort</td><td class="n">2</td><td>any time</td><td class="n">1</td><td class="n">48</td><td>Buoyant: move 3% faster</td></tr>
+      <tr><td>Ember Pepper</td><td class="n">2</td><td>day</td><td class="n">1</td><td class="n">46</td><td>Spicy: +2% damage, reactions charge 3% more</td></tr>
+      <tr><td>Sunpetal</td><td class="n">2</td><td>day</td><td class="n">1.5</td><td class="n">50</td><td>Kindled: reactions charge 8% more</td></tr>
+      <tr><td>Pinwheel Poppy</td><td class="n">2</td><td>day</td><td class="n">1.5</td><td class="n">50</td><td>Whirling: ults charge 5% faster</td></tr>
+      <tr><td>Emberheart</td><td class="n">3</td><td>day</td><td class="n">3</td><td class="n">90</td><td>Fleet: move 4% faster</td></tr>
+      <tr><td>Void Lily</td><td class="n">3</td><td>night</td><td class="n">3</td><td class="n">90</td><td>Prosperous: Tower floors pay 5% more</td></tr>
+      <tr><td>Nebula Orchid</td><td class="n">3</td><td>night</td><td class="n">3.5</td><td class="n">100</td><td>Thunderous: ults deal 5% more damage</td></tr>
+      <tr><td>Eyestalk</td><td class="n">3</td><td>night</td><td class="n">3.5</td><td class="n">95</td><td>Watchful: +2.5% crit chance</td></tr>
+      <tr><td>Galaxy Gourd</td><td class="n">3</td><td>any time</td><td class="n">4</td><td class="n">110</td><td>Spiralled: ults deal 4% more and charge 3% faster</td></tr>
+    </table>
+  </div>
+  <p>Hours are with the Clay Can; a better can divides them. Dust is for a whole bed of one crop.</p>
+  <h3>The garden shop</h3>
+  <p>The garden shop sells three things, for glorps.</p>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>The rake</th><th>Beds</th><th>Blessings banked</th><th>Opens at Tower best</th><th>Glorps</th></tr>
+      <tr><td>Tier I</td><td class="n">3</td><td class="n">1</td><td>from the start</td><td class="n">free</td></tr>
+      <tr><td>Tier II</td><td class="n">4</td><td class="n">2</td><td class="n">5</td><td class="n">1,500</td></tr>
+      <tr><td>Tier III</td><td class="n">5</td><td class="n">3</td><td class="n">15</td><td class="n">5,000</td></tr>
+      <tr><td>Tier IV</td><td class="n">6</td><td class="n">3</td><td class="n">30</td><td class="n">15,000</td></tr>
+    </table>
+  </div>
+  <div class="wrap">
+    <table class="numbers">
+      <tr><th>Watering can</th><th>Growth speed</th><th>Opens at Tower best</th><th>Glorps</th></tr>
+      <tr><td>Clay Can</td><td class="n">1×</td><td>from the start</td><td class="n">free</td></tr>
+      <tr><td>Copper Can</td><td class="n">1.6×</td><td>from the start</td><td class="n">800</td></tr>
+      <tr><td>Silver Can</td><td class="n">2.5×</td><td class="n">5</td><td class="n">3,000</td></tr>
+      <tr><td>Crystal Can</td><td class="n">4×</td><td class="n">15</td><td class="n">9,000</td></tr>
+      <tr><td>Starwell Can</td><td class="n">6×</td><td class="n">30</td><td class="n">25,000</td></tr>
+    </table>
+  </div>
+  <p><strong>Fertilizer</strong> costs 150 glorps and doubles a bed's next harvest.</p>
+  <h3>Fishing</h3>
+  <p>The river and the lake can be fished for dust, and for rare seeds you can't get in the Tower: the river's Tide Lotus, Reedwhistle and Lantern Lily, and the lake's Coral Fan, Moonmelon, Pearl Kelp and Abyssbloom.</p>
+  <ul>
+    <li><strong>Plant different crops.</strong> Blessings only stack when they're different, so a bed of each beats three of one.</li>
+    <li><strong>Fill the bank before a climb.</strong> Starting a climb spends everything banked, full or not.</li>
+    <li><strong>Plant night crops before nightfall</strong> and day crops before dawn, so they don't sit paused.</li>
+    <li><strong>The can is the best buy early.</strong> The Copper Can makes every crop 1.6 times as fast, and needs no Tower floor.</li>
+  </ul>
+
+  <p class="foot">Every number on this page is the game's own. Keys are the defaults; rebind them in Settings on the map. ◂ <a href="index.html">All guides</a></p>
+</main>
+</body>
+</html>
