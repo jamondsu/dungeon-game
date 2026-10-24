@@ -3,11 +3,11 @@
 //
 // You step through a mirror into a hall and see through your slime's eyes, a step a tile and a quarter turn at a time. The
 // mirror breaks behind you, and the things in the hall take your powers the moment you're in: you can't fight them, only
-// get out. They sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane,
+// get out. They're far beyond you, and you're a game to them: they don't want to hurt you, they want to scare you. They sleep at first, and stay asleep till you come too near or make a noise (a dash, a knock on a pane,
 // a stand turned), and every shard of the way out you take wakes another. Awake, they're bigger than you and they move only
 // while nothing sees them, never while you watch, and only ever in
 // still poses: far off, asleep, looking like you; nearer, awake and wrong; close, your own face, huge and much too near, then
-// pouncing. Watching them holds
+// BOO. They giggle (where they are, to your ears) when they wake and after they've made you jump. Watching them holds
 // them, but don't meet their eyes: looking straight at one that's awake fills you with dread (the screen darkens, cracks,
 // your heart pounds) till you can't bear it and look away, and for a moment nothing watches them. In a mirror they can't
 // reach you that way: watch them there. The hall's mirrors see for
@@ -30,7 +30,7 @@
 // awake lunge at you. Read a pane before you chalk it: you, or what's behind you, in it, or what's beyond it. But behind some
 // glass one of them stands still, looking just like your reflection: yours lags you a beat, and raises the shard when you do;
 // it doesn't. Shatter its glass and it's awake, right there. All three, and
-// the way out is whole again: step back through it. If one of them reaches you, it has you.
+// the way out is whole again: step back through it. If one of them reaches you: tag, you're it.
 // Drawn small and scaled up: a ray a column through the tile map, off mirrors and through glass, shaded to black with
 // distance and dithered to a few levels a colour; the shard's view the same, turned round and flipped, cut to its shape.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -161,7 +161,7 @@ class MirrorTrial extends Phaser.Scene {
         // what's said, and the keys
         const T = (y, s, size, col) => this.add.text(W / 2, y, s, { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#05030a', strokeThickness: 5, align: 'center' }).setOrigin(0.5).setDepth(6);
         this.title = T(H * 0.38, 'THE HALL OF REFLECTIONS', '30px', '#d8c8ff');
-        this.sub = T(H * 0.38 + 44, 'The way out\'s three fragments are in mirrors. Walk into a pane to chalk it.\nBut half the panes are glass, and glass shatters. They\'re asleep. Don\'t wake them.\nAnd not everything in a pane that looks like you is you.', '16px', '#a898c8');
+        this.sub = T(H * 0.38 + 44, 'The way out\'s three fragments are in mirrors. Walk into a pane to chalk it.\nBut half the panes are glass, and glass shatters. They\'re asleep. Don\'t wake them: they\'ll want to play.\nAnd not everything in a pane that looks like you is you.', '16px', '#a898c8');
         this.time.delayedCall(1300, () => { Sfx.play(this, 'shatter'); this.cameras.main.shake(200, 0.006); });
         this.time.delayedCall(2300, () => Sfx.play(this, 'e_absorb'));
         this.tweens.add({ targets: [this.title, this.sub], alpha: 0, delay: C.GRACE_MS - 500, duration: 600 });
@@ -335,9 +335,10 @@ class MirrorTrial extends Phaser.Scene {
             this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.5); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 450, ease: 'Quad.easeIn' });
             this.cameras.main.zoomTo(1.12, 50, 'Quad.easeOut', true, (c, p) => p === 1 && c.zoomTo(1, 380));   // (it jumps at the screen)
             if (e.dpx) this.dread = Math.min(1, this.dread + D.STING);
+            this.time.delayedCall(420, () => !this.caught && this._giggle(e, 1));   // (got you)
         }
         if (now < this.blackUntil) {}
-        else if (direct >= C.SEEN_PX) {
+        else if (direct >= C.SEEN_PX && !this.caught) {   // (tagged: it's over, no more looking away)
             this.dread = Math.min(1, this.dread + (D.RISE + D.CLOSE * Math.min(1, direct / D.CLOSE_PX)) * dt); this.dreadAt = now;
             if (this.dread >= 1) {
                 this.blackUntil = now + D.OUT_MS; this.dread = D.AFTER; this.breaks++;
@@ -660,21 +661,25 @@ class MirrorTrial extends Phaser.Scene {
         e.pose = pick[0] === e.pose ? pick[1] : pick[1] === e.pose ? pick[0] : pick[Math.random() < 0.5 ? 0 : 1];
         this._hear(e);
     }
-    // one moving, heard: from where it is, left or right of the way you face, louder the nearer, dull through stone
-    _hear(e) {
+    // where one is, to your ears: left or right of the way you face, louder the nearer, dull through stone (null: too far off)
+    _where(e) {
         const dx = e.x - this.me.x, dy = e.y - this.me.y, d = Math.hypot(dx, dy);
-        if (d > MirrorTrial.CFG.HEAR) return;
+        if (d > MirrorTrial.CFG.HEAR) return null;
         const a = this.view.a, pan = (dx * -Math.sin(a) + dy * Math.cos(a)) / (d || 1);
         let muffled = false;
         for (let i = 1, n = Math.ceil(d * 2); i < n && !muffled; i++) { const c = this.map[Math.floor(this.me.y + 0.5 + dy * i / n)]?.[Math.floor(this.me.x + 0.5 + dx * i / n)]; muffled = c === '#' || c === 'O' || c === 'Q'; }
-        Sfx.play(this, 'shift', { pan, near: Math.max(0, 1 - d / MirrorTrial.CFG.HEAR), muffled });
+        return { pan, near: Math.max(0, 1 - d / MirrorTrial.CFG.HEAR), muffled };
     }
+    // one moving, heard
+    _hear(e) { const w = this._where(e); if (w) Sfx.play(this, 'shift', w); }
+    // one giggling (far off: faint, from nowhere you can tell)
+    _giggle(e, n = 0) { Sfx.play(this, 'hall_giggle', { ...(this._where(e) || { near: 0.1, muffled: true }), n }); }
     // one wakes: its eyes open (seen as it happens: a jolt)
     _wake(e) {
         if (e.awake) return;
         e.awake = true; e.pose = 2; e.t = -MirrorTrial.CFG.WAKE.MS;   // (coming to: a moment before its first step, to see it coming)
-        Sfx.play(this, 'tell');
-        this._note('SOMETHING WOKE UP.');
+        Sfx.play(this, 'tell'); this.time.delayedCall(500, () => !this.caught && this._giggle(e));
+        this._note('SOMETHING WOKE UP. IT WANTS TO PLAY.');
         if (e.seen) { this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.25); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 500 }); this.cameras.main.shake(140, 0.006); }
     }
     // a noise at (x, y): any asleep within r tiles wakes
@@ -700,13 +705,21 @@ class MirrorTrial extends Phaser.Scene {
         line(H * 0.52 + 60, this.closest === Infinity ? 'NONE OF THEM GOT NEAR YOU' : `CLOSEST CALL  ${this.closest} TILE${this.closest > 1 ? 'S' : ''} AWAY`, '18px', '#ff9ab8');
         line(H * 0.8, 'ENTER  again        ESC  leave', '16px', '#8a7aa8');
     }
+    // One reached you: tag. The biggest scare it has, slammed into your face; a beat; then it laughs
     _caught() {
-        const W = this.scale.width, H = this.scale.height;
-        this.caught = true; this.raised = false;
-        Sfx.play(this, 'bosshit'); this.cameras.main.shake(300, 0.012);
-        this.add.image(W / 2, H / 2 + H * 0.1, 'mt_twin', 'face').setScale(H / 64 * 1.3).setDepth(5);
-        this._say('IT HAS YOU', 'R  try again        ESC  leave', '#ff8aa0', 0);
-        this.title.setY(H * 0.8); this.sub.setY(H * 0.8 + 40);   // (under its face)
+        const W = this.scale.width, H = this.scale.height, cam = this.cameras.main, s = H / 64 * 1.3;
+        this.caught = true; this.raised = false; this.blackUntil = 0;   // (looking away or not, you see this)
+        this.tweens.killTweensOf([this.noteTxt, this.black]); this.noteTxt.setAlpha(0); this.black.setAlpha(0);
+        Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'bosshit'); Sfx.play(this, 'whoosh');
+        cam.shake(420, 0.02); cam.zoomTo(1.18, 60, 'Quad.easeOut', true, (c, p) => p === 1 && c.zoomTo(1, 500));
+        this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.7); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 600, ease: 'Quad.easeIn' });
+        const face = this.add.image(W / 2, H / 2 + H * 0.1, 'mt_twin', 'face').setScale(s * 1.8).setDepth(5);
+        this.tweens.add({ targets: face, scale: s, duration: 140, ease: 'Back.easeOut' });
+        this.time.delayedCall(900, () => {
+            Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
+            this._say('TAG.', 'You\'re it.\nR  again        ESC  leave', '#ff8aa0', 0);
+            this.title.setY(H * 0.8); this.sub.setY(H * 0.8 + 52);   // (under its face)
+        });
     }
     _leave(msg) {
         if (this.leaving) return;

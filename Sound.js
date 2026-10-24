@@ -871,6 +871,16 @@ const Sfx = {
             this._noise(ctx, t + 0.05, { filter: 'bandpass', f0: 950 * j * dull, f1: 480, q: 2.2, dur: 0.22, vol: v * 0.3 * dull, attack: 0.05, out });
             this._tone(ctx, t + 0.32, { type: 'sine', f0: 92 * j, f1: 66, dur: 0.12, vol: v * 0.45, out });
         },
+        hall_giggle(ctx, t, o, j) {       // one of them giggling in the dark: breathy "hehehe", stepping down, a little too slow (o.pan, o.near 0-1,
+            const pan = ctx.createStereoPanner?.(), v = 0.03 + 0.09 * (o.near ?? 0.6), dull = o.muffled ? 0.5 : 1;   // o.muffled: through stone, o.n: longer)
+            if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
+            const out = pan || undefined;
+            for (let k = 0, n = 4 + (o.n || 0); k < n; k++) {
+                const at = t + k * 0.13, f = (560 - 38 * k) * j;
+                this._noise(ctx, at, { filter: 'bandpass', f0: 2300 * dull, f1: 1500 * dull, q: 3, dur: 0.09, vol: v * 0.55, attack: 0.01, out, space: true });   // (the breath of it)
+                this._tone(ctx, at, { type: 'triangle', f0: f * 1.06, f1: f * 0.9, dur: 0.1, vol: v * 0.5 * dull, attack: 0.012, out, space: true });
+            }
+        },
         heartbeat(ctx, t, o) {            // your heart: lub-dub, low (o.hard, 0-1: harder)
             const v = 0.12 + 0.14 * (o.hard || 0);
             for (const [at, f, k] of [[0, 62, 1], [0.16, 52, 0.75]]) this._tone(ctx, t + at, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.14, vol: v * k });
