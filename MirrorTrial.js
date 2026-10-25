@@ -933,7 +933,7 @@ class MirrorTrial extends Phaser.Scene {
         const finish = () => {
             if (over) return;
             over = true; this.ending = false;
-            this.tweens.killTweensOf(objs); objs.forEach(o => o.destroy());
+            this.tweens.killTweensOf(objs); objs.forEach(o => o !== bg && o.destroy());   // (the dark stays: what comes next goes over it)
             done();
         };
         this._endingSkip = finish;
@@ -952,7 +952,7 @@ class MirrorTrial extends Phaser.Scene {
         const spots = [[W * 0.24, 0.92, -1], [W / 2, 1.08, 1], [W * 0.76, 0.92, 1]];   // (x, size, which way it faces)
         // 1. relief
         this.cameras.main.flash(500, 200, 170, 255); Sfx.play(this, 'surge');
-        this.tweens.add({ targets: bg, alpha: 0.92, duration: 600 });
+        this.tweens.add({ targets: bg, alpha: 1, duration: 600 });
         this.tweens.add({ targets: you, alpha: 1, duration: 600 });
         this.tweens.add({ targets: you, scaleY: sc * 0.95, scaleX: sc * 1.04, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });   // (breathing hard)
         at(700, () => line('Finally... I can be free of this terrible place.'));
@@ -987,7 +987,7 @@ class MirrorTrial extends Phaser.Scene {
         at(8600, () => { you.setTexture('mt_end_sad'); this.tweens.add({ targets: you, scaleY: sc * 0.96, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
         at(9000, () => kids.forEach((c, i) => this.tweens.add({ targets: c, angle: { from: -8, to: 8 }, delay: i * 120, duration: 300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })));   // (waving you off)
         at(10200, () => line("I'll miss them.", '#bfd8ff'));
-        at(11600, () => this.tweens.add({ targets: objs.filter(o => o.setAlpha), alpha: 0, duration: 600, onComplete: finish }));
+        at(11600, () => this.tweens.add({ targets: objs.filter(o => o.setAlpha && o !== bg), alpha: 0, duration: 600, onComplete: finish }));
     }
     // how it went: your time and your best, the glorps, how often they got you, how close they came
     _endCard(t) {
