@@ -4802,7 +4802,7 @@ class WeaponSystem {
         // hit one target softer than the free Flame Fists (37 vs 46 DPS, measured) while
         // out-damaging every T2 on a crowd. Three tiles at 20 puts it back on fire's side:
         // 47 to one target, 95 to a pack of five.
-        const MAX_TILES = 4 + WeaponLevels.perk('flame_sword', 'arc');   // the 3-tile arc in front + the tile beyond its middle (ring order, below)
+        const MAX_TILES = 4 + 2 * WeaponLevels.perk('flame_sword', 'arc');   // the 3-tile arc in front + the tile beyond its middle (ring order, below); Wide Arc a tile each side a level (they come in pairs)
         const tileAt = (angle, r) => {
             const wx = playerPx + Math.cos(angle) * r * this.TILE_SIZE;
             const wy = playerPy + Math.sin(angle) * r * this.TILE_SIZE;

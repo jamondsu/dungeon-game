@@ -203,9 +203,9 @@ const WeaponLevels = {
     // [key, name, cap, first cost, growth, what level p does]
     PERKS: {
         flame_fists:       [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
-        flame_sword:       [['arc', 'Wide Arc', 3, 180, 1.8, p => `+${p} tile${p === 1 ? '' : 's'} per swing`]],
+        flame_sword:       [['arc', 'Wide Arc', 3, 180, 1.8, p => `+${p} tile${p === 1 ? '' : 's'} each side per swing`]],
         magma_staff:       [['volley', 'Fuller Volley', 3, 200, 1.8, p => `+${p} fireball${p === 1 ? '' : 's'} a cast`],
-                            ['burn', 'Slow Burn', 1, 600, 1, () => 'heat stages last 40% longer']],
+                            ['burn', 'Slow Burn', 1, 600, 1, () => 'heat drains 40% slower once you stop']],
         ignition:          [['reach', 'Long Nozzle', 3, 180, 1.8, p => `+${(0.8 * p).toFixed(1)} tiles of flame`],
                             ['spray', 'Wide Spray', 3, 200, 1.8, p => `a ${15 * p}% wider fan`],
                             ['mix', 'Hot Mix', 3, 200, 1.8, p => `+${4 * p}% burn chance a tick`],
@@ -226,7 +226,7 @@ const WeaponLevels = {
         cosmic_fists:      [['momentum', 'Deep Momentum', 2, 300, 2, p => `${3 + p} Momentum at most`]],
         barrier_staff:     [['wards', 'More Wards', 6, 220, 1.6, p => `${4 + p} wards`],
                             ['cd', 'Quick Recast', 3, 200, 1.8, p => `${10 * p}% shorter cooldown`]],
-        astrolabe:         [['stars', 'Meteor Shower', 3, 200, 1.8, p => `+${2 * p} stars fall`],
+        astrolabe:         [['stars', 'Meteor Shower', 3, 200, 1.8, p => `at least ${p} more star${p === 1 ? '' : 's'}, up to ${2 * p} more in a big room`],
                             ['impact', 'Heavy Stars', 3, 200, 1.8, p => `+${0.5 * p} tiles, +${(0.3 * p).toFixed(1)}s daze`],
                             ['charts', 'Star Charts', 3, 220, 1.8, p => `+${25 * p}% charge from marks`],
                             ['gift', 'Star Gift', 1, 900, 1, () => 'a star: 50% of a cosmic gem']],

@@ -2039,7 +2039,7 @@ ShopScene.KEYWORDS = {
     'deadly accuracy': ['Deadly Accuracy (R)', 'One side of the Fractal Shard\'s gamble: for 6s five shards circle you. Click and they line up half a tile apart, converge on that point and fly on past it, half again as hard, and every hit a crit.'],
     'shard storm': ['Shard Storm (R)', 'The other side of the Fractal Shard\'s gamble, the ult charger: it heals 10% of your max HP when it lands, and for 6s ice ult charge is doubled and every shot is a wide fan of seven chip shards, about three a second.'],
     'frost shield': ['Frost Shield (R)', '5s of 35% less damage taken, and it applies *Chill* to whoever hits you.'],
-    amp: ['Amped', 'Lightning carries further from this enemy: forks and chains reach past it.'],
+    amp: ['Amped', 'Lightning\'s mark on an enemy: a hit from fire, ice or cosmic on it is a reaction, the Orb Emitter\'s orb bounces only between Amped enemies, and some books and relics hit Amped enemies harder.'],
     momentum: ['Momentum', 'Stacks from punching and dashing: +7% damage and +8% speed each. Fades if you stop.'],
     ward: ['Wards', 'Orbiting shields. Each one eats one projectile, then shoves nearby enemies back.'],
     mark: ['Mark', 'An astral mark, a gold ring left by the Astrolabe\'s stars. Hitting the enemy pops it for ult charge.'],
