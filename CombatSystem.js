@@ -1089,14 +1089,14 @@ class CombatSystem {
         const _pact = Enchants.bloodpact(this.equippedWeapons?.[this.currentElement]);   // Bloodpact (a corrupted book): being hit charges the ult
         if (_pact) this.gainUltCharge(actualDamage * _pact, this.currentElement);
         const blockedDamage = amount - actualDamage;
-        // Spiked Hide (Tower boon) and Thorn Mail (relic): whoever hit you in melee takes some back
-        const _thorns = this._mods?.thorns;
+        // Spiked Hide (Tower boon) and Thorn Mail (relic): whoever hit you in melee takes some back (not a shot: _hitMelee)
+        const _thorns = this._mods?.thorns, _by = this._hitMelee ? this._hitBy : null;
         this._thornsHit = true;   // thorns crit like any hit (_hitRoll); Iron Edge reads this
         try {
-            if (_thorns && this._hitBy?.sprite?.active && this._hitBy.health > 0) this.damageEnemy(this._hitBy, _thorns * (this.damageScaling || 1));
-            if (this._mods?.thornsPct && this._hitBy?.sprite?.active && this._hitBy.health > 0) this.damageEnemy(this._hitBy, amount * this._mods.thornsPct);   // Colossus Core: a share of the hit, back
-            if (this._mods?.frostThorns && this.currentElement === 'ice' && this._hitBy?.sprite?.active && this._hitBy.health > 0) {   // Rime Ward: holding ice, a melee hit on you is answered in frost
-                const by = this._hitBy; this.damageEnemy(by, this._mods.frostThorns * (this.damageScaling || 1), 'ice');
+            if (_thorns && _by?.sprite?.active && _by.health > 0) this.damageEnemy(_by, _thorns * (this.damageScaling || 1));
+            if (this._mods?.thornsPct && _by?.sprite?.active && _by.health > 0) this.damageEnemy(_by, amount * this._mods.thornsPct);   // Colossus Core: a share of the hit, back
+            if (this._mods?.frostThorns && this.currentElement === 'ice' && _by?.sprite?.active && _by.health > 0) {   // Rime Ward: holding ice, a melee hit on you is answered in frost
+                const by = _by; this.damageEnemy(by, this._mods.frostThorns * (this.damageScaling || 1), 'ice');
                 if (by.sprite?.active && by.health > 0) this.applyChill?.(by, 0.34);
             }
         } finally { this._thornsHit = false; }   // Colossus Core: a share of the hit, back

@@ -4822,7 +4822,7 @@ class LevelManager {
             if (!hit && tx === this.playerX && ty === this.playerY) {
                 hit = true;
                 const before = this.health;
-                this._hitBy = e; this.takeDamage(D.DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
+                this._hitBy = e; this._hitMelee = true; this.takeDamage(D.DMG * (this.enemyDamageScale || 1)); this._hitBy = null; this._hitMelee = false;
                 if (this.health < before) { this._applyDripping(this.time.now); this._bleedStart(D.BLEED_MS); }
                 this.cameras.main.shake(80, 0.006);
             }
@@ -5474,7 +5474,7 @@ class LevelManager {
                 const dx = this.playerX - tx, dy = this.playerY - ty;
                 if (inArea(dx, dy)) {
                     const before = this.health;
-                    this._hitBy = e; this.takeDamage(H.FLURRY_DMG / n * H.RING_MULT[ring(dx, dy)] * (1 + H.SLASH_RAMP * k) * (this.enemyDamageScale || 1)); this._hitBy = null;
+                    this._hitBy = e; this._hitMelee = true; this.takeDamage(H.FLURRY_DMG / n * H.RING_MULT[ring(dx, dy)] * (1 + H.SLASH_RAMP * k) * (this.enemyDamageScale || 1)); this._hitBy = null; this._hitMelee = false;
                     if (this.health < before) this._bleedStart(H.BLEED_MS);
                 }
             });

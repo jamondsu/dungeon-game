@@ -857,10 +857,10 @@ class EnemyManager {
                 if (enemy._goalX == null && nextStep.x === _etx && nextStep.y === _ety) {
                     if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
                         this.enemyAttackAnimation(enemy, _etx, _ety);
-                        this._hitBy = enemy;   // who it was (the Frost Shield chills them back)
+                        this._hitBy = enemy; this._hitMelee = true;   // who it was (the Frost Shield chills them back), and up close (thorns answer it)
                         this.takeDamage(enemy._meleeDmg || 1);   // most slimes hit for 1; a Frostborn far harder
                         if (enemy._isHunter) this._hunterReset(enemy);
-                        this._hitBy = null;
+                        this._hitBy = null; this._hitMelee = false;
                         this.lastPlayerDamageTime = currentTime;
                     }
                     enemy.lastMoveTime = currentTime - moveCooldown * (1 - 1 / this._atkSpd(enemy, currentTime));   // its next hit comes sooner when it attacks faster
@@ -1193,7 +1193,7 @@ class EnemyManager {
         }
         const playerKey = `${Math.round(this.player.x / this.TILE_SIZE)},${Math.round(this.player.y / this.TILE_SIZE)}`;
         if (hitTiles.has(playerKey)) {
-            this._hitBy = enemy; this.takeDamage(SWING_DMG); this._hitBy = null;
+            this._hitBy = enemy; this._hitMelee = true; this.takeDamage(SWING_DMG); this._hitBy = null; this._hitMelee = false;
             this.cameras.main.shake(60, 0.006);
             // Knockback 1 tile away
             const kbDX = Math.sign(this.playerX - enemy.x);
