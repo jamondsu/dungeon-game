@@ -253,20 +253,23 @@ class TowerFloors {
     static onKill(S, e) {
         const T = S.towerRun, C = TowerFloors.CFG;
         if (!T || T.state === 'clear' || !e?.sprite) return;
+        if (e._budCopy) return;   // a bud's copy drops nothing (the clear pays its share)
+        // a splitter's family counts as one enemy: a third for the big one, a sixth for each half, a twelfth for each quarter
+        const w = e.isSplitter ? 1 / (3 * 2 ** (e._splitterTier || 0)) : 1;
         const x = e.sprite.x, y = e.sprite.y - 6, pay = TowerFloors.pay(T.floor) * (S._mods?.pay ?? 1) * (T.twist ? TowerFloors.TWIST_PAY : 1);
-        const budget = Math.round(pay * C.KILL_SHARE), each = Math.max(1, Math.round(budget / (T.total || TowerFloors.crowd(T.floor)))), give = Math.min(each, budget - (T.killPaid || 0));
+        const budget = Math.round(pay * C.KILL_SHARE), each = Math.max(1, Math.round(budget / (T.total || TowerFloors.crowd(T.floor)))), give = Math.min(Math.round(each * w), budget - (T.killPaid || 0));
         if (give > 0) { T.killPaid = (T.killPaid || 0) + give; TowerFloors.flyGlorps(S, x, y, give); }
-        const dustAll = TowerFloors.floorDust(T), dEach = Math.max(1, Math.round(dustAll * C.KILL_DUST / (T.total || TowerFloors.crowd(T.floor)))), dGive = Math.min(dEach, Math.round(dustAll * C.KILL_DUST) - (T.killDust || 0));
+        const dustAll = TowerFloors.floorDust(T), dEach = Math.max(1, Math.round(dustAll * C.KILL_DUST / (T.total || TowerFloors.crowd(T.floor)))), dGive = Math.min(Math.round(dEach * w), Math.round(dustAll * C.KILL_DUST) - (T.killDust || 0));
         if (dGive > 0 && typeof Enchants !== 'undefined') { T.killDust = (T.killDust || 0) + dGive; Enchants.addDust(dGive); TowerFloors.flyDust(S, x, y, dGive, true); }
         T.lastKill = { x, y };   // where the clear's dust comes out
         if (T.boss) return;   // a boss floor pays its loot on the clear
         const n = T.total || TowerFloors.crowd(T.floor);
-        if (typeof Garden !== 'undefined' && Math.random() < C.SEED_FLOOR / n) {
+        if (typeof Garden !== 'undefined' && Math.random() < C.SEED_FLOOR * w / n) {
             const id = Garden.drop(T.floor, true), got = Garden.give(id), Sd = Garden.seed(id);
             const tex = typeof GardenScene !== 'undefined' ? GardenScene.prototype._seedTex.call(S, Sd) : null;
             TowerFloors.dropItem(S, x, y, tex, null, got.dust ? `${Sd.name} seed: +${got.dust} dust` : `+1 ${Sd.name} seed`, UIKit._hex(Sd.col), 3);
         }
-        if (Math.random() < TowerFloors.bookChance(T.floor) / n) {
+        if (Math.random() < TowerFloors.bookChance(T.floor) * w / n) {
             Enchants.addBooks(1); T.books = (T.books || 0) + 1;
             TowerFloors.dropItem(S, x, y, ShopScene.bookIcon?.(S, -1), 0, '+1 sealed book', '#d8a8ff', 1.4);
         }
