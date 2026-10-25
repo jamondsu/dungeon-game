@@ -136,13 +136,11 @@ details[open] summary { margin-bottom: 12px; }
   <h2 id="them">Them</h2>
   <p>There are four. They start <strong>asleep</strong>, looking a lot like you, eyes shut. One wakes if you come within <strong>2 tiles</strong> of it, or at a noise near it: a dash (6 tiles), a chalked pane (4 tiles), breaking glass (7 tiles). Every fragment you take also wakes the nearest one still asleep. Waking takes a moment (an extra second and a half before its first step), and you'll hear it: a giggle, from where it is.</p>
   <div class="note"><p><strong>They only move while nothing is looking at them.</strong> Your eyes, your raised shard and your decoys all count. Look away, even to turn a corner, and they come toward you, the shortest way, round each other.</p></div>
-  <p>Every step one takes, it's in a new look, picked for how close it is. Three or more steps away, the look shows its <a href="#moods">mood</a>: calm, playful or hunting. Right behind a pane between you, it's usually up against the glass. Two steps away, it's in your face. One step away, you catch it frozen just before it got you. If you look away then, it reaches you.</p>
+  <p>Every step one takes, it's in a new look. However near it is, the look shows its <a href="#moods">mood</a>: calm, playful or hunting, so you can always tell how riled it is. Right behind a pane between you, it's usually up against the glass instead. One step away, if you look away, it reaches you.</p>
   <div class="grid">
     <figure><img src="hall/asleep.jpg" alt="One asleep down a corridor, eyes shut." width="800" height="450" loading="lazy"><figcaption>Asleep. Leave it be.</figcaption></figure>
     <figure><img src="hall/far.jpg" alt="One awake far down a corridor, waving." width="800" height="450" loading="lazy"><figcaption>Far off, and playful: waving at you.</figcaption></figure>
     <figure><img src="hall/glass.jpg" alt="One behind a pane, its breath fogging the glass with a heart drawn in it." width="800" height="450" loading="lazy"><figcaption>Behind glass: a heart drawn in its breath.</figcaption></figure>
-    <figure><img src="hall/near.jpg" alt="One two tiles away, hanging upside down from the ceiling, its face huge." width="800" height="450" loading="lazy"><figcaption>Two steps away: dropped down at you.</figcaption></figure>
-    <figure><img src="hall/caught.jpg" alt="One right in front of you, frozen mid-BOO with a sheepish grin and a bead of sweat." width="800" height="450" loading="lazy"><figcaption>One step away: caught mid-BOO.</figcaption></figure>
   </div>
   <p>You hear them move too: a soft wet slide, from the left or right, louder the nearer it is, and dull through stone. You can hear one up to about 10 tiles off.</p>
   <p>If one reaches you, it <strong>pranks</strong> you, then goes back to sleep somewhere at least 8 tiles away. It sleeps it off for 15 to 25 seconds, then it's up again by itself.</p>
@@ -151,17 +149,19 @@ details[open] summary { margin-bottom: 12px; }
   <p>Every one wakes <span class="calm">calm</span>, and the longer it's awake, the worse it gets.</p>
   <div class="cards">
     <div><b class="calm">Calm</b>Slow, and busy with itself: reading, juggling your gems, whistling. A step about every 0.9 seconds you're not watching. It can't be shooed.</div>
-    <div><b class="play">Playful</b>After 30 seconds awake. Toying with you: waving, peekaboo, copying you. A step about every 0.6 seconds.</div>
-    <div><b class="hunt">Hunting</b>After 45 seconds more. Quick and wrong: staring, up the walls, on the ceiling. A step about every 0.43 seconds.</div>
+    <div><b class="play">Playful</b>After 75 seconds awake. Toying with you: waving, peekaboo, copying you. A step about every 0.6 seconds.</div>
+    <div><b class="hunt">Hunting</b>After 75 seconds more. Quick and wrong: staring, up the walls, on the ceiling. A step about every 0.43 seconds.</div>
   </div>
   <h3>What riles them</h3>
   <ul>
-    <li><strong>Staring.</strong> While you look straight at one, it gets worse three times as fast (calm to playful in 10 seconds, playful to hunting in 15).</li>
+    <li><strong>Staring.</strong> While you look straight at one, it gets worse half again as fast (calm to playful in 50 seconds, playful to hunting in 50 more).</li>
     <li><strong>A noise near it.</strong> A dash or a chalked pane nearby makes it half a mood worse.</li>
     <li><strong>Breaking glass.</strong> Every one awake gets a whole mood worse, wherever it is, and half a mood more if it's within 7 tiles.</li>
-    <li><strong>Fragments.</strong> Once you have one, every one awake is at least playful. With the way out whole, they're all hunting.</li>
+    <li><strong>Fragments.</strong> Each of your first two riles every one awake a little (a quarter of a mood). With the way out whole, they're all hunting, and stay that way.</li>
   </ul>
-  <p>Nothing calms one down except a <a href="#shoo">shoo</a> or a prank. Either sends it back to sleep far away, and it wakes calm again (or as riled as your fragments say).</p>
+  <h3>What calms them</h3>
+  <p>A hunter that hasn't seen you for <strong>20 seconds</strong> loses interest and cools to playful (not once the way out is whole). Lose it round a few corners and the hall settles down.</p>
+  <p>A <a href="#shoo">shoo</a> or a prank calms one right down: either sends it back to sleep far away, and it wakes calm again (hunting, once the way out is whole).</p>
   <h3>Hearing them turn</h3>
   <p>You hear it when one gets worse: a giggle when it turns playful, and a low, quick giggle when it starts hunting, with a note on screen. Both come from where it is, so you can tell which way to be careful.</p>
   <h3>When one can see you</h3>
@@ -221,24 +221,6 @@ details[open] summary { margin-bottom: 12px; }
       <figure><div class="sp" style="background-position:-4200px 0" role="img" aria-label="Waving in: Both hands up at the window, a big grin."></div><figcaption><b>Waving in</b>Both hands up at the window, a big grin.</figcaption></figure>
       <figure><div class="sp" style="background-position:-4320px 0" role="img" aria-label="Licking the glass: Tongue flat on the pane, eyes crossed."></div><figcaption><b>Licking the glass</b>Tongue flat on the pane, eyes crossed.</figcaption></figure>
       <figure><div class="sp" style="background-position:-4440px 0" role="img" aria-label="Knocking: Tapping on the glass to get your attention."></div><figcaption><b>Knocking</b>Tapping on the glass to get your attention.</figcaption></figure>
-  </div>
-  <div class="mood"><h3>Up close</h3><span>Any mood, two steps away.</span></div>
-  <div class="roster">
-      <figure><div class="sp" style="background-position:-4560px 0" role="img" aria-label="Your face: A huge dome of you, eyes wide, an O mouth."></div><figcaption><b>Your face</b>A huge dome of you, eyes wide, an O mouth.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-4680px 0" role="img" aria-label="Dropped down: Upside down from the ceiling, right in your face."></div><figcaption><b>Dropped down</b>Upside down from the ceiling, right in your face.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-4800px 0" role="img" aria-label="All eyes: Eyes everywhere, all wide open."></div><figcaption><b>All eyes</b>Eyes everywhere, all wide open.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-4920px 0" role="img" aria-label="Pressed up close: Squashed flat against the air in front of you."></div><figcaption><b>Pressed up close</b>Squashed flat against the air in front of you.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5040px 0" role="img" aria-label="Peeking in: Half its face round the edge, one eye."></div><figcaption><b>Peeking in</b>Half its face round the edge, one eye.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5160px 0" role="img" aria-label="Reaching up: Up out of a puddle on a long neck, to your eye level."></div><figcaption><b>Reaching up</b>Up out of a puddle on a long neck, to your eye level.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5280px 0" role="img" aria-label="Chin in its hands: Lying in front of you, propped up, watching. Fond."></div><figcaption><b>Chin in its hands</b>Lying in front of you, propped up, watching. Fond.</figcaption></figure>
-  </div>
-  <div class="mood"><h3>Caught in time</h3><span>Any mood, one step away: frozen just before it got you. Look away now and it does.</span></div>
-  <div class="roster">
-      <figure><div class="sp" style="background-position:-5400px 0" role="img" aria-label="BOO!: Leaping at you, arms up. A boo, not a bite."></div><figcaption><b>BOO!</b>Leaping at you, arms up. A boo, not a bite.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5520px 0" role="img" aria-label="Caught mid-reach: Frozen with its arms out, eyes wide."></div><figcaption><b>Caught mid-reach</b>Frozen with its arms out, eyes wide.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5640px 0" role="img" aria-label="Caught sneaking: On tiptoe, a finger to its lips, eyes sliding away."></div><figcaption><b>Caught sneaking</b>On tiptoe, a finger to its lips, eyes sliding away.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5760px 0" role="img" aria-label="Caught mid-BOO: Arms up, frozen, a sheepish grin."></div><figcaption><b>Caught mid-BOO</b>Arms up, frozen, a sheepish grin.</figcaption></figure>
-      <figure><div class="sp" style="background-position:-5880px 0" role="img" aria-label="Going for a hug: Arms flung wide, so pleased with itself."></div><figcaption><b>Going for a hug</b>Arms flung wide, so pleased with itself.</figcaption></figure>
   </div>
 
   <details>
@@ -395,7 +377,9 @@ details[open] summary { margin-bottom: 12px; }
     <tr><td>Them: each fragment taken</td><td class="n">0.03s quicker (never under 0.45s before mood)</td></tr>
     <tr><td>Them: can see you / lost you</td><td class="n">×0.8 / ×1.25 step time</td></tr>
     <tr><td>Them: first moves</td><td class="n">none in your first 5s</td></tr>
-    <tr><td>Moods: calm to playful / playful to hunting</td><td class="n">30s / 45s awake (3× faster stared at)</td></tr>
+    <tr><td>Moods: calm to playful / playful to hunting</td><td class="n">75s / 75s awake (1.5× faster stared at)</td></tr>
+    <tr><td>Moods: a hunter that lost you</td><td class="n">playful again after 20s unseen</td></tr>
+    <tr><td>Moods: each of the first two fragments</td><td class="n">+¼ mood</td></tr>
     <tr><td>Moods: a noise near / breaking glass</td><td class="n">+½ mood / +1 mood (+1½ within 7 tiles)</td></tr>
     <tr><td>Waking: too near / dash / chalk / glass</td><td class="n">2 / 6 / 4 / 7 tiles</td></tr>
     <tr><td>Waking: coming to</td><td class="n">1.5s more before its first step</td></tr>
