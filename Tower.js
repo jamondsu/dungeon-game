@@ -495,7 +495,7 @@ class TowerFloors {
         // the floor's twist, if it has one
         T.twist = TowerFloors.twistOf(T.floor, T.seed);
         if (T.twist?.id === 'flood') this.generateWaterBlobs?.(0.35);
-        if (T.twist?.id === 'swarm') this.enemyHealthScale *= 0.7;
+        if (T.twist?.id === 'swarm') { this.enemyHealthScale *= 0.7; T.total = Math.round(T.total * 1.5); }
         if (T.twist?.id === 'frenzy') this.enemyMoveCooldown = Math.round(this.enemyMoveCooldown * 0.75);
         T.state = 'start'; T.nextAt = this.time.now + 1400;
         if (T.owed > 0) { T.state = 'draft'; this.time.delayedCall(700, () => this._towerDraft()); }   // a skip: the boons the floors below would have given
@@ -672,7 +672,10 @@ class TowerFloors {
             return;
         }
         const P = TowerFloors.PLANS[T.plan || 'mixed'];
-        const n = Math.max(1, Math.round((T.total || TowerFloors.crowd(T.floor)) * (T.split?.[T.wave - 1] ?? 1 / C.WAVES) * (T.twist?.id === 'swarm' ? 1.5 : 1))) + (T.wave === C.WAVES ? 1 : 0);
+        // the waves before the last take their share rounded down, and the last takes what's left, so the floor holds T.total
+        const total = T.total || TowerFloors.crowd(T.floor), share = w => Math.max(1, Math.floor(total * (T.split?.[w] ?? 1 / C.WAVES)));
+        let n = share(T.wave - 1);
+        if (T.wave === C.WAVES) { n = total; for (let w = 0; w < C.WAVES - 1; w++) n -= share(w); n = Math.max(1, n); }
         const wet = (this.waterTiles?.size || 0) >= 8;   // a floor laid out with pools
         const pool = TowerFloors.POOL.filter(p => p.from <= T.floor && (!p.water || wet));
         let budget = Math.round(n * (1.2 + T.floor / 12) * P.budget);

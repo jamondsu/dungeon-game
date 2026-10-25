@@ -1910,7 +1910,7 @@ class LevelManager {
         const boss = this.voltslimeBoss;
         if (!boss?.active) return;
         boss.phase = 'spawner';
-        const bossRoom = this.rooms?.[6];
+        const bossRoom = this.towerRun ? this._towerArena?.room : this.rooms?.[6];   // the Tower fights it in its arena
         if (!bossRoom) { this.time.delayedCall(400, () => this._voltslimeNextPhase()); return; }
         let spawned = 0, attempts = 0;
         while (spawned < 4 && attempts < 80) {
