@@ -203,7 +203,7 @@ const WeaponLevels = {
     // [key, name, cap, first cost, growth, what level p does]
     PERKS: {
         flame_fists:       [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
-        flame_sword:       [['arc', 'Wide Arc', 3, 180, 1.8, p => `+${p} tile${p === 1 ? '' : 's'} each side per swing`]],
+        flame_sword:       [['arc', 'Wide Arc', 3, 180, 1.8, p => `about ${2 * p} more tiles per swing, reaching further`]],
         magma_staff:       [['volley', 'Fuller Volley', 3, 200, 1.8, p => `+${p} fireball${p === 1 ? '' : 's'} a cast`],
                             ['burn', 'Slow Burn', 1, 600, 1, () => 'heat drains 40% slower once you stop']],
         ignition:          [['reach', 'Long Nozzle', 3, 180, 1.8, p => `+${(0.8 * p).toFixed(1)} tiles of flame`],

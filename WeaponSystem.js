@@ -4802,7 +4802,7 @@ class WeaponSystem {
         // hit one target softer than the free Flame Fists (37 vs 46 DPS, measured) while
         // out-damaging every T2 on a crowd. Three tiles at 20 puts it back on fire's side:
         // 47 to one target, 95 to a pack of five.
-        const MAX_TILES = 4 + 2 * WeaponLevels.perk('flame_sword', 'arc');   // the 3-tile arc in front + the tile beyond its middle (ring order, below); Wide Arc a tile each side a level (they come in pairs)
+        const ARC = WeaponLevels.perk('flame_sword', 'arc'), MAX_TILES = 4 + 2 * ARC;   // the 3-tile arc in front + the tile beyond its middle (ring order, below); Wide Arc: a pair more a level, from a ring further out
         const tileAt = (angle, r) => {
             const wx = playerPx + Math.cos(angle) * r * this.TILE_SIZE;
             const wy = playerPy + Math.sin(angle) * r * this.TILE_SIZE;
@@ -4816,7 +4816,7 @@ class WeaponSystem {
         // The ring next to you first, every angle, then the next ring out. Angle-first took the
         // centre tile at both radii, so no flanking pair fit under MAX_TILES after it: the arc
         // came out 2 tiles straight ahead, or 3 with one side only.
-        for (const r of [1.0, 1.85]) {
+        for (const r of ARC ? [1.0, 1.85, 2.7] : [1.0, 1.85]) {
             for (const spread of [0, halfSpread * 0.5, halfSpread]) {
                 const unit = (spread === 0)
                     ? [tileAt(facingAngle, r)]
@@ -4834,7 +4834,7 @@ class WeaponSystem {
         // ── Arc sweep visual ───────────────────────────────────────────────
         // A crescent of flame that chases the blade's edge: a white-hot leading edge, banded
         // yellow, orange and ember red behind it, thinning toward its tail, embers off the tip.
-        const T = this.TILE_SIZE, rOut = 2.3 * T, rIn0 = 0.62 * T;
+        const T = this.TILE_SIZE, rOut = (ARC ? 2.9 : 2.3) * T, rIn0 = 0.62 * T;
         const arcGfx = this.add.graphics().setDepth(3).setPosition(playerPx, playerPy);
         const SWING_DURATION = 170;
         const startAngle = facingAngle + halfSpread, endAngle = facingAngle - halfSpread, sweep = endAngle - startAngle;
