@@ -351,7 +351,7 @@ class ShopScene extends Phaser.Scene {
         this._refreshStall = () => renderWeapon(0);
         const HINTS = ['← →  weapons     ↑ ↓  element     Enter  buy / equip', 'hover anything for the details',
                        '↑ ↓  element     ← →  stage     Enter  upgrade', '← →  gadgets     Q / F  pick a slot     Enter  unlock / slot',
-                       '← →  relics     ↑ ↓  tiers     Q E  shelves     Enter  buy / wear'];
+                       '← →  relics     ↑ ↓  tiers     Q E  up / down the list     Enter  buy / wear'];
 
         // ── TAB SWITCHING ─────────────────────────────────────────────────
         this.switchShopTab = (i) => {
@@ -1633,9 +1633,16 @@ class ShopScene extends Phaser.Scene {
         this._hideRelicTab();
         const L = this._layout, S = L.S, D = 8, objs = [], keep = o => { objs.push(o); return o; };
         const list = Relics.all(), worn = Relics.worn(), slots = Relics.slots(), stock = Relics.stock();
+        // what the case shows: one shelf, today's stock, or yours (the index on the wall picks; the first visit opens on today's)
+        if (this._relicView === undefined) { this._relicView = 'today'; this._relicSel = list.findIndex(x => x.id === stock[stock.length - 1]); }
+        if (this._relicView === 'yours' && !Relics.owned().length) this._relicView = 'today';
         this._relicSel = Phaser.Math.Clamp(this._relicSel ?? 0, 0, list.length - 1);
+        let view = this._relicView || list[this._relicSel].sh;
+        if (!this._relicFirst(view)) view = this._relicView = list[this._relicSel].sh;
+        const inView = id => [1, 2, 3].some(t => this._relicRow(view, t).some(x => x.id === id));
+        if (!inView(list[this._relicSel].id)) this._relicSel = list.findIndex(x => x.id === this._relicFirst(view).id);
         const r = list[this._relicSel], owned = Relics.has(r.id), inStock = stock.includes(r.id), on = worn.includes(r.id);
-        const shelf = Relics.shelf(r.sh), si = Relics.SHELVES.indexOf(shelf), acc = shelf.col;
+        const shelf = Relics.shelf(r.sh), VIEW = this._relicViewInfo(view), acc = VIEW.col;
         this._awning(UIKit.PALETTE.brass, [0, 1, 2, 3, 4].map(i => ({ label: ['I', 'II', 'III', 'IV', 'V'][i], on: !!worn[i] && worn[i] === r.id,
             icon: worn[i] ? Relics.icon(this, worn[i]) : null, glyph: i < slots ? 'empty' : (i ? 'F' + Relics.SLOT_AT[i] : 'TOWER') }))).forEach(o => objs.push(o));
         // the bookcase: the stall's plank is the top layer (Legend), two more under it
@@ -1655,10 +1662,10 @@ class ShopScene extends Phaser.Scene {
         const wash = keep(this.add.graphics().setDepth(2.4).setBlendMode(Phaser.BlendModes.ADD));
         wash.fillStyle(acc, 0.06); wash.fillRect(S.x0 + 10, S.beam + 70, BX1 - S.x0, LAYER[2] - S.beam - 40);
         [3, 2, 1].forEach((t, row) => {
-            const y = LAYER[row], T = Relics.TIERS[t], items = Relics.onShelf(shelf.id, t);
+            const y = LAYER[row], T = Relics.TIERS[t], items = this._relicRow(view, t);
             keep(this.add.text(S.x0 + 34, y - 14, `${['', 'I', 'II', 'III'][t]}  ${T.name}`, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(T.col),
                 backgroundColor: '#1b1612', padding: { x: 4, y: 2 } }).setOrigin(0, 1).setDepth(3));
-            const x0 = S.x0 + 165, x1 = BX1 - 40;
+            const wide = view === 'yours' || view === 'today', x0 = S.x0 + (wide ? 135 : 165), x1 = BX1 - (wide ? 30 : 40);
             items.forEach((it, k) => {
                 const x = items.length === 1 ? (x0 + x1) / 2 : x0 + (x1 - x0) * k / (items.length - 1);
                 const got = Relics.has(it.id), sel = it.id === r.id, ik = Relics.icon(this, it.id), forSale = stock.includes(it.id);
@@ -1681,13 +1688,14 @@ class ShopScene extends Phaser.Scene {
             });
         });
         // the shelf's plaque, and the way to the others
-        const pcx = (S.x0 + BX1) / 2, py = Math.max(LAYER[2] + 50, plaqueY), have = list.filter(x => x.sh === shelf.id && Relics.has(x.id)).length;
+        const pcx = (S.x0 + BX1) / 2, py = Math.max(LAYER[2] + 50, plaqueY), pages = this._relicPages(view);
         const pl = keep(this.add.graphics().setDepth(3));
         pl.fillStyle(0x1b1612, 0.95); pl.fillRoundedRect(pcx - 150, py - 18, 300, 38, 6); pl.lineStyle(2, acc, 0.9); pl.strokeRoundedRect(pcx - 150, py - 18, 300, 38, 6);
-        keep(this.add.text(pcx, py - 9, shelf.name, { fontSize: '17px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(acc) }).setOrigin(0.5).setDepth(4));
-        keep(this.add.text(pcx, py + 10, `${shelf.build}  ·  shelf ${si + 1} of ${Relics.SHELVES.length}  ·  ${have} owned`, { fontSize: '10px', fontFamily: 'monospace', color: UIKit.CSS.textMid }).setOrigin(0.5).setDepth(4));
+        keep(this.add.text(pcx, py - 9, VIEW.name, { fontSize: '17px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(acc) }).setOrigin(0.5).setDepth(4));
+        keep(this.add.text(pcx, py + 10, VIEW.sub + (pages > 1 ? `  ·  page ${(this._relicPage || 0) + 1} of ${pages}` : ''), { fontSize: '10px', fontFamily: 'monospace', color: UIKit.CSS.textMid }).setOrigin(0.5).setDepth(4));
         for (const [dx, d, s] of [[-172, -1, '‹'], [172, 1, '›']]) keep(this.add.text(pcx + dx, py, s, { fontSize: '30px', fontFamily: UIKit.FONT.title, color: UIKit.CSS.textHi }).setOrigin(0.5).setDepth(4))
-            .setInteractive({ useHandCursor: true }).on('pointerdown', () => this._relicNav(0, 0, d));
+            .setInteractive({ useHandCursor: true }).on('pointerdown', () => pages > 1 ? this._relicTurnPage(d) : this._relicNav(0, 0, d));
+        this._relicIndex(keep, view, stock);
         // the display stand: the chosen relic turning in the spotlight
         this._turntable(acc, Relics.icon(this, r.id), { anim: true, dim: !owned, fromDir, scale: 5, x: standX }).forEach(o => objs.push(o));
         // the tag
@@ -1731,26 +1739,88 @@ class ShopScene extends Phaser.Scene {
         }
         this._relicTabObjs = objs;
     }
-    // ← → along a layer (off its end onto the next shelf), ↑ ↓ between the tiers, Q / E a whole shelf.
-    _relicNav(dx, dy = 0, dShelf = 0) {
-        const list = Relics.all(), r = list[this._relicSel ?? 0], SH = Relics.SHELVES, n = SH.length;
-        let si = SH.findIndex(s => s.id === r.sh), t = r.t, items = Relics.onShelf(r.sh, t), k = items.findIndex(x => x.id === r.id);
-        const wrap = i => ((i % n) + n) % n;
-        // the next shelf that has something on this tier (the corrupted one is empty until you siphon)
-        const step = d => { do { si = wrap(si + d); items = Relics.onShelf(SH[si].id, t); } while (!items.length); };
-        if (dShelf) { step(dShelf); k = Math.min(k, items.length - 1); }
+    // A view of the case: 'today' (today's stock), 'yours' (every relic you own, in pages of RELIC_PER a layer), or a shelf's id.
+    // Its relics on one tier's layer:
+    _relicRow(view, t) {
+        if (view === 'today') return Relics.stock().map(id => Relics.def(id)).filter(x => x && x.t === t);
+        if (view === 'yours') { const all = Relics.owned().map(id => Relics.def(id)).filter(x => x && x.t === t), p = this._relicPage || 0; return all.slice(p * ShopScene.RELIC_PER, (p + 1) * ShopScene.RELIC_PER); }
+        return Relics.onShelf(view, t);
+    }
+    _relicPages(view) { return view === 'yours' ? Math.max(1, ...[1, 2, 3].map(t => Math.ceil(Relics.owned().map(id => Relics.def(id)).filter(x => x && x.t === t).length / ShopScene.RELIC_PER))) : 1; }
+    _relicFirst(view) { for (const t of [3, 2, 1]) { const it = this._relicRow(view, t); if (it.length) return it[0]; } return null; }
+    // the views in the index's order: today's, yours (once you own one), then every shelf with something on it
+    _relicViews() { return ['today', ...(Relics.owned().length ? ['yours'] : []), ...Relics.SHELVES.filter(sh => [1, 2, 3].some(t => Relics.onShelf(sh.id, t).length)).map(sh => sh.id)]; }
+    _relicViewInfo(view) {
+        if (view === 'today') return { name: "TODAY'S STOCK", sub: 'new ones every day  ·  the rest from Tower bosses', col: 0xf0b84a };
+        if (view === 'yours') { const n = Relics.owned().length, w = Relics.worn().length; return { name: 'YOUR RELICS', sub: `${n} owned  ·  ${w} worn`, col: 0x7fd06a }; }
+        const sh = Relics.shelf(view), have = Relics.all().filter(x => x.sh === view && Relics.has(x.id)).length, of = Relics.all().filter(x => x.sh === view).length;
+        return { name: sh.name, sub: `${sh.build}  ·  ${have} of ${of} owned`, col: sh.col };
+    }
+    _relicTurnPage(d) {
+        const n = this._relicPages('yours');
+        this._relicPage = ((this._relicPage || 0) + d + n) % n;
+        const f = this._relicFirst('yours');
+        if (f) this._relicGo(Relics.all().findIndex(x => x.id === f.id), d);
+    }
+    _relicPick(view) {
+        this._relicView = view; this._relicPage = 0;
+        const f = this._relicFirst(view);
+        if (f) this._relicGo(Relics.all().findIndex(x => x.id === f.id), 1);
+    }
+    // The index on the wall left of the case: every view by name, how many of it you own, a ✦ where something's in stock today;
+    // click one to open it
+    _relicIndex(keep, view, stock) {
+        const L = this._layout, S = L.S, x0 = 16, x1 = S.x0 - 22, top = 66, bottom = L.CT - 232;
+        const views = this._relicViews(), rowH = Math.min(20, Math.floor((bottom - top - 30) / views.length));
+        if (x1 - x0 < 150 || rowH < 13) return;
+        const g = keep(this.add.graphics().setDepth(3));
+        const h = 26 + rowH * views.length + 8;
+        g.fillStyle(0x120d0a, 0.88); g.fillRoundedRect(x0, top, x1 - x0, h, 6); g.lineStyle(1.5, 0x6a4a26, 0.9); g.strokeRoundedRect(x0, top, x1 - x0, h, 6);
+        keep(this.add.text(x0 + 10, top + 7, 'THE RELIC CASE', { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit.CSS.textLo }).setDepth(4));
+        keep(this.add.text(x1 - 10, top + 7, `${Relics.owned().length} / ${Relics.all().length}`, { fontSize: '10px', fontFamily: 'monospace', color: UIKit.CSS.textLo }).setOrigin(1, 0).setDepth(4));
+        const fs = rowH >= 18 ? '12px' : '11px';
+        views.forEach((v, i) => {
+            const y = top + 26 + i * rowH, I = this._relicViewInfo(v), on = v === view;
+            let count;
+            if (v === 'today') count = `${stock.filter(id => !Relics.has(id)).length} for sale`;
+            else if (v === 'yours') count = `${Relics.worn().length} worn`;
+            else count = `${Relics.all().filter(x => x.sh === v && Relics.has(x.id)).length}/${Relics.all().filter(x => x.sh === v).length}`;
+            if (on) { g.fillStyle(I.col, 0.22); g.fillRect(x0 + 4, y - 1, x1 - x0 - 8, rowH); g.fillStyle(I.col, 1); g.fillRect(x0 + 4, y - 1, 3, rowH); }
+            if (i === 2 || (i === 1 && views[1] !== 'yours')) { g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(x0 + 8, y - 2, x1 - 8, y - 2); }
+            const name = v === 'today' ? "✦ TODAY'S STOCK" : v === 'yours' ? '★ YOURS' : I.name;
+            const sale = v !== 'today' && v !== 'yours' && stock.some(id => Relics.def(id)?.sh === v && !Relics.has(id));
+            keep(this.add.text(x0 + 12, y + rowH / 2 - 1, name, { fontSize: fs, fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: on ? '#fff4d6' : UIKit._hex(I.col) }).setOrigin(0, 0.5).setDepth(4));
+            keep(this.add.text(x1 - 12, y + rowH / 2 - 1, (sale ? '✦ ' : '') + count, { fontSize: '10px', fontFamily: 'monospace', color: sale ? '#f0b84a' : UIKit.CSS.textMid }).setOrigin(1, 0.5).setDepth(4));
+            keep(this.add.zone((x0 + x1) / 2, y + rowH / 2 - 1, x1 - x0 - 8, rowH).setInteractive({ useHandCursor: true }).setDepth(12))
+                .on('pointerdown', () => { if (!on) { Sfx.play(this, 'click'); this._relicPick(v); } });
+        });
+    }
+    // ← → along a layer (off a shelf's end onto the next shelf; round and round today's and yours, through yours's pages),
+    // ↑ ↓ between the tiers, Q / E the next view in the index.
+    _relicNav(dx, dy = 0, dView = 0) {
+        const list = Relics.all(), r = list[this._relicSel ?? 0], V = this._relicViews(), shelfView = v => v !== 'today' && v !== 'yours';
+        let view = this._relicView || r.sh, t = r.t, items = this._relicRow(view, t), k = Math.max(0, items.findIndex(x => x.id === r.id));
+        let vi = Math.max(0, V.indexOf(view));
+        const firstIn = v => { for (const tt of [t, 3, 2, 1]) { const it = this._relicRow(v, tt); if (it.length) return [tt, it]; } return null; };
+        const step = (d, shelvesOnly) => { for (let n = 0; n < V.length; n++) { vi = (vi + d + V.length) % V.length; if (shelvesOnly && !shelfView(V[vi])) continue; this._relicPage = 0; const f = firstIn(V[vi]); if (f) { view = V[vi]; [t, items] = f; return true; } } return false; };
+        if (dView) { if (!step(dView, false)) return; items = this._relicRow(view, t); k = Math.min(k, items.length - 1); }
         else if (dy) {
             const nt = Phaser.Math.Clamp(t - dy, 1, 3);   // up is a better tier
             if (nt === t) return;
-            const was = items.length, next = Relics.onShelf(SH[si].id, nt);
+            const was = items.length, next = this._relicRow(view, nt);
             if (!next.length) return;
             t = nt; items = next;
             k = Math.round(was > 1 ? k / (was - 1) * (items.length - 1) : 0);
         } else {
             k += dx;
-            if (k < 0 || k >= items.length) { step(dx); k = dx > 0 ? 0 : items.length - 1; }
+            if (k < 0 || k >= items.length) {
+                if (shelfView(view)) { step(dx, true); items = this._relicRow(view, t); k = dx > 0 ? 0 : items.length - 1; }
+                else if (view === 'yours' && this._relicPages('yours') > 1) return this._relicTurnPage(dx);
+                else k = (k + items.length) % items.length;
+            }
         }
-        this._relicGo(list.findIndex(x => x.id === items[k].id), dx || dy || dShelf);
+        this._relicView = view;
+        this._relicGo(list.findIndex(x => x.id === items[k].id), dx || dy || dView);
     }
     _relicGo(i, dir = 1) {
         this._relicSel = i;
@@ -1791,7 +1861,7 @@ class ShopScene extends Phaser.Scene {
         const id = Relics.siphon(a, r.id);
         this._siphonA = null;
         if (!id) { Sfx.play(this, 'deny'); return; }
-        this._relicSel = Relics.all().findIndex(x => x.id === id);
+        this._relicSel = Relics.all().findIndex(x => x.id === id); this._relicView = 'yours'; this._relicPage = 0;
         this._showRelicTab(1);
         const nr = Relics.def(id), cam = this.cameras.main;
         Sfx.play(this, 'fanfare'); cam.shake(260, 0.006); cam.flash(220, 120, 255, 90);
@@ -1958,6 +2028,7 @@ ShopScene.CATALOGUE = [
 // Lightning and cosmic are sealed in the shop (weapons and ult stages) until the story gives them (devMode opens all).
 // Relics and ult stages open once the tutorial's done and Tower floor 1 is cleared (devMode opens them)
 ShopScene.upgradesOpen = () => localStorage.getItem('devMode') === 'true' || (localStorage.getItem('cleared_tutorial') === '1' && (parseInt(localStorage.getItem('tower_best') || '0', 10) || 0) >= 1);
+ShopScene.RELIC_PER = 6;   // relics a layer of the case shows at once when it shows yours (more: pages)
 ShopScene.UPGRADES_SEALED = { short: 'the tutorial, then Tower floor 1', glurp: "Relics and ult stages? Finish the tutorial and clear the Tower's first floor, then we'll talk." };
 ShopScene.elementOpen = el => (el !== 'lightning' && el !== 'cosmic') || localStorage.getItem('unlocked_' + el) === 'true' || localStorage.getItem('devMode') === 'true';
 ShopScene.SEALED = {
