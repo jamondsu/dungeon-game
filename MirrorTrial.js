@@ -60,6 +60,7 @@ class MirrorTrial extends Phaser.Scene {
         ECHO_MS: 300,                                                // how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         SHOO_MS: 2000,                                               // one held in a reflection (your shard) this long leaves: they don't like being caught there
+        LOOK_STEPS: [2, 3],                                          // a look holds this many steps (at random), sooner if its mood turns
         DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; full: you black out OUT_MS, back at AFTER
         STRESS: { PRANK: 0.3, DREAD: 0.4, CALM_MS: 2000 },            // your stress: each prank of theirs adds PRANK for good, your dread on top (full: DREAD); 1: scared to death (two pranks and a full dread; three and a moment's). After a prank, CALM_MS with none of them moving
     };
@@ -91,7 +92,7 @@ class MirrorTrial extends Phaser.Scene {
         ['THE HALL OF REFLECTIONS', 'Five fragments of the way out are in mirrors, spread through the hall\'s 30 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they hear it. Three make the way out whole, and taking the third wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
         ['MIRROR OR GLASS?', 'Straight on, a mirror here looks just like glass: you see through both. Only a reflection of a reflection shows. Turn your back on a pane and hold up your shard (SPACE): a mirror shows you, holding the shard; glass shows what\'s beyond it. Your decoys and sentries are made of reflection, so a mirror shows them even straight on.'],
         ['CHALK AND MARKS', 'Chalk is the real test: an eye for a mirror, a cross for glass. C puts your own mark on a pane (glass, then mirror, then rubbed out) so you don\'t test it twice; with the shard up, it marks the pane behind you. Shattered glass wakes every sleeper near it, and the awake ones lunge two steps at you.'],
-        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every step they take, they look different.'],
+        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every two or three steps they take, they look different, and the moment their mood turns.'],
         ['THEIR MOODS', 'Every one wakes calm and slow (reading, juggling, whistling), and the longer it\'s awake the worse it gets: playful, then hunting and quick (staring, up the walls). You\'ll hear it turn. Staring at one, a noise near it and breaking glass rile it faster, a fragment a little. A hunter that loses you for 20 seconds cools to playful; a shoo or a prank calms one right down. One that can see you comes quicker: lose it round a corner.'],
         ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and only your decoys still watch them. In your shard they can\'t do that to you. Hold one that isn\'t calm in your raised shard for two seconds and it slinks off to sleep it off somewhere far away, for a while.'],
         ['THEY CAN\'T HURT YOU', 'One that reaches you pranks you, and it stays with you as stress. They have four pranks, never the same one twice running; one spins you round to face the other way. Your dread counts toward your stress too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
@@ -825,13 +826,24 @@ class MirrorTrial extends Phaser.Scene {
         // however near (so you can always tell how riled it is); the ones holding a corridor's walls only in a corridor running at you
         const P = MirrorTrial.POSES, near = path.length - 2, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y), was = e.pose;
         const sx = along ? Math.sign(me.x - nx) : 0, sy = along ? 0 : Math.sign(me.y - ny), pane = this.map[ny + sy]?.[nx + sx];
-        const glass = (pane === 'M' || pane === 'G') && Math.abs(along ? me.x - nx : me.y - ny) >= 2 && Math.random() < 0.75;
-        const [lo, hi] = glass ? P.GLASS : P[e.mood || 'play'];
+        const atPane = (pane === 'M' || pane === 'G') && Math.abs(along ? me.x - nx : me.y - ny) >= 2;
         const walled = along ? !this._open(nx, ny - 1) && !this._open(nx, ny + 1) : !this._open(nx - 1, ny) && !this._open(nx + 1, ny);
         const backed = (sx || sy) && !this._open(nx - sx, ny - sy) && !this.map[ny - sy]?.[nx - sx]?.match(/[MG]/);   // (stone right behind it, away from you)
-        const looks = []; for (let f = lo; f <= hi; f++) if (f !== was && (walled || !P.CORRIDOR.includes(f)) && (backed || !P.WALLED.includes(f))) looks.push(f);
-        e.pose = looks[Math.floor(Math.random() * looks.length)]; e.lean = glass ? [sx, sy] : P.WALLED.includes(e.pose) ? [-sx, -sy] : null;
-        e.truly = !glass && near >= 3 && Math.random() < MirrorTrial.CFG.MOOD.TRUE; e.trueSeen = false;   // (now and then, what it really is: only straight on)   // (up against the glass, or flat on the wall behind)
+        // a look holds for LOOK_STEPS steps, so you can make it out: a new one sooner only when its mood turns (you see it turn), or
+        // when the look no longer fits where it stands (off the glass, out of the corridor, no wall behind it)
+        const wasGlass = was >= P.GLASS[0] && was <= P.GLASS[1], turned = e.lookMood !== e.mood;
+        const fits = wasGlass ? atPane : (was >= P[e.mood || 'play'][0] && was <= P[e.mood || 'play'][1] && (walled || !P.CORRIDOR.includes(was)) && (backed || !P.WALLED.includes(was)));
+        const glass = wasGlass && fits && !turned ? true : atPane && !turned && Math.random() < 0.75;
+        if ((e.lookLeft || 0) > 0 && fits && !turned) e.lookLeft--;
+        else {
+            const [lo, hi] = glass ? P.GLASS : P[e.mood || 'play'];
+            const looks = []; for (let f = lo; f <= hi; f++) if (f !== was && (walled || !P.CORRIDOR.includes(f)) && (backed || !P.WALLED.includes(f))) looks.push(f);
+            e.pose = looks[Math.floor(Math.random() * looks.length)]; e.lookMood = e.mood;
+            const [a0, a1] = MirrorTrial.CFG.LOOK_STEPS; e.lookLeft = a0 - 1 + Math.floor(Math.random() * (a1 - a0 + 1));
+        }
+        const inGlass = e.pose >= P.GLASS[0] && e.pose <= P.GLASS[1];
+        e.lean = inGlass ? [sx, sy] : P.WALLED.includes(e.pose) ? [-sx, -sy] : null;
+        e.truly = !inGlass && near >= 3 && Math.random() < MirrorTrial.CFG.MOOD.TRUE; e.trueSeen = false;   // (now and then, what it really is: only straight on)   // (up against the glass, or flat on the wall behind)
         if (near <= 2 && (e.near ?? 9) > 2) e.fresh = true;   // (come right up on you: the first time you see it there, the sting)
         e.near = near;
         this._hear(e);

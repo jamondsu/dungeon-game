@@ -136,7 +136,7 @@ details[open] summary { margin-bottom: 12px; }
   <h2 id="them">Them</h2>
   <p>There are four. They start <strong>asleep</strong>, looking a lot like you, eyes shut. One wakes if you come within <strong>2 tiles</strong> of it, or at a noise near it: a dash (6 tiles), a chalked pane (4 tiles), breaking glass (7 tiles). Every fragment you take also wakes the nearest one still asleep. Waking takes a moment (an extra second and a half before its first step), and you'll hear it: a giggle, from where it is.</p>
   <div class="note"><p><strong>They only move while nothing is looking at them.</strong> Your eyes, your raised shard and your decoys all count. Look away, even to turn a corner, and they come toward you, the shortest way, round each other.</p></div>
-  <p>Every step one takes, it's in a new look. However near it is, the look shows its <a href="#moods">mood</a>: calm, playful or hunting, so you can always tell how riled it is. Right behind a pane between you, it's usually up against the glass instead. One step away, if you look away, it reaches you.</p>
+  <p>Every two or three steps one takes, it's in a new look, and at once when its mood turns, so you see it turn. However near it is, the look shows its <a href="#moods">mood</a>: calm, playful or hunting, so you can always tell how riled it is. Right behind a pane between you, it's usually up against the glass instead. One step away, if you look away, it reaches you.</p>
   <div class="grid">
     <figure><img src="hall/asleep.jpg" alt="One asleep down a corridor, eyes shut." width="800" height="450" loading="lazy"><figcaption>Asleep. Leave it be.</figcaption></figure>
     <figure><img src="hall/far.jpg" alt="One awake far down a corridor, waving." width="800" height="450" loading="lazy"><figcaption>Far off, and playful: waving at you.</figcaption></figure>
@@ -168,7 +168,7 @@ details[open] summary { margin-bottom: 12px; }
   <p>One with a clear line to you (through floor and panes, not stone) comes about a fifth quicker. One that's lost you round a corner slows down by a quarter. Every fragment you take makes them all a little quicker too.</p>
 
   <h2 id="roster">Every look</h2>
-  <p>Each step one takes, it picks a new look from the right group (never the one it just had). Here's every one of them.</p>
+  <p>Every two or three steps (or when its mood turns), one picks a new look from the right group, never the one it just had. Here's every one of them.</p>
       <div class="mood"><h3>Asleep</h3><span>Where they start, and where a shooed or pranked one goes back to.</span></div>
   <div class="roster">
       <figure><div class="sp" style="background-position:-0px 0" role="img" aria-label="Asleep: Looks a lot like you, eyes shut. Let it lie."></div><figcaption><b>Asleep</b>Looks a lot like you, eyes shut. Let it lie.</figcaption></figure>
@@ -378,6 +378,7 @@ details[open] summary { margin-bottom: 12px; }
     <tr><td>Them: can see you / lost you</td><td class="n">×0.8 / ×1.25 step time</td></tr>
     <tr><td>Them: first moves</td><td class="n">none in your first 5s</td></tr>
     <tr><td>Moods: calm to playful / playful to hunting</td><td class="n">75s / 75s awake (1.5× faster stared at)</td></tr>
+    <tr><td>Them: a new look</td><td class="n">every 2 to 3 steps, at once when the mood turns</td></tr>
     <tr><td>Moods: a hunter that lost you</td><td class="n">playful again after 20s unseen</td></tr>
     <tr><td>Moods: each of the first two fragments</td><td class="n">+¼ mood</td></tr>
     <tr><td>Moods: a noise near / breaking glass</td><td class="n">+½ mood / +1 mood (+1½ within 7 tiles)</td></tr>
