@@ -97,7 +97,7 @@
   <div class="wrap">
     <table class="numbers">
       <tr><th>Weapon</th><th>What it gives you</th><th>Cooldown</th></tr>
-      <tr><td>Void Fists</td><td>Every punch that lands, and every dash, is a stack of <span class="term">Momentum</span>, up to 3. Each is +7% damage with every element and +8% move speed, for 8s after the last.</td><td class="n">0.45s a punch</td></tr>
+      <tr><td>Void Fists</td><td>Every punch that lands, and each hop of your cosmic dash (two a dash), is a stack of <span class="term">Momentum</span>, up to 3. Each is +7% damage with every element and +8% move speed, for 8s after the last.</td><td class="n">0.45s a punch</td></tr>
       <tr><td>Barrier Staff</td><td>4 wards orbit you for 10s. Each eats one enemy shot, Hexes whoever fired it for 5s and shoves enemies within 2.5 tiles 2 tiles back. Recast before they run out to top them up.</td><td class="n">9s</td></tr>
       <tr><td>Astrolabe</td><td>Starfall, in a room with enemies: stars crash round the room, dazing where they land. Pick them up within 5s. Each one marks 2 enemies (10 at most). Hitting a mark pops it for 6% of the gem of the element you hold and 2% of each other one.</td><td class="n">40s</td></tr>
       <tr><td>Singularity</td><td>A well at the cursor pulls enemies in for 5s, adding a Hex stack every 2s they stay inside. While it's out and for 5s after, you take 30% less damage.</td><td class="n">12s</td></tr>
@@ -177,7 +177,7 @@
   <ul>
     <li><strong>Cosmic is never resisted.</strong> A cosmic hit lands the same on an enemy with a ring as on one without.</li>
     <li><strong>Grounding Spike</strong> turns every ring within 3 tiles grey for 6 seconds. While it's grey, the enemy resists nothing.</li>
-    <li>A few enemies in the story are <strong>IMMUNE</strong> to an element instead, and say so when you hit them. The Spike doesn't lift that. Cosmic still hurts them, a little less than usual; a fire-immune one still takes Burn ticks, and an ice-immune one can still be chilled into a cube that shatters.</li>
+    <li>An <strong>Adaptive Shade</strong> plays by its own rule. Two seconds after an element hits it, it turns into that element and takes only 15% from it (<strong>ADAPTED</strong>). The Spike doesn't lift that. Switch again.</li>
     <li>In the Tower, a <strong>WARDED</strong> floor gives every enemy a resistance.</li>
   </ul>
   <p>Switching to an element they don't resist is nearly always the answer. A 40% hit takes two and a half times as long to kill with.</p>
@@ -226,7 +226,7 @@
     <table class="numbers">
       <tr><th>On you</th><th>What it does</th><th>How long</th></tr>
       <tr><td>Dripping</td><td>Every tile you step on turns to water, and stays water until fire dries it. It doesn't hurt; it just floods the floor for the water enemies.</td><td class="n">8s</td></tr>
-      <tr><td>Bleed</td><td>Every tile you move costs health: 2 a tile at first, more on harder floors, and half that per tile in a dash. Standing still costs nothing. From a Hunter Slime's slashes and a Torpedo Diver.</td><td class="n">6s</td></tr>
+      <tr><td>Bleed</td><td>Every tile you move costs health: 2 a tile at first, more on harder floors, and half that per tile in a dash. Standing still costs nothing. From a Hunter Slime's slashes, a Torpedo Diver, and a water bubble bursting on you.</td><td>6s from a Hunter, 4s from a Diver, 3s from a bubble</td></tr>
       <tr><td>Poison</td><td>Damage every 0.6s, and any healing you get is cut by 60%. One dose at a time: a new one restarts the clock, it never stacks.</td><td>4s from the last dose</td></tr>
       <tr><td>Rooted</td><td>You can't move or dash. You can still attack.</td><td>A moment</td></tr>
       <tr><td>Burning</td><td>1 damage a second for each stack, up to 5. From an Ult Absorber's stolen fire.</td><td class="n">3s</td></tr>
@@ -275,21 +275,21 @@
   </figure>
   <h3>What the elements do with it</h3>
   <ul>
-    <li><span class="bolt">Lightning</span> does <strong>1.5 times</strong> damage to an enemy standing in water, and a hit on a wet enemy runs through the whole connected pool, hitting everything in it however far away.</li>
-    <li><span class="fire">Fire</span> dries it. Each tile takes a few hits to boil away, and becomes <span class="term">fog</span> for 15 seconds.</li>
+    <li><span class="bolt">Lightning</span> runs through water. A Storm Fists punch or an Orb Emitter orb that hits a wet enemy sends 60% of its damage through the pool round it (up to 30 tiles of it), hitting everything standing there. Ball Lightning's forks jump along a pool too. The Storm Fists also do <strong>1.5 times</strong> damage to an enemy standing in water.</li>
+    <li><span class="fire">Fire</span> dries it. Most fire boils a tile away in one hit (Ignition's flame takes a moment, the Flame Sword's embers two), and it becomes <span class="term">fog</span> for 15 seconds.</li>
     <li><span class="ice">Ice</span> skates on it: holding ice, you move faster in water than out of it.</li>
   </ul>
   <ul>
     <li><strong>Burn a dry path</strong> round a Tidecaller or Conduit before you fight near it, or kill it first.</li>
     <li><strong>Fight Drowners on dry ground.</strong></li>
-    <li><strong>On a flooded floor, lightning is king.</strong> One hit in a pool reaches every enemy standing in it.</li>
+    <li><strong>On a flooded floor, lightning is king.</strong> One punch in a pool reaches the enemies standing round it.</li>
   </ul>
 
   <!-- ───────────────────────────── CAST ───────────────────────────── -->
   <h2 id="cast">The cast</h2>
-  <p>Each enemy wears something that shows what it does: horns on the Berserker, the spout on the Spitter, a trident on the Tidal Guard. The first time you walk into a room with one you've never met, the fight holds and a card explains it. That happens once per kind, ever.</p>
+  <p>Each enemy wears something that shows what it does: horns on the Berserker, the puckered mouth on the Spitter, a trident on the Tidal Guard. The first time you walk into a room with one you've never met, the fight holds and a card explains it. That happens once per kind, ever.</p>
   <figure>
-    <img src="../assets/guide/9.jpg" width="640" height="234" alt="Two rows of enemies of many kinds, each a slime with its own colour and something on its head: horns, a stone shell, a crown, a spout, a sprout, a trident, a flower." loading="lazy">
+    <img src="../assets/guide/9.jpg" width="640" height="234" alt="Two rows of enemies of many kinds, each a slime with its own colour and something on its head: horns, a stone shell, a crown, a spout, a sprout, an anchor, a flower." loading="lazy">
     <figcaption>Some of the cast. What each one wears is a clue to what it does.</figcaption>
   </figure>
   <p>The <strong>book of enemies</strong> on the map lists every one, as it looks in a fight, with its card. Use the chips along the top to show one type at a time.</p>
@@ -306,7 +306,7 @@
       <tr><td>Healer Slime</td><td>Heals everything near it, past full. Kill it first.</td></tr>
       <tr><td>Anchor Slime</td><td>Pulses now and then: its allies speed up, you slow down. Kill it first.</td></tr>
       <tr><td>Splitter</td><td>Bursts when it dies and splits into smaller, faster copies, twice over. Kill it where you have room.</td></tr>
-      <tr><td>Mortar</td><td>Lobs shells over walls at where you stand. Inside its glow you're safe.</td></tr>
+      <tr><td>Mortar</td><td>Lobs shells over walls at where you stand, from up to 13 steps away. Inside its glow you're safe.</td></tr>
       <tr><td>Armored Slime</td><td>Plated on three sides that never turn. One side is open and glows when you stand on it. Go round.</td></tr>
       <tr><td>Leech</td><td>Picks one of your elements and steals that gem if you're still holding it when its ring closes. Kill it to get the gem back.</td></tr>
       <tr><td>Adaptive Shade</td><td>Turns into whatever element hits it and barely feels it after. Hex slides off it. Keep swapping.</td></tr>
@@ -355,7 +355,7 @@
     <figcaption>A red zone, two yellow domes, and the Gem. A yellow gem is falling over you: get into a dome holding lightning.</figcaption>
   </figure>
   <h3>The Gem</h3>
-  <p>The Gem is a crystal that can't be hurt and never moves. It breaks by itself once everything else is dead. Every 22 seconds, a gem in one element's colour starts falling on you from high up, and three glass domes of that colour open on the floor. You have 5 seconds. When it lands, you must be <strong>inside a dome and holding that element</strong>, or it bursts on you for 38.</p>
+  <p>The Gem is a crystal that can't be hurt and never moves. It breaks by itself once everything else is dead. Every 22 seconds, a gem in one element's colour starts falling on you from high up, and three glass domes of that colour open on the floor. You have 5 seconds. When it lands, you must be <strong>inside a dome and holding that element</strong>, or it bursts on you for 38, more on harder floors.</p>
   <ul>
     <li><strong>The colour is the element.</strong> A yellow gem wants lightning in your hand, blue wants ice, and so on.</li>
     <li><strong>Ults and red zones:</strong> step out before you cast. Kill the inhibitor and its zone goes with it.</li>
@@ -384,8 +384,8 @@
   </figure>
   <ul>
     <li><strong>A shared cooldown.</strong> After any ult, the others wait 5 seconds (you'll see <strong>ULT READY IN 3s</strong> and the like). Ascend is the exception: it ignores that wait and doesn't start it, so it can open a combo.</li>
-    <li><strong>No refilling itself.</strong> While an ult (or what it leaves behind) is still working, its own gem doesn't charge. A white ring runs down on that gem.</li>
-    <li><strong>Overflow.</strong> Charge that comes in past a full gem isn't lost. Up to another whole gem's worth is kept, and it makes that element's next ult hit harder: up to +50% at a whole extra gem.</li>
+    <li><strong>No refilling itself.</strong> For a while after an ult, its own gem doesn't charge: all through Scorch and the Blizzard, but only the first 4.5 seconds of Fork's 12-second aftermath and the first 6 of Ascend's 10. A white ring runs down on that gem.</li>
+    <li><strong>Overflow.</strong> Charge that comes in past a full fire, ice or lightning gem isn't lost. Up to another whole gem's worth is kept, and it makes that element's next ult hit harder: up to +50% at a whole extra gem. Cosmic has none: from stage II its spare charge fills the next layer.</li>
     <li><strong>Zones.</strong> You can't cast inside a red or violet zone (see <a href="#attacks">Reading attacks</a>).</li>
   </ul>
   <h3>Signature abilities</h3>
@@ -394,9 +394,9 @@
     <table class="numbers">
       <tr><th>Weapon</th><th>Ability</th><th>Ready when</th><th>What it does</th></tr>
       <tr><td>Icicle Cannon</td><td>Frost Shield</td><td>28 icicles have hit</td><td>5s of 35% less damage taken, and whoever hits you is chilled.</td></tr>
-      <tr><td>Magma Staff</td><td>Magma Surge</td><td>The staff has heat, from fireballs that land</td><td>Dumps the heat: everything round you is thrown back and set burning, and a ring of lava rolls out. More heat, bigger: 2 to 5 tiles, 1 to 3 tiles of knockback, 1 to 3 Burn stacks. The staff drops back to its first tier.</td></tr>
+      <tr><td>Magma Staff</td><td>Magma Surge</td><td>The staff is at its second tier of heat or more, from fireballs that land</td><td>Dumps the heat: everything round you is thrown back and set burning, and a ring of lava rolls out. More heat, bigger: 2 to 5 tiles, 1 to 3 tiles of knockback, 1 to 3 Burn stacks. The staff drops back to its first tier.</td></tr>
       <tr><td>Ignition</td><td>Blue Flame</td><td>16s after you last used it</td><td>5s of blue-hot flame: it ticks half again as fast, ignores resistance, and now and then lays a <span class="term">Blue Burn</span> stack that bursts later for 25 plus 2% of max HP.</td></tr>
-      <tr><td>Fractal Shard</td><td>The gamble</td><td>5 fan shards have hit enemies its spikes marked</td><td>6s of one of two: <strong>Deadly Accuracy</strong> (five shards circle you; click and they converge on the spot and fly on through, every hit a crit) or <strong>Shard Storm</strong> (heals 10% of your max HP, doubles ice ult charge, every shot a wide fan of chip shards).</td></tr>
+      <tr><td>Fractal Shard</td><td>The gamble</td><td>5 fans have each hit an enemy its spikes marked</td><td>6s of one of two: <strong>Deadly Accuracy</strong> (five shards circle you; click and they converge on the spot and fly on through, every hit a crit) or <strong>Shard Storm</strong> (heals 10% of your max HP, doubles ice ult charge, every shot a wide fan of chip shards).</td></tr>
       <tr><td>Circuit Breaker</td><td>Current</td><td>Any time you have a wire on an enemy</td><td>Turns the current on: down the wire nearest your aim, again each time it's ready, until you press <kbd>R</kbd> again or no wire is left.</td></tr>
     </table>
   </div>
@@ -475,7 +475,7 @@
     <table class="numbers">
       <tr><th>Part</th><th>What it does</th></tr>
       <tr><td>The bolt</td><td>Goes through every enemy in your room once (30 at most): the nearest first, then the rest in random order, each hop quicker than the last. The combo counts up over each one, x1, x2, x3 and on.</td></tr>
-      <tr><td>The ignition</td><td>Each enemy it went through takes 18 plus 1.2% of its max HP (bosses a quarter of that share), and 4% more for each step of its combo count: the tenth takes 36% more than the first. Anything else the path crosses takes 8. All of it is multiplied by the crowd: +16% for each enemy past the first, up to 4.5 times.</td></tr>
+      <tr><td>The ignition</td><td>Each enemy it went through takes 18 plus 1.2% of its max HP (bosses a quarter of that share), and 4% more for each step of its combo count: the tenth takes 36% more than the first. Everything the path crosses takes 8 as well, the ones it went through included. All of it is multiplied by the crowd: +16% for each enemy past the first, up to 4.5 times.</td></tr>
       <tr><td>The aftermath</td><td>For 12s, 40% of any damage to any enemy forks to every enemy within 2.5 tiles of it (at most 30 a hit).</td></tr>
       <tr><td>Your steps</td><td>You move twice as fast, and every step thumps the floor round you (the 5 by 5 square, corners off), dazing what's on it, and zaps everything within 5 tiles for 5 plus 0.5% of max HP. Each zap forks to 2 more enemies at half.</td></tr>
     </table>
@@ -566,9 +566,9 @@
       <tr><td>EMP Pulse</td><td class="n">120</td><td class="n">30s</td><td>From where you stand, no throw: everything within 8 tiles is slowed hard (three and a half times slower), easing off over 6s.</td></tr>
       <tr><td>Displacer</td><td class="n">180</td><td class="n">24s</td><td>Catches up to 6 enemies within 4 tiles of where it lands. Click within 2s to set them down anywhere within 10 tiles of you, or they're flung off further.</td></tr>
       <tr><td>Grounding Spike</td><td class="n">240</td><td class="n">20s</td><td>Strips resistance from everything within 3 tiles for 6s. Their rings turn grey.</td></tr>
-      <tr><td>Mend Totem</td><td class="n">150</td><td class="n">35s</td><td>Planted where it lands. Stand within 2.5 tiles to heal 2% of your max HP a second for 6s (12% in all). Your only carried healing.</td></tr>
+      <tr><td>Mend Totem</td><td class="n">150</td><td class="n">35s</td><td>Planted where it lands, for 6s. Stand within 2.5 tiles to heal 2% of your max HP each second (10% in all). The one gadget that heals.</td></tr>
       <tr><td>Bulwark</td><td class="n">200</td><td class="n">26s</td><td>Three tiles of wall across the line you threw it on, for 4s. Enemies have to go round, and it stops shots. It never lands on anyone.</td></tr>
-      <tr><td>Decoy Slime</td><td class="n">220</td><td class="n">28s</td><td>A pink copy of you. Enemies within 5 tiles go for it instead of you for 3s. It has 40 HP, so heavy hitters break it early, and it pops for 8 when it goes.</td></tr>
+      <tr><td>Decoy Slime</td><td class="n">220</td><td class="n">28s</td><td>A pink copy of you. Enemies within 5 tiles (not bosses) go for it instead of you for 3s. It has 40 HP, so heavy hitters break it early, and it pops for 8 when it goes.</td></tr>
     </table>
   </div>
   <p>You buy them and choose your two in the <strong>GADGETS</strong> tab of the shop. Smite Charge is yours from the start.</p>
@@ -609,7 +609,7 @@
 
   <!-- ───────────────────────────── RELICS ───────────────────────────── -->
   <h2 id="relics">Relics</h2>
-  <p>Relics are trinkets you keep for good. They work in every level, story and Tower alike. Most trade a strength for a weakness. They're sorted onto <strong>shelves</strong> by the kind of play they suit, and each shelf has three tiers.</p>
+  <p>Relics are trinkets you keep for good. They work in the story levels and the Tower, but not in Eng. Defense. Most trade a strength for a weakness. They're sorted onto <strong>shelves</strong> by the kind of play they suit, and each shelf has three tiers.</p>
   <figure id="fig-relics">
     <div class="shot"><img src="../assets/guide/20.jpg" width="640" height="360" alt="The RELICS tab of Glurp's shop: three shelves labelled III LEGEND, II ADEPT and I NOVICE, the PRECISION shelf named below them, and the card for Keen Eye (+5% crit chance) showing slots 2 of 4 worn. Chalk arrows point at the tier labels, labelled three tiers, and at the slots line, labelled relic slots." loading="lazy">
       <svg class="ink" viewBox="0 0 640 360" aria-hidden="true">
@@ -659,7 +659,7 @@
     </table>
   </div>
   <h3>Siphoning</h3>
-  <p><strong>SIPHON</strong> fuses two relics you own into one <span class="term">Corrupted</span> relic. It keeps half of each one's upsides and none of their downsides, but gains a small curse of its own: ults charge 10% slower, or you take 8% more damage, move 5% slower, have 10 less max HP, or Tower floors pay 10% less. The two you fused are gone for good, and you can wear only one Corrupted relic at a time.</p>
+  <p><strong>SIPHON</strong> fuses two relics you own into one <span class="term">Corrupted</span> relic. It keeps each one's upsides at half strength (an on-or-off one stays whole) and none of their downsides, but gains a small curse of its own: ults charge 10% slower, or you take 8% more damage, move 5% slower, have 10 less max HP, or Tower floors pay 10% less. The two you fused are gone for good, and you can wear only one Corrupted relic at a time.</p>
   <ul>
     <li><strong>Match your relics to your elements.</strong> An Ember relic does nothing for a lightning player.</li>
     <li><strong>Read the downside twice.</strong> -30 max HP is a lot on the early Tower floors.</li>
@@ -742,7 +742,7 @@
   </div>
   <ul>
     <li><strong>Don't reforge a good book.</strong> Most rolls land under 25. Reforge Flawed books, not Superior ones.</li>
-    <li><strong>Feed combines quality.</strong> Three copies at 50 beat two, and two near-perfect copies reach the 95% cap.</li>
+    <li><strong>Feed combines quality.</strong> Three copies at 50 beat two, and copies adding up to 200 quality reach the 95% cap.</li>
     <li><strong>Reseal instead of salvaging</strong> when you'd rather have another pull than the dust.</li>
   </ul>
 
@@ -759,7 +759,7 @@
   </figure>
   <h3>Seeds</h3>
   <p>Seeds drop in the Tower: every boss gives one, and a normal floor sometimes does. Higher floors drop better seeds: only tier 1 below floor 10, some tier 2 from floor 10, and tier 3 from floor 25. A seed is <strong>never used up</strong>. Planting one puts a copy to work, and harvesting gives it back. A second copy lets you grow two beds of it at once; copies past your number of beds turn into dust.</p>
-  <p>A planted seed waits until you <strong>water</strong> it. Then it grows, and the can you watered it with decides how fast. Nothing withers: a ripe crop just waits for you.</p>
+  <p>Seeds are <strong>watered</strong> as you sprinkle them, so a bed starts growing at once, as fast as your can makes it. A new can only speeds up what you sow after you buy it. Nothing withers: a ripe crop just waits for you.</p>
   <h3>Day and night</h3>
   <p>A garden day lasts 20 minutes of real time, and about 7 of them are night. Some crops grow only by day, some only by night: they pause the rest of the time, but in real time they take about as long as any other. The top right of the screen tells you which it is and how long until it changes.</p>
   <h3>Harvest and blessings</h3>
@@ -787,7 +787,7 @@
   </div>
   <p>Hours are with the Clay Can; a better can divides them. Dust is for a whole bed of one crop.</p>
   <h3>The garden shop</h3>
-  <p>The garden shop sells three things, for glorps.</p>
+  <p>The garden shop sells these three for glorps, and fish tanks too. Its other tabs sell fishing rods, decor and orchard saplings for dust, and orchard plots for glorps.</p>
   <div class="wrap">
     <table class="numbers">
       <tr><th>The rake</th><th>Beds</th><th>Blessings banked</th><th>Opens at Tower best</th><th>Glorps</th></tr>
@@ -809,7 +809,7 @@
   </div>
   <p><strong>Fertilizer</strong> costs 150 glorps and doubles a bed's next harvest.</p>
   <h3>Fishing</h3>
-  <p>The river and the lake can be fished for dust, and for rare seeds you can't get in the Tower: the river's Tide Lotus, Reedwhistle and Lantern Lily, and the lake's Coral Fan, Moonmelon, Pearl Kelp and Abyssbloom.</p>
+  <p>The river and the lake can be fished for dust, and for rare seeds you can't get in the Tower: the river's Tide Lotus, Reedwhistle and Lantern Lily, and the lake's Coral Fan, Moonmelon, Pearl Kelp and Abyssbloom. The lake wakes once your best Tower floor is 10.</p>
   <ul>
     <li><strong>Plant different crops.</strong> Blessings only stack when they're different, so a bed of each beats three of one.</li>
     <li><strong>Fill the bank before a climb.</strong> Starting a climb spends everything banked, full or not.</li>

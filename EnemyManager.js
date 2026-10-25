@@ -673,11 +673,11 @@ class EnemyManager {
                         if ((enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) continue;
                     }
                     const mdx = this.playerX - enemy.x, mdy = this.playerY - enemy.y;
-                    const mdist = Math.abs(mdx) + Math.abs(mdy);
+                    const mdist = Math.abs(mdx) + Math.abs(mdy), mround = Math.hypot(mdx, mdy);   // its reach in steps; its safe zone round, like its glow
                     // A mortar lobs over the walls of ITS room; it is not artillery. Without
                     // an upper bound the only thing limiting range was the room gate above.
                     const mmax = enemy._mortarMaxRange ?? 13;
-                    if (mdist > enemy._mortarSafeRadius && mdist <= mmax
+                    if (mround > enemy._mortarSafeRadius && mdist <= mmax
                         && currentTime - enemy._mortarLastFire >= enemy._mortarCooldown / this._atkSpd(enemy, currentTime)) {
                         enemy._mortarLastFire = currentTime;
                         this._fireMortarShot(enemy);

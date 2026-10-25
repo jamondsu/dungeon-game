@@ -314,7 +314,7 @@ const Relics = {
             dmg: v => `${sg(v)}${pct(v)}% damage`, hp: v => `${v > 0 ? '+' : '-'}${Math.abs(v)} max HP`,
             taken: v => `take ${pct(v)}% ${v < 1 ? 'less' : 'more'} damage`, ultDmg: v => `${sg(v)}${pct(v)}% ult damage`, ult: v => `ults charge ${pct(v)}% ${v > 1 ? 'faster' : 'slower'}`,
             react: v => `reactions charge ${pct(v)}% more`, speed: v => `move ${pct(v)}% ${v < 1 ? 'faster' : 'slower'}`,
-            pay: v => `Tower floors pay ${pct(v)}% more`, leech: v => `kills heal ${v} HP`, thorns: v => `melee hits on you deal ${v} back`,
+            pay: v => `Tower floors pay ${pct(v)}% ${v < 1 ? 'less' : 'more'}`, leech: v => `kills heal ${v} HP`, thorns: v => `melee hits on you deal ${v} back`,
             heal: v => `heal ${Math.round(v * 100)}% more after a Tower floor`, crit: v => `+${Math.round(v * 100)}% crit chance`,
             critMult: v => `crits hit ${Math.round(v * 100)}% harder`, proc: v => `${Math.round(v * 100)}% of hits add their element's touch`,
             boom: v => `kills burst for ${v} on what's close`, boss: v => `${sg(v)}${pct(v)}% damage to bosses`,

@@ -546,7 +546,7 @@ class EnchantScene extends Phaser.Scene {
         const can = k => books >= k && dust >= U * k;
         const go = k => {
             if (this._busy) return;
-            if (!books) { Sfx.play(this, 'deny'); this._say('No sealed books. The Tower drops them, Glurp sells them.'); return; }
+            if (!books) { Sfx.play(this, 'deny'); this._say('No sealed books. The Tower drops them.'); return; }
             const n = Math.min(k, books, Math.floor(dust / U));
             if (n < 1) { Sfx.play(this, 'deny'); this._say(`Unsealing takes ✧${U} dust. Salvage books you don't want, or climb the Tower.`); return; }
             this._unseal(n);

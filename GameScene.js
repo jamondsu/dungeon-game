@@ -1069,14 +1069,14 @@ class GameScene extends Phaser.Scene {
 
     _cosmicDashToward() {
         const now = this.time.now, HOP_GAP = 400;
-        if (this._lifting || this._cosmicHops || now - (this.lastCosmicDashTime || 0) < this.cosmicDashCooldown) return;
+        if (this._lifting || this._cosmicHops || this._playerRooted || now - (this.lastCosmicDashTime || 0) < this.cosmicDashCooldown) return;
         if (!this._stamSpend()) return;
         this._cosmicHops = true;
         this._glideUntil = now + HOP_GAP + 150;   // the catch: you can't walk during it, from the first hop until just after the second
         this._cosmicHop();
         this.time.delayedCall(HOP_GAP, () => {
             this._cosmicHops = false; this.lastCosmicDashTime = this.time.now;
-            if (this.currentElement === 'cosmic' && !this._deathScreenActive && !this._csRooted?.() && !this._glued()) this._cosmicHop();
+            if (this.currentElement === 'cosmic' && !this._deathScreenActive && !this._csRooted?.() && !this._playerRooted && !this._glued()) this._cosmicHop();
         });
     }
     _cosmicHop() {
