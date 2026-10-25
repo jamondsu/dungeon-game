@@ -360,8 +360,7 @@ class MirrorTrial extends Phaser.Scene {
         this.cameras.main.flash(280, 255, 255, 255); this.cameras.main.shake(120, 0.006);
         Sfx.play(this, 'gulp'); Sfx.play(this, 'dash'); Sfx.play(this, 'whoosh');
         this._noise(x, y, C.WAKE.DASH);
-        this.tweens.killTweensOf(this);
-        this.tweens.add({ targets: this, gooK: 1, fovK: C.GOO.FOV, duration: 90, hold: 260, yoyo: true, ease: 'Quad.easeOut' });
+        this.dashAt = this.time.now;   // (the goo over the view and the view widening follow from this: update)
         this.tweens.add({ targets: this.view, x: x + 0.5, y: y + 0.5, duration: 90, ease: 'Quad.easeOut', onComplete: () => this._moved() });
     }
     // E: a sentry set down where you stand; or, standing on one that hasn't gone off, picked back up
@@ -748,6 +747,10 @@ class MirrorTrial extends Phaser.Scene {
     update(time, delta) {
         if (this.reading) return;   // (the guide open: the hall holds still)
         const C = MirrorTrial.CFG, now = this.time.now;
+        // a dash's goo over the view and the view widened: in quickly, held, back out, worked out from the time since the dash
+        // each frame, so another dash or TAB can never leave the view stuck wide (a yoyo tween killed partway did)
+        const dt = now - (this.dashAt ?? -1e9), dk = dt < 90 ? 1 - (1 - dt / 90) ** 2 : dt < 350 ? 1 : dt < 440 ? 1 - (dt - 350) / 90 : 0;
+        this.gooK = dk; this.fovK = 1 + (C.GOO.FOV - 1) * dk;
         this._gooTick(now, delta);
         // your reflection: a beat behind you (where you were ECHO_MS ago, the shard up or not)
         this.echoes.push({ at: now, x: this.view.x, y: this.view.y, up: this.raised });
