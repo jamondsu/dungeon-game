@@ -59,7 +59,7 @@ const Enchants = {
     BUILDS: { CRIT: 0xffd34a, HUNTER: 0xe05a7a, BURN: 0xff8a3a, FROST: 0x7ad8ff, STORM: 0xffe85a, AIM: 0xc8d0e0, ULT: 0xd8a8ff, SUSTAIN: 0x8ae07a, CROWD: 0xff6a4a,
               TANK: 0xa8b8c8, SPEED: 0x8af0c8, REACT: 0xff7ae0, LUCK: 0x6ad86a },
     // weapons whose shots spread (True Aim): each scales its spread by Enchants.spread
-    SPREAD: ['ignition', 'magma_staff', 'icicle_cannon', 'fractal_shard'],
+    SPREAD: ['magma_staff', 'icicle_cannon', 'fractal_shard'],   // (the Ignition's flame is a fan of fire: nothing to tighten)
     // r: rarity; max: top level; b: build; fit: 'dmg' (any weapon that deals damage, the
     // default), 'any', an element, or a list's name; v: the effect per level at quality 50;
     // text(x, lvl): x is v x level x quality.

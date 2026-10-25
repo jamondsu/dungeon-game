@@ -3631,7 +3631,7 @@ class WeaponSystem {
             // apart (7 over 90 -> 5 over 60) cuts coverage without handing back focused damage.
             const FAN_COUNT = (mode ? FC.FAN_N : 5) + 2 * WeaponLevels.perk('fractal_shard', 'fan');   // Burst Fan: more (Shard Storm: a wide one)
             this._fractalVolley = Math.random().toString(36).slice(2);   // the burst's shards fall off on one target
-            const FAN_HALF  = mode ? FC.FAN_HALF : Math.PI / 6;      // 30 deg either side = a 60 deg fan
+            const FAN_HALF  = (mode ? FC.FAN_HALF : Math.PI / 6) * Enchants.spread('fractal_shard');      // 30 deg either side = a 60 deg fan (True Aim narrows it)
             for (let i = 0; i < FAN_COUNT; i++) {
                 const t = FAN_COUNT === 1 ? 0.5 : i / (FAN_COUNT - 1);
                 this._spawnSplitterShard(playerPx, playerPy, angle - FAN_HALF + t * (FAN_HALF * 2), 0);
