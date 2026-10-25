@@ -739,7 +739,7 @@ class TowerFloors {
         this._vfxSpawn?.(e);
         const T = this.towerRun;
         // some arrive resisting an element (switch to break them): from floor 4, more the higher you go; doubles, and from 15 the odd triple
-        if (T.twist?.id === 'warded' || (T.floor >= 4 && this.rng() < Math.min(0.5, 0.12 + T.floor * 0.012))) this._tagResist(e, this._rollResist(this.rng, T.floor >= 15));
+        if (T.twist?.id === 'warded' || (T.floor >= 4 && this.rng() < Math.min(0.5, 0.12 + T.floor * 0.012))) { const k = this._rollResist(this.rng, T.floor >= 15); this._tagResist(e, e.resistTrait ? [...new Set([].concat(e.resistTrait, k))] : k); }   // on top of its own (a Storm Elemental keeps lightning)
     }
 
     // A story boss, scaled to the floor (their HP is fixed in the story, so it's set here).

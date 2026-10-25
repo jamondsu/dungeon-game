@@ -2524,13 +2524,15 @@ class LevelManager {
         }
         this.cameras.main.shake(200, 0.013);
         this.showStatusText(bpx, bpy-50, 'VOLTSLIME DEFEATED!', '#44ffff');
-        if (!this.towerRun) Progress.announce(this, Progress.rewardBoss('gauntlet').frags);
+        if (!this.towerRun && !this.trainingRun) Progress.announce(this, Progress.rewardBoss('gauntlet').frags);   // (one summoned in the Training Ground pays nothing)
         this.tweens.killTweensOf(boss.container);
         this.tweens.add({ targets:boss.container, alpha:0, duration:400, onComplete:()=>boss.container.destroy() });
-        this.totalGlorps = (this.totalGlorps || 0) + 80;
-        localStorage.setItem('glorps', this.totalGlorps);
-        if (this.glorpText) this.glorpText.setText(`✦ ${this.totalGlorps} Glorps`);
-        if (!this.towerRun) this._level2RoomClear(6);
+        if (!this.trainingRun) {
+            this.totalGlorps = (this.totalGlorps || 0) + 80;
+            localStorage.setItem('glorps', this.totalGlorps);
+            if (this.glorpText) this.glorpText.setText(`✦ ${this.totalGlorps} Glorps`);
+        }
+        if (!this.towerRun && !this.trainingRun) this._level2RoomClear(6);
     }
 
     // ─── FINAL CHEST + UNLOCK CINEMATIC ──────────────────────────────────
@@ -10367,7 +10369,7 @@ class LevelManager {
     _voidSovereignDeath() {
         const boss = this.voidSovereignBoss;
         Sfx.play(this, 'bossdie');
-        if (!this.towerRun) Progress.announce(this, Progress.rewardBoss('voidrift').frags);
+        if (!this.towerRun && !this.trainingRun) Progress.announce(this, Progress.rewardBoss('voidrift').frags);
         this.cameras.main.shake(350, 0.025);
 
         // Clean up any surviving singularity slimes
@@ -10429,6 +10431,6 @@ class LevelManager {
         // Drop reward fragments
         if (this.towerRun) for (let i = 0; i < 8; i++) this.spawnOrbScrap(boss.container.x + (Math.random()-0.5)*60, boss.container.y + (Math.random()-0.5)*60);   // scraps: Tower runs only
 
-        if (!this.towerRun) this.time.delayedCall(1500, () => this._level3RoomClear(5));
+        if (!this.towerRun && !this.trainingRun) this.time.delayedCall(1500, () => this._level3RoomClear(5));
     }
 }
