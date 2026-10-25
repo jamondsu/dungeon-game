@@ -95,7 +95,7 @@ class MirrorTrial extends Phaser.Scene {
         ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every two or three steps they take, they look different, and the moment their mood turns.'],
         ['THEIR MOODS', 'Every one wakes calm and slow (reading, juggling, whistling), and the longer it\'s awake the worse it gets: playful, then hunting and quick (staring, up the walls). You\'ll hear it turn. Staring at one, a noise near it and breaking glass rile it faster, a fragment a little. A hunter that loses you for 20 seconds cools to playful; a shoo or a prank calms one right down. One that can see you comes quicker: lose it round a corner.'],
         ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and only your decoys still watch them. In your shard they can\'t do that to you. Hold one that isn\'t calm in your raised shard for two seconds and it slinks off to sleep it off somewhere far away, for a while.'],
-        ['THEY CAN\'T HURT YOU', 'One that reaches you pranks you, and it stays with you as stress. They have four pranks, never the same one twice running; one spins you round to face the other way. Your dread counts toward your stress too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
+        ['THEY CAN\'T HURT YOU', 'Right next to you, one you\'re not watching reaches for you first, and you hear it: turn and catch it. Look away again and it pranks you, and that stays with you as stress. They have four pranks, never the same one twice running; one spins you round to face the other way. Your dread counts toward your stress too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
         ['YOUR SHARD', 'Held up, your arm tires: it gives out after four seconds, and rests slowly once it\'s down. The goo arm beside the shard shows what\'s left. Down, the shard fogs up now and then, and a fogged shard only holds the ones close behind you. Hold F to wipe it, but your arm can\'t rest while you do.'],
         ['WHAT YOU\'LL FIND', 'Flasks of your goo: SHIFT dashes you up to three tiles on, past one of them, loudly. Decoys (Q): they take it for you, and whatever it stares at holds. Sentries (E): one of them moving near it, even a wall away, or waking beside it, sets it off, and two pings show you where they are. Glorps go into your purse.'],
         ['LOOKING FROM ABOVE', 'Hold TAB to step out of your own eyes, up behind yourself: you, the panes round you with your chalk and marks, your slimes. You never see them this way, except where a sentry pings. While you\'re up there only your decoys watch them, and you can\'t move till you let go. W S step, A D turn, ESC leaves the hall.'],
@@ -103,10 +103,11 @@ class MirrorTrial extends Phaser.Scene {
     // their looks (mt_twin, a strip): asleep; awake, by their mood, however near: calm (reading in
     // glasses, juggling your gems, whistling, counting glorps, a baby with a pacifier, caught snacking on a burger, lounging...), playful (waving, peekaboo, copying you...), hunting
     // (staring, up the walls, splatted on one, weeping...); right behind a pane between you, up against the glass
-    // (face squashed on it, a heart in its breath, waving in, licking it, knocking); (frames 38-49, the old near looks, unused); (a prank's
+    // (face squashed on it, a heart in its breath, waving in, licking it, knocking); REACH, right next to you, the step before it gets
+    // you, caught in time (mid-reach, sneaking up, mid-BOO, going for a hug); (frames 38-44, the old near looks, unused); (a prank's
     // face is its own drawing, mt_face); TRUE, what they really are (rare, and only ever seen straight on); CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
-    static POSES = { SLEEP: [0, 1], calm: [2, 15], play: [16, 24], hunt: [25, 32], GLASS: [33, 37], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
+    static POSES = { SLEEP: [0, 1], calm: [2, 15], play: [16, 24], hunt: [25, 32], GLASS: [33, 37], REACH: [45, 49], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
@@ -825,7 +826,8 @@ class MirrorTrial extends Phaser.Scene {
         let at = [me.x, me.y]; const path = [at];
         while (from.get(key(...at))) { at = from.get(key(...at)); path.unshift(at); }
         const [nx, ny] = path[1];
-        if (nx === me.x && ny === me.y) return this._prank(e);
+        if (nx === me.x && ny === me.y) return e.reaching ? this._prank(e) : this._reach(e);   // (next to you: it reaches first, then it has you)
+        e.reaching = false;
         e.x = nx; e.y = ny; e.movedAt = this.time.now;
         this.closest = Math.min(this.closest, Math.abs(nx - me.x) + Math.abs(ny - me.y));
         // a new look (never the one it had): right behind a pane between you, mostly up against the glass; else its mood's,
@@ -1010,11 +1012,18 @@ class MirrorTrial extends Phaser.Scene {
         if (typeof Achievements !== 'undefined') { Achievements.bump('trueFace', 1, this, true); const G = this.scene.get('Game'); if (G) try { G.totalGlorps = parseInt(localStorage.getItem('glorps'), 10) || G.totalGlorps; } catch (er) {} }   // (its glorps went to the save: the Game's purse kept in step)
     }
     // one of them off: asleep again, anywhere open far from you that nobody's in
+    // Right next to you and unseen: it doesn't get you yet. It reaches, caught in time almost on you, and you hear it; its next
+    // unseen step has you, so that's your one chance to turn and catch it
+    _reach(e) {
+        const P = MirrorTrial.POSES;
+        Object.assign(e, { reaching: true, pose: Phaser.Math.Between(...P.REACH), lean: null, truly: false, lookLeft: 0, lookMood: null, fresh: true, movedAt: this.time.now });
+        Sfx.play(this, 'hall_reach', this._where(e) || {});
+    }
     _sendOff(e) {
         const far = [];
         this.map.forEach((row, y) => row.forEach((c, x) => { if (c === '.' && Math.abs(x - this.me.x) + Math.abs(y - this.me.y) >= 8 && !this.ents.some(o => o.x === x && o.y === y)) far.push([x, y]); }));
         if (far.length) [e.x, e.y] = far[Math.floor(Math.random() * far.length)];
-        Object.assign(e, { awake: false, pose: Math.random() < 0.5 ? 0 : 1, t: 0, fresh: false, shy: 0, lean: null, mood: null, rile: 0, restUntil: this.time.now + Phaser.Math.Between(...MirrorTrial.CFG.MOOD.REST_MS) });   // (it's had its fun: a rest, then up again, calm)   // (it's had its fun: calm, next time it wakes)
+        Object.assign(e, { awake: false, reaching: false, pose: Math.random() < 0.5 ? 0 : 1, t: 0, fresh: false, shy: 0, lean: null, mood: null, rile: 0, restUntil: this.time.now + Phaser.Math.Between(...MirrorTrial.CFG.MOOD.REST_MS) });   // (it's had its fun: a rest, then up again, calm)   // (it's had its fun: calm, next time it wakes)
     }
     // held in a reflection long enough: it doesn't like being caught there, and slinks off
     _shoo(e) {

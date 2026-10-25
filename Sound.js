@@ -881,6 +881,14 @@ const Sfx = {
                 this._tone(ctx, at, { type: 'triangle', f0: f * 1.06, f1: f * 0.9, dur: 0.1, vol: v * 0.5 * dull, attack: 0.012, out, space: true });
             }
         },
+        hall_reach(ctx, t, o) {           // one of them right on you, reaching: a sharp breath in, two shrill notes grinding a semitone apart, your heart jumping (o.pan)
+            const pan = ctx.createStereoPanner?.();
+            if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
+            const out = pan || undefined;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 800, f1: 3400, q: 2.5, dur: 0.3, vol: 0.17, attack: 0.22, out });
+            for (const f of [1245, 1319]) this._tone(ctx, t + 0.24, { type: 'sawtooth', f0: f, f1: f * 1.04, dur: 0.55, vol: 0.045, attack: 0.02, out, space: true });
+            for (const [at, f, k] of [[0.24, 66, 1], [0.38, 54, 0.8]]) this._tone(ctx, t + at, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.14, vol: 0.26 * k });
+        },
         heartbeat(ctx, t, o) {            // your heart: lub-dub, low (o.hard, 0-1: harder)
             const v = 0.12 + 0.14 * (o.hard || 0);
             for (const [at, f, k] of [[0, 62, 1], [0.16, 52, 0.75]]) this._tone(ctx, t + at, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.14, vol: v * k });
