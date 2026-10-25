@@ -36,7 +36,7 @@
 // of them if it's in the way (not through stone or glass), loud. Found in the hall: decoy slimes (Q, you in pink: set one
 // down and it stares the way you face for a while; they take it for you, and anything in its line holds) and sentry
 // slimes (E sets one down: one of them moving within its reach, even a wall away, or one asleep by it waking, sets it off: it pings twice, each ping
-// showing you where they are for a moment, then it's spent). Your map (TAB, held up to your face: nothing watches them) is
+// showing you where they are for a moment, then it's spent). Your map (TAB, held up to your face: only your decoys watch them) is
 // the whole hall: its panes as you've chalked or marked them, your decoys and sentries, you; them only as a ping shows.
 // Drawn small and scaled up: a ray a column through the tile map, off mirrors and through glass, shaded to black with
 // distance and dithered to a few levels a colour; the shard's view the same, turned round and flipped, cut to its shape.
@@ -89,16 +89,16 @@ class MirrorTrial extends Phaser.Scene {
     // HOW THE HALL WORKS: the game's own guide (LevelSelectScene._guide), a picture from the hall a page (assets/mirror_guide).
     // By itself the first time you come in (mirror_guide_seen), and on H; the hall holds still while it's open
     static GUIDE = [
-        ['THE HALL OF REFLECTIONS', 'Five fragments of the way out are in mirrors, spread through the hall\'s 30 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they all hear it. Three make the way out whole, and taking the third wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
+        ['THE HALL OF REFLECTIONS', 'Five fragments of the way out are in mirrors, spread through the hall\'s 30 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they hear it. Three make the way out whole, and taking the third wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
         ['MIRROR OR GLASS?', 'Straight on, a mirror here looks just like glass: you see through both. Only a reflection of a reflection shows. Turn your back on a pane and hold up your shard (SPACE): a mirror shows you, holding the shard; glass shows what\'s beyond it. Your decoys and sentries are made of reflection, so a mirror shows them even straight on.'],
         ['CHALK AND MARKS', 'Chalk is the real test: an eye for a mirror, a cross for glass. C puts your own mark on a pane (glass, then mirror, then rubbed out) so you don\'t test it twice; with the shard up, it marks the pane behind you. Shattered glass wakes every sleeper near it, and the awake ones lunge two steps at you.'],
         ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every step they take, they look different.'],
         ['THEIR MOODS', 'Every one wakes calm and slow (reading, juggling, whistling), and the longer it\'s awake the worse it gets: playful, then hunting and quick (staring, up the walls). You\'ll hear it turn. Staring at one, a noise near it and breaking glass rile it faster; a fragment taken lifts them all. Only a shoo or a prank calms one down. One that can see you comes quicker: lose it round a corner.'],
-        ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and nothing is watching them. In your shard they can\'t do that to you. Hold one in your raised shard for two seconds and it slinks off to sleep it off somewhere far away, for a while.'],
-        ['THEY CAN\'T HURT YOU', 'One that reaches you pranks you, and it stays with you as stress. Your dread counts toward it too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
+        ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and only your decoys still watch them. In your shard they can\'t do that to you. Hold one that isn\'t calm in your raised shard for two seconds and it slinks off to sleep it off somewhere far away, for a while.'],
+        ['THEY CAN\'T HURT YOU', 'One that reaches you pranks you, and it stays with you as stress. They have four pranks, never the same one twice running; one spins you round to face the other way. Your dread counts toward your stress too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
         ['YOUR SHARD', 'Held up, your arm tires: it gives out after four seconds, and rests slowly once it\'s down. The goo arm beside the shard shows what\'s left. Down, the shard fogs up now and then, and a fogged shard only holds the ones close behind you. Hold F to wipe it, but your arm can\'t rest while you do.'],
-        ['WHAT YOU\'LL FIND', 'Flasks of your goo: SHIFT dashes you three tiles on, past one of them, loudly. Decoys (Q): they take it for you, and whatever it stares at holds. Sentries (E): one of them moving near it, even a wall away, or waking beside it, sets it off, and two pings show you where they are. Glorps go into your purse.'],
-        ['LOOKING FROM ABOVE', 'Hold TAB to step out of your own eyes, up behind yourself: you, the panes round you with your chalk and marks, your slimes. You never see them this way, except where a sentry pings, and while you\'re out of your eyes nothing watches them. W S step, A D turn, ESC leaves the hall.'],
+        ['WHAT YOU\'LL FIND', 'Flasks of your goo: SHIFT dashes you up to three tiles on, past one of them, loudly. Decoys (Q): they take it for you, and whatever it stares at holds. Sentries (E): one of them moving near it, even a wall away, or waking beside it, sets it off, and two pings show you where they are. Glorps go into your purse.'],
+        ['LOOKING FROM ABOVE', 'Hold TAB to step out of your own eyes, up behind yourself: you, the panes round you with your chalk and marks, your slimes. You never see them this way, except where a sentry pings. While you\'re up there only your decoys watch them, and you can\'t move till you let go. W S step, A D turn, ESC leaves the hall.'],
     ];
     // their looks (mt_twin, a strip: scratchpad art states.mjs --game): asleep; seen from afar, by their mood: calm (reading in
     // glasses, juggling your gems, whistling, counting glorps, a baby with a pacifier, caught snacking on a burger, lounging...), playful (waving, peekaboo, copying you...), hunting
@@ -207,7 +207,7 @@ class MirrorTrial extends Phaser.Scene {
         this.mapDim = this.add.rectangle(0, 0, W, H, 0x05030a).setOrigin(0).setAlpha(0).setDepth(6.4);
         this.overCv = canvas('mt_over', W, H);   // the hall from above, drawn each frame it's out
         this.mapImg = this.add.image(W / 2, H / 2, 'mt_over').setDepth(6.5).setVisible(false);
-        this.mapHint = this.add.text(W / 2, H - 58, 'AN EYE: A MIRROR · A CROSS: GLASS · FAINT: YOUR MARK (C) · PLAIN: NOT TESTED\nOUT OF YOUR OWN EYES. WHILE YOU ARE, NOTHING WATCHES THEM', { fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d6c49a', stroke: '#05030a', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(6.6).setAlpha(0);
+        this.mapHint = this.add.text(W / 2, H - 58, 'AN EYE: A MIRROR · A CROSS: GLASS · FAINT: YOUR MARK (C) · PLAIN: NOT TESTED\nOUT OF YOUR OWN EYES. WHILE YOU ARE, ONLY YOUR DECOYS WATCH THEM', { fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d6c49a', stroke: '#05030a', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(6.6).setAlpha(0);
         this.mapMode = null;
         this.input.keyboard.addCapture(Phaser.Input.Keyboard.KeyCodes.TAB);
         this.glorpTxt = this.add.text(W - 24, 20, '', { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#5dffb8', stroke: '#05030a', strokeThickness: 5 }).setOrigin(1, 0).setDepth(6);
@@ -400,7 +400,7 @@ class MirrorTrial extends Phaser.Scene {
     }
     // Your dread: looking straight at one that's awake (not in a reflection) builds it, faster the more of it fills your view;
     // it ebbs when you stop. One that's just turned horrible stings the first time it's seen, anywhere. Full: you black out for
-    // a moment (and nothing watches them). Your stress: what their pranks left you with, for good, and your dread on top; full,
+    // a moment (and only your decoys watch them). Your stress: what their pranks left you with, for good, and your dread on top; full,
     // you're scared to death (two pranks in, a full dread does it; three, a moment's). The look of it: the edges darkening, the
     // colour going (your dread); cracks creeping in (your stress: as far as the pranks took them, they stay); and once they've
     // got you, your heart going all the time and the dark pulsing in, like you're about to faint, worse with every prank.
