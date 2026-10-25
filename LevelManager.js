@@ -1757,7 +1757,16 @@ class LevelManager {
             _lastAuraTime:0, _baseY:baseY, _activated:false,
         };
         if (this.isLevel2 && !this.trainingRun && !this.towerRun) this._voltSleep(this.voltslimeBoss);
+        else this._wakeArenaBoss(this.voltslimeBoss, 2200, () => this._voltslimeNextPhase());
     }
+    // The Tower and the Training Ground have no boss room to walk into: a boss starts once it has landed
+    _wakeArenaBoss(b, ms, start) {
+        if (!b || !(this.towerRun || this.trainingRun)) return;
+        b._activated = true; b.phase = 'idle';
+        this.time.delayedCall(ms, () => { if (b.active) start(); });
+    }
+    // the boss's room: the Void Rift's room 6, or the Tower's (or the Training Ground's) one arena
+    _bossArena() { return this.rooms?.[this.towerRun || this.trainingRun ? 0 : 6]; }
     // The Gauntlet's Voltslime sleeps till you come in (HUD._bossIntro wakes it): grey, its crown on the floor beside it,
     // a brood of speedy slimes dozing round it
     _voltSleep(b) {
@@ -1910,7 +1919,7 @@ class LevelManager {
         const boss = this.voltslimeBoss;
         if (!boss?.active) return;
         boss.phase = 'spawner';
-        const bossRoom = this.towerRun ? this._towerArena?.room : this.rooms?.[6];   // the Tower fights it in its arena
+        const bossRoom = this.towerRun || this.trainingRun ? this._bossArena() : this.rooms?.[this._storyRoom ? this._storyRoom(6) : 6];
         if (!bossRoom) { this.time.delayedCall(400, () => this._voltslimeNextPhase()); return; }
         let spawned = 0, attempts = 0;
         while (spawned < 4 && attempts < 80) {
@@ -8760,6 +8769,7 @@ class LevelManager {
             _isInvulnerable: false,
             _singWaveId: 0,
         };
+        this._wakeArenaBoss(this.voidSovereignBoss, 2400, () => this._voidSovereignNextAttack());
 
         // Debris orbit update timer
         this.time.addEvent({
@@ -9001,7 +9011,7 @@ class LevelManager {
         (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '☠ VOID MINES', '#cc44ff');
         Sfx.play(this, 'tell', { ms: 600, big: true });
         this.cameras.main.shake(30, 0.003);
-        const bossRoomBounds = this.rooms[6];
+        const bossRoomBounds = this._bossArena();
 
         // Rhythmic waves: 2 mines per tick, 600ms between ticks, 3 waves with a pause
         const waveCounts = boss._phase3Unlocked ? [5, 5, 5] : boss._phase2Unlocked ? [4, 4, 4] : [3, 3, 3];
@@ -9061,7 +9071,7 @@ class LevelManager {
         Sfx.play(this, 'tell', { ms: 600, big: true });
         this.cameras.main.shake(30, 0.003);
 
-        const bossRoom = this.rooms[6];
+        const bossRoom = this._bossArena();
         const count = boss._phase3Unlocked ? 18 : boss._phase2Unlocked ? 13 : 8;
         const waveId = ++boss._singWaveId;    // unique ID for this wave
 
@@ -9133,7 +9143,7 @@ class LevelManager {
         Sfx.play(this, 'laser_charge', { ms: 900 });
         this.cameras.main.shake(30, 0.004);
 
-        const bossRoom = this.rooms[6];
+        const bossRoom = this._bossArena();
         const roomX1 = bossRoom.x * this.TILE_SIZE;
         const roomY1 = bossRoom.y * this.TILE_SIZE;
         const roomX2 = (bossRoom.x + bossRoom.w) * this.TILE_SIZE;
@@ -9386,7 +9396,7 @@ class LevelManager {
         Sfx.play(this, 'tell', { ms: 600, big: true });
         boss.container.setVisible(false);
 
-        const bossRoom = this.rooms[6];
+        const bossRoom = this._bossArena();
         const cx = (bossRoom.x + bossRoom.w/2) * this.TILE_SIZE;
         const cy = (bossRoom.y + bossRoom.h/2) * this.TILE_SIZE;
         const ORBIT_R = 9 * this.TILE_SIZE;
@@ -9647,7 +9657,7 @@ class LevelManager {
 
                     // Boss returns to original position
                     this.time.delayedCall(600, () => {
-                        const bossSpawn = this.rooms[6];
+                        const bossSpawn = this._bossArena();
                         const homeX = (bossSpawn.x + bossSpawn.w/2) * this.TILE_SIZE;
                         const homeY = boss._baseY; // use the stored home Y (matches idle bob anchor exactly)
                         this.tweens.add({
@@ -9818,7 +9828,7 @@ class LevelManager {
                                 this._voidMawHop(boss, nextHop, boss.container.x, boss.container.y);
                             } else {
                                 // Final hop done — return home
-                                const bossSpawn = this.rooms[6];
+                                const bossSpawn = this._bossArena();
                                 const returnHomeX = (bossSpawn.x + bossSpawn.w / 2) * this.TILE_SIZE;
                                 const returnHomeY = boss._baseY;
                                 this.tweens.add({
@@ -9885,7 +9895,7 @@ class LevelManager {
         Sfx.play(this, 'tell', { ms: 1200, big: true });
         this.cameras.main.shake(40, 0.004);
 
-        const bossRoom = this.rooms[6];
+        const bossRoom = this._bossArena();
         const cx = (bossRoom.x + bossRoom.w / 2) * this.TILE_SIZE;
         const cy = (bossRoom.y + bossRoom.h / 2) * this.TILE_SIZE;
         const centerTX = Math.floor(cx / this.TILE_SIZE);
@@ -10213,7 +10223,7 @@ class LevelManager {
         // Destroy corner pillars. These were the Voltslime arena's coordinates (level 2's room 6):
         // in the Sovereign's room they are empty space, so phase two broke nothing. Its pillars are
         // found instead: the 2x2 blocks of wall standing inside its room.
-        const bossRoom = this.towerRun ? this.rooms[0] : this.rooms[6];   // the Tower's arena is its only room
+        const bossRoom = this._bossArena();
         const pillarPositions = [];
         for (let x = bossRoom.x + 1; x < bossRoom.x + bossRoom.w - 2; x++) {
             for (let y = bossRoom.y + 1; y < bossRoom.y + bossRoom.h - 2; y++) {

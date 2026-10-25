@@ -1756,6 +1756,8 @@ class GameScene extends Phaser.Scene {
     _drawVoidCrown(...a)         { return LevelManager.prototype._drawVoidCrown.call(this, ...a); }
     spawnVoltslimeBoss(...a)    { return LevelManager.prototype.spawnVoltslimeBoss.call(this, ...a); }
     _voltslimeNextPhase(...a)   { return LevelManager.prototype._voltslimeNextPhase.call(this, ...a); }
+    _wakeArenaBoss(...a)        { return LevelManager.prototype._wakeArenaBoss.call(this, ...a); }
+    _bossArena(...a)            { return LevelManager.prototype._bossArena.call(this, ...a); }
     _voltslimeSlam(...a)        { return LevelManager.prototype._voltslimeSlam.call(this, ...a); }
     _voltslimeScatter(...a)     { return LevelManager.prototype._voltslimeScatter.call(this, ...a); }
     _voltslimeHoming(...a)      { return LevelManager.prototype._voltslimeHoming.call(this, ...a); }
