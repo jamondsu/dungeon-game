@@ -503,6 +503,7 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     // All EnemyManager internal methods used by updateRangedEnemies and other systems
     _hasLineOfSight(...a)          { return EnemyManager.prototype._hasLineOfSight.call(this,...a); }
+    _anchorBuffEnd(...a)           { return EnemyManager.prototype._anchorBuffEnd.call(this,...a); }
     _atkSpd(...a)                  { return LevelManager.prototype._atkSpd.call(this,...a); }
     _cheerEnd(...a)                { return LevelManager.prototype._cheerEnd.call(this,...a); }
     _cheerCfg(...a)                { return LevelManager.prototype._cheerCfg.call(this,...a); }

@@ -7203,12 +7203,6 @@ class LevelManager {
 
         this._fractureEnemies(time);
 
-        // Anchor slow expiry
-        if (this._anchorSlowUntil && time > this._anchorSlowUntil) {
-            this._anchorSlowUntil = 0;
-            if (this.moveCooldown > 200) this.moveCooldown = 200;
-            if (this._playerSlowIndTimer) { this._playerSlowIndTimer.remove(); this._playerSlowIndTimer = null; }
-        }
 
         if (playerRoom !== this.currentTutorialRoom) {
             this.currentTutorialRoom = playerRoom;

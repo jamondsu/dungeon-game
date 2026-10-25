@@ -203,6 +203,12 @@ class EnemyManager {
         return path;
     }
 
+    _anchorBuffEnd(enemy) {
+        enemy._anchorBuffUntil = 0; enemy._anchorSpeedMult = 1;
+        if (enemy.sprite?.active && !enemy.isFrozen && typeof enemy.sprite.clearTint === 'function') enemy.sprite.clearTint();
+        if (enemy._speedIndTimer) { enemy._speedIndTimer.remove(); enemy._speedIndTimer = null; }
+    }
+
     moveEnemies() {
         const currentTime = this.time.now;
 
@@ -221,6 +227,13 @@ class EnemyManager {
                     );
                 }
             }
+        }
+
+        // an Anchor's slow on you wears off a pulse and a half after its last one caught you (it only ever did in the Fracture)
+        if (this._anchorSlowUntil && currentTime > this._anchorSlowUntil) {
+            this._anchorSlowUntil = 0;
+            if (this.moveCooldown > 200 && !this._singularitySlowed) this.moveCooldown = 200;
+            if (this._playerSlowIndTimer && !this._singularitySlowed) { this._playerSlowIndTimer.remove(); this._playerSlowIndTimer = null; }
         }
 
         for (let enemy of this.enemies) {
@@ -593,6 +606,7 @@ class EnemyManager {
             // hard-codes its own constant against its own flag; this is the same idea
             // without needing a new flag and a new line each time. Used by the queen's brood.
             if (enemy._moveCdMult) moveCooldown = Math.round(moveCooldown * enemy._moveCdMult);
+            if (enemy._anchorBuffUntil && enemy._anchorBuffUntil < currentTime) this._anchorBuffEnd(enemy);   // an Anchor's push wears off (walkers included)
             // Standing in water slows anything that is not native to it. This is what makes
             // water a TOOL rather than only a hazard -- the ice ult's puddles, and the
             // flooded level's terrain, both bog down an ordinary enemy. Creatures that
@@ -1274,12 +1288,7 @@ class EnemyManager {
             if (enemy._splitterMark?.active) { enemy._splitterMark.x = enemy.sprite.x; enemy._splitterMark.y = enemy.sprite.y - 20; }
             if (enemy._sniperMark?.active)   { enemy._sniperMark.x   = enemy.sprite.x; enemy._sniperMark.y   = enemy.sprite.y - 20; }
 
-            // Expire anchor speed buff
-            if (enemy._anchorBuffUntil && enemy._anchorBuffUntil < time) {
-                enemy._anchorBuffUntil = 0; enemy._anchorSpeedMult = 1;
-                if (enemy.sprite?.active && !enemy.isFrozen && typeof enemy.sprite.clearTint === 'function') enemy.sprite.clearTint();
-                if (enemy._speedIndTimer) { enemy._speedIndTimer.remove(); enemy._speedIndTimer = null; }
-            }
+            if (enemy._anchorBuffUntil && enemy._anchorBuffUntil < time) this._anchorBuffEnd(enemy);
 
             // TD sniper enemies (_tdType set only by TowerDefenseScene) can spawn or drift
             // much farther from the base than dungeon rooms ever allowed, so they get an

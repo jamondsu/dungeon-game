@@ -1931,6 +1931,7 @@ class GameScene extends Phaser.Scene {
     _bfsRun(...a) { return EnemyManager.prototype._bfsRun.call(this, ...a); }
     reconstructPath(...a) { return EnemyManager.prototype.reconstructPath.call(this, ...a); }
     moveEnemies(...a) { return EnemyManager.prototype.moveEnemies.call(this, ...a); }
+    _anchorBuffEnd(...a) { return EnemyManager.prototype._anchorBuffEnd.call(this, ...a); }
     updateVoidSniperBolts(...a) { return EnemyManager.prototype.updateVoidSniperBolts.call(this, ...a); }
     enemyAttackAnimation(...a) { return EnemyManager.prototype.enemyAttackAnimation.call(this, ...a); }
     updateRangedEnemies(...a) { return EnemyManager.prototype.updateRangedEnemies.call(this, ...a); }
