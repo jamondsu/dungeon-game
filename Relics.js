@@ -371,6 +371,24 @@ const Relics = {
     icon(scene, id) {
         const r = this.def(id), key = 'relic_' + id;
         if (!r || typeof ShopScene === 'undefined' || !ShopScene.icon) return null;
+        // its own hand-made picture (assets/art relic_art, a frame each) in four frames, with a glint now and then and a Legend's glow over it
+        const art = !r.corrupt && scene.textures.exists('relic_art') && scene.textures.get('relic_art').has(id) ? scene.textures.getFrame('relic_art', id) : null;
+        if (art) {
+            if (!scene.textures.exists(key)) {
+                const t = scene.textures.createCanvas(key, 64, 16), ctx = t.getContext();
+                ctx.imageSmoothingEnabled = false; ctx.fillStyle = '#fffbe0';
+                for (let f = 0; f < 4; f++) {
+                    ctx.drawImage(art.source.image, art.cutX, art.cutY, 16, 16, f * 16, 0, 16, 16);
+                    const dot = (x, y) => ctx.fillRect(f * 16 + x, y, 1, 1);
+                    if (r.t === 3 && f % 2 === 0) { dot(0, 1); dot(15, 3); dot(1, 13); }
+                    if (f % 4 === 1) { dot(13, 2); dot(12, 3); dot(14, 3); dot(13, 4); }
+                    t.add(String(f), 0, f * 16, 0, 16, 16);
+                }
+                t.refresh();
+            }
+            if (!scene.anims.exists(key)) scene.anims.create({ key, frames: [0, 1, 2, 3].map(f => ({ key, frame: String(f) })), frameRate: 6, repeat: -1 });
+            return key;
+        }
         const hex = c => '#' + c.toString(16).padStart(6, '0');
         const lite = c => hex([16, 8, 0].reduce((v, sh) => v | (Math.min(255, ((c >> sh) & 255) + 70) << sh), 0));
         const dark = c => hex([16, 8, 0].reduce((v, sh) => v | (Math.floor(((c >> sh) & 255) * 0.45) << sh), 0));
