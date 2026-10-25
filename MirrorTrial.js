@@ -60,7 +60,8 @@ class MirrorTrial extends Phaser.Scene {
         ECHO_MS: 300,                                                // how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         SHOO_MS: 2000,                                               // one held in a reflection (your shard) this long leaves: they don't like being caught there
-        LOOK_STEPS: [2, 3],                                          // a look holds this many steps (at random), sooner if its mood turns
+        LOOK_STEPS: [2, 3],
+        WAY: { NEAR: 3, AHEAD: 3, STARTLE: 3, BACK: [4, 7] },     // their ways of hunting (_target): within NEAR steps any of them comes straight at you; the ambusher heads AHEAD tiles past where you face; a prank startles the others within STARTLE steps back to BACK steps off                                          // a look holds this many steps (at random), sooner if its mood turns
         DREAD: { RISE: 0.12, CLOSE: 0.6, CLOSE_PX: 3500, FALL: 0.35, WAIT: 500, STING: 0.25, OUT_MS: 1000, AFTER: 0.55 },   // a second's straight look at one awake (more the more it fills your view); ebbing after WAIT; the sting of one turning near; full: you black out OUT_MS, back at AFTER
         STRESS: { PRANK: 0.3, DREAD: 0.4, CALM_MS: 2000 },            // your stress: each prank of theirs adds PRANK for good, your dread on top (full: DREAD); 1: scared to death (two pranks and a full dread; three and a moment's). After a prank, CALM_MS with none of them moving
     };
@@ -92,7 +93,7 @@ class MirrorTrial extends Phaser.Scene {
         ['THE HALL OF REFLECTIONS', 'Seven fragments of the way out are in mirrors, spread through the hall\'s 38 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they hear it. Five make the way out whole, and taking the fifth wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
         ['MIRROR OR GLASS?', 'Straight on, a mirror here looks just like glass: you see through both. Only a reflection of a reflection shows. Turn your back on a pane and hold up your shard (SPACE): a mirror shows you, holding the shard; glass shows what\'s beyond it. Your decoys and sentries are made of reflection, so a mirror shows them even straight on.'],
         ['CHALK AND MARKS', 'Chalk is the real test: an eye for a mirror, a cross for glass. C puts your own mark on a pane (glass, then mirror, then rubbed out) so you don\'t test it twice; with the shard up, it marks the pane behind you. Shattered glass wakes every sleeper near it, and the awake ones lunge two steps at you.'],
-        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every two or three steps they take, they look different, and the moment their mood turns.'],
+        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come, each its own way: one straight at you, one to head you off, one to wait by the fragment you\'re after, one wandering till it\'s near. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every two or three steps they take, they look different, and the moment their mood turns.'],
         ['THEIR MOODS', 'Every one wakes calm and slow (reading, juggling, whistling), and the longer it\'s awake the worse it gets: playful, then hunting and quick (staring, up the walls). You\'ll hear it turn. Staring at one, a noise near it and breaking glass rile it faster, a fragment a little. A hunter that loses you for 20 seconds cools to playful; a shoo or a prank calms one right down. One that can see you comes quicker: lose it round a corner.'],
         ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and only your decoys still watch them. In your shard they can\'t do that to you. Hold one in your raised shard for two seconds and it slinks off to sleep it off somewhere far away, for a while.'],
         ['THEY CAN\'T HURT YOU', 'Right next to you, one you\'re not watching reaches for you first, and you hear it: turn and catch it. Look away again and it pranks you, and that stays with you as stress. They have four pranks, never the same one twice running; one spins you round to face the other way. Your dread counts toward your stress too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
@@ -107,6 +108,8 @@ class MirrorTrial extends Phaser.Scene {
     // you, caught in time (mid-reach, sneaking up, mid-BOO, going for a hug); (frames 38-44, the old near looks, unused); (a prank's
     // face is its own drawing, mt_face); TRUE, what they really are (rare, and only ever seen straight on); CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
+    // their four ways of hunting, one each (_target)
+    static WAYS = ['chase', 'ambush', 'cut', 'wander'];
     static POSES = { SLEEP: [0, 1], calm: [2, 15], play: [16, 24], hunt: [25, 32], GLASS: [33, 37], REACH: [45, 49], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
@@ -133,7 +136,7 @@ class MirrorTrial extends Phaser.Scene {
         this.map.forEach((row, y) => row.forEach((c, x) => {
             if (c === '@') this.me = { x, y, dir: 0 };
             else if (c === 'P') { row[x] = Math.random() < C.MIRRORS ? 'M' : 'G'; return; }
-            else if (c === 'W') this.ents.push({ x, y, pose: Math.random() < 0.5 ? 0 : 1, t: 0, seen: false, awake: false });
+            else if (c === 'W') this.ents.push({ x, y, pose: Math.random() < 0.5 ? 0 : 1, t: 0, seen: false, awake: false, way: MirrorTrial.WAYS[this.ents.length % 4] });
             else if (c === 'h') this.hand = { x, y };
             else if (c === 'g') this.glorps.push({ x, y, n: 3 + Math.floor(Math.random() * 4) });
             else if ('vdn'.includes(c)) this.items.push({ x, y, k: c });
@@ -679,7 +682,7 @@ class MirrorTrial extends Phaser.Scene {
         Sfx.play(this, 'shatter'); Sfx.play(this, 'boom', { big: true }); this.cameras.main.shake(320, 0.012);
         this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.3); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 400 });
         this._note('GLASS. IT SHATTERS. THEY HEARD THAT.');
-        for (const e of this.ents) if (e.awake) { this._rile(e, C.MOOD.SHATTER); for (let k = 0; k < C.SHATTER.LUNGE && !this.caught; k++) this._entStep(e); }   // (and riled, a whole stage)
+        for (const e of this.ents) if (e.awake) { this._rile(e, C.MOOD.SHATTER); for (let k = 0; k < C.SHATTER.LUNGE && !this.caught; k++) this._entStep(e, true); }   // (and riled, a whole stage)
         if (!this.caught) this._noise(x, y, C.SHATTER.WAKE);
     }
     _act(k) {
@@ -814,20 +817,11 @@ class MirrorTrial extends Phaser.Scene {
 
     // Unseen long enough: a step toward you (the shortest way, round the others), in a new pose for how near it is; next to
     // you, it has you
-    _entStep(e) {
-        const me = this.me, key = (x, y) => y * 64 + x, from = new Map([[key(e.x, e.y), null]]), q = [[e.x, e.y]];
-        const blocked = (x, y) => this.ents.some(o => o !== e && o.x === x && o.y === y);
-        while (q.length) {
-            const [x, y] = q.shift();
-            if (x === me.x && y === me.y) break;
-            for (const [dx, dy] of MirrorTrial.DIRS) {
-                const nx = x + dx, ny = y + dy, k = key(nx, ny);
-                if (!from.has(k) && this._open(nx, ny) && !blocked(nx, ny)) { from.set(k, [x, y]); q.push([nx, ny]); }
-            }
-        }
-        if (!from.has(key(me.x, me.y))) return;
-        let at = [me.x, me.y]; const path = [at];
-        while (from.get(key(...at))) { at = from.get(key(...at)); path.unshift(at); }
+    _entStep(e, atYou = false) {   // (atYou: straight at you whatever its way: glass breaking)
+        const me = this.me, toMe = this._path(e, me.x, me.y);
+        if (!toMe) return;
+        const [tx, ty] = atYou ? [me.x, me.y] : this._target(e, toMe), path = tx === me.x && ty === me.y ? toMe : this._path(e, tx, ty) || toMe;
+        if (path.length < 2) return;   // (there already: it waits, out of sight)
         const [nx, ny] = path[1];
         if (nx === me.x && ny === me.y) return e.reaching ? this._prank(e) : this._reach(e);   // (next to you: it reaches first, then it has you)
         e.reaching = false;
@@ -835,7 +829,7 @@ class MirrorTrial extends Phaser.Scene {
         this.closest = Math.min(this.closest, Math.abs(nx - me.x) + Math.abs(ny - me.y));
         // a new look (never the one it had): right behind a pane between you, mostly up against the glass; else its mood's,
         // however near (so you can always tell how riled it is); the ones holding a corridor's walls only in a corridor running at you
-        const P = MirrorTrial.POSES, near = path.length - 2, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y), was = e.pose;
+        const P = MirrorTrial.POSES, near = (this._path(e, me.x, me.y)?.length ?? 99) - 1, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y), was = e.pose;
         const sx = along ? Math.sign(me.x - nx) : 0, sy = along ? 0 : Math.sign(me.y - ny), pane = this.map[ny + sy]?.[nx + sx];
         const atPane = (pane === 'M' || pane === 'G') && Math.abs(along ? me.x - nx : me.y - ny) >= 2;
         const walled = along ? !this._open(nx, ny - 1) && !this._open(nx, ny + 1) : !this._open(nx - 1, ny) && !this._open(nx + 1, ny);
@@ -944,6 +938,7 @@ class MirrorTrial extends Phaser.Scene {
         const laugh = this[MirrorTrial.PRANKS[kind]]();   // (how long till it laughs)
         this.calmUntil = now + Math.max(C.STRESS.CALM_MS, laugh + 1100);
         this._sendOff(e);
+        this._startle(e);
         this.time.delayedCall(laugh, () => {
             Sfx.play(this, 'hall_giggle', { near: 1, n: 3 });
             if (this.scarred >= 0.999) return this._die();
@@ -1015,6 +1010,61 @@ class MirrorTrial extends Phaser.Scene {
         if (typeof Achievements !== 'undefined') { Achievements.bump('trueFace', 1, this, true); const G = this.scene.get('Game'); if (G) try { G.totalGlorps = parseInt(localStorage.getItem('glorps'), 10) || G.totalGlorps; } catch (er) {} }   // (its glorps went to the save: the Game's purse kept in step)
     }
     // one of them off: asleep again, anywhere open far from you that nobody's in
+    // the way for `e` to (tx, ty) over open floor, round the others: [where it is, ..., there], or null
+    _path(e, tx, ty) {
+        const key = (x, y) => y * 64 + x, from = new Map([[key(e.x, e.y), null]]), q = [[e.x, e.y]];
+        const blocked = (x, y) => this.ents.some(o => o !== e && o.x === x && o.y === y);
+        while (q.length) {
+            const [x, y] = q.shift();
+            if (x === tx && y === ty) break;
+            for (const [dx, dy] of MirrorTrial.DIRS) {
+                const nx = x + dx, ny = y + dy, k = key(nx, ny);
+                if (!from.has(k) && this._open(nx, ny) && !blocked(nx, ny)) { from.set(k, [x, y]); q.push([nx, ny]); }
+            }
+        }
+        if (!from.has(key(tx, ty))) return null;
+        let at = [tx, ty]; const path = [at];
+        while (from.get(key(...at))) { at = from.get(key(...at)); path.unshift(at); }
+        return path;
+    }
+    // Where one is headed, by its way (e.way): the chaser straight at you; the ambusher a few tiles past where you face, to meet
+    // you there; the cutter beside the fragment you're nearest (the way out, once it's whole), so it's there when you get there;
+    // the wanderer anywhere, a spot at a time. Any of them comes straight at you once it's within WAY.NEAR steps (toMe: its way to you)
+    _target(e, toMe) {
+        const me = this.me, W = MirrorTrial.CFG.WAY, here = [me.x, me.y];
+        if (e.way === 'chase' || !e.way || toMe.length - 1 <= W.NEAR) return here;
+        const free = ([x, y]) => this._open(x, y) && !this.ents.some(o => o !== e && o.x === x && o.y === y);
+        if (e.way === 'ambush') {
+            const [dx, dy] = MirrorTrial.DIRS[me.dir]; let x = me.x, y = me.y;
+            for (let k = 0; k < W.AHEAD && this._open(x + dx, y + dy); k++) { x += dx; y += dy; }
+            return free([x, y]) ? [x, y] : here;
+        }
+        if (e.way === 'cut') {
+            const goals = this.done ? [...this.map.entries()].flatMap(([y, row]) => row.map((c, x) => c === 'Q' ? [x, y] : null).filter(Boolean)) : [...this.frags].map(k => [k % 64, Math.floor(k / 64)]);
+            const spots = goals.flatMap(([gx, gy]) => MirrorTrial.DIRS.map(([dx, dy]) => [gx + dx, gy + dy])).filter(free);
+            if (!spots.length) return here;
+            return spots.reduce((a, b) => Math.abs(b[0] - me.x) + Math.abs(b[1] - me.y) < Math.abs(a[0] - me.x) + Math.abs(a[1] - me.y) ? b : a);
+        }
+        if (!e.roam || (e.x === e.roam[0] && e.y === e.roam[1]) || !free(e.roam)) {   // the wanderer: somewhere new
+            const open = []; this.map.forEach((row, y) => row.forEach((c, x) => { if (c === '.') open.push([x, y]); }));
+            e.roam = open[Math.floor(Math.random() * open.length)];
+        }
+        return e.roam;
+    }
+    // A prank startles the rest: any other within WAY.STARTLE steps scampers back to BACK steps off (out of your sight if it can),
+    // its reach undone, so one prank never runs straight into the next
+    _startle(by) {
+        const W = MirrorTrial.CFG.WAY, me = this.me;
+        for (const e of this.ents) {
+            if (e === by || !e.awake) continue;
+            const p = this._path(e, me.x, me.y);
+            if (!p || p.length - 1 > W.STARTLE) continue;
+            const spots = []; this.map.forEach((row, y) => row.forEach((c, x) => { if (c !== '.' || this.ents.some(o => o.x === x && o.y === y)) return;
+                const d = this._path({ x, y }, me.x, me.y); if (d && d.length - 1 >= W.BACK[0] && d.length - 1 <= W.BACK[1]) spots.push([x, y, !this._sees({ x, y })]); }));
+            const hid = spots.filter(s => s[2]), pick = (hid.length ? hid : spots)[Math.floor(Math.random() * (hid.length || spots.length))];
+            if (pick) Object.assign(e, { x: pick[0], y: pick[1], reaching: false, lookLeft: 0, lookMood: null, t: 0, movedAt: this.time.now });
+        }
+    }
     // Right next to you and unseen: it doesn't get you yet. It reaches, caught in time almost on you, and you hear it; its next
     // unseen step has you, so that's your one chance to turn and catch it
     _reach(e) {
