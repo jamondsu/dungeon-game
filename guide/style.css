@@ -73,6 +73,7 @@ li { margin-bottom: 8px; }
 .ink path { fill: none; stroke: #fff4d6; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; filter: url(#chalk); }
 .ink text { font: 700 21px "Bradley Hand", "Segoe Print", "Chalkboard SE", "Comic Sans MS", cursive; fill: #fff4d6; paint-order: stroke; stroke: #0d0a08; stroke-width: 5px; stroke-linejoin: round; }
 .ink .y path, .ink path.y { stroke: #ffd36a; } .ink .y text, .ink text.y { fill: #ffd36a; }
+@media (max-width: 560px) { .ink text { font-size: 28px; } .ink path { stroke-width: 4; } }   /* a phone shows the picture at half size: bigger chalk */
 svg.defs { position: absolute; width: 0; height: 0; }
 .fire { color: var(--fire); } .ice { color: var(--ice); } .bolt { color: var(--bolt); } .cosmic { color: var(--cosmic); }
 .gold { color: var(--accent); } .green { color: var(--green); } .red { color: var(--red); } .cyan { color: var(--cyan); }
