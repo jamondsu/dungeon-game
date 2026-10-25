@@ -74,23 +74,36 @@ const Sfx = {
     SAMPLES: Object.fromEntries(['evil_laugh', 'snap', 'roar', 'roar_big', 'bossdie', 'lava_loop', 'lava_pop1', 'lava_pop2', 'sear', 'crackle',
         'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_dash', 'ice_dash', 'frost_shield', 'fire_burst', 'zap', 'magic_whoosh',
         'splat1', 'splat2', 'splat_big', 'squelch', 'punch', 'sword', 'potion', 'boom1', 'boom2', 'eshot', 'block', 'door', 'gust', 'wind',
-        'lava_erupt', 'slam', 'thud', 'powerup', 'buzz', 'click'].map(k => [k, `assets/sfx/${k}.wav`])),
+        'lava_erupt', 'slam', 'thud', 'powerup', 'buzz', 'click',
+        // the Hall's children (hv_): giggles, the hunting giggle, a boo, a gasp, a whoops, an oh no, and what their looks say
+        'hv_giggle1', 'hv_giggle2', 'hv_giggle3', 'hv_giggle4', 'hv_hunt1', 'hv_hunt2', 'hv_boo', 'hv_whoops', 'hv_ohno', 'hv_gasp', 'hv_hi', 'hv_whisper',
+        'hv_shh', 'hv_sigh', 'hv_mmm', 'hv_coo', 'hv_bite', 'hv_count', 'hv_sniff', 'hv_knock', 'hv_squeak', 'hv_breath', 'hv_whistle'].map(k => [k, `assets/sfx/${k}.wav`])),
     _buf: {},
     _loadSamples(ctx) {
         if (typeof fetch !== 'function') return;
         for (const [k, url] of Object.entries(this.SAMPLES))
             fetch(url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { this._buf[k] = buf; }).catch(() => {});
     },
+    // One of the Hall's children (o.v: a recording, or several to pick from), made wrong: slower and deeper, doubled, a little
+    // grit, ringing down the corridors, from where it is (o.pan, o.near 0-1, o.muffled through stone). False if not loaded.
+    _voice(ctx, t, o, j = 1) {
+        const names = [].concat(o.v).filter(n => this._buf[n]), name = names[Math.floor(Math.random() * names.length)];
+        if (!name) return false;
+        const pan = ctx.createStereoPanner?.();
+        if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
+        return this._sample(ctx, t, { name, out: pan, rate: (o.rate || 0.82) * (1 + (j - 1) * 0.4), vol: (o.vol || 0.55) * (0.35 + 0.65 * (o.near ?? 0.6)),
+            grit: o.grit ?? 0.12, double: o.double ?? 0.4, space: 0.55, lp: o.muffled ? 1100 : 5200 });
+    },
     // A recorded sound. rate pitches it (under 1: deeper and slower), grit mixes in a distorted copy filtered to a
     // crackle, double a second voice a shade lower drifting against the first, growl the voice ring-modulated at 45Hz
     // (a demon's buzz), space sends that share into the echoes. False if it isn't loaded.
-    _sample(ctx, t, { name, rate = 1, vol = 1, grit = 0, double = 0, growl = 0, space = 0, lp = 0 }) {
+    _sample(ctx, t, { name, rate = 1, vol = 1, grit = 0, double = 0, growl = 0, space = 0, lp = 0, out = null }) {   // (out: where it goes, a panner; else straight out)
         const buf = this._buf[name];
         if (!buf) return false;
-        const g = ctx.createGain(), end = t + buf.duration / rate + 0.2;
+        const g = ctx.createGain(), end = t + buf.duration / rate + 0.2, dest = out || this._master;
         g.gain.value = vol;
-        if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; g.connect(f); f.connect(this._master); }   // (lp: its top end off, Hz)
-        else g.connect(this._master);
+        if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; g.connect(f); f.connect(dest); }   // (lp: its top end off, Hz)
+        else g.connect(dest);
         if (space && this._space) { const sg = ctx.createGain(); sg.gain.value = space; g.connect(sg); sg.connect(this._space); }
         const voice = (r, level) => { const s = ctx.createBufferSource(), lg = ctx.createGain(); s.buffer = buf; s.playbackRate.value = r; lg.gain.value = level; s.connect(lg); lg.connect(g); s.start(t); return s; };
         const s = voice(rate, 1);
@@ -871,7 +884,9 @@ const Sfx = {
             this._noise(ctx, t + 0.05, { filter: 'bandpass', f0: 950 * j * dull, f1: 480, q: 2.2, dur: 0.22, vol: v * 0.3 * dull, attack: 0.05, out });
             this._tone(ctx, t + 0.32, { type: 'sine', f0: 92 * j, f1: 66, dur: 0.12, vol: v * 0.45, out });
         },
+        hall_voice(ctx, t, o, j) { this._voice(ctx, t, o, j); },   // one of them saying something (o.v), from where it is: MirrorTrial
         hall_giggle(ctx, t, o, j) {       // one of them giggling in the dark: breathy "hehehe", stepping down, a little too slow (o.pan, o.near 0-1,
+            if (this._voice(ctx, t, { ...o, v: o.low ? ['hv_hunt1', 'hv_hunt2'] : ['hv_giggle1', 'hv_giggle2', 'hv_giggle3', 'hv_giggle4'], rate: o.low ? 0.7 : 0.84 }, j)) return;   // (the recordings; the synth below till they're in)
             const pan = ctx.createStereoPanner?.(), v = 0.03 + 0.09 * (o.near ?? 0.6), dull = o.muffled ? 0.5 : 1;   // o.muffled: through stone, o.n: longer)
             if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
             const out = pan || undefined;
@@ -885,7 +900,8 @@ const Sfx = {
             const pan = ctx.createStereoPanner?.();
             if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
             const out = pan || undefined;
-            this._noise(ctx, t, { filter: 'bandpass', f0: 800, f1: 3400, q: 2.5, dur: 0.3, vol: 0.17, attack: 0.22, out });
+            if (!this._voice(ctx, t, { v: 'hv_gasp', pan: o.pan, near: 1, rate: 0.9, vol: 0.9, double: 0.25 }, 1))   // (a child's gasp, right at you; the synth breath till it's in)
+                this._noise(ctx, t, { filter: 'bandpass', f0: 800, f1: 3400, q: 2.5, dur: 0.3, vol: 0.17, attack: 0.22, out });
             for (const f of [1245, 1319]) this._tone(ctx, t + 0.24, { type: 'sawtooth', f0: f, f1: f * 1.04, dur: 0.55, vol: 0.045, attack: 0.02, out, space: true });
             for (const [at, f, k] of [[0.24, 66, 1], [0.38, 54, 0.8]]) this._tone(ctx, t + at, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.14, vol: 0.26 * k });
         },

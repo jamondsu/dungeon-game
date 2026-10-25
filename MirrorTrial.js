@@ -108,6 +108,10 @@ class MirrorTrial extends Phaser.Scene {
     // you, caught in time (mid-reach, sneaking up, mid-BOO, going for a hug); (frames 38-44, the old near looks, unused); (a prank's
     // face is its own drawing, mt_face); TRUE, what they really are (rare, and only ever seen straight on); CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
+    // what some of their looks say, now and then, when you can hear it (Sound.js, the hv_ recordings): reading, whistling, counting
+    // glorps, the baby, snacking, lounging, giggling, shh, waving, peekaboo, weeping, a heart in the fog, waving in, licking, knocking
+    static LOOK_SOUNDS = { 2: 'hv_mmm', 4: 'hv_whistle', 5: 'hv_count', 6: 'hv_coo', 7: 'hv_bite', 8: 'hv_sigh', 12: ['hv_giggle1', 'hv_giggle3'], 13: 'hv_shh',
+        16: 'hv_hi', 17: 'hv_whisper', 32: 'hv_sniff', 34: 'hv_breath', 35: 'hv_hi', 36: 'hv_squeak', 37: 'hv_knock' };
     // their four ways of hunting, one each (_target)
     static WAYS = ['chase', 'ambush', 'cut', 'wander'];
     static POSES = { SLEEP: [0, 1], calm: [2, 15], play: [16, 24], hunt: [25, 32], GLASS: [33, 37], REACH: [45, 49], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
@@ -792,6 +796,7 @@ class MirrorTrial extends Phaser.Scene {
         this._render(this.front, this.view.a, C.FOV * this.fovK, false, !this.mapUp);
         if (this.holding) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
         if (now < this.blackUntil) for (const e of this.ents) e.seen = false;   // (blacked out: you hold nothing)
+        for (const e of this.ents) if (e.reaching && e.seen && !e.oops) { e.oops = true; Sfx.play(this, 'hall_voice', { ...(this._where(e) || {}), near: 1, v: 'hv_whoops' }); }   // (turned and caught it reaching: whoops)
         this._dread(now, delta);
         for (const e of this.ents) if (e.truly && !e.trueSeen && e.dpx >= C.SEEN_PX && !this.caught) this._trueFace(e);
         // one caught in a reflection, held there: it fades and, long enough, leaves
@@ -846,6 +851,7 @@ class MirrorTrial extends Phaser.Scene {
             e.pose = looks[Math.floor(Math.random() * looks.length)]; e.lookMood = e.mood;
             const [a0, a1] = MirrorTrial.CFG.LOOK_STEPS; e.lookLeft = a0 - 1 + Math.floor(Math.random() * (a1 - a0 + 1));
         }
+        if (e.pose !== was) this._lookSound(e);
         const inGlass = e.pose >= P.GLASS[0] && e.pose <= P.GLASS[1];
         e.lean = inGlass ? [sx, sy] : P.WALLED.includes(e.pose) ? [-sx, -sy] : null;
         e.truly = !inGlass && near >= 3 && Math.random() < MirrorTrial.CFG.MOOD.TRUE; e.trueSeen = false;   // (now and then, what it really is: only straight on)   // (up against the glass, or flat on the wall behind)
@@ -949,6 +955,7 @@ class MirrorTrial extends Phaser.Scene {
     _boo() {
         const W = this.scale.width, H = this.scale.height, cam = this.cameras.main;
         Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'bosshit'); Sfx.play(this, 'whoosh');
+        Sfx.play(this, 'hall_voice', { v: 'hv_boo', near: 1, vol: 1, rate: 0.86, double: 0.5, grit: 0.2 });
         cam.shake(420, 0.02); this._punch(1.18, 60, 500);
         this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.7); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 600, ease: 'Quad.easeIn' });
         const fs = H * 1.15 / this.textures.get('mt_face').getSourceImage().height, face = this.add.image(W / 2, H / 2, 'mt_face').setScale(fs * 1.8).setDepth(5);   // (its own drawing, made for the whole screen)
@@ -1010,6 +1017,12 @@ class MirrorTrial extends Phaser.Scene {
         if (typeof Achievements !== 'undefined') { Achievements.bump('trueFace', 1, this, true); const G = this.scene.get('Game'); if (G) try { G.totalGlorps = parseInt(localStorage.getItem('glorps'), 10) || G.totalGlorps; } catch (er) {} }   // (its glorps went to the save: the Game's purse kept in step)
     }
     // one of them off: asleep again, anywhere open far from you that nobody's in
+    // a new look, heard now and then (not too often from any one of them), from where it is
+    _lookSound(e) {
+        const v = MirrorTrial.LOOK_SOUNDS[e.pose], now = this.time.now, w = v && this._where(e);
+        if (!w || now < (e.saidAt || 0) + 5000 || Math.random() > 0.55) return;
+        e.saidAt = now; Sfx.play(this, 'hall_voice', { ...w, v });
+    }
     // the way for `e` to (tx, ty) over open floor, round the others: [where it is, ..., there], or null
     _path(e, tx, ty) {
         const key = (x, y) => y * 64 + x, from = new Map([[key(e.x, e.y), null]]), q = [[e.x, e.y]];
@@ -1069,7 +1082,7 @@ class MirrorTrial extends Phaser.Scene {
     // unseen step has you, so that's your one chance to turn and catch it
     _reach(e) {
         const P = MirrorTrial.POSES;
-        Object.assign(e, { reaching: true, pose: Phaser.Math.Between(...P.REACH), lean: null, truly: false, lookLeft: 0, lookMood: null, fresh: true, movedAt: this.time.now });
+        Object.assign(e, { reaching: true, oops: false, pose: Phaser.Math.Between(...P.REACH), lean: null, truly: false, lookLeft: 0, lookMood: null, fresh: true, movedAt: this.time.now });
         Sfx.play(this, 'hall_reach', this._where(e) || {});
     }
     _sendOff(e) {
@@ -1080,7 +1093,7 @@ class MirrorTrial extends Phaser.Scene {
     }
     // held in a reflection long enough: it doesn't like being caught there, and slinks off
     _shoo(e) {
-        this._giggle(e); Sfx.play(this, 'whoosh');
+        Sfx.play(this, 'hall_voice', { ...(this._where(e) || {}), v: 'hv_ohno' }); Sfx.play(this, 'whoosh');
         this.shooed = (this.shooed || 0) + 1;
         this._note('CAUGHT IN A REFLECTION. IT SLINKS OFF.');
         this._sendOff(e);
