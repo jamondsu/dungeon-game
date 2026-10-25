@@ -311,9 +311,11 @@ class Training {
         btn(x0 + P, y, IW, 30, 'START', () => RhythmTrial.start(S), null, { size: 13 });
         y += 40;
         text(x0 + P, y, 'THE HALL OF REFLECTIONS  (a first try)', 12, '#ffffff'); y += 18;
-        text(x0 + P, y, 'No powers. They move only when nothing sees them.\nFind the 3 shards and get back out.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 36;
+        text(x0 + P, y, 'No powers. They move only when nothing sees them.\nFind 5 of the 7 fragments and get back out.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 36;
         btn(x0 + P, y, IW, 28, 'STEP INTO THE MIRROR', () => MirrorTrial.enter(S), null, { size: 12 });   // MirrorTrial.js
         y += 32;
+        btn(x0 + P, y, IW, 22, 'WATCH THE ENDING', () => MirrorTrial.enter(S, { ending: true }), null, { size: 10 });
+        y += 26;
         foot = Math.max(foot, ends.trial = y);
         // under every page: your damage, and the way out
         cur = null; y = foot + 6;

@@ -119,7 +119,7 @@ class MirrorTrial extends Phaser.Scene {
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
     // From the Training Ground: down into your slime's eyes, and through
-    static enter(S) {
+    static enter(S, opts = {}) {   // (opts.ending: just the ending, then back out)
         if (S._mirrorBusy || !S.player || !S.scene.get('MirrorTrial')) return;
         S._mirrorBusy = true;
         Training.showPanel(S, false);
@@ -127,7 +127,7 @@ class MirrorTrial extends Phaser.Scene {
         Sfx.play(S, 'whoosh');
         cam.zoomTo(zoom * 4, 650, 'Cubic.easeIn');
         cam.fadeOut(650, 8, 4, 16);
-        S.time.delayedCall(680, () => { S.scene.launch('MirrorTrial', { zoom }); S.scene.pause(); });
+        S.time.delayedCall(680, () => { S.scene.launch('MirrorTrial', { zoom, ...opts }); S.scene.pause(); });
     }
 
     constructor() { super('MirrorTrial'); }
@@ -233,6 +233,12 @@ class MirrorTrial extends Phaser.Scene {
         this.events.once('shutdown', () => { this.input.keyboard.off('keydown', this._key, this); this.input.keyboard.off('keyup', this._keyUp, this); this.input.off('pointerdown', this._boop, this); });
         if (typeof Music !== 'undefined') Music.duck(true, 'mirror');
         this.cameras.main.fadeIn(700, 8, 4, 16);
+        if (data?.ending) {   // just the ending (the Training Ground's WATCH THE ENDING): nothing moves, then straight back out
+            this.escaped = true; this.title.setAlpha(0); this.sub.setAlpha(0);
+            if (MirrorTrial.ENDING.every(k => this.textures.exists(k))) this.time.delayedCall(500, () => this._ending(() => this._leave(null)));
+            else { this._note('THE ENDING ISN\'T DRAWN YET.'); this.time.delayedCall(2000, () => this._leave(null)); }
+            return;
+        }
         this.time.delayedCall(750, () => this._openGuide(false));   // (the first time in: how it works)
     }
 
@@ -284,6 +290,7 @@ class MirrorTrial extends Phaser.Scene {
     _key(e) {
         if (this.leaving || this.reading) return;   // (reading the guide: its keys)
         const k = e.code;
+        if (this.ending) { if (k === 'Enter' || k === 'Space' || k === 'Escape') this._endingSkip?.(); return; }   // (the ending playing: these skip it)
         if (k === 'KeyH') return this._openGuide(true);
         if (k === 'Escape') return this._leave(this.escaped ? 'YOU GOT OUT OF THE HALL OF REFLECTIONS' : null);
         if (this.caught || this.escaped) { if (k === 'KeyR' || (this.escaped && k === 'Enter')) this.scene.restart({ zoom: this.zoom0 }); return; }
@@ -906,16 +913,89 @@ class MirrorTrial extends Phaser.Scene {
         for (let i = 1; i < n; i++) { const c = this.map[Math.floor(e.y + 0.5 + dy * i / n)]?.[Math.floor(e.x + 0.5 + dx * i / n)]; if (c !== '.' && c !== 'M' && c !== 'G') return false; }
         return true;
     }
-    // Out: how it went (your time and your best, the glorps, how often they got you, how close they came)
+    // Out: the ending (if its pictures are in), then how it went
     _escape() {
         if (this.escaped) return;
         this.escaped = true;
-        const W = this.scale.width, H = this.scale.height, t = (this.time.now - this.t0) / 1000;
+        const t = (this.time.now - this.t0) / 1000;   // (your time stops as you step through)
+        for (const o of [this.title, this.sub, this.noteTxt, this.countTxt, this.keysTxt]) { this.tweens.killTweensOf(o); o.setAlpha(0); }   // (what was being said: gone)
+        if (MirrorTrial.ENDING.every(k => this.textures.exists(k))) this._ending(() => this._endCard(t));
+        else this._endCard(t);
+    }
+    static ENDING = ['mt_end_relief', 'mt_end_cower', 'mt_end_sad', 'mt_end_loom', 'mt_end_kid1', 'mt_end_kid2', 'mt_end_kid3'];
+    // The ending, about eleven seconds (Enter, Space or Esc skip it): you, through, sweating with relief ("Finally. I can be free
+    // of this terrible place."); then three of them loom up round you, huge and dark, and you cower; the mirror blazes up behind
+    // them, the dark burns off, and they're only what they really are, three little slimes who wanted to play; and you're sad to go
+    _ending(done) {
+        const W = this.scale.width, H = this.scale.height, D = 7, objs = [], cam = this.cameras.main, add = o => { objs.push(o); return o; };
+        let over = false;
+        this.ending = true;
+        const finish = () => {
+            if (over) return;
+            over = true; this.ending = false;
+            this.tweens.killTweensOf(objs); objs.forEach(o => o.destroy());
+            done();
+        };
+        this._endingSkip = finish;
+        const at = (ms, fn) => this.time.delayedCall(ms, () => { if (!over) fn(); });
+        const sc = Math.round(H / 115), feet = H * 0.86;   // (your slime about a quarter of the screen tall)
+        const bg = add(this.add.rectangle(0, 0, W, H, 0x05030a).setOrigin(0).setAlpha(0).setDepth(D));
+        if (!this.textures.exists('mt_end_glow')) {   // the mirror's light: soft, falling away from its middle (a light, so drawn here)
+            const R = 256, tx = this.textures.createCanvas('mt_end_glow', R * 2, R * 2), cx = tx.getContext(), gr = cx.createRadialGradient(R, R, 0, R, R, R);
+            gr.addColorStop(0, 'rgba(255,250,255,1)'); gr.addColorStop(0.25, 'rgba(214,196,255,0.75)'); gr.addColorStop(0.6, 'rgba(150,120,230,0.25)'); gr.addColorStop(1, 'rgba(90,60,180,0)');
+            cx.fillStyle = gr; cx.fillRect(0, 0, R * 2, R * 2); tx.refresh();
+        }
+        const glow = add(this.add.image(W / 2, H * 0.5, 'mt_end_glow').setScale(H * 1.2 / 512 * 0.4).setAlpha(0).setDepth(D).setBlendMode(Phaser.BlendModes.ADD));   // (the mirror's light, behind them)
+        const you = add(this.add.image(W / 2, feet, 'mt_end_relief').setOrigin(0.5, 1).setScale(sc).setDepth(D + 3).setAlpha(0));
+        const say = add(this.add.text(W / 2, H * 0.16, '', { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f0ece0', stroke: '#05030a', strokeThickness: 6, align: 'center', wordWrap: { width: W * 0.8 } }).setOrigin(0.5).setDepth(D + 4));
+        const line = (s, col = '#f0ece0') => { say.setColor(col).setText(''); let n = 0; const ev = this.time.addEvent({ delay: 38, repeat: s.length - 1, callback: () => { if (!over) say.setText(s.slice(0, ++n)); } }); objs.push({ destroy: () => ev.remove() }); };
+        const spots = [[W * 0.24, 0.92, -1], [W / 2, 1.08, 1], [W * 0.76, 0.92, 1]];   // (x, size, which way it faces)
+        // 1. relief
+        this.cameras.main.flash(500, 200, 170, 255); Sfx.play(this, 'surge');
+        this.tweens.add({ targets: bg, alpha: 0.92, duration: 600 });
+        this.tweens.add({ targets: you, alpha: 1, duration: 600 });
+        this.tweens.add({ targets: you, scaleY: sc * 0.95, scaleX: sc * 1.04, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });   // (breathing hard)
+        at(700, () => line('Finally... I can be free of this terrible place.'));
+        // 2. they loom
+        const looms = spots.map(([x, k, f]) => add(this.add.image(x, feet + H * 0.1, 'mt_end_loom').setOrigin(0.5, 1).setScale(sc * 1.6 * k).setFlipX(f < 0).setDepth(D + 2).setAlpha(0)));
+        at(3400, () => {
+            say.setText(''); Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'heartbeat', { hard: 1 }); cam.shake(500, 0.008);
+            looms.forEach((l, i) => this.tweens.add({ targets: l, alpha: 1, y: feet - H * 0.02, delay: i * 160, duration: 900, ease: 'Cubic.easeOut' }));
+            this.tweens.killTweensOf(you); you.setTexture('mt_end_cower').setScale(sc);
+            this.tweens.add({ targets: you, x: { from: W / 2 - 3, to: W / 2 + 3 }, duration: 45, yoyo: true, repeat: -1 });   // (shaking)
+        });
+        at(4300, () => Sfx.play(this, 'heartbeat', { hard: 1 }));
+        at(5100, () => { Sfx.play(this, 'heartbeat', { hard: 1 }); Sfx.play(this, 'hall_giggle', { near: 1, low: true, n: 2 }); });
+        // 3. the mirror blazes up, and they're only little
+        const kids = [W * 0.2, W * 0.35, W * 0.78].map((x, i) => add(this.add.image(x, feet, 'mt_end_kid' + (i + 1)).setOrigin(0.5, 1).setScale(0).setDepth(D + 2)));   // (round you, not behind you)
+        at(6200, () => {
+            Sfx.play(this, 'ready'); Sfx.play(this, 'fanfare'); cam.flash(700, 230, 215, 255);
+            this.tweens.add({ targets: glow, alpha: 0.85, scale: H * 1.2 / 512, duration: 900, ease: 'Cubic.easeOut' });
+            this.tweens.add({ targets: glow, alpha: 0.6, delay: 900, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });   // (it breathes)
+            looms.forEach(l => this.tweens.add({ targets: l, alpha: 0, scaleY: l.scaleY * 0.3, duration: 500, ease: 'Quad.easeIn' }));
+            kids.forEach((c, i) => this.time.delayedCall(250 + i * 130, () => {
+                if (over) return;
+                this.tweens.add({ targets: c, scale: sc * 1.3, duration: 420, ease: 'Back.easeOut' });
+                this.tweens.add({ targets: c, y: feet - sc * 3, delay: 500 + i * 90, duration: 260, yoyo: true, repeat: -1, repeatDelay: 380, ease: 'Quad.easeOut' });   // (bouncing: they want to play)
+            }));
+            this.tweens.killTweensOf(you); you.setX(W / 2).setTexture('mt_end_relief');
+        });
+        at(6700, () => Sfx.play(this, 'hall_giggle', { near: 1 }));
+        at(7300, () => Sfx.play(this, 'hall_giggle', { near: 0.8, pan: -0.5 }));
+        at(7700, () => line('...oh. They only wanted to play.', '#d8c8ff'));
+        // 4. and you're sad to go
+        at(8600, () => { you.setTexture('mt_end_sad'); this.tweens.add({ targets: you, scaleY: sc * 0.96, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
+        at(9000, () => kids.forEach((c, i) => this.tweens.add({ targets: c, angle: { from: -8, to: 8 }, delay: i * 120, duration: 300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })));   // (waving you off)
+        at(10200, () => line("I'll miss them.", '#bfd8ff'));
+        at(11600, () => this.tweens.add({ targets: objs.filter(o => o.setAlpha), alpha: 0, duration: 600, onComplete: finish }));
+    }
+    // how it went: your time and your best, the glorps, how often they got you, how close they came
+    _endCard(t) {
+        const W = this.scale.width, H = this.scale.height;
         let best = 0; try { best = parseFloat(localStorage.getItem('mt_best')) || 0; } catch (e) {}
         const isBest = !best || t < best; if (isBest) try { localStorage.setItem('mt_best', t.toFixed(1)); } catch (e) {}
         const clock = v => `${Math.floor(v / 60)}:${(v % 60).toFixed(1).padStart(4, '0')}`;
         Sfx.play(this, 'fanfare'); this.cameras.main.flash(400, 200, 170, 255);
-        for (const o of [this.title, this.sub, this.noteTxt, this.countTxt, this.keysTxt]) { this.tweens.killTweensOf(o); o.setAlpha(0); }   // (what was being said: gone)
         this.add.rectangle(0, 0, W, H, 0x05030a).setOrigin(0).setAlpha(0.82).setDepth(7);
         const line = (y, s, size, col) => this.add.text(W / 2, y, s, { fontSize: size, fontFamily: y < H * 0.3 ? UIKit.FONT.title : 'monospace', fontStyle: 'bold', color: col, stroke: '#05030a', strokeThickness: 5, align: 'center' }).setOrigin(0.5).setDepth(8);
         line(H * 0.24, 'YOU GOT OUT', '44px', '#d8c8ff');
