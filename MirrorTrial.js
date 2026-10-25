@@ -16,14 +16,14 @@
 // and after they've made you jump. Watching them holds them, but don't meet their eyes: looking straight at one that's
 // awake fills you with dread (the screen darkens, cracks, your heart pounds) till you can't bear it and look away, and for a
 // moment nothing watches them. In a reflection they can't reach you that way: watch them there.
-// Five fragments of the way out are in mirrors, spread through the hall (three make it whole, two more are worth glorps), and every pane is a mirror or glass. The mirrors here
+// Seven fragments of the way out are in mirrors, spread through the hall (five make it whole, two more are worth glorps), and every pane is a mirror or glass. The mirrors here
 // don't show you anything straight on: they look just like glass, and you see through both. Only a reflection of a
 // reflection shows: turn your back on a pane and hold up your shard (SPACE) to your eyes, and in it a mirror shows you
 // (holding it up, a beat behind you), glass what's beyond; held low, it's no help. Your decoys and sentries are made of
 // reflection: a mirror shows them even
 // straight on. C marks a pane (your guess, glass or mirror). Walk into a pane to chalk it: a mirror rings (an eye; its
 // fragment, if it holds one); glass shatters (a cross), and they hear it: the sleepers near wake, the awake lunge at you,
-// and the awake are hunting. Three fragments, and the way out is whole again (and every one of them wakes, for the run home): step back
+// a whole mood worse. Five fragments, and the way out is whole again (and every one of them wakes, for the run home): step back
 // through it. They can't hurt you, but they can scare you: one reaching you pranks you (a third of your stress, for good;
 // it goes back to sleep far off), and your dread from looking at them goes on top: full dread, you black out for a moment
 // (two pranks in, that does it; three, a moment's look); full stress, you're scared to death. The more they've got you, the
@@ -56,7 +56,7 @@ class MirrorTrial extends Phaser.Scene {
         ENT_MS: 600, ENT_SHARD: 30, ENT_MIN: 450, GRACE_MS: 5000,    // unseen this long, one moves (quicker by ENT_SHARD a shard found: not far off your walk, so you can't leave one be); none at first
         WAKE: { NEAR: 2, DASH: 6, TAP: 4, TURN: 3, MS: 1500 },         // asleep, one wakes: you this near (tiles), or a noise this near; it takes MS to come to
         HEAR: 10,                                                    // how far off you hear one move
-        MIRRORS: 0.45, FRAGMENTS: 5, NEED: 3, BONUS: 25, MID_MAX: 2, SHATTER: { WAKE: 7, LUNGE: 2 },     // a pane's odds of being a mirror; the way out's fragments (in mirrors: NEED make it whole, the rest are worth BONUS glorps; at most MID_MAX in the gallery, one a quarter outside it); glass struck: sleepers this near wake, the awake lunge this many steps
+        MIRRORS: 0.45, FRAGMENTS: 7, NEED: 5, BONUS: 25, MID_MAX: 2, FRAG_FAR: 5, FRAG_APART: 4, SHATTER: { WAKE: 7, LUNGE: 2 },     // a pane's odds of being a mirror; the way out's fragments (in mirrors: NEED make it whole, the rest are worth BONUS glorps; one or MID_MAX in the gallery, one a quarter outside it, the rest anywhere; none within FRAG_FAR steps of your start, none within FRAG_APART of another); glass struck: sleepers this near wake, the awake lunge this many steps
         ECHO_MS: 300,                                                // how far behind you your reflection is
         SEEN_PX: 6, SEEN_BACK: 3, LIT: 0.05, BIG: 1.35,              // this much of one on screen (in the shard), this lit, holds it; how tall they stand
         SHOO_MS: 2000,                                               // one held in a reflection (your shard) this long leaves: they don't like being caught there
@@ -71,17 +71,17 @@ class MirrorTrial extends Phaser.Scene {
     static MAP = [
         '###################',
         '#W...g...g...g...W#',
-        '#.#####P#.#P#####.#',
+        '#.###P#P#.#P#P###.#',
         '#...P.........P...#',
         '#.#W#.#P#.#P#.#v#g#',
         '#.P.PgP....gPdP.P.#',
-        '#.###.#.P.P.#.###.#',
+        '#.#P#.#.P.P.#.#P#.#',
         '#n....P.....P....n#',
-        '#.###.#.P.P.#.###.#',
+        '#.#P#.#.P.P.#.#P#.#',
         '#.P.PdP..g..PgP.P.#',
         '#g#v#.#P#.#P#.#W#.#',
         '#.#.P....h....P.#.#',
-        '#.#.###P#.#P###.#.#',
+        '#.#.#P#P#.#P#P#.#.#',
         '#..g.....@.....g..#',
         '#########O#########',
     ];
@@ -89,7 +89,7 @@ class MirrorTrial extends Phaser.Scene {
     // HOW THE HALL WORKS: the game's own guide (LevelSelectScene._guide), a picture from the hall a page (assets/mirror_guide).
     // By itself the first time you come in (mirror_guide_seen), and on H; the hall holds still while it's open
     static GUIDE = [
-        ['THE HALL OF REFLECTIONS', 'Five fragments of the way out are in mirrors, spread through the hall\'s 30 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they hear it. Three make the way out whole, and taking the third wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
+        ['THE HALL OF REFLECTIONS', 'Seven fragments of the way out are in mirrors, spread through the hall\'s 38 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they hear it. Five make the way out whole, and taking the fifth wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
         ['MIRROR OR GLASS?', 'Straight on, a mirror here looks just like glass: you see through both. Only a reflection of a reflection shows. Turn your back on a pane and hold up your shard (SPACE): a mirror shows you, holding the shard; glass shows what\'s beyond it. Your decoys and sentries are made of reflection, so a mirror shows them even straight on.'],
         ['CHALK AND MARKS', 'Chalk is the real test: an eye for a mirror, a cross for glass. C puts your own mark on a pane (glass, then mirror, then rubbed out) so you don\'t test it twice; with the shard up, it marks the pane behind you. Shattered glass wakes every sleeper near it, and the awake ones lunge two steps at you.'],
         ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every two or three steps they take, they look different, and the moment their mood turns.'],
@@ -140,13 +140,19 @@ class MirrorTrial extends Phaser.Scene {
             row[x] = '.';
         }));
         this.view = { x: this.me.x + 0.5, y: this.me.y + 0.5, a: -Math.PI / 2 };
-        // the way out's fragments, in mirrors, spread out: one or two in the gallery (the middle), the rest one each in quarters of
-        // the hall outside it (a pane picked for one made a mirror if it wasn't); and at least a few more mirrors than that
+        // the way out's fragments, in mirrors, spread out: one or two in the gallery (the middle), one in each quarter of the hall
+        // outside it, the rest anywhere; never near where you start or next to another (a pane picked for one made a mirror if it
+        // wasn't); and at least a few more mirrors than that
         const mirrors = [], rows = this.map.length, cols = this.map[0].length, area = (x, y) => x >= 6 && x <= 12 && y >= 4 && y <= 10 ? 'mid' : (y < rows / 2 ? 'n' : 's') + (x < cols / 2 ? 'w' : 'e');
         const panes = {}; this.map.forEach((row, y) => row.forEach((c, x) => { if (c === 'M' || c === 'G') (panes[area(x, y)] ||= []).push([x, y]); if (c === 'M') mirrors.push(y * 64 + x); }));
-        const mid = Math.min(C.MID_MAX, C.FRAGMENTS - 4 + Math.floor(Math.random() * C.MID_MAX)), quarters = ['nw', 'ne', 'sw', 'se'].sort(() => Math.random() - 0.5).slice(0, C.FRAGMENTS - mid);
         this.frags = new Set();
-        for (const [a, n] of [['mid', mid], ...quarters.map(q => [q, 1])]) for (const [x, y] of (panes[a] || []).sort(() => Math.random() - 0.5).slice(0, n)) { if (this.map[y][x] === 'G') { this.map[y][x] = 'M'; mirrors.push(y * 64 + x); } this.frags.add(y * 64 + x); }
+        const picked = [], far = ([x, y]) => Math.abs(x - this.me.x) + Math.abs(y - this.me.y) >= C.FRAG_FAR;
+        const take = (list, n, apart = C.FRAG_APART) => { for (const p of list.filter(far).sort(() => Math.random() - 0.5)) { if (n <= 0) return; if (picked.some(q => Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) < apart || (q[0] === p[0] && q[1] === p[1]))) continue; picked.push(p); n--; } };
+        take(panes.mid || [], 1 + Math.floor(Math.random() * C.MID_MAX));
+        for (const q of ['nw', 'ne', 'sw', 'se']) take(panes[q] || [], 1);
+        const all = Object.values(panes).flat();
+        take(all, C.FRAGMENTS - picked.length); take(all, C.FRAGMENTS - picked.length, 1);   // (spread out if they can be; never short)
+        for (const [x, y] of picked) { if (this.map[y][x] === 'G') { this.map[y][x] = 'M'; mirrors.push(y * 64 + x); } this.frags.add(y * 64 + x); }
         for (let i = 0; mirrors.length < C.FRAGMENTS + 3 && i < 200; i++) { const y = Math.floor(Math.random() * rows), x = Math.floor(Math.random() * cols); if (this.map[y][x] === 'G') { this.map[y][x] = 'M'; mirrors.push(y * 64 + x); } }
         Object.assign(this, { found: 0, holding: false, raised: false, t0: this.time.now, done: false, caught: false, leaving: false, moving: false, queued: null,
             charges: 1, vials: 1, chargeT: 0, fovK: 1, gooK: 0, bubbles: [], drips: [], echoes: [], wards: 0, placed: [], labels: {}, marks: {}, sentries: [], sentryLeft: 0, lines: new Map(), escaped: false, pranks: 0, breaks: 0, closest: Infinity,
@@ -184,7 +190,7 @@ class MirrorTrial extends Phaser.Scene {
         // what's said, and the keys
         const T = (y, s, size, col) => this.add.text(W / 2, y, s, { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#05030a', strokeThickness: 5, align: 'center' }).setOrigin(0.5).setDepth(6);
         this.title = T(H * 0.38, 'THE HALL OF REFLECTIONS', '30px', '#d8c8ff');
-        this.sub = T(H * 0.38 + 44, 'Five fragments of the way out are in mirrors; three make it whole. Walk into a pane to chalk it.\nBut half the panes are glass, and glass shatters. They\'re asleep. Don\'t wake them: they\'ll want to play.\nThey can\'t hurt you. But they can scare you out of your mind.', '16px', '#a898c8');
+        this.sub = T(H * 0.38 + 44, 'Seven fragments of the way out are in mirrors; five make it whole. Walk into a pane to chalk it.\nBut half the panes are glass, and glass shatters. They\'re asleep. Don\'t wake them: they\'ll want to play.\nThey can\'t hurt you. But they can scare you out of your mind.', '16px', '#a898c8');
         this.time.delayedCall(1300, () => { Sfx.play(this, 'shatter'); this.cameras.main.shake(200, 0.006); });
         this.time.delayedCall(2300, () => Sfx.play(this, 'e_absorb'));
         this.tweens.add({ targets: [this.title, this.sub], alpha: 0, delay: C.GRACE_MS - 500, duration: 600 });
