@@ -6510,6 +6510,8 @@ class LevelManager {
                 e._cisternMark.setVisible(mine || !this._roomGated());
             }
             if (!mine) { if (e._conduitGfx?.active) e._conduitGfx.clear(); continue; }
+            // dazed or held in an ice cube: no attacks, like any other enemy (the Ripplerunner and the Smasher see to their own)
+            if (((e.stunnedUntil || 0) > time || e.isFrozen || e._iceCube) && !e._isRipplerunner && !e._isSmasher) { if (e._conduitGfx?.active) e._conduitGfx.clear(); continue; }
 
             // ── Drowner: sink, track, lock, resolve ──
             if (e._isDrowner) {
