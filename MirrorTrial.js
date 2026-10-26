@@ -93,7 +93,7 @@ class MirrorTrial extends Phaser.Scene {
         ['THE HALL OF REFLECTIONS', 'Seven fragments of the way out are in mirrors, spread through the hall\'s 38 panes. Walk into a pane to chalk it: a mirror rings and gives up its fragment if it has one; glass shatters, and they hear it. Five make the way out whole, and taking the fifth wakes every one of them for the run home. The other two are worth glorps. H shows this again.'],
         ['MIRROR OR GLASS?', 'Straight on, a mirror here looks just like glass: you see through both. Only a reflection of a reflection shows. Turn your back on a pane and hold up your shard (SPACE): a mirror shows you, holding the shard; glass shows what\'s beyond it. Your decoys and sentries are made of reflection, so a mirror shows them even straight on.'],
         ['CHALK AND MARKS', 'Chalk is the real test: an eye for a mirror, a cross for glass. C puts your own mark on a pane (glass, then mirror, then rubbed out) so you don\'t test it twice; with the shard up, it marks the pane behind you. Shattered glass wakes every sleeper near it, and the awake ones lunge two steps at you.'],
-        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come, each its own way: one straight at you, one to head you off, one to wait by the fragment you\'re after, one wandering till it\'s near. Asleep, one wakes if you come within two tiles of it, or at a noise: a dash, a chalked pane, breaking glass. Each fragment you take wakes another. Every two or three steps they take, they look different, and the moment their mood turns.'],
+        ['THEM', 'They only move while nothing is watching them: your eyes, your raised shard, your decoys. Look away and they come, each its own way, and its looks tell you which: the show-off (snacking, lounging, licking the glass) comes straight at you; the trickster (whistling, shh, peekaboo) heads you off; the collector (reading, juggling your gems) waits by the fragment you\'re after; the baby (its pacifier, giggling, floating) wanders till it\'s near. Asleep, one wakes within two tiles of you, or at a dash, a chalked pane or breaking glass. Each fragment you take wakes another.'],
         ['THEIR MOODS', 'Every one wakes calm and slow (reading, juggling, whistling), and the longer it\'s awake the worse it gets: playful, then hunting and quick (staring, up the walls). You\'ll hear it turn. Staring at one, a noise near it and breaking glass rile it faster, a fragment a little. A hunter that loses you for 20 seconds cools to playful; a shoo or a prank calms one right down. One that can see you comes quicker: lose it round a corner.'],
         ['DON\'T MEET THEIR EYES', 'Looking straight at one that\'s awake fills you with dread. When it\'s full you black out for a second, and only your decoys still watch them. In your shard they can\'t do that to you. Hold one in your raised shard for two seconds and it slinks off to sleep it off somewhere far away, for a while.'],
         ['THEY CAN\'T HURT YOU', 'Right next to you, one you\'re not watching reaches for you first, and you hear it: turn and catch it. Look away again and it pranks you, and that stays with you as stress. They have four pranks, never the same one twice running; one spins you round to face the other way. Your dread counts toward your stress too, while it lasts. Two pranks in, a full dread scares you to death. Three in, one moment\'s look does. A fourth prank always does.'],
@@ -114,7 +114,20 @@ class MirrorTrial extends Phaser.Scene {
         16: 'hv_hi', 17: 'hv_whisper', 32: 'hv_sniff', 34: 'hv_breath', 35: 'hv_hi', 36: 'hv_squeak', 37: 'hv_knock' };
     // their four ways of hunting, one each (_target)
     static WAYS = ['chase', 'ambush', 'cut', 'wander'];
-    static POSES = { SLEEP: [0, 1], calm: [2, 15], play: [16, 24], hunt: [25, 32], GLASS: [33, 37], REACH: [45, 49], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
+    static POSES = { SLEEP: [0, 1], GLASS: [33, 37], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
+    // each of the four is its own sort, by its way, and wears only its own looks: the chaser a show-off (snacking, lounging in the
+    // air, a tower of them; the smile, two of you; staring, too tall; face on the glass, licking it; BOO, mid-reach), the ambusher
+    // a trickster (whistling, shh, turned away; peekaboo, coming up, face sideways; too tall, on the ceiling; waving in, knocking;
+    // sneaking, a sheepish mid-BOO), the cutter a collector (reading, juggling your gems, counting glorps, showing off your decoy;
+    // copying you, no eyes; staring, weeping; a heart in the fog, knocking; mid-reach, sneaking), the wanderer a baby (the
+    // pacifier, cuddling your decoy, giggling, a puddle; waving, floating; on the ceiling, weeping; a heart in the fog, waving in;
+    // a sheepish mid-BOO, a hug). Any of them holds a corridor's walls or splats on the wall behind it
+    static LOOKS = {
+        chase: { calm: [7, 8, 11], play: [19, 22], hunt: [25, 26, 28, 29, 30, 31], GLASS: [33, 36], REACH: [45, 46] },
+        ambush: { calm: [4, 13, 14], play: [17, 21, 23], hunt: [26, 27, 28, 29, 30, 31], GLASS: [35, 37], REACH: [47, 48] },
+        cut: { calm: [2, 3, 5, 10], play: [18, 24], hunt: [25, 32, 28, 29, 30, 31], GLASS: [34, 37], REACH: [46, 47] },
+        wander: { calm: [6, 9, 12, 15], play: [16, 20], hunt: [27, 32, 28, 29, 30, 31], GLASS: [34, 35], REACH: [48, 49] },
+    };
     static TEX = ['mt_wall', 'mt_glass', 'mt_mirror', 'mt_broken', 'mt_self', 'mt_twin', 'mt_shard', 'mt_pickup', 'mt_decoy', 'mt_mark_m', 'mt_mark_g', 'mt_sentry', 'mt_glorp', 'mt_items'];
     static BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16 - 0.5);
 
@@ -841,7 +854,7 @@ class MirrorTrial extends Phaser.Scene {
         this.closest = Math.min(this.closest, Math.abs(nx - me.x) + Math.abs(ny - me.y));
         // a new look (never the one it had): right behind a pane between you, mostly up against the glass; else its mood's,
         // however near (so you can always tell how riled it is); the ones holding a corridor's walls only in a corridor running at you
-        const P = MirrorTrial.POSES, near = (this._path(e, me.x, me.y)?.length ?? 99) - 1, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y), was = e.pose;
+        const P = MirrorTrial.POSES, L = MirrorTrial.LOOKS[e.way], near = (this._path(e, me.x, me.y)?.length ?? 99) - 1, along = Math.abs(nx - me.x) >= Math.abs(ny - me.y), was = e.pose;
         const sx = along ? Math.sign(me.x - nx) : 0, sy = along ? 0 : Math.sign(me.y - ny), pane = this.map[ny + sy]?.[nx + sx];
         const atPane = (pane === 'M' || pane === 'G') && Math.abs(along ? me.x - nx : me.y - ny) >= 2;
         const walled = along ? !this._open(nx, ny - 1) && !this._open(nx, ny + 1) : !this._open(nx - 1, ny) && !this._open(nx + 1, ny);
@@ -849,12 +862,11 @@ class MirrorTrial extends Phaser.Scene {
         // a look holds for LOOK_STEPS steps, so you can make it out: a new one sooner only when its mood turns (you see it turn), or
         // when the look no longer fits where it stands (off the glass, out of the corridor, no wall behind it)
         const wasGlass = was >= P.GLASS[0] && was <= P.GLASS[1], turned = e.lookMood !== e.mood;
-        const fits = wasGlass ? atPane : (was >= P[e.mood || 'play'][0] && was <= P[e.mood || 'play'][1] && (walled || !P.CORRIDOR.includes(was)) && (backed || !P.WALLED.includes(was)));
+        const fits = wasGlass ? atPane : (L[e.mood || 'play'].includes(was) && (walled || !P.CORRIDOR.includes(was)) && (backed || !P.WALLED.includes(was)));
         const glass = wasGlass && fits && !turned ? true : atPane && !turned && Math.random() < 0.75;
         if ((e.lookLeft || 0) > 0 && fits && !turned) e.lookLeft--;
         else {
-            const [lo, hi] = glass ? P.GLASS : P[e.mood || 'play'];
-            const looks = []; for (let f = lo; f <= hi; f++) if (f !== was && (walled || !P.CORRIDOR.includes(f)) && (backed || !P.WALLED.includes(f))) looks.push(f);
+            const looks = (glass ? L.GLASS : L[e.mood || 'play']).filter(f => f !== was && (walled || !P.CORRIDOR.includes(f)) && (backed || !P.WALLED.includes(f)));
             e.pose = looks[Math.floor(Math.random() * looks.length)]; e.lookMood = e.mood;
             const [a0, a1] = MirrorTrial.CFG.LOOK_STEPS; e.lookLeft = a0 - 1 + Math.floor(Math.random() * (a1 - a0 + 1));
         }
@@ -884,7 +896,7 @@ class MirrorTrial extends Phaser.Scene {
     _wake(e) {
         if (e.awake) return;
         e.rile = 0; e.mood = null; this._rile(e, 0); e.restUntil = null;
-        e.awake = true; e.sawAt = this.time.now; e.pose = MirrorTrial.POSES[e.mood][0]; e.lean = null; e.t = -MirrorTrial.CFG.WAKE.MS; e.movedAt = this.time.now;   // (stirring: a sentry near it hears that)   // (coming to: a moment before its first step, to see it coming)
+        e.awake = true; e.sawAt = this.time.now; e.pose = MirrorTrial.LOOKS[e.way][e.mood][0]; e.lean = null; e.t = -MirrorTrial.CFG.WAKE.MS; e.movedAt = this.time.now;   // (stirring: a sentry near it hears that)   // (coming to: a moment before its first step, to see it coming)
         Sfx.play(this, 'tell'); this.time.delayedCall(500, () => !this.caught && this._giggle(e));
         this._note('SOMETHING WOKE UP. IT WANTS TO PLAY.');
         if (e.seen) { this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.25); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 500 }); this.cameras.main.shake(140, 0.006); }
@@ -1161,8 +1173,7 @@ class MirrorTrial extends Phaser.Scene {
     // Right next to you and unseen: it doesn't get you yet. It reaches, caught in time almost on you, and you hear it; its next
     // unseen step has you, so that's your one chance to turn and catch it
     _reach(e) {
-        const P = MirrorTrial.POSES;
-        Object.assign(e, { reaching: true, oops: false, pose: Phaser.Math.Between(...P.REACH), lean: null, truly: false, lookLeft: 0, lookMood: null, fresh: true, movedAt: this.time.now });
+        Object.assign(e, { reaching: true, oops: false, pose: Phaser.Utils.Array.GetRandom(MirrorTrial.LOOKS[e.way].REACH), lean: null, truly: false, lookLeft: 0, lookMood: null, fresh: true, movedAt: this.time.now });
         Sfx.play(this, 'hall_reach', this._where(e) || {});
     }
     _sendOff(e) {
