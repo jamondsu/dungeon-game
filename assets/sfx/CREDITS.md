@@ -55,18 +55,12 @@ Trimmed, levelled and resampled for the game. All free to use; none require cred
 | hv_giggle4.wav | freesound.org/s/203230 "child giggle" | RaspberryTickle | CC0 |
 | hv_hunt1.wav | freesound.org/s/617265 "He..He..." | sheblum | CC0 |
 | hv_hunt2.wav | freesound.org/s/350554 "LittleEvilLaugh" | thetwiggydancer | CC0 |
-| hv_boo.wav | freesound.org/s/457920 "funny kids 8 booo" | phantastonia | CC0 |
-| hv_whoops.wav | freesound.org/s/839999 "kid-whoops, long" | Bluey1234 | CC0 |
-| hv_ohno.wav | freesound.org/s/839990 "kid-Oh, no" | Bluey1234 | CC0 |
 | hv_gasp.wav | freesound.org/s/346198 "LittleGirlGasp" | Willary1 | CC0 |
-| hv_hi.wav | freesound.org/s/416689 "Baby Language - Hi" | FunWithSound | CC0 |
-| hv_whisper.wav | freesound.org/s/350763 "Child_Wispher_1" | DRFX | CC0 |
 | hv_shh.wav | freesound.org/s/151224 "Shush!" | OwlStorm | CC0 |
 | hv_sigh.wav | freesound.org/s/507451 "Ghost Kid sigh, less verb" | HorrorAudio | CC0 |
 | hv_mmm.wav | freesound.org/s/170788 "Mmm girl 1" | esperar | CC0 |
 | hv_coo.wav | freesound.org/s/431344 "Daughter gooing 2" | digitalchkn | CC0 |
 | hv_bite.wav | freesound.org/s/275015 "Bite (Apple)" | wadaltmon | CC0 |
-| hv_count.wav | freesound.org/s/573225 "4 Year Old Counting to 10" | elaineaeris | CC0 |
 | hv_sniff.wav | freesound.org/s/346681 "Sniffles_07" | deleted_user_2104797 | CC0 |
 | hv_knock.wav | freesound.org/s/685583 "Window Knock" | ZyrofomeAnimations | CC0 |
 | hv_squeak.wav | freesound.org/s/104344 "Glass Windows Squeaking" | RutgerMuller | CC0 |

@@ -108,10 +108,10 @@ class MirrorTrial extends Phaser.Scene {
     // you, caught in time (mid-reach, sneaking up, mid-BOO, going for a hug); (frames 38-44, the old near looks, unused); (a prank's
     // face is its own drawing, mt_face); TRUE, what they really are (rare, and only ever seen straight on); CORRIDOR, the ones holding a corridor's walls (only where it runs toward you); WALLED, the ones
     // flat on the wall right behind them (only where there is one)
-    // what some of their looks say, now and then, when you can hear it (Sound.js, the hv_ recordings): reading, whistling, counting
-    // glorps, the baby, snacking, lounging, giggling, shh, waving, peekaboo, weeping, a heart in the fog, waving in, licking, knocking
-    static LOOK_SOUNDS = { 2: 'hv_mmm', 4: 'hv_whistle', 5: 'hv_count', 6: 'hv_coo', 7: 'hv_bite', 8: 'hv_sigh', 12: ['hv_giggle1', 'hv_giggle3'], 13: 'hv_shh',
-        16: 'hv_hi', 17: 'hv_whisper', 32: 'hv_sniff', 34: 'hv_breath', 35: 'hv_hi', 36: 'hv_squeak', 37: 'hv_knock' };
+    // the sounds some of their looks make, now and then, when you can hear it (Sound.js, the hv_ recordings; they never say a word):
+    // reading, whistling, the baby, snacking, lounging, giggling, shh, peekaboo, weeping, a heart in the fog, licking, knocking
+    static LOOK_SOUNDS = { 2: 'hv_mmm', 4: 'hv_whistle', 6: 'hv_coo', 7: 'hv_bite', 8: 'hv_sigh', 12: ['hv_giggle1', 'hv_giggle3'], 13: 'hv_shh',
+        17: 'hv_giggle4', 32: 'hv_sniff', 34: 'hv_breath', 36: 'hv_squeak', 37: 'hv_knock' };
     // their four ways of hunting, one each (_target)
     static WAYS = ['chase', 'ambush', 'cut', 'wander'];
     static POSES = { SLEEP: [0, 1], GLASS: [33, 37], TRUE: 50, CORRIDOR: [28, 29, 30], WALLED: [31] };
@@ -816,7 +816,7 @@ class MirrorTrial extends Phaser.Scene {
         this._render(this.front, this.view.a, C.FOV * this.fovK, false, !this.mapUp);
         if (this.holding) this._render(this.back, this.view.a + Math.PI, C.BACK.FOV, true, this.raised);
         if (now < this.blackUntil) for (const e of this.ents) e.seen = false;   // (blacked out: you hold nothing)
-        for (const e of this.ents) if (e.reaching && e.seen && !e.oops) { e.oops = true; Sfx.play(this, 'hall_voice', { ...(this._where(e) || {}), near: 1, v: 'hv_whoops' }); }   // (turned and caught it reaching: whoops)
+        for (const e of this.ents) if (e.reaching && e.seen && !e.oops) { e.oops = true; Sfx.play(this, 'hall_voice', { ...(this._where(e) || {}), near: 1, v: ['hv_giggle3', 'hv_giggle4'], rate: 0.9 }); }   // (turned and caught it reaching: a stifled giggle)
         this._dread(now, delta);
         for (const e of this.ents) if (e.truly && !e.trueSeen && e.dpx >= C.SEEN_PX && !this.caught) this._trueFace(e);
         // one caught in a reflection, held there: it fades and, long enough, leaves
@@ -1047,7 +1047,7 @@ class MirrorTrial extends Phaser.Scene {
     _boo() {
         const W = this.scale.width, H = this.scale.height, cam = this.cameras.main;
         Sfx.play(this, 'boom', { big: true }); Sfx.play(this, 'bosshit'); Sfx.play(this, 'whoosh');
-        Sfx.play(this, 'hall_voice', { v: 'hv_boo', near: 1, vol: 1, rate: 0.86, double: 0.5, grit: 0.2 });
+        Sfx.play(this, 'hall_voice', { v: 'hv_hunt2', near: 1, vol: 1, rate: 0.72, double: 0.5, grit: 0.25 });
         cam.shake(420, 0.02); this._punch(1.18, 60, 500);
         this.tweens.killTweensOf(this.stingWash); this.stingWash.setAlpha(0.7); this.tweens.add({ targets: this.stingWash, alpha: 0, duration: 600, ease: 'Quad.easeIn' });
         const fs = H * 1.15 / this.textures.get('mt_face').getSourceImage().height, face = this.add.image(W / 2, H / 2, 'mt_face').setScale(fs * 1.8).setDepth(5);   // (its own drawing, made for the whole screen)
@@ -1184,7 +1184,7 @@ class MirrorTrial extends Phaser.Scene {
     }
     // held in a reflection long enough: it doesn't like being caught there, and slinks off
     _shoo(e) {
-        Sfx.play(this, 'hall_voice', { ...(this._where(e) || {}), v: 'hv_ohno' }); Sfx.play(this, 'whoosh');
+        Sfx.play(this, 'hall_vanish', this._where(e) || {});
         this.shooed = (this.shooed || 0) + 1;
         this._note('CAUGHT IN A REFLECTION. IT SLINKS OFF.');
         this._sendOff(e);

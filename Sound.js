@@ -75,9 +75,9 @@ const Sfx = {
         'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_dash', 'ice_dash', 'frost_shield', 'fire_burst', 'zap', 'magic_whoosh',
         'splat1', 'splat2', 'splat_big', 'squelch', 'punch', 'sword', 'potion', 'boom1', 'boom2', 'eshot', 'block', 'door', 'gust', 'wind',
         'lava_erupt', 'slam', 'thud', 'powerup', 'buzz', 'click',
-        // the Hall's children (hv_): giggles, the hunting giggle, a boo, a gasp, a whoops, an oh no, and what their looks say
-        'hv_giggle1', 'hv_giggle2', 'hv_giggle3', 'hv_giggle4', 'hv_hunt1', 'hv_hunt2', 'hv_boo', 'hv_whoops', 'hv_ohno', 'hv_gasp', 'hv_hi', 'hv_whisper',
-        'hv_shh', 'hv_sigh', 'hv_mmm', 'hv_coo', 'hv_bite', 'hv_count', 'hv_sniff', 'hv_knock', 'hv_squeak', 'hv_breath', 'hv_whistle'].map(k => [k, `assets/sfx/${k}.wav`])),
+        // the Hall's children (hv_), who never say a word: giggles, the hunting giggle, a gasp, and the sounds their looks make
+        'hv_giggle1', 'hv_giggle2', 'hv_giggle3', 'hv_giggle4', 'hv_hunt1', 'hv_hunt2', 'hv_gasp',
+        'hv_shh', 'hv_sigh', 'hv_mmm', 'hv_coo', 'hv_bite', 'hv_sniff', 'hv_knock', 'hv_squeak', 'hv_breath', 'hv_whistle'].map(k => [k, `assets/sfx/${k}.wav`])),
     _buf: {},
     _loadSamples(ctx) {
         if (typeof fetch !== 'function') return;
@@ -884,7 +884,7 @@ const Sfx = {
             this._noise(ctx, t + 0.05, { filter: 'bandpass', f0: 950 * j * dull, f1: 480, q: 2.2, dur: 0.22, vol: v * 0.3 * dull, attack: 0.05, out });
             this._tone(ctx, t + 0.32, { type: 'sine', f0: 92 * j, f1: 66, dur: 0.12, vol: v * 0.45, out });
         },
-        hall_voice(ctx, t, o, j) { this._voice(ctx, t, o, j); },   // one of them saying something (o.v), from where it is: MirrorTrial
+        hall_voice(ctx, t, o, j) { this._voice(ctx, t, o, j); },   // a sound one of them makes (o.v), from where it is: MirrorTrial
         hall_giggle(ctx, t, o, j) {       // one of them giggling in the dark: breathy "hehehe", stepping down, a little too slow (o.pan, o.near 0-1,
             if (this._voice(ctx, t, { ...o, v: o.low ? ['hv_hunt1', 'hv_hunt2'] : ['hv_giggle1', 'hv_giggle2', 'hv_giggle3', 'hv_giggle4'], rate: o.low ? 0.7 : 0.84 }, j)) return;   // (the recordings; the synth below till they're in)
             const pan = ctx.createStereoPanner?.(), v = 0.03 + 0.09 * (o.near ?? 0.6), dull = o.muffled ? 0.5 : 1;   // o.muffled: through stone, o.n: longer)
@@ -904,6 +904,14 @@ const Sfx = {
                 this._noise(ctx, t, { filter: 'bandpass', f0: 800, f1: 3400, q: 2.5, dur: 0.3, vol: 0.17, attack: 0.22, out });
             for (const f of [1245, 1319]) this._tone(ctx, t + 0.24, { type: 'sawtooth', f0: f, f1: f * 1.04, dur: 0.55, vol: 0.045, attack: 0.02, out, space: true });
             for (const [at, f, k] of [[0.24, 66, 1], [0.38, 54, 0.8]]) this._tone(ctx, t + at, { type: 'sine', f0: f, f1: f * 0.6, dur: 0.14, vol: 0.26 * k });
+        },
+        hall_vanish(ctx, t, o) {          // one of them gone: a breath drawn in backwards, swelling to a dead stop, and a wet slide dropping away
+            const pan = ctx.createStereoPanner?.(), v = 0.16 + 0.3 * (o.near ?? 0.5), dull = o.muffled ? 0.45 : 1;   // (o.pan, o.near 0-1, o.muffled)
+            if (pan) { pan.pan.value = Math.max(-1, Math.min(1, o.pan || 0)); pan.connect(this._master); }
+            const out = pan || undefined;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 500 * dull, f1: 2600 * dull, q: 1.4, dur: 0.6, vol: v, attack: 0.55, out, space: true });
+            this._noise(ctx, t + 0.1, { filter: 'lowpass', f0: 700 * dull, f1: 90, dur: 0.5, vol: v * 0.7, attack: 0.04, out });
+            this._tone(ctx, t + 0.05, { type: 'sine', f0: 180, f1: 40, dur: 0.6, vol: v * 0.5, attack: 0.02, out });
         },
         heartbeat(ctx, t, o) {            // your heart: lub-dub, low (o.hard, 0-1: harder)
             const v = 0.12 + 0.14 * (o.hard || 0);
