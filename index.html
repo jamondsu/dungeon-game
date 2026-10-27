@@ -20,12 +20,15 @@
 <body>
     <!-- Phaser 3 -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <!-- Supabase (your account: saves online, the leaderboards) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js"></script>
 
     <!-- Load utility files first -->
     <script src="Utils.js"></script>
     <script src="Sound.js"></script>
     <script src="Settings.js"></script>
     <script src="Telemetry.js"></script>
+    <script src="Cloud.js"></script>
     <script src="Relics.js"></script>
     <script src="Enchants.js"></script>
     <script src="Garden.js"></script>
@@ -108,6 +111,7 @@
 
         const game = new Phaser.Game(config);
         Settings.fpsMeter(game);   // the frame counter in the corner (Settings > FPS)
+        Cloud.init();   // your account, if you're signed in: your save kept online
     </script>
 </body>
 </html>

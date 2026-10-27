@@ -639,6 +639,7 @@ class LevelSelectScene extends Phaser.Scene {
         });
         // small details for the empty parchment: trees, hills, ruins, a campfire, a skull
         const DEC = ['pines', 'hills', 'pines', 'ruin', 'hills', 'pines', 'fire', 'skull', 'ruin', 'pines', 'hills', 'pines'];
+        for (const [x, y] of [[44, 62], [104, 62], [164, 62], [64, 118], [64, 176]]) taken.push([m.x + x, m.y + m.h - y, 34]);   // (kept clear: the corner's doodles, below)
         const pathPts = legs.flat();
         let placed = 0;
         for (let tries = 0; tries < 400 && placed < DEC.length; tries++) {
@@ -707,6 +708,32 @@ class LevelSelectScene extends Phaser.Scene {
             const z = this.add.zone(bx, by + 4, 50, 46).setInteractive({ useHandCursor: true }).setDepth(7);
             z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
             z.on('pointerdown', () => this._openIndex());
+        }
+        {   // and a page with an arrow out of it: the guides on the web (every guide and the Compendium), in a new tab
+            const ax = m.x + 164, ay = m.y + m.h - 64, g = this.add.graphics().setDepth(6).setPosition(ax, ay).setAngle(-4);
+            for (const [w, a, j] of [[2.4, 0.85, 0], [1.2, 0.6, 1]]) {   // twice over, a little off
+                g.lineStyle(w, INK, a); g.beginPath(); g.moveTo(-2 + j, -10); g.lineTo(-11, -10); g.lineTo(-11 + j, 10); g.lineTo(9, 10 - j); g.lineTo(9, 1); g.strokePath();
+                g.lineBetween(-3, 3 + j, 11, -11); g.lineBetween(3, -12 + j, 11, -11); g.lineBetween(11, -11, 11 - j, -3);
+            }
+            const t = this.add.text(ax, ay + 14, 'all guides', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(-3);
+            const z = this.add.zone(ax, ay + 4, 60, 46).setInteractive({ useHandCursor: true }).setDepth(7);
+            z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
+            z.on('pointerdown', () => { if (!this._settingsOpen) window.open('guide/', '_blank', 'noopener'); });
+        }
+        {   // and stacked over the guide: a podium (the leaderboards) and a little slime (your account, saved online)
+            const doodle = (x, y, angle, label, draw, onClick) => {
+                const g = this.add.graphics().setDepth(6).setPosition(x, y).setAngle(angle);
+                for (const [w, a, j] of [[2.4, 0.85, 0], [1.2, 0.6, 1]]) { g.lineStyle(w, INK, a); draw(g, j); }   // (twice over, a little off)
+                const t = this.add.text(x, y + 14, label, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(angle);
+                const z = this.add.zone(x, y + 4, 64, 46).setInteractive({ useHandCursor: true }).setDepth(7);
+                z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
+                z.on('pointerdown', () => { if (!this._settingsOpen) onClick(); });
+            };
+            doodle(m.x + 64, m.y + m.h - 176, 3, 'leaderboards', (g, j) => { g.strokeRect(-13, -2 + j, 9, 11); g.strokeRect(-4, -10, 9, 19 - j); g.strokeRect(5 + j, -5, 9, 14); }, () => Cloud.open('board'));
+            doodle(m.x + 60, m.y + m.h - 118, -5, 'account', (g, j) => {
+                g.beginPath(); g.moveTo(-11, 9); g.lineTo(-11, 0 + j); g.lineTo(-7, -7); g.lineTo(0, -10 + j); g.lineTo(7, -7); g.lineTo(11, 0); g.lineTo(11 - j, 9); g.closePath(); g.strokePath();
+                g.lineBetween(-4, -2, -4, 1); g.lineBetween(4, -2 + j, 4, 1);   // (its eyes)
+            }, () => Cloud.open('account'));
         }
 
         // Title cartouche and compass rose.
