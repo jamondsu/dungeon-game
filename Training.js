@@ -150,20 +150,20 @@ class Training {
         S.waterTiles?.clear(); S.steamTiles?.clear(); S._waterDirty = true;
     }
 
-    // ROOMS: three rooms of the Gauntlet's live floor (Pulse.js), a 9x9 field in the middle of the arena, you at its west edge:
-    // [its button, its pattern, slimes, armoured slimes, what to do]
+    // ROOMS: the Gauntlet's conductive floor (Pulse.js), a little, a lot, all of it, in a 9x9 field in the middle of the arena, you
+    // at its west edge: [its button, its pattern, ms between zaps, which tiles conduct (dx, dy from the middle), slimes, armoured, what to do]
     static ROOMS = [
-        ['1 · LEARN THE BEAT', 'checker', 0, 0, 'CROSS IT: STEP WHEN YOUR PANELS GO DARK'],
-        ['2 · LURE THEM ON', 'rows', 4, 0, 'THE LIVE ROWS HURT THEM TOO: LEAD THEM ON'],
-        ['3 · INSULATED', 'wave', 2, 2, 'THE ARMOURED ONES DON\'T CARE: FIND ANOTHER WAY'],
+        ['1 · A LITTLE', 'all', 2600, (dx, dy) => dx === 0 || dx === 1 || (Math.abs(dx) >= 3 && Math.abs(dy) >= 3), 3, 0, 'A STRIP AND THE CORNERS: OFF THEM WHEN THEY GLOW'],
+        ['2 · A LOT', 'all', 2400, (dx, dy) => !((Math.abs(dx) === 2 || Math.abs(dx) === 3) && (Math.abs(dy) === 2 || Math.abs(dy) === 3)) && !(dx === 0 && dy === 0), 4, 0, 'ISLANDS OF SAFE FLOOR: FIGHT FROM THEM'],
+        ['3 · ALL OF IT', 'checker', 1700, null, 3, 1, 'ALL OF IT, HALF AT A TIME: STEP OR DASH TO THE DARK HALF'],
     ];
     static room(S, i) {
-        const [, pattern, slimes, armored, hint] = Training.ROOMS[i], A = S._trainArena, T = S.TILE_SIZE, F = 4, X = S._train;
+        const [, pattern, period, conducts, slimes, armored, hint] = Training.ROOMS[i], A = S._trainArena, T = S.TILE_SIZE, F = 4, X = S._train;
         Training.clear(S);
         X.room = i; X.crossed = false;
         S.playerX = A.cx - F - 2; S.playerY = A.cy; S._step = null;
         S.player.setPosition(S.playerX * T + T / 2, S.playerY * T + T / 2 + (S.SLIME_Y_OFFSET || 0));
-        Pulse.start(S, { x0: A.cx - F, y0: A.cy - F, w: 2 * F + 1, h: 2 * F + 1, pattern });
+        Pulse.start(S, { x0: A.cx - F, y0: A.cy - F, w: 2 * F + 1, h: 2 * F + 1, pattern, period, tiles: conducts && ((x, y) => conducts(x - A.cx, y - A.cy)) });
         const spots = [[2, -3], [2, 3], [3, 0], [0, -2], [1, 2], [-1, 3]], add = (make, k) => {
             const before = new Set(S.enemies || []), [dx, dy] = spots[k % spots.length];
             make(A.cx + dx, A.cy + dy);
@@ -185,9 +185,9 @@ class Training {
     static update(S, time) {
         const T = S._train;
         if (!T) return;
-        if (T.room === 0 && S._pulse) {   // the first live-floor room: across it, and how many shocks it took (back to the start: again)
+        if (T.room != null && S._pulse) {   // across the floor, and how many zaps it took (back to the start: again)
             const A = S._trainArena, n = S._pulse.shocks;
-            if (!T.crossed && S.playerX >= A.cx + 5) { T.crossed = true; S.showStatusText?.(S.player.x, S.player.y - 40, n ? `ACROSS · ${n} SHOCK${n > 1 ? 'S' : ''}` : 'ACROSS · NOT ONE SHOCK!', '#ffe14a'); }
+            if (!T.crossed && S.playerX >= A.cx + 5) { T.crossed = true; S.showStatusText?.(S.player.x, S.player.y - 40, n ? `ACROSS · ${n} ZAP${n > 1 ? 'S' : ''}` : 'ACROSS · NOT ONE ZAP!', '#ffe14a'); }
             else if (T.crossed && S.playerX <= A.cx - 5) { T.crossed = false; S._pulse.shocks = 0; }
         }
         if (S.voidSovereignBoss?.active) S._updateVoidSovereign?.(time);
@@ -347,11 +347,11 @@ class Training {
         btn(x0 + P, y, IW, 22, 'WATCH THE ENDING', () => MirrorTrial.enter(S, { ending: true }), null, { size: 10 });
         y += 26;
         foot = Math.max(foot, ends.trial = y);
-        // ROOMS: rooms of the levels being made, tried out here first. The Gauntlet's live floor (Pulse.js): learn the beat, lure
-        // them on, the insulated ones
+        // ROOMS: rooms of the levels being made, tried out here first. The Gauntlet's conductive floor (Pulse.js): a little of it,
+        // a lot, all of it
         cur = 'rooms'; y = top;
-        text(x0 + P, y, 'THE GAUNTLET: THE LIVE FLOOR', 12, '#ffffff'); y += 18;
-        text(x0 + P, y, 'Panels go live on a beat, in patterns.\nEach glows the beat before it fires.\nThey shock enemies too, not the insulated.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 50;
+        text(x0 + P, y, 'THE GAUNTLET: THE CONDUCTIVE FLOOR', 12, '#ffffff'); y += 18;
+        text(x0 + P, y, 'Panels glow, then zap, every few seconds.\nCaught on one: a small hit and a daze.\nThey zap enemies too, not the insulated.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 50;
         Training.ROOMS.forEach(([label], i) => { btn(x0 + P, y, IW, 24, label, () => Training.room(S, i), () => T.room === i && !!S._pulse, { size: 11 }); y += 28; });
         btn(x0 + P, y, IW, 22, 'STOP THE FLOOR', () => { Pulse.stop(S); T.room = null; Training.clear(S); }, null, { size: 10 });
         y += 26;
