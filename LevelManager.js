@@ -4226,9 +4226,10 @@ class LevelManager {
 
     // ── WAVE RIDER — the terrain ────────────────────────────────────────────
     // Lays water in its own wake, so every pass leaves the floor worse than it
-    // found it. Fighting it in place is how the room drowns.
+    // found it. Fighting it in place is how the room drowns. Its one attack is the charge
+    // (no Berserker's swing): caught by it, you're pulled onto its line and thrown ahead of it.
     createWaveRider(x, y, ri) {
-        const e = this.createBerserker(x, y, ri);
+        const e = this.createEnemy(x, y, 140);
         e.tutorialRoomIndex = ri;
         e._waterNative = true;
         e._isWaveRider = true;
@@ -4254,7 +4255,8 @@ class LevelManager {
         e._waveAccel   = 0.6;    // px/s gained per pixel travelled
         e._waveSpeedMax= 230;
         e._waveHalfW   = 2.5;    // tiles either side -> a 5-wide carpet
-        e._waveDmg     = 12;
+        e._waveDmg     = [6, 26];   // a hit: from its starting speed to its top speed
+        e._waveKnock   = 3;      // tiles it throws you along its path (after pulling you one onto its line)
         e._waveHitGap  = 500;    // ms between hits while you are in it
         if (e.sprite.setTint) e.sprite.setTint(0xdff3ff);
         this._cisternMark(e, m => {
@@ -4296,12 +4298,21 @@ class LevelManager {
         const mx = e._waveDx * e._waveSpeed * dt, my = e._waveDy * e._waveSpeed * dt;
         const nx = e.sprite.x + mx, ny = e.sprite.y + my;
         const ntx = Math.floor(nx / TS), nty = Math.floor((ny - (this.SLIME_Y_OFFSET || -10)) / TS);
+        const floor = (x, y) => this.world?.[x]?.[y] === this.FLOOR && !this.isInLockedRoom(x, y);
 
-        // Wall ends the charge.
-        if (this.world?.[ntx]?.[nty] !== this.FLOOR || this.isInLockedRoom(ntx, nty)) {
+        // Wall ends the charge (a corner cut diagonally counts: it slipped between two walls). It settles on a tile of its
+        // own: if that's yours (it threw you to the wall and caught up) or another's, it backs off along its path
+        if (!floor(ntx, nty) || (ntx !== e.x && nty !== e.y && (!floor(ntx, e.y) || !floor(e.x, nty)))) {
             e._waveState = 'walk';
             e._waveLastEnd = time;
             e._moveCdMult = 1.0;
+            const taken = (x, y) => (x === this.playerX && y === this.playerY) || (this.enemies || []).some(o => o !== e && o.sprite?.active && o.x === x && o.y === y);
+            for (let k = 1; k <= 3 && taken(e.x, e.y); k++) {
+                const bx = Math.round(e.x - e._waveDx * k), by = Math.round(e.y - e._waveDy * k);
+                if (floor(bx, by) && !taken(bx, by)) { e.x = bx; e.y = by; }
+            }
+            e._attackAnimPlaying = true;   // (no lunge till it's settled: a lunge springs back to where it began, which was against the wall)
+            this.tweens.add({ targets: e.sprite, x: e.x * TS + TS / 2, y: e.y * TS + TS / 2 + (this.SLIME_Y_OFFSET || -10), duration: 120, ease: 'Quad.easeOut', onComplete: () => { e._attackAnimPlaying = false; } });
             this._setSpeedIndicator?.(e, 'wave', 'speed_anchor', false);
             this.showStatusText?.(e.sprite.x, e.sprite.y - 26, 'SPENT', '#8fd8ff');
             const crash = this.add.graphics().setDepth(2.4);
@@ -4335,21 +4346,28 @@ class LevelManager {
 
         if ((inWave || nearRider) && time - (e._waveLastHit || 0) >= e._waveHitGap) {
             e._waveLastHit = time;
-            this.takeDamage(e._waveDmg * (this.enemyDamageScale || 1));
+            // the faster it's going, the harder it hits
+            const f = Phaser.Math.Clamp((e._waveSpeed - e._waveSpeed0) / (e._waveSpeedMax - e._waveSpeed0), 0, 1);
+            this.takeDamage(Math.round(e._waveDmg[0] + (e._waveDmg[1] - e._waveDmg[0]) * f) * (this.enemyDamageScale || 1));
             this._waterSlowUntil = Math.max(this._waterSlowUntil || 0, time + 1500);
-            // Shoved two tiles along the wave, as far as the floor allows.
+            // Pulled a tile onto its line (if you're off it), then thrown _waveKnock tiles along its path, as far as the floor allows
+            const off = (this.player.x - e.sprite.x) * perpX + (this.player.y - e.sprite.y) * perpY;
             let px = this.playerX, py = this.playerY;
-            for (let step = 0; step < 2; step++) {
-                const tx = px + Math.round(e._waveDx), ty = py + Math.round(e._waveDy);
-                if (this.world?.[tx]?.[ty] !== this.FLOOR) break;
-                if (this.isInLockedRoom(tx, ty)) break;
+            if (Math.abs(off) >= TS * 0.5) {
+                const tx = px - Math.round(Math.sign(off) * perpX), ty = py - Math.round(Math.sign(off) * perpY);
+                if (floor(tx, ty)) { px = tx; py = ty; }
+            }
+            const mid = [px, py];
+            for (let k = 1; k <= e._waveKnock; k++) {
+                const tx = Math.round(mid[0] + e._waveDx * k), ty = Math.round(mid[1] + e._waveDy * k);
+                if (!floor(tx, ty)) break;
                 px = tx; py = ty;
             }
             if ((px !== this.playerX || py !== this.playerY) && (this._iceShellUntil || 0) <= this.time.now) {   // (not through the ice ult's shell)
+                const at = (x, y) => ({ x: x * TS + TS / 2, y: y * TS + TS / 2 + (this.SLIME_Y_OFFSET || -10) });
                 this.playerX = px; this.playerY = py;
-                this.tweens.add({ targets: this.player,
-                    x: px * TS + TS / 2, y: py * TS + TS / 2 + (this.SLIME_Y_OFFSET || -10),
-                    duration: 120, ease: 'Quad.easeOut' });
+                this.tweens.add({ targets: this.player, ...at(mid[0], mid[1]), duration: 70, ease: 'Quad.easeIn',
+                    onComplete: () => this.player?.active && this.tweens.add({ targets: this.player, ...at(px, py), duration: 180, ease: 'Quad.easeOut' }) });
             }
             this.showStatusText?.(this.player.x, this.player.y - 30, 'SWEPT', '#dff3ff');
         }
@@ -5364,13 +5382,13 @@ class LevelManager {
     // counting tiles let it wind up faster the faster it got); every time
     // it attacks, pounce or touch, its rage halves. Within POUNCE_R tiles (more, wound up) it
     // marks the ground round you, leaps and vanishes into it, then slashes it for FLURRY_MS, more
-    // slashes in that time the angrier it is (SLASHES), sharing FLURRY_DMG between them; the outer tiles cut deepest (RING_MULT). The marked ground grows with it too, from the
+    // slashes in that time the angrier it is (SLASHES), sharing FLURRY_DMG between them; the middle cuts deepest, less toward the edge (RING_MULT: about 60 in the middle at full rage, 20 at a crawl). The marked ground grows with it too, from the
     // 3x3 round you to a 5x5 squircle in a frenzy (AREA_R): out of reach only if you dodge out
     // during the tell or keep running. Each slash that finds you hurts and makes you BLEED for BLEED_MS:
     // every tile you move while bleeding costs BLEED_STEP. Wound all the way up it FRENZIES: blood-red, red-eyed, leaving
     // afterimages.
     _hunterCfg() { return { HP: 140, SLOW: 2.4, FAST: 0.55, RAMP_TILES: 16, RAMP_MS: 12000, MELEE0: 2, MELEE1: 6, CHASE_R: 14,
-        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 28], FLURRY_MS: 900, RING_MULT: [0.6, 1, 1.8], FLURRY_DMG: 12, SLASH_RAMP: 1.31,
+        POUNCE_R: 4, POUNCE_R_MAX: 5, AREA_R: [1.2, 2.3], POUNCE_CD: 7000, TELL: 700, SLASHES: [2, 28], FLURRY_MS: 900, RING_MULT: [1, 0.58, 0.33], FLURRY_DMG: 20, SLASH_RAMP: 2,
         BLEED_MS: 6000, BLEED_STEP: 2, BLEED_DASH: 0.5, EYE: 0xffe8d0, FRENZY_EYE: 0xff1a1a }; }
     createHunterSlime(x, y, ri) {
         const H = this._hunterCfg();
@@ -5442,15 +5460,15 @@ class LevelManager {
         for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if ((dx ** 4 + dy ** 4) ** 0.25 <= R) area.push([dx, dy]);
         const inArea = (x, y) => area.some(([dx, dy]) => dx === x && dy === y), Rn = Math.max(...area.map(([dx]) => Math.abs(dx)));
         const mark = e._huntMark = this.add.graphics().setDepth(0.95).setPosition(tx * T + T / 2, ty * T + T / 2);
-        const ring = (dx, dy) => Math.max(Math.abs(dx), Math.abs(dy));   // 0 the middle, 1, 2 the edge: the edge cuts deepest (RING_MULT)
-        const draw = (a, flash) => {   // a square per tile, apart from its neighbours, redder and brighter toward the edge
+        const ring = (dx, dy) => Math.max(Math.abs(dx), Math.abs(dy));   // 0 the middle, 1, 2 the edge: the middle cuts deepest (RING_MULT)
+        const draw = (a, flash) => {   // a square per tile, apart from its neighbours, redder and brighter toward the middle (where it cuts deepest)
             mark.clear();
             const pad = 3, sz = T - pad * 2;
             for (const [dx, dy] of area) {
                 const r = ring(dx, dy), x0 = (dx - 0.5) * T + pad, y0 = (dy - 0.5) * T + pad;
-                const col = r === 2 ? 0xff1a1a : r === 1 ? 0xff5a3a : 0xff9a7a, fa = (r === 2 ? 0.28 : r === 1 ? 0.18 : 0.1) + 0.2 * a;
+                const col = r === 0 ? 0xff1a1a : r === 1 ? 0xff5a3a : 0xff9a7a, fa = (r === 0 ? 0.28 : r === 1 ? 0.18 : 0.1) + 0.2 * a;
                 mark.fillStyle(col, fa).fillRect(x0, y0, sz, sz);
-                mark.lineStyle(r === 2 ? 2 : 1, flash ? 0xffffff : col, r === 2 ? 0.95 : 0.7).strokeRect(x0, y0, sz, sz);
+                mark.lineStyle(r === 0 ? 2 : 1, flash ? 0xffffff : col, r === 0 ? 0.95 : 0.7).strokeRect(x0, y0, sz, sz);
                 const s2 = sz * (1 - a) * 0.5;   // each square closing in on its middle as the leap comes
                 if (s2 > 1) mark.lineStyle(1, col, 0.5).strokeRect(x0 + sz / 2 - s2, y0 + sz / 2 - s2, s2 * 2, s2 * 2);
             }
@@ -6830,7 +6848,7 @@ class LevelManager {
             cheer:        { name: 'Cheerleader Slime', role: 'Booster',  tint: 0xff6ad0,
                             desc: 'Fast, and never comes for you: she rushes to wherever she can cheer on the most of her friends. Then a stage pops up under her and she performs for six seconds, standing still and taking half damage: everything within five tiles is Encouraged for six seconds, moving faster and hitting three times as hard. Kill her and the cheer stops, but everything near her is Discouraged: slower, and harder to hurt for five seconds.' },
             waverider:    { name: 'Wave Rider',       role: 'Charger',   tint: 0xdff3ff,
-                            desc: 'Swings like a Berserker up close. From across the room it winds up, then charges in one locked direction, flooding a five-wide lane and sweeping you along it until it hits a wall. Leave the lane while it winds up.' },
+                            desc: 'From across the room it winds up, then charges in one locked direction, flooding a five-wide lane until it hits a wall. Caught in it, you\'re pulled onto its line and thrown ahead of it, harder the faster it\'s going. Leave the lane while it winds up.' },
             bud:          { name: 'Budding Slime',    role: 'Grower',    tint: 0x9be05a,
                             desc: 'Every ten seconds it swells and buds off a copy with its full health; both burst a ring of poison globs, and poison pools round it. Hitting it does not stop the clock: kill it, or freeze or stun it mid-swell. No Budding Slime charges your ult. The original wears the bud; a family stops at eight.' },
             shade:        { name: 'Adaptive Shade',   role: 'Mini-boss', tint: 0xa060ff,
@@ -6848,7 +6866,7 @@ class LevelManager {
             armored:      { name: 'Armored Slime',    role: 'Tank',      tint: 0x8a94a6,
                             desc: 'Plated on three sides that never turn: hits from those barely scratch it. One side is open and glows when you stand on it. Go round.' },
             hunter:       { name: 'Hunter Slime',     role: 'Stalker',   tint: 0x8c3c46,
-                            desc: 'Crawls at first, and gets faster and hits harder the longer it chases you; its ears fill with blood as it does. Get close and it leaps at the ground round you and slashes it apart, wider the angrier it is (up to five tiles across), the outer tiles cutting deepest. Every attack halves its rage. Its slashes make you bleed: moving hurts for a while.' },
+                            desc: 'Crawls at first, and gets faster and hits harder the longer it chases you; its ears fill with blood as it does. Get close and it leaps at the ground round you and slashes it apart, wider the angrier it is (up to five tiles across), cutting deepest in the middle. Every attack halves its rage. Its slashes make you bleed: moving hurts for a while.' },
             frost:        { name: 'Frost Slime',      role: 'Zoner',     tint: 0x9fe8ff,
                             desc: 'Stops and lights the tiles round itself, then they all freeze at once. You can\'t dash out while it\'s lit, so step onto an unlit tile. Killed, it seals itself in ice: break the block before the ring closes, or it hatches a faster, harder Frostborn whose haze slows you.' },
             tidalguard:   { name: 'Tidal Guard',      role: 'Zoner',     tint: 0xb8912f,

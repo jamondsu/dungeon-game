@@ -1001,19 +1001,33 @@ class LevelSelectScene extends Phaser.Scene {
                 const z = v(this.add.zone(x + cw / 2, y + ch / 2, cw, ch).setInteractive({ useHandCursor: true }).setDepth(D + 5));
                 z.on('pointerdown', () => { if (pick === idx) return; pick = idx; Sfx.play(this, 'hover'); draw(); });
             });
-            // the chosen one on a little stage, big, with its card
-            const k = keys[pick], e = codex[k];
+            // the chosen one on a little stage, with its card: what it does, on a loop (assets/enemy_clips/<key>.mp4, filmed in the
+            // Training Ground), or, till that's loaded (or where there's none), itself, big
+            const k = keys[pick], e = codex[k], clip = 'clip_' + k, has = this.cache.video.exists(clip);
             const st = v(this.add.graphics().setDepth(D + 2));
             st.fillStyle(0x100c0a, 1).fillRoundedRect(rx, gy, rw, rh, 8);
-            st.fillStyle(e.tint, 0.1).fillRoundedRect(rx + 4, gy + 4, rw - 8, 196, 6);
-            for (let fx = rx + 10; fx + 22 <= rx + rw - 10; fx += 24) { st.fillStyle(0x2a2420, 1).fillRect(fx, gy + 168, 22, 10); st.fillStyle(0x3a322c, 1).fillRect(fx, gy + 168, 22, 2); }   // flagstones
-            st.fillStyle(0x000000, 0.45).fillEllipse(rx + rw / 2, gy + 170, 120, 18);
+            st.fillStyle(e.tint, 0.1).fillRoundedRect(rx + 4, gy + 4, rw - 8, 236, 6);
+            if (!has) {
+                for (let fx = rx + 10; fx + 22 <= rx + rw - 10; fx += 24) { st.fillStyle(0x2a2420, 1).fillRect(fx, gy + 208, 22, 10); st.fillStyle(0x3a322c, 1).fillRect(fx, gy + 208, 22, 2); }   // flagstones
+                st.fillStyle(0x000000, 0.45).fillEllipse(rx + rw / 2, gy + 210, 120, 18);
+            }
             st.lineStyle(2, e.tint, 0.75).strokeRoundedRect(rx, gy, rw, rh, 8);
-            model(k, rx + rw / 2, gy + 170, 5).forEach(v);
-            v(this.add.text(rx + rw / 2, gy + 212, e.name, { fontSize: '24px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f3e3b8' }).setOrigin(0.5, 0).setDepth(D + 3));
-            v(this.add.text(rx + rw / 2, gy + 246, ` ${e.role.toUpperCase()} `, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#0e0b09', backgroundColor: UIKit._hex(e.tint), padding: { x: 6, y: 2 } }).setOrigin(0.5, 0).setDepth(D + 3));
-            const dt = v(this.add.text(rx + 20, gy + 280, e.desc, { fontSize: '13px', fontFamily: 'monospace', color: UIKit.CSS.textMid, lineSpacing: 6, wordWrap: { width: rw - 40 } }).setDepth(D + 3));
-            for (let fs = 12; dt.height > rh - 292 && fs >= 9; fs--) dt.setFontSize(fs).setLineSpacing(fs > 10 ? 4 : 2);   // a long one shrinks to stay inside its card
+            if (has) {
+                const vid = v(this.add.video(rx + rw / 2, gy + 120, clip).setDepth(D + 3));
+                vid.setScale(Math.min((rw - 16) / 432, 228 / 256)); vid.play(true);   // (the clips are 432x256)
+            } else {
+                model(k, rx + rw / 2, gy + 210, 5).forEach(v);
+                if (!(this._clipTried ||= new Set()).has(k)) {   // (one try each: a missing clip leaves it the model)
+                    this._clipTried.add(k);
+                    this.load.video(clip, `assets/enemy_clips/${k}.mp4`, true);
+                    this.load.once('complete', () => { if (this._settingsOpen && keys[pick] === k) draw(); });
+                    this.load.start();
+                }
+            }
+            v(this.add.text(rx + rw / 2, gy + 250, e.name, { fontSize: '24px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f3e3b8' }).setOrigin(0.5, 0).setDepth(D + 3));
+            v(this.add.text(rx + rw / 2, gy + 282, ` ${e.role.toUpperCase()} `, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#0e0b09', backgroundColor: UIKit._hex(e.tint), padding: { x: 6, y: 2 } }).setOrigin(0.5, 0).setDepth(D + 3));
+            const dt = v(this.add.text(rx + 20, gy + 314, e.desc, { fontSize: '13px', fontFamily: 'monospace', color: UIKit.CSS.textMid, lineSpacing: 6, wordWrap: { width: rw - 40 } }).setDepth(D + 3));
+            for (let fs = 12; dt.height > rh - 326 && fs >= 9; fs--) dt.setFontSize(fs).setLineSpacing(fs > 10 ? 4 : 2);   // a long one shrinks to stay inside its card
             v(this.add.text(px + pw / 2, py + ph - 74, `page ${page + 1} of ${pages}   ·   ${pick + 1} / ${keys.length}   ·   arrows to browse`, { fontSize: '11px', fontFamily: 'monospace', color: UIKit.CSS.textLo }).setOrigin(0.5).setDepth(D + 3));
         };
         const go = d => { page = (page + d + pages) % pages; pick = Math.min(keys.length - 1, page * PER); Sfx.play(this, 'hover'); draw(); };

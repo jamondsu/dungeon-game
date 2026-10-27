@@ -150,6 +150,30 @@ class Training {
         S.waterTiles?.clear(); S.steamTiles?.clear(); S._waterDirty = true;
     }
 
+    // ROOMS: three rooms of the Gauntlet's live floor (Pulse.js), a 9x9 field in the middle of the arena, you at its west edge:
+    // [its button, its pattern, slimes, armoured slimes, what to do]
+    static ROOMS = [
+        ['1 · LEARN THE BEAT', 'checker', 0, 0, 'CROSS IT: STEP WHEN YOUR PANELS GO DARK'],
+        ['2 · LURE THEM ON', 'rows', 4, 0, 'THE LIVE ROWS HURT THEM TOO: LEAD THEM ON'],
+        ['3 · INSULATED', 'wave', 2, 2, 'THE ARMOURED ONES DON\'T CARE: FIND ANOTHER WAY'],
+    ];
+    static room(S, i) {
+        const [, pattern, slimes, armored, hint] = Training.ROOMS[i], A = S._trainArena, T = S.TILE_SIZE, F = 4, X = S._train;
+        Training.clear(S);
+        X.room = i; X.crossed = false;
+        S.playerX = A.cx - F - 2; S.playerY = A.cy; S._step = null;
+        S.player.setPosition(S.playerX * T + T / 2, S.playerY * T + T / 2 + (S.SLIME_Y_OFFSET || 0));
+        Pulse.start(S, { x0: A.cx - F, y0: A.cy - F, w: 2 * F + 1, h: 2 * F + 1, pattern });
+        const spots = [[2, -3], [2, 3], [3, 0], [0, -2], [1, 2], [-1, 3]], add = (make, k) => {
+            const before = new Set(S.enemies || []), [dx, dy] = spots[k % spots.length];
+            make(A.cx + dx, A.cy + dy);
+            for (const e of S.enemies || []) if (!before.has(e)) e.tutorialRoomIndex = 0;
+        };
+        for (let k = 0; k < slimes; k++) add((x, y) => S.createEnemy(x, y), k);
+        for (let k = 0; k < armored; k++) add((x, y) => S.createArmoredSlime(x, y, 0), slimes + k);
+        S.showStatusText?.(S.player.x, S.player.y - 40, hint, '#9ff6ff');
+    }
+
     static clear(S) {
         for (const e of [...(S.enemies || [])]) { e._trainImmortal = false; S.killEnemy(e); }
         try { if (S.voltslimeBoss?.active) S.damageVoltslimeBoss(1e9); if (S.voidSovereignBoss?.active) { S.voidSovereignBoss._isInvulnerable = false; S.damageVoidSovereignBoss(1e9); } } catch (e) {}
@@ -161,6 +185,11 @@ class Training {
     static update(S, time) {
         const T = S._train;
         if (!T) return;
+        if (T.room === 0 && S._pulse) {   // the first live-floor room: across it, and how many shocks it took (back to the start: again)
+            const A = S._trainArena, n = S._pulse.shocks;
+            if (!T.crossed && S.playerX >= A.cx + 5) { T.crossed = true; S.showStatusText?.(S.player.x, S.player.y - 40, n ? `ACROSS · ${n} SHOCK${n > 1 ? 'S' : ''}` : 'ACROSS · NOT ONE SHOCK!', '#ffe14a'); }
+            else if (T.crossed && S.playerX <= A.cx - 5) { T.crossed = false; S._pulse.shocks = 0; }
+        }
         if (S.voidSovereignBoss?.active) S._updateVoidSovereign?.(time);
         S._fractureEnemies?.(time);   // the Encased slime's attacks and rebirth, the rooter's and splitter's marks (the Fracture's own loop)
         let dealt = 0;
@@ -188,7 +217,7 @@ class Training {
     // The panel, on the HUD camera at the left, in its frames (ui_tr: a 9-slice panel, the buttons' three states): a title,
     // tabs, the tab's page (ENEMIES: how many, how strong, what they carry, a card each with its portrait; BOSSES; ARENA:
     // options and terrain; TRIAL), and under every page your damage and LEAVE. Short enough for a 720-high window.
-    static TABS = [['enemies', 'ENEMIES'], ['bosses', 'BOSSES'], ['arena', 'ARENA'], ['trial', 'TRIAL']];
+    static TABS = [['enemies', 'ENEMIES'], ['bosses', 'BOSSES'], ['arena', 'ARENA'], ['trial', 'TRIAL'], ['rooms', 'ROOMS']];
     static showPanel(S, on) { if (S._train) S._train.panelOn = on; S._trainPanelShow?.(); }
     // the box of what's drawn in a frame (its opaque pixels), measured once
     static drawn(S, key, frame) {
@@ -234,7 +263,7 @@ class Training {
         const T = S._train;
         T.tab ||= 'enemies'; T.res ||= {};
         text(x0 + P, y, 'TRAINING GROUND', 13, '#ffffff'); text(x0 + PW - P, y + 2, 'H hides', 9, '#59627f').setOrigin(1, 0); y += 20;
-        const tw = (IW - 9) / 4;
+        const tw = (IW - 3 * (Training.TABS.length - 1)) / Training.TABS.length;
         Training.TABS.forEach(([id, label], i) => btn(x0 + P + i * (tw + 3), y, tw, 20, label, () => { T.tab = id; show(); }, () => T.tab === id, { size: 10 }));
         y += 28;
         const top = y, ends = {};
@@ -318,6 +347,15 @@ class Training {
         btn(x0 + P, y, IW, 22, 'WATCH THE ENDING', () => MirrorTrial.enter(S, { ending: true }), null, { size: 10 });
         y += 26;
         foot = Math.max(foot, ends.trial = y);
+        // ROOMS: rooms of the levels being made, tried out here first. The Gauntlet's live floor (Pulse.js): learn the beat, lure
+        // them on, the insulated ones
+        cur = 'rooms'; y = top;
+        text(x0 + P, y, 'THE GAUNTLET: THE LIVE FLOOR', 12, '#ffffff'); y += 18;
+        text(x0 + P, y, 'Panels go live on a beat, in patterns.\nEach glows the beat before it fires.\nThey shock enemies too, not the insulated.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 50;
+        Training.ROOMS.forEach(([label], i) => { btn(x0 + P, y, IW, 24, label, () => Training.room(S, i), () => T.room === i && !!S._pulse, { size: 11 }); y += 28; });
+        btn(x0 + P, y, IW, 22, 'STOP THE FLOOR', () => { Pulse.stop(S); T.room = null; Training.clear(S); }, null, { size: 10 });
+        y += 26;
+        foot = Math.max(foot, ends.rooms = y);
         // under every page: your damage, and the way out
         cur = null; y = foot + 6;
         const footFrom = objs.length;

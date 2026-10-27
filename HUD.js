@@ -252,16 +252,18 @@ class HUD {
     }
 
     // ── ULT GEMS ────────────────────────────────────────────────────────────
-    // Four sockets where the bar was: a charge arc that fills clockwise, a core and an icon
-    // that brighten with it, a slow pulse when full, a white ring running down while the gem is
-    // sealed (its ult still working, see NO_CHARGE_MS), a dark sweep over all four during the
-    // shared lockout, and the key under each (the held element's also says E).
+    // Four sockets, a gem in each (ui_ultgem: a ruby with a flame, an aquamarine with a snowflake, a topaz with a bolt, an
+    // amethyst with a star): dark, and lit from the bottom up as it charges; full, it glints, glows and gives off sparkles,
+    // with a burst the moment it fills. A white ring running down while the gem is sealed (its ult still working, see
+    // NO_CHARGE_MS), a dark sweep over all four during the shared lockout, and the key under each (the held element's also says E).
     _buildUltGems() {
-        const C = this._ultCfg();
+        const C = this._ultCfg(), gt = this.textures.get('ui_ultgem');
+        if (!gt.has('fire_dark')) ['fire', 'ice', 'lightning', 'cosmic'].forEach((el, c) => ['dark', 'lit', 'shine'].forEach((f, r) => gt.add(`${el}_${f}`, 0, c * 16, r * 14, 16, 14)));
         const W = this.scale.width, H = this.scale.height;
         const SPACING = 58, R = 15;
         const x0 = W / 2 - SPACING * 1.5, y = H - 36;
         this._ultGemGfx = this.add.graphics().setScrollFactor(0).setDepth(31);
+        this._ultGemFx = this.add.graphics().setScrollFactor(0).setDepth(31.45); this._vfxSort?.(this._ultGemFx);   // (what's drawn over the held gem when it's full: HUD drawUltGems)
         this._ultGemUI = ['fire', 'ice', 'lightning', 'cosmic'].map((el, i) => {
             const x = x0 + i * SPACING;
             const key = this.add.text(x, y + R + 12, C.KEYS[el], {
@@ -272,7 +274,10 @@ class HUD {
             const react = this.add.text(x, y - R - 14, `×${C.REACTION_MULT}`, {
                 fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffffff', stroke: '#000000', strokeThickness: 3
             }).setOrigin(0.5).setScrollFactor(0).setDepth(32).setAlpha(0);
-            return { el, x, y, r: R, key, react };
+            const gem = (f, d) => { const o = this.add.image(x, y, 'ui_ultgem', `${el}_${f}`).setScrollFactor(0).setDepth(d).setScale(2); this._vfxSort?.(o); return o; };
+            const glow = this.add.image(x, y, 'vfx_glow').setScrollFactor(0).setDepth(31.1).setBlendMode(Phaser.BlendModes.ADD).setTint(C.COLORS[el]).setVisible(false);
+            this._vfxSort?.(glow);
+            return { el, x, y, r: R, key, react, glow, dark: gem('dark', 31.2), lit: gem('lit', 31.3) };
         });
         this._ultLockText = this.add.text(W / 2, y - R - 14, '', {
             fontSize: '11px', fontFamily: 'monospace', color: '#cfd6e4',
@@ -511,36 +516,7 @@ class HUD {
         const TAU = Math.PI * 2, TOP = -Math.PI / 2;
         const lockLeft = Math.max(0, (this._ultLockUntil || 0) - now);
         const lockFrac = Math.min(1, lockLeft / C.LOCKOUT_MS);
-        // Each element's icon, drawn rather than typed: emoji glyphs come out in a different
-        // style (or not at all) on every platform.
-        const icon = (el, x, y, color, alpha, full) => {
-            const P = pts => pts.map(([px, py]) => ({ x: x + px, y: y + py }));
-            if (el === 'fire') {
-                g.fillStyle(color, alpha);
-                g.fillPoints(P([[0, -8], [3, -3], [5.5, 1], [5, 4.5], [2.5, 7], [0, 7.5], [-2.5, 7],
-                                [-5, 4.5], [-5.5, 1], [-3.5, -1], [-2.2, -4.5]]), true);
-                g.fillStyle(full ? C.COLORS.fire : 0x000000, full ? 0.95 : 0.3 * alpha);   // the inner flame
-                g.fillPoints(P([[0, -0.5], [2, 2.5], [2.2, 5], [0, 6.2], [-2.2, 5], [-2, 2.5]]), true);
-            } else if (el === 'ice') {
-                g.lineStyle(1.8, color, alpha);
-                for (let k = 0; k < 3; k++) {
-                    const a = Math.PI / 2 + k * Math.PI / 3, c = Math.cos(a), s = Math.sin(a);
-                    g.lineBetween(x - c * 7.5, y - s * 7.5, x + c * 7.5, y + s * 7.5);
-                    for (const d of [-1, 1]) {                       // a pair of twigs on each half-arm
-                        const bx = x + d * c * 4.4, by = y + d * s * 4.4, out = a + (d < 0 ? Math.PI : 0);
-                        for (const t of [-0.8, 0.8]) g.lineBetween(bx, by, bx + Math.cos(out + t) * 2.6, by + Math.sin(out + t) * 2.6);
-                    }
-                }
-            } else if (el === 'lightning') {
-                g.fillStyle(color, alpha);
-                g.fillPoints(P([[2, -8], [-4, 1.5], [-0.5, 1.5], [-2.5, 8], [4.5, -1.5], [1, -1.5], [3.5, -8]]), true);
-            } else {
-                g.fillStyle(color, alpha);                               // a four-point star and a speck
-                g.fillPoints(P([[0, -8], [1.8, -1.8], [8, 0], [1.8, 1.8], [0, 8], [-1.8, 1.8], [-8, 0], [-1.8, -1.8]]), true);
-                g.fillCircle(x + 5, y - 5, 1.3);
-            }
-        };
-        g.clear();
+        g.clear(); this._ultGemFx?.clear();
         for (const u of this._ultGemUI) {
             const col = this._elStolen?.[u.el] ? 0x5a5a64 : C.COLORS[u.el];   // a Leech has it: grey, and the Leech sits on it (LevelManager._leechHud)
             const fill = Math.min(1, (this.ultGems[u.el] || 0) / max);
@@ -556,35 +532,19 @@ class HUD {
             // socket: the held element's rim lights up in its colour (white is the seal ring's)
             g.fillStyle(0x070a12, 0.88); g.fillCircle(x, y, r + 6);
             g.lineStyle(held ? 2 : 1.5, col, held ? 0.95 : 0.35); g.strokeCircle(x, y, r + 6);
-            // charge: a faint track, then the arc
-            g.lineStyle(4, col, 0.14); g.strokeCircle(x, y, r + 1);
-            if (fill > 0) {
-                const flash = now < (this._ultFlashUntil[u.el] || 0);
-                g.lineStyle(4, flash ? 0xffffff : col, full ? 1 : 0.9);
-                g.beginPath(); g.arc(x, y, r + 1, TOP, TOP + fill * TAU, false); g.strokePath();
-            }
-            // cosmic at ult stage 2: the second layer, an outer gold arc and a pip per full layer
+            // cosmic from ult stage 2: a ring a layer round it, each its own colour and further out (its own charge, the second, the
+            // third: amethyst, gold, white), so how many are charged reads at a glance; a full one bright and breathing
             if (u.el === 'cosmic' && this._cs && (this._csStage?.() || 1) >= 2) {
-                const l2 = Math.min(1, this._cs.layer2 || 0), l3 = Math.min(1, this._cs.layer3 || 0), L = this._csMaxLayers?.() || 2;
-                if (l2 > 0) { g.lineStyle(2, 0xffd060, l2 >= 1 ? 1 : 0.7); g.beginPath(); g.arc(x, y, r + 9, TOP, TOP + l2 * TAU, false); g.strokePath(); }
-                if (l3 > 0) { g.lineStyle(2, 0xffffff, l3 >= 1 ? 1 : 0.7); g.beginPath(); g.arc(x, y, r + 12, TOP, TOP + l3 * TAU, false); g.strokePath(); }
-                const n = this._csLayers?.() ?? 0;
-                for (let i = 0; i < L; i++) {
-                    const px = x - 5 * (L - 1) + i * 10, py = y - r - 12;
-                    g.fillStyle(i < n ? 0xffd060 : 0x2b2540, 1);
-                    g.fillTriangle(px, py - 3, px + 3, py, px, py + 3); g.fillTriangle(px, py - 3, px - 3, py, px, py + 3);
+                const L = this._csMaxLayers?.() || 2, layers = [fill, Math.min(1, this._cs.layer2 || 0), Math.min(1, this._cs.layer3 || 0)], RC = [col, 0xffd060, 0xe8f6ff];
+                for (let k = 0; k < L; k++) {
+                    const rr = r + 10 + k * 5, f = layers[k], done = f >= 1, br = done ? 0.75 + 0.25 * Math.sin(now / 240 + k) : 0.85;
+                    g.lineStyle(3, RC[k], 0.16); g.strokeCircle(x, y, rr);   // its track
+                    if (f > 0) { g.lineStyle(done ? 3.5 : 3, RC[k], br); g.beginPath(); g.arc(x, y, rr, TOP, TOP + f * TAU, false); g.strokePath(); }
                 }
             }
-            // core, then the icon: in the element's colour while charging, white once full
-            g.fillStyle(col, full ? 0.92 : 0.08 + 0.42 * fill); g.fillCircle(x, y, r - 4);
-            if (full) {
-                const p = 0.5 + 0.5 * Math.sin(now / 190 + u.x);
-                g.lineStyle(2, col, 0.25 + 0.4 * p); g.strokeCircle(x, y, r + 9 + 3 * p);
-            }
-            icon(u.el, x, y, full ? 0xffffff : col, full ? 1 : 0.45 + 0.45 * fill, full);
-            if (full) { g.fillStyle(0xffffff, 0.55); g.fillCircle(x - 7, y - 7, 1.6); }   // glint
+            const cosmicRings = u.el === 'cosmic' && this._cs && (this._csStage?.() || 1) >= 2;
             // Overflow: charge banked past full, a gold arc round the gem (a whole one: +50% on the next ult)
-            const ovf = full ? Math.min(1, (this._overflow?.[u.el] || 0) / this.ultChargeMax) : 0;
+            const ovf = full && !cosmicRings ? Math.min(1, (this._overflow?.[u.el] || 0) / this.ultChargeMax) : 0;   // (cosmic's rings are there instead)
             if (ovf > 0.02) { g.lineStyle(3, 0xffd060, 0.95); g.beginPath(); g.arc(x, y, r + 13, TOP, TOP + ovf * TAU, false); g.strokePath(); }
             // sealed (its ult is still working): a white ring counting down to when it charges
             const sealLeft = (this._ultNoChargeUntil[u.el] || 0) - now;
@@ -607,7 +567,7 @@ class HUD {
             if (u.react) {
                 const show = reactT < 700;
                 if (show) u.react.setText(this._ultReactKind?.[u.el] === 'residue' ? `×${this._ultCfg().RESIDUE_MULT}` : `×${this._ultCfg().REACTION_MULT}`);
-                u.react.setAlpha(show ? Math.min(1, (700 - reactT) / 250) : 0).setY(y - r - (u.el === "cosmic" ? 24 : 14) - (show ? 6 * Math.min(1, reactT / 200) : 0))
+                u.react.setAlpha(show ? Math.min(1, (700 - reactT) / 250) : 0).setY(y - r - (u.el === "cosmic" ? 30 : 14) - (show ? 6 * Math.min(1, reactT / 200) : 0))
                     .setScale(show && reactT < 120 ? 1 + 0.4 * (1 - reactT / 120) : 1).setColor('#' + col.toString(16).padStart(6, '0'));
             }
             // ready ping: one ring out when the gem fills (and a chime, once per fill)
@@ -620,6 +580,63 @@ class HUD {
             if (pingT < 520) {
                 const k = pingT / 520;
                 g.lineStyle(3 * (1 - k) + 0.5, col, 1 - k); g.strokeCircle(x, y, r + 7 + 22 * k);
+            }
+            // the gem: dark, lit a row at a time from the bottom as it charges (white for a moment as charge flies in); filling, it pops
+            // and bursts. Full, it beats (all of them in step) and glows with it; the one you hold beats harder, shivers, flashes at the
+            // top of each beat and sends a ring out, with a touch of its own (fire's embers, ice's frost, lightning crackling, cosmic's
+            // stars going round it). Stolen: dark and grey. Locked out: dimmed
+            const stolen = !!this._elStolen?.[u.el], gy = by + (y - by) * u.k, hot = full && held && !stolen;
+            if (hot && u.el === 'lightning' && now >= (u.zapNext || 0)) { u.zapUntil = now + 220; u.zapNext = now + 450 + Math.random() * 700; }
+            const zap = hot && u.el === 'lightning' && now < (u.zapUntil || 0);
+            const BEAT = 760, beat = full && !stolen ? 0.5 + 0.5 * Math.sin(now * TAU / BEAT) : 0, amp = hot ? 0.8 + 1.4 * beat + (zap ? 1.2 : 0) : 0;
+            const jx = (Math.random() - 0.5) * 2 * amp, jy = (Math.random() - 0.5) * 1.4 * amp;   // (the shiver: hardest at the top of a beat)
+            const sc = 2 * u.k * (1 + 0.3 * Math.max(0, 1 - pingT / 240)) * (1 + (hot ? 0.16 : 0.05) * beat), rows = stolen ? 0 : Math.round(14 * fill), dim = lockFrac > 0 ? 0x6a6a78 : 0xffffff;
+            const shine = (hot && beat > 0.9) || (full && !hot && (now + u.x * 7) % 1700 < 150) || now < (this._ultFlashUntil?.[u.el] || 0) || (zap && Math.random() < 0.5);   // (the top of each beat; a glint now and then; as charge flies in; flickering as lightning crackles)
+            u.dark.setPosition(x + jx, gy + jy).setScale(sc).setTint(stolen ? 0x8a8a94 : dim);
+            u.lit.setFrame(`${u.el}_${shine ? 'shine' : 'lit'}`).setPosition(x + jx, gy + jy).setScale(sc).setVisible(rows > 0).setCrop(0, 14 - rows, 16, rows).setTint(dim);
+            const glowA = hot ? 0.3 + 0.5 * beat + (zap ? 0.2 : 0) + (u.el === 'fire' ? 0.15 * Math.random() : 0) : full && !stolen ? 0.12 + 0.12 * beat : 0;
+            u.glow.setVisible(glowA > 0).setPosition(x, gy).setScale((0.4 + (hot ? 0.18 : 0.06) * beat) * u.k).setAlpha(Math.min(1, glowA));
+            const mote = (x0, y0, size, c, dx, dy, ms) => {   // a pixel of it, off it and fading
+                const o = this.add.rectangle(x0, y0, size, size, c).setScrollFactor(0).setDepth(31.4);
+                this._vfxSort?.(o);
+                this.tweens.add({ targets: o, x: x0 + dx, y: y0 + dy, alpha: { value: 0, ease: 'Cubic.easeIn' }, scale: { value: 0.4, ease: 'Cubic.easeIn' }, duration: ms, ease: 'Quad.easeOut', onComplete: () => o.destroy() });   // (bright most of the way, then gone)
+            };
+            if (pingT < 200 && u.burstFor !== this._ultReadyAt[u.el]) {   // filling: a burst of sparkles flung out round it
+                u.burstFor = this._ultReadyAt[u.el];
+                for (let i = 0; i < 12; i++) { const a = i / 12 * TAU, d = 18 + Math.random() * 8; mote(x, gy, 2, Math.random() < 0.5 ? 0xffffff : col, Math.cos(a) * d, Math.sin(a) * d, 420); }
+            }
+            if (hot && now >= (u.fxAt || 0)) {
+                if (u.el === 'fire') {   // flames licking up off it, embers
+                    u.fxAt = now + 30;
+                    mote(x + (Math.random() - 0.5) * 20 * u.k, gy - 8 * u.k + Math.random() * 6, 2 + (Math.random() < 0.4), [0xffe08a, 0xffb040, 0xff6a20][Math.floor(Math.random() * 3)], (Math.random() - 0.5) * 8, -22 - Math.random() * 16, 420 + Math.random() * 260);
+                } else if (u.el === 'ice') {   // frost drifting off it
+                    u.fxAt = now + 70;
+                    const a = Math.random() * TAU, rr = 22 * u.k;
+                    mote(x + Math.cos(a) * rr, gy + Math.sin(a) * rr, 2, Math.random() < 0.5 ? 0xffffff : 0xbfeaff, Math.cos(a) * 12, Math.sin(a) * 8 + 6, 1000);
+                } else if (zap) {   // sparks off it as it crackles
+                    u.fxAt = now + 40;
+                    const a = Math.random() * TAU;
+                    mote(x + Math.cos(a) * 18 * u.k, gy + Math.sin(a) * 18 * u.k, 2, Math.random() < 0.5 ? 0xffffff : 0xfff2a0, Math.cos(a) * 16, Math.sin(a) * 16, 280);
+                } else if (u.el === 'cosmic') {   // now and then a star drifting off
+                    u.fxAt = now + 300;
+                    mote(x + (Math.random() - 0.5) * 20 * u.k, gy + (Math.random() - 0.5) * 14 * u.k, 2, Math.random() < 0.5 ? 0xffd060 : 0xffffff, (Math.random() - 0.5) * 10, -10, 800);
+                }
+            }
+            if (hot) {   // drawn round it every frame: a ring out from the rim each beat, lightning's arcs, cosmic's stars going round (behind it, then in front)
+                const f = this._ultGemFx, t = ((now / BEAT - 0.25) % 1 + 1) % 1;   // (0 at the top of a beat)
+                f.lineStyle(2, u.el === 'ice' ? 0xdff4ff : col, 0.85 * (1 - t)); f.strokeCircle(x, gy, (r + 6 + 16 * t) * u.k);
+                if (zap) for (let n = 0; n < 2; n++) {
+                    let a = Math.random() * TAU, px = x + Math.cos(a) * 7 * u.k, py = gy + Math.sin(a) * 6 * u.k;
+                    f.lineStyle(1.5, Math.random() < 0.5 ? 0xffffff : 0xfff2a0, 0.95); f.beginPath(); f.moveTo(px, py);
+                    for (let sgm = 0; sgm < 3; sgm++) { a += (Math.random() - 0.5) * 1.2; px += Math.cos(a) * 6; py += Math.sin(a) * 6; f.lineTo(px, py); }
+                    f.strokePath();
+                }
+                if (u.el === 'cosmic') for (let n = 0; n < 3; n++) {
+                    const a = now / 650 + n * TAU / 3, front = Math.sin(a) > 0, gfx = front ? f : g;   // (g is already scaled round the socket)
+                    const sx = x + Math.cos(a) * 20 * (front ? u.k : 1), sy = (front ? gy : y) + Math.sin(a) * 8 * (front ? u.k : 1);
+                    const tw = 0.6 + 0.4 * Math.sin(now / 120 + n * 2), c2 = n === 1 ? 0xffffff : 0xffd060;
+                    gfx.fillStyle(c2, (front ? 1 : 0.45) * tw); gfx.fillRect(sx - 1, sy - 3, 2, 6); gfx.fillRect(sx - 3, sy - 1, 6, 2);   // a little four-point star
+                }
             }
             // cast: a white burst off the socket
             const castT = now - (this._ultCastAt[u.el] ?? -1e9);
@@ -1270,6 +1287,7 @@ class HUD {
         const TITLES = { volt: 'the storm that walks', sovereign: 'ruler of the dark between stars', core: 'the stone that remembers fire', queen: 'mother of the brood', tide: 'queen of the sea kingdom' };
         const cam = this.cameras.main, W = this.scale.width, H = this.scale.height, css = '#' + col.toString(16).padStart(6, '0');
         this._bossIntroOn = true; this._pauseMenuOpen = true; this._freezeClock(true); this.anims.resumeAll();
+        for (const f of this._fog || []) if (f.lifted && f.c?.active) { f.c.destroy(); if (f.tkey && this.textures.exists(f.tkey)) this.textures.remove(f.tkey); }   // (a room's fog still rolling away: gone at once, not held half-lifted over you by the freeze)
         const hid = (this._dialogueObjects || []).filter(o => o?.active && o.visible); hid.forEach(o => o.setVisible(false));   // a speech box would sit over it
         const objs = [], tw = [], LB = 76;
         const add = o => { objs.push(o); return o.setScrollFactor(0); };

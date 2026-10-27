@@ -561,6 +561,14 @@ class ShopScene extends Phaser.Scene {
     _drawTag(T, w, el, acc, st, onStamp) {
         const objs = [], keep = o => { objs.push(o); return o; };
         const D = 8, INK = '#3b2716';
+        // an owned weapon with several perks lists its upgrades in place of the ratings; when they and its description still
+        // don't fit, it's crowded: the tag hangs longer, EQUIP moves up beside YOURS and the description steps down a size
+        const perky = st.owned && (WeaponLevels.PERKS[w.id] || []).length >= 2, ROW_MIN = 34;
+        const nRows = (WeaponLevels.NO_POWER.includes(w.id) ? 0 : 1) + (WeaponLevels.PERKS[w.id] || []).length + 1;   // (Power, the perks, enchants: as listed below)
+        const descStyle = fs => ({ fontSize: fs + 'px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: fs > 12 ? 4 : 3 });
+        const descH = fs => { const t = this.add.text(0, 0, w.desc.replace(/\n/g, ' ').replace(/\*([^*]+)\*/g, '$1'), descStyle(fs)), h = t.height; t.destroy(); return h; };
+        const crowded = perky && 98 + descH(13) + 16 + 42 + nRows * 38 + 84 > T.h;   // (98: the header down to the description; 42: the ledger's rule and YOURS; 84: the stamp)
+        if (crowded) T = { ...T, h: Math.min(this.scale.height - 36 - T.y, T.h + 80) };
         const g = this._tagSheet(T, keep, D);
 
         const L = T.x + 20, R = T.x + T.w - 20;
@@ -579,15 +587,14 @@ class ShopScene extends Phaser.Scene {
         y += 40;
         g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(L, y, R, y);
         y += 10;
-        y += this._richText(keep, L, y, w.desc.replace(/\n/g, ' '), {
-            fontSize: '13px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: 4,
-        }, D + 1) + 16;
+        const roomy = !perky;
+        let fs = 13;
+        while (crowded && fs > 11 && 98 + descH(fs) + 16 + 42 + nRows * ROW_MIN + 24 > T.h) fs--;
+        y += this._richText(keep, L, y, w.desc.replace(/\n/g, ' '), descStyle(fs), D + 1) + 16;
 
         // What it's good at, rated out of 10 on three axes (ShopScene.RATINGS): one target,
         // crowds, and utility (control, setup, sustain). Cosmic weapons are buffs: no bars.
         const rt = ShopScene.RATINGS[w.id];
-        // an owned weapon with several perks needs the room for its upgrades instead
-        const roomy = !(st.owned && (WeaponLevels.PERKS[w.id] || []).length >= 2);
         if (!roomy) { /* the ratings are on the tag before you buy it */ }
         else if (rt) {
             [['ONE TARGET', rt[0]], ['CROWD', rt[1]], ['UTILITY', rt[2]]].forEach(([label, v]) => {
@@ -629,7 +636,11 @@ class ShopScene extends Phaser.Scene {
             if (st.sealed) row('SEALED', ShopScene.SEALED[el].short, '#8a2a1a');
         } else {
             // Upgrades (Stats.js WeaponLevels): Power, no cap (none on cosmic weapons); each perk, capped.
-            row('YOURS', st.equipped ? 'Equipped' : 'Owned', '#3a7a2a');
+            if (crowded && !st.equipped && !st.sealed) {   // the stamp, small, where "Owned" would say so
+                objs.push(...UIKit.button(this, { x: R - 44, y: y + 8, w: 88, h: 26, label: 'EQUIP', accent: UIKit.PALETTE.accentGreen, fontSize: '12px', depth: D + 2, fireOn: 'down', onClick: onStamp }).objs);
+                row('YOURS', '');
+                y += 4;
+            } else row('YOURS', st.equipped ? 'Equipped' : 'Owned', '#3a7a2a');
             const rows = [];
             if (!WeaponLevels.NO_POWER.includes(w.id)) {
                 const lv = WeaponLevels.level(w.id);
@@ -643,9 +654,9 @@ class ShopScene extends Phaser.Scene {
             const en = Enchants.on(w.id), es = Enchants.slots(w.id);
             rows.push([`ENCHANTS  ${en.length}/${es}`, en.length ? en.map(b => `${Enchants.def(b.id).name} ${Enchants.roman(b.lvl)}`).join(', ') : `none yet  ·  ${Enchants.books()} sealed book${Enchants.books() === 1 ? '' : 's'}`, 0, '__ench']);
             // spread over the room down to the stamp, so a short list doesn't huddle at the top
-            stampRoom = roomy || (T.y + T.h - 84 - y) / rows.length >= 48;   // a tall tag fits the stamp under its upgrades too
-            const floor = (st.equipped && !stampRoom ? T.y + T.h - 24 : T.y + T.h - 84);
-            const rowH = Math.max(38, Math.min(64, (floor - y) / Math.max(1, rows.length)));
+            stampRoom = !crowded && (roomy || (T.y + T.h - 84 - y) / rows.length >= 48);   // a tall tag fits the stamp under its upgrades too
+            const floor = ((st.equipped || crowded) && !stampRoom ? T.y + T.h - 24 : T.y + T.h - 84);
+            const rowH = Math.max(crowded ? ROW_MIN : 38, Math.min(64, (floor - y) / Math.max(1, rows.length)));
             for (const [label, value, cost, key] of rows) {
                 const cy = y + rowH / 2;
                 keep(this.add.text(L, cy - 2, label, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setOrigin(0, 1).setDepth(D + 1));
@@ -661,7 +672,7 @@ class ShopScene extends Phaser.Scene {
 
         // The stamp: EQUIPPED is inked onto the tag; otherwise a wax-red button to press.
         const sy = T.y + T.h - 46;
-        if (st.equipped && !stampRoom) { /* YOURS already says Equipped; the space went to upgrades */ }
+        if ((st.equipped || crowded) && !stampRoom) { /* YOURS already says Equipped (or has EQUIP beside it); the space went to upgrades */ }
         else if (st.equipped) {
             const s = keep(this.add.text(T.x + T.w / 2, sy, 'EQUIPPED', {
                 fontSize: '24px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3a7a2a',

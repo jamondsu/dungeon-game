@@ -1374,22 +1374,23 @@ class CosmicSystem {
         }
     }
 
-    // V pressed. True when it's handled here (the charge), false to let castUlt do the usual.
-    _csVDown() {
+    // V (or E, holding cosmic) pressed. True when it's handled here (the charge), false to let castUlt do the usual. `key`: which
+    // one, so only its own release ends the charge
+    _csVDown(key) {
         const S = this._cs;
         if (!S || this._csStage() < 2) return false;
         if (S.tf || S.charge) return true;
         const n = this._csLayers();
         if (n < 2) return false;
         const cam = this.cameras.main;
-        S.charge = { at: this.time.now, p: 0, cap: n >= 3 && this._csStage() >= 3 ? 1 : 0.5, half: false, dramatic: false, z0: cam.zoom, shakeAt: 0, snd: Sfx.charge(this) };
+        S.charge = { key, at: this.time.now, p: 0, cap: n >= 3 && this._csStage() >= 3 ? 1 : 0.5, half: false, dramatic: false, z0: cam.zoom, shakeAt: 0, snd: Sfx.charge(this) };
         Music.duck(true);
         return true;
     }
-    // V released: what the bar reached decides.
-    _csVUp() {
+    // V (or E) released: what the bar reached decides.
+    _csVUp(key) {
         const S = this._cs, ch = S?.charge;
-        if (!ch) return;
+        if (!ch || ch.key !== key) return;
         this._csChargeEnd();
         if (ch.p >= 0.5) this._csTfBegin(false);
         else this.castUlt('cosmic');   // Ascend, one layer (_csAscend keeps the rest)

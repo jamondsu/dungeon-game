@@ -50,6 +50,9 @@ class ElementSystem {
         const C = this._ultCfg();
         // Ascend (Cosmic.js) ignores the shared lockout and doesn't start it: it opens combos.
         const _ascend = el === 'cosmic' && !!this._csAscend;
+        if (_ascend && this._csAscending?.()) {   // one at a time: a second only restarted it, and quick taps spent a layer each
+            this._ultDeny(el, 'busy'); this.showStatusText?.(this.player.x, this.player.y - 22, 'ALREADY ASCENDED', '#c8a8ff'); return false;
+        }
         if (!_ascend && this.time.now < (this._ultLockUntil || 0)) { this._ultDeny(el, 'lock'); return false; }
         if (this._mods?.ultLong && Object.values(this.ultGems).some(v => v < this.ultChargeMax)) {   // Grand Overture: all four, then one
             this.showStatusText?.(this.player.x, this.player.y - 30, 'ALL FOUR GEMS FIRST', '#f0c8ff'); this._ultDeny(el, 'empty'); return false;

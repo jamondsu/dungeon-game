@@ -855,8 +855,8 @@ class EnemyManager {
 
                 // Player collision — attack instead of moving
                 if (enemy._goalX == null && nextStep.x === _etx && nextStep.y === _ety) {
+                    this.enemyAttackAnimation(enemy, _etx, _ety);   // every one swings (two side by side used to: one swung, the other froze in your hit cooldown)
                     if (currentTime - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
-                        this.enemyAttackAnimation(enemy, _etx, _ety);
                         this._hitBy = enemy; this._hitMelee = true;   // who it was (the Frost Shield chills them back), and up close (thorns answer it)
                         this.takeDamage(enemy._meleeDmg || 1);   // most slimes hit for 1; a Frostborn far harder
                         if (enemy._isHunter) this._hunterReset(enemy);
@@ -1051,11 +1051,12 @@ class EnemyManager {
         const lungeY = homeY + (dirY / len) * this.TILE_SIZE * 0.42;
 
         enemy._attackAnimPlaying = true;
+        const B = enemy._baseScale ?? this.SLIME_SCALE;   // its own size (a big Splitter's, not a slime's)
 
         // 1. Wind-up squish (compress toward direction)
         this.tweens.add({
             targets: enemy.sprite,
-            scaleX: this.SLIME_SCALE * 0.75, scaleY: this.SLIME_SCALE * 1.3,
+            scaleX: B * 0.75, scaleY: B * 1.3,
             duration: 60, ease: 'Quad.easeOut',
             onComplete: () => {
                 if (!enemy.sprite?.active) { enemy._attackAnimPlaying = false; return; }
@@ -1063,7 +1064,7 @@ class EnemyManager {
                 this.tweens.add({
                     targets: enemy.sprite,
                     x: lungeX, y: lungeY,
-                    scaleX: this.SLIME_SCALE * 1.2, scaleY: this.SLIME_SCALE * 0.8,
+                    scaleX: B * 1.2, scaleY: B * 0.8,
                     duration: 80, ease: 'Quad.easeOut',
                     onComplete: () => {
                         if (!enemy.sprite?.active) { enemy._attackAnimPlaying = false; return; }
@@ -1071,14 +1072,14 @@ class EnemyManager {
                         this.tweens.add({
                             targets: enemy.sprite,
                             x: homeX, y: homeY,
-                            scaleX: this.SLIME_SCALE * 0.9, scaleY: this.SLIME_SCALE * 1.1,
+                            scaleX: B * 0.9, scaleY: B * 1.1,
                             duration: 90, ease: 'Back.easeOut',
                             onComplete: () => {
                                 if (!enemy.sprite?.active) { enemy._attackAnimPlaying = false; return; }
                                 // 4. Settle to normal scale
                                 this.tweens.add({
                                     targets: enemy.sprite,
-                                    scaleX: enemy._baseScale ?? this.SLIME_SCALE, scaleY: enemy._baseScale ?? this.SLIME_SCALE,
+                                    scaleX: B, scaleY: B,
                                     duration: 60, ease: 'Quad.easeOut',
                                     onComplete: () => { enemy._attackAnimPlaying = false; }
                                 });

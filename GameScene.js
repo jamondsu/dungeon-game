@@ -651,13 +651,15 @@ class GameScene extends Phaser.Scene {
         this._magmaOrbGraphics     = [];
         this._magmaOrbCount        = 0;
 
-        // E key to activate ult
-        this.input.keyboard.on('keydown-' + Settings.key('ult'), () => {
+        // E key to activate ult (a held key repeats its press: only the first counts, for all the ult keys)
+        this.input.keyboard.on('keydown-' + Settings.key('ult'), (ev) => {
+            if (ev?.repeat) return;
             // If black hole projectile is in flight, E detonates it
             if (this.cosmicBlackHoleProjectile) {
                 this.detonateCosmicBomb();
                 return;
             }
+            if (this.currentElement === 'cosmic' && this._csVDown?.('ult')) return;   // holding cosmic, E is V: tap vs hold (Cosmic.js)
             // A second ice press shatters everything the ice ult froze (any stage now)
             if (this.currentElement === 'ice' && this._iceFrostEarly()) return;   // ends the ice ult early
             this.activateUlt();
@@ -670,12 +672,14 @@ class GameScene extends Phaser.Scene {
         // Z/X/C/V: cast the fire / ice / lightning / cosmic ult from whatever element you're
         // holding (E still casts the held element's). See ElementSystem.castUlt.
         for (const [key, el] of [[Settings.key('ultFire'), 'fire'], [Settings.key('ultIce'), 'ice'], [Settings.key('ultLightning'), 'lightning'], [Settings.key('ultCosmic'), 'cosmic']]) {
-            this.input.keyboard.on('keydown-' + key, () => {
-                if (el === 'cosmic' && this._csVDown?.()) return;   // Cosmic.js stage 2: tap vs hold
+            this.input.keyboard.on('keydown-' + key, (ev) => {
+                if (ev?.repeat) return;
+                if (el === 'cosmic' && this._csVDown?.('ultCosmic')) return;   // Cosmic.js stage 2: tap vs hold
                 this.castUlt(el);
             });
         }
-        this.input.keyboard.on('keyup-' + Settings.key('ultCosmic'), () => this._csVUp?.());
+        this.input.keyboard.on('keyup-' + Settings.key('ultCosmic'), () => this._csVUp?.('ultCosmic'));
+        this.input.keyboard.on('keyup-' + Settings.key('ult'), () => this._csVUp?.('ult'));
 
         // SPACE — dash, any element. Queued here and spent in update (so it reads the movement
         // keys' direction there). Not polled with JustDown: a tap whose down and up land in the
@@ -2862,7 +2866,8 @@ class GameScene extends Phaser.Scene {
     // ── DEV PANEL ────────────────────────────────────────────────────────
     // To the corridor two tiles outside the boss room (each story level's last room), on the side the story path comes in by
     _devToBossDoor() {
-        const i = { 2: 6, 3: 6, 4: 6, 5: 14 }[this.currentLevelIndex], R = this.rooms?.[i], T = this.TILE_SIZE;
+        const B = [this.voltslimeBoss, this.voidSovereignBoss].find(o => o?.active && o.tileX != null), T = this.TILE_SIZE;   // (on a level in floors, the room the boss is actually in)
+        const R = (B && this.rooms?.find(r => B.tileX >= r.x && B.tileX < r.x + r.w && B.tileY >= r.y && B.tileY < r.y + r.h)) || this.rooms?.[{ 2: 6, 3: 6, 4: 6, 5: 14 }[this.currentLevelIndex]];
         const say = (t, c = '#ff8866') => this.showStatusText(this.player.x, this.player.y - 20, t, c);
         if (!R) return say('NO BOSS ROOM HERE');
         const inR = (x, y) => x >= R.x && x < R.x + R.w && y >= R.y && y < R.y + R.h, F = (x, y) => this.world[x]?.[y] === this.FLOOR;
@@ -2873,13 +2878,17 @@ class GameScene extends Phaser.Scene {
             if (d) mouths.push([x, y, -d[0], -d[1]]);
         }
         if (!mouths.length) return say('NO WAY IN FOUND');
-        const P = R._from || this.rooms[i - 1], pc = P ? [P.x + P.w / 2, P.y + P.h / 2] : [this.playerX, this.playerY];
+        const P = R._from || this.rooms[this.rooms.indexOf(R) - 1], pc = P ? [P.x + P.w / 2, P.y + P.h / 2] : [this.playerX, this.playerY];
         let [tx, ty, ox, oy] = mouths.sort((a, b) => Math.hypot(a[0] - pc[0], a[1] - pc[1]) - Math.hypot(b[0] - pc[0], b[1] - pc[1]))[0];
         if (F(tx + ox, ty + oy)) { tx += ox; ty += oy; }
         this.playerX = tx; this.playerY = ty; this._glideUntil = 0;
         this.player.setPosition(tx * T + T / 2, ty * T + T / 2 + (this.SLIME_Y_OFFSET || 0));
         this.cameras.main.centerOn(this.player.x, this.player.y);
         say('BOSS DOOR', '#44ff44');
+    }
+    // dev: straight to floor n of this level, as if you'd come up to it (your health, gems and element carried)
+    _devToFloor(n) {
+        this.scene.restart({ levelIndex: this.currentLevelIndex, floor: n, continueRun: true, carry: { hp: this.health, gems: { ...(this.ultGems || {}) }, el: this.currentElement } });
     }
     _createDevPanel() {
         const W = this.scale.width;
@@ -2916,6 +2925,7 @@ class GameScene extends Phaser.Scene {
                   this.showStatusText(this.player.x, this.player.y - 20, 'GADGETS LOCKED', '#ff8866');
               } },
             { label: 'To Boss Door',   key: null,                desc: 'Warp to the boss room corridor', action: () => this._devToBossDoor() },
+            ...(LevelLayouts.FLOORS[this.currentLevelIndex] || []).map((F, i) => ({ label: `Floor ${this.currentLevelIndex}-${i + 1}`, key: null, desc: `Straight to ${F.name}`, action: () => this._devToFloor(i + 1) })),   // (a level in floors: any of them)
             { label: 'Teleport Mode',  key: '_devTeleportMode',  desc: 'Left-click to warp' },
         ];
 
