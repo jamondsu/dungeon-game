@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Rhythm Run · Dungeon Roguelike</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg class="defs" aria-hidden="true"><filter id="chalk" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="2.6"/></filter></svg>
+<main class="page">
+  <a class="back" href="index.html">◂ All guides</a>
+  <div class="eyebrow">Dungeon Roguelike · The Training Ground's trial</div>
+  <h1>The Fracture Rhythm Run</h1>
+  <p class="lede">The floor is gone. The only ground is a route of slabs over the abyss, each one forming exactly on its beat. Land on every one in time, and every note you land hits the core floating in the middle. Shatter it before the song ends, reach the far side alive, and score as many points as you can.</p>
+  <ul class="toc">
+    <li><a href="#start">Starting a run</a></li>
+    <li><a href="#floor">Reading the floor</a></li>
+    <li><a href="#grades">Grades, combo and groove</a></li>
+    <li><a href="#dashes">Dashes and hops</a></li>
+    <li><a href="#quakes">Quakes</a></li>
+    <li><a href="#extras">The extras</a></li>
+    <li><a href="#breaks">Breaks</a></li>
+    <li><a href="#points">Points</a></li>
+    <li><a href="#boards">The leaderboards</a></li>
+    <li><a href="#settings">Difficulty, speed and songs</a></li>
+    <li><a href="#tips">Tips</a></li>
+  </ul>
+
+  <h2 id="start">Starting a run</h2>
+  <p>Go to the <strong>Training Ground</strong> on the map, press <kbd>H</kbd> for its panel and open the <strong>TRIAL</strong> tab. Pick your settings and press <strong>START</strong>. The first time, the game shows its own guide; <strong>HOW IT WORKS</strong> brings it back any time. A four-beat count-in, then GO.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/1.jpg" width="640" height="360" alt="Mid-run: your slime on a short route of stone slabs over a starry abyss, the core (a cracked-open geode with a burning amber eye) floating nearby, the race bar up top and points, combo and groove on the right." loading="lazy"></div>
+    <figcaption>A run under way: the route of slabs, the core, and up top the race between the core's health and the song.</figcaption>
+  </figure>
+  <p>You win if the core is shattered <strong>and</strong> you reach the last slab alive. You have <strong>5 lives</strong>: a fall puts you back on the newest slab.</p>
+
+  <h2 id="floor">Reading the floor</h2>
+  <p>There's no note lane: the floor is the score. Before a slab rises, <strong>fault lines of light</strong> open in the dark round its cell and close in on it, landing on its edges on the beat. A spark runs along a fissure from the slab before it, arriving on the beat too. Over each cell an inked <strong>note</strong> says how long it lasts (a crotchet, two quavers, a dotted quaver and a semiquaver, a run of semiquavers), so a stretch of slabs reads like a bar of music.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/2.jpg" width="640" height="360" alt="The next slabs forming ahead of your slime: glowing outlines around their cells, inked notes over them, and amber arrows showing the route." loading="lazy"></div>
+    <figcaption>The next slabs forming, their notes over them.</figcaption>
+  </figure>
+  <p>Step onto each slab as it forms. You may land a little early (see the table below), never late. The slab you're on crumbles a moment after the next one forms, so keep moving.</p>
+
+  <h2 id="grades">Grades, combo and groove</h2>
+  <p>Every landing is graded by how close to its beat you land.</p>
+  <div class="cards">
+    <div><b>PERFECT</b>Builds your combo and your <strong>groove</strong>. A run of PERFECTs raises the groove, which multiplies the damage you do to the core and the points you score.</div>
+    <div><b>GOOD</b>Keeps the combo going.</div>
+    <div><b>BAD</b>Only just made it: breaks the combo and the groove.</div>
+  </div>
+  <div class="wrap"><table class="numbers">
+    <tr><th>Difficulty</th><th class="n">PERFECT within</th><th class="n">GOOD within</th><th class="n">You may land early by</th></tr>
+    <tr><td>Easy</td><td class="n">115 ms</td><td class="n">230 ms</td><td class="n">300 ms</td></tr>
+    <tr><td>Normal</td><td class="n">100 ms</td><td class="n">200 ms</td><td class="n">260 ms</td></tr>
+    <tr><td>Hard</td><td class="n">85 ms</td><td class="n">170 ms</td><td class="n">220 ms</td></tr>
+    <tr><td>Impossible</td><td class="n">85 ms</td><td class="n">170 ms</td><td class="n">220 ms</td></tr>
+  </table></div>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/3.jpg" width="640" height="360" alt="A PERFECT popping over your slime as it lands, with the combo and groove counting up on the right." loading="lazy"></div>
+    <figcaption>A PERFECT landing.</figcaption>
+  </figure>
+
+  <h2 id="dashes">Dashes and hops</h2>
+  <p>Some gaps are too wide to step. A few beats early, an <strong>amber arrow</strong> runs from the slab you'll leave to the one you'll land on, with the badge of the element it needs. Dash with <kbd>Shift</kbd>: <strong>lightning</strong> dashes 3 tiles, <strong>fire</strong> 4, <strong>ice</strong> 6, and the wrong element falls short or long. <strong>Cosmic</strong>'s is an aimed hop, drawn as a curved arrow. The <strong>NEXT DASHES</strong> row under you shows the elements coming up, each with the key that switches to it, so you can switch in time.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/4.jpg" width="640" height="360" alt="An ice dash across a gap, your slime sliding along a glowing arrow, the NEXT DASHES row of element icons beneath it." loading="lazy"></div>
+    <figcaption>A dash over a gap, the next dashes lined up underneath.</figcaption>
+  </figure>
+
+  <h2 id="quakes">Quakes</h2>
+  <p>When the slab you're standing on <strong>cracks red from the middle</strong>, a quake is coming. On its beat the slab tears apart, then mends a moment later. Jump with <kbd>Space</kbd> on the beat and you come down on it whole. Jump too early and you land before it's mended.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/5.jpg" width="640" height="360" alt="Your slab cracked red with JUMP written over it, a quake about to hit, the core floating behind." loading="lazy"></div>
+    <figcaption>A quake coming: jump on the beat.</figcaption>
+  </figure>
+
+  <h2 id="extras">The extras</h2>
+  <p>None of these is needed to clear a run (except the trill), but they hurt the core and score big.</p>
+  <div class="cards">
+    <div><b>Accent (&gt;)</b>Click as you land on it: the core takes a big hit.</div>
+    <div><b>Mordent</b>Land on it, step back onto the slab you came from, then onto it again, all before the next slab forms.</div>
+    <div><b>Trill</b>Rare, and a must: your step quickens and you hop back and forth between two slabs until it's done. Leave it unfinished and you lose a life.</div>
+    <div><b>Slur</b>A curve over a few steps: its slabs stay until the phrase ends, and nothing under it grades below GOOD.</div>
+    <div><b>Hold</b>A long note: keep the direction held and you're carried along it. Let go and you stop; hold again and you catch up, and it's SAVED.</div>
+    <div><b>Glissando</b>With a song, once a run: no notes, a row of keys shown, and on the beat you sweep your finger along them (<kbd>T</kbd> to <kbd>P</kbd>, <kbd>F</kbd> to <kbd>L</kbd>, or <kbd>V</kbd> to <kbd>,</kbd>).</div>
+  </div>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/6.jpg" width="640" height="360" alt="A run of PERFECT landings building the groove to times 1.25, the slabs ahead marked with notes." loading="lazy"></div>
+    <figcaption>The groove climbing as PERFECTs pile up.</figcaption>
+  </figure>
+
+  <h2 id="breaks">Breaks</h2>
+  <p>Between phases comes a <strong>BREAK</strong>: a few beats with no notes, when the core takes <strong>1.5 times</strong> the damage. Throw every weapon you have at it. Then a count-in, and the next phase, faster (on the run's own beat: 66, 82, 96, then 110 beats a minute) and busier.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/7.jpg" width="640" height="360" alt="BREAK! ATTACK THE CORE, times 1.5 damage, written large over the run." loading="lazy"></div>
+    <figcaption>A break: everything at the core.</figcaption>
+  </figure>
+
+  <h2 id="points">Points</h2>
+  <p>Every run scores points, shown on the right during the run and in the banner at the end.</p>
+  <div class="wrap"><table class="numbers">
+    <tr><th>For</th><th class="n">Points</th></tr>
+    <tr><td>A PERFECT / GOOD / BAD landing</td><td class="n">300 / 150 / 50</td></tr>
+    <tr><td>On top, for a dash</td><td class="n">100</td></tr>
+    <tr><td>On top, for a cosmic hop</td><td class="n">150</td></tr>
+    <tr><td>On top, a dash on a different element from your last one</td><td class="n">150</td></tr>
+    <tr><td>On top, a quake jumped</td><td class="n">100</td></tr>
+    <tr><td>A hold carried home (SAVED)</td><td class="n">100</td></tr>
+    <tr><td>An accent</td><td class="n">250</td></tr>
+    <tr><td>A mordent</td><td class="n">300</td></tr>
+    <tr><td>A trill</td><td class="n">500</td></tr>
+    <tr><td>A glissando, perfect / not</td><td class="n">1000 / 500</td></tr>
+    <tr><td>At the end: the core shattered</td><td class="n">3000</td></tr>
+    <tr><td>At the end: the far side reached</td><td class="n">1000</td></tr>
+  </table></div>
+  <p>Everything above (but the end bonuses) is multiplied by your <strong>groove</strong> at that moment. Then all of it is multiplied by the difficulty (<strong>Easy ×0.5, Normal ×1, Hard ×1.5, Impossible ×2.5</strong>) and by your <strong>speed</strong> (×0.5 to ×1.5). A BAD landing gets no dash, hop or quake bonus.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/8.jpg" width="640" height="360" alt="CLEARED! with 32,138 POINTS and BEST COMBO 36 under it, your slime on the last slab." loading="lazy"></div>
+    <figcaption>The end of a run: your points and best combo.</figcaption>
+  </figure>
+
+  <h2 id="boards">The leaderboards</h2>
+  <p>Signed in (<strong>account</strong>, in the map's corner), your points go up when a run ends, and the banner tells you your place. <strong>Every song and difficulty is its own board</strong> (the run's own beat counts as a song), and only your best counts. Open <strong>leaderboards</strong> on the map and pick a board to see it.</p>
+  <p>A run with <strong>unlimited lives</strong> is practice: it scores, but it isn't posted.</p>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/9.jpg" width="640" height="360" alt="The leaderboard window over the game, a menu picking Rhythm Run, its own beat, Normal." loading="lazy"></div>
+    <figcaption>The leaderboards, one board per song and difficulty.</figcaption>
+  </figure>
+
+  <h2 id="settings">Difficulty, speed and songs</h2>
+  <div class="cards">
+    <div><b>Easy</b>Wider windows, slabs that stay longer, fewer quakes and extras.</div>
+    <div><b>Normal</b>The run as meant.</div>
+    <div><b>Hard</b>Tight windows and the busiest rhythms.</div>
+    <div><b>Impossible</b>Hard, twice: you on <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> and a pink partner on the arrow keys, each on a route of your own, at once. <kbd>Shift</kbd> and <kbd>Space</kbd> are for both of you.</div>
+    <div><b>Speed</b>×0.5 to ×1.5: the whole run slower or faster.</div>
+    <div><b>Unlimited lives</b>Practice. Nothing is posted.</div>
+    <div><b>Song</b>Off plays the run's own beat. A song plays the run to it, with one tempo all through; it needs its file installed.</div>
+    <div><b>Offset</b>Nudge the beat later (+) or earlier (−) by ear, 10 ms at a time, if a song feels off.</div>
+  </div>
+  <figure>
+    <div class="shot"><img src="../assets/rhythm_guide/10.jpg" width="640" height="360" alt="The Training Ground's panel on its TRIAL page: difficulty, speed, unlimited lives, song, offset, START and HOW IT WORKS." loading="lazy"></div>
+    <figcaption>The TRIAL page of the Training Ground's panel.</figcaption>
+  </figure>
+
+  <h2 id="tips">Tips</h2>
+  <ul>
+    <li>Watch the fault lines, not your slime. They land on the beat; move when they do.</li>
+    <li>Read the NEXT DASHES row early and switch elements a beat ahead, not on the gap.</li>
+    <li>When your slab cracks red, wait for the beat before you jump.</li>
+    <li>Protect the groove: a BAD costs more than a skipped extra. Take accents and mordents only when you're comfortable.</li>
+    <li>Save your strongest attacks for the breaks: everything does half again as much.</li>
+    <li>Chasing points: switching elements between dashes and keeping the groove high are worth more than anything else.</li>
+  </ul>
+
+  <p class="foot">The Rhythm Run guide. Numbers are for the current version of the game.</p>
+</main>
+</body>
+</html>

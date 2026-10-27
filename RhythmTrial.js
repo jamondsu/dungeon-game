@@ -226,6 +226,21 @@ class RhythmTrial {
 
     // the run's clock: the scene's, or with a song, the song's own (its playback position: it can't drift, and a pause holds it)
     static now(S) { return S.time.now + (S._rtrial?.drift || 0); }
+    // ── POINTS ── what a run's worth: every note landed (PERFECT 300, GOOD 150, BAD 50), more for the hard ones (a dash 100 more,
+    // cosmic's hop 150, a dash on another element than your last 150 on top, a quake jumped 100, a hold carried home 100), the
+    // extras (an accent 250, a mordent 300, a trill 500, a glissando 1000 or 500), each times your groove; at the end, the core
+    // shattered 3000 and the far side reached 1000. All of it times the difficulty and the speed. Unlimited lives is practice:
+    // nothing posted. Each song (or its own beat) and difficulty is its own leaderboard
+    static POINTS = { perfect: 300, good: 150, bad: 50, dash: 100, hop: 150, swap: 150, quake: 100, hold: 100, accent: 250, mordent: 300, trill: 500, gliss: [1000, 500], core: 3000, clear: 1000 };
+    static DIFF_MULT = { easy: 0.5, normal: 1, hard: 1.5, impossible: 2.5 };
+    static score(S, n, groove = true) {
+        const main = S._rtrial?.main || S, st = main._rtrial;
+        if (!st || st.done || !(n > 0)) return;
+        const { diff, speed } = RhythmTrial.settings();
+        st.score = (st.score || 0) + Math.round(n * (groove ? RhythmTrial.groove(main) : 1) * RhythmTrial.DIFF_MULT[diff] * speed);
+        st.scoreTxt?.setText(st.score.toLocaleString('en-US'));
+    }
+    static board() { const { song, diff } = RhythmTrial.settings(); return `rhythm_${song || 'beat'}_${diff}`; }
     static groove(S) { const s = S._rtrial?.streak || 0; return (RhythmTrial.C.GROOVE.find(([n]) => s >= n) || [0, 1])[1]; }
     static inBreak(st, now) { return st.breaks.some(b => now >= b.t0 && now < b.t1); }
     // what a hit on the core is multiplied by (GameScene.damageEnemy): the groove, and the break
@@ -514,6 +529,25 @@ class RhythmTrial {
     static ghosts(S) { const G = S._cfxGearState; return [S.player, S.player?._cfx?.eyes, S.player?._cfx?.hat, G?.main, G?.off].filter(o => o?.active); }
 
     // ── START / STOP ──
+    // HOW THE RUN WORKS: the game's own guide (LevelSelectScene._guide), a picture from a run a page (assets/rhythm_guide). By
+    // itself the first time you START (rt_guide_seen); any time from the panel's HOW IT WORKS
+    static GUIDE = [
+        ['THE FRACTURE RHYTHM RUN', 'The floor is gone. The only ground is a route of slabs over the abyss, and each one forms exactly on its beat. Step onto each slab in time; stand anywhere else and you fall. The core floats in the middle, out of reach, and every note you land hits it. Shatter it before the song ends, and reach the far side alive.'],
+        ['READ THE FLOOR', 'Before a slab rises, fault lines of light close in on its cell and land on its edges on the beat. The note drawn over it says how long it lasts: a crotchet, two quavers, a run of semiquavers, so a stretch of slabs reads like a bar of music. Land on each as it forms. A little early is fine.'],
+        ['PERFECT, GOOD, BAD', 'Every landing is graded. PERFECT builds your combo and your groove, and the groove multiplies the damage you do to the core. GOOD keeps the combo going. BAD (only just made it) breaks both. You have five lives, and a fall puts you back on the newest slab.'],
+        ['DASHES AND HOPS', 'Some gaps are too wide to step. An amber arrow shows a dash a few beats early, with the element it needs: lightning dashes 3 tiles, fire 4, ice 6 (Shift). Cosmic\'s is an aimed hop. The NEXT DASHES row shows the elements coming up, so you can switch in time.'],
+        ['QUAKES', 'When the slab you\'re on cracks red from the middle, a quake is coming: it tears apart on its beat and mends a moment later. Jump (Space) over it on the beat. Jump too early and you come down before it\'s whole.'],
+        ['THE EXTRAS', 'None of these are needed, but they hurt the core and score big. An ACCENT (>): click as you land on it. A MORDENT: land on it, step back onto the slab you came from, then onto it again, before the next slab forms. A TRILL (rare, and a must): hop back and forth till it\'s done. A SLUR: its slabs stay till the phrase ends, and nothing in it grades below GOOD. With a song, once a run, a GLISSANDO: sweep your finger along the row of keys shown, on the beat.'],
+        ['BREAKS', 'Between phases comes a BREAK: a few beats with no notes, when the core takes 1.5 times the damage. Throw every weapon you have at it. Then a count-in, and the next phase, faster and busier.'],
+        ['POINTS', 'Every landing scores: PERFECT 300, GOOD 150, BAD 50, and more for the hard ones: a dash 100, a cosmic hop 150, a dash on a different element from your last 150 on top, a quake jumped 100, a hold carried home 100. An accent is 250, a mordent 300, a trill 500, a glissando up to 1000. All of it times your groove. Shatter the core for 3000 and reach the far side for 1000. Harder difficulties and faster speeds multiply the lot.'],
+        ['THE LEADERBOARDS', 'Signed in (ACCOUNT, on the map), your points go up to the leaderboard for that song and difficulty: each one is its own board, and your best counts. Open LEADERBOARDS on the map to see them. A run with unlimited lives is practice, and isn\'t posted.'],
+        ['YOUR RUN, YOUR WAY', 'On the Training Ground\'s TRIAL page: EASY, NORMAL, HARD or IMPOSSIBLE (two routes at once: you on WASD, a pink partner on the arrow keys, Shift and Space for both), the SPEED from x0.5 to x1.5, unlimited lives, a SONG (if it\'s installed) or the run\'s own beat, and OFFSET to nudge the beat to your ears. H shows the panel.'],
+    ];
+    static guide(S, force = false, then = () => {}) {
+        for (const [k, from] of [['_guide', LevelSelectScene], ['_richText', ShopScene], ['_tipZone', ShopScene], ['_moveTip', ShopScene], ['_hideTip', ShopScene], ['_showTip', LevelSelectScene]]) if (!S[k]) S[k] = from.prototype[k];   // (the guide and its helpers, borrowed as the Hall borrows them)
+        S._guide({ id: 'rguide', dir: 'rhythm_guide', title: 'THE FRACTURE RHYTHM RUN', pages: RhythmTrial.GUIDE, seenKey: 'rt_guide_seen', force, end: force ? 'GOT IT' : 'START THE RUN  ▸', then });
+    }
+    static play(S) { if (!S._rtrial) RhythmTrial.guide(S, false, () => RhythmTrial.start(S)); }   // (START: the guide first, the first time)
     static start(S) {
         if (S._rtrial) RhythmTrial.stop(S);
         if (!S._trainArena) return;
@@ -633,8 +667,12 @@ class RhythmTrial {
         // the core: out of reach in the middle, floating, a real enemy (every weapon hits it)
         const core = st.core = S.createEnemy(A.cx, A.cy, Math.round(C.CORE_HP * Math.max(1, R[R.length - 1].t / 55000)));   // (as tough as the run is long: a song's runs three times as long)
         core.tutorialRoomIndex = 0; core._moveCdMult = 999; core._rhythmCore = true;
+        // its own look (rt_core): a geode, its amethyst cracked open round a burning heart that watches you; it cracks as it's hurt
+        const ct = S.textures.get('rt_core');
+        if (!ct.has('s0')) for (let i = 0; i < 3; i++) ct.add('s' + i, 0, i * 32, 0, 32, 32);
+        core.sprite.anims.stop(); core.sprite.setTexture('rt_core', 's0').clearTint();
         core._baseScale = S.SLIME_SCALE * 1.8; core.sprite.setScale(core._baseScale); LevelManager.seat(core, 1.8);
-        core.sprite.setTint(0xffc860);
+        core._hpBarYOff = -Math.round(core.sprite.displayHeight * core.sprite.originY + 8);   // (its bar over its top, not across its eye)
         st.coreGlow = keep(S.add.image(core.sprite.x, core.sprite.y, 'vfx_glow').setTint(0xffa040).setBlendMode(ADD).setScale(0.8).setAlpha(0.5).setDepth(0.95));
         // you, on the first slab
         const p0 = R[0];
@@ -800,7 +838,7 @@ class RhythmTrial {
                     S.player.x = st.letGo === st.i ? S.player.x + h.hdx * Math.min(Math.abs(hx - S.player.x), 3 * h.hold * T / h.holdMs * dt) : hx;
                     S.playerX = h.x + h.hdx * Phaser.Math.Clamp(Math.round(((S.player.x - T / 2) / T - h.x) * h.hdx), 0, h.hold);
                 }
-                if (st.carry === st.i && st.letGo === st.i && head >= h.hold && Math.abs(hx - S.player.x) < 1) { st.letGo = null; st.combo++; RhythmTrial.judge(S, 'SAVED', '#9dffb0'); }
+                if (st.carry === st.i && st.letGo === st.i && head >= h.hold && Math.abs(hx - S.player.x) < 1) { st.letGo = null; st.combo++; RhythmTrial.judge(S, 'SAVED', '#9dffb0'); RhythmTrial.score(S, RhythmTrial.POINTS.hold); }
             }
             if (!airborne) for (let k = st.i + 1; k <= N && now >= st.times[k] - RhythmTrial.early(st, k); k++) if (on(k)) {
                 const kd = st.R[k].kind, lift = (kd === 'dash' || kd === 'hop') && now - (st.liftAt ?? -1e9) < 900;   // (an ice glide, a hop: you land half a second after you pressed)
@@ -809,6 +847,9 @@ class RhythmTrial {
                 let grade = off <= C.PERFECT ? 'perfect' : off <= C.GOOD ? 'good' : 'bad';
                 if (grade === 'bad' && st.R[k].slurEnd != null) grade = 'good';   // (a slur forgives)
                 RhythmTrial.hitFx(S, k, grade);
+                const P = RhythmTrial.POINTS, el = (kd === 'dash' || kd === 'hop') && st.R[k].el;
+                RhythmTrial.score(S, P[grade] + (grade === 'bad' ? 0 : (P[kd] || 0) + (el && st.lastEl && el !== st.lastEl ? P.swap : 0)));
+                if (el) st.lastEl = el;
                 if (st.R[k].mordent) { st.mord = { k, stage: 1 }; RhythmTrial.light(S, k); }
                 if (st.R[k].trill) RhythmTrial.trillStart(S, k);
                 if (st.R[k].kind !== 'quake') { st.landAt = now; st.landK = k; st.landDone = false; RhythmTrial.strike(S, 'land'); }
@@ -860,7 +901,9 @@ class RhythmTrial {
             core.sprite.y = core._floatY - 6 + Math.sin(now / 500) * 5 * (1 - rear) - rear * T * 0.7 + flat * T * 0.2;
             core.sprite.x = core._floatX + hit * 1.5 * Math.sin(now / 18);
             core.sprite.setScale(b * (1 + 0.1 * rear + 0.22 * flat + 0.1 * hit), b * (1 + 0.18 * rear - 0.22 * flat - 0.1 * hit));
-            if (core.sprite._cfx) core.sprite._cfx.mood = rear > 0.25 ? 'sly' : 'angry';
+            if (core.sprite._cfx) core.sprite._cfx.hidden = true;   // (no slime's face on it: its heart's its eye)
+            const hp = core.health / core.maxHealth, crack = hp > 0.66 ? 's0' : hp > 0.33 ? 's1' : 's2';
+            if (core.sprite.frame.name !== crack) core.sprite.setFrame(crack);
             st.coreGlow.setPosition(core.sprite.x, core.sprite.y).setTint(rear > 0.05 ? 0xff4a3a : 0xffa040)
                 .setScale(brk ? 1.15 + 0.15 * Math.sin(now / 80) : 0.8 + 0.6 * rear).setAlpha(brk ? 0.8 : 0.5 + 0.4 * rear);
         }
@@ -956,7 +999,7 @@ class RhythmTrial {
         for (const j of [k - 1, k]) { const t = st.tiles[j]; if (t?.top?.active) { t.top.setTintFill(0xffffff); S.time.delayedCall(90, () => { if (t.top.active && !t.gone) { t.top.clearTint(); t.top.setTint(0xffd84a); } }); } RhythmTrial.light(S, j); }
         [0, 70, 140].forEach((d, i) => S.time.delayedCall(d, () => Sfx.play(S, 'rt_hit', { n: 5 + i * 2, perfect: true })));
         st.combo++; st.best = Math.max(st.best || 0, st.combo); st.kick = 1;
-        RhythmTrial.judge(S, 'MORDENT!', '#ffd84a');
+        RhythmTrial.judge(S, 'MORDENT!', '#ffd84a'); RhythmTrial.score(S, RhythmTrial.POINTS.mordent);
         RhythmTrial.hurtCore(S, RhythmTrial.C.MORDENT_HIT);
     }
     // a life lost where you stand (a trill left unfinished)
@@ -996,7 +1039,7 @@ class RhythmTrial {
         RhythmTrial.tile(S2, 0, false);
         RhythmTrial.eatKeys(S2);
         RhythmTrial.hudBuild(S2);
-        for (const o of [st2.livesTxt, st2.raceTxt, st2.comboTxt, st2.comboLbl, st2.grooveTxt, st2.missTxt, st2.queueLbl]) o?.setVisible(false);
+        for (const o of [st2.livesTxt, st2.raceTxt, st2.comboTxt, st2.comboLbl, st2.grooveTxt, st2.missTxt, st2.queueLbl, st2.scoreTxt, st2.scoreLbl]) o?.setVisible(false);
         st2.tick = () => RhythmTrial.tick(S2); S.events.on('update', st2.tick);
         st2.ghost = () => { if (!st2.falling) [spr, spr._cfx?.eyes].forEach(o => o?.active && o.setAlpha(C.GHOST)); }; S.events.on('postupdate', st2.ghost);
         st2.onJump = () => { if (S2._rtrial) RhythmTrial.jump(S2); }; S.input.keyboard.on('keydown-' + Settings.key('dash'), st2.onJump);
@@ -1086,7 +1129,7 @@ class RhythmTrial {
     static accentHit(S, k) {
         const st = S._rtrial, C = RhythmTrial.C, core = st.core, T = S.TILE_SIZE;
         st.combo++; st.best = Math.max(st.best || 0, st.combo); st.kick = 1.4;
-        RhythmTrial.judge(S, 'ACCENT!', '#ff7a4a');
+        RhythmTrial.judge(S, 'ACCENT!', '#ff7a4a'); RhythmTrial.score(S, RhythmTrial.POINTS.accent);
         Sfx.play(S, 'boom'); Sfx.play(S, 'rt_hit', { n: 9, perfect: true });
         if (!core?.sprite?.active) return;
         const g = S.add.graphics().setDepth(RhythmTrial.DEPTH + 0.3), x0 = S.player.x, y0 = S.player.y, x1 = core.sprite.x, y1 = core.sprite.y;   // a bolt to the core
@@ -1136,7 +1179,7 @@ class RhythmTrial {
         for (const j of [tr.k - 1, tr.k]) { const t = st.tiles[j]; if (t?.top?.active) t.top.setTint(0xd8b8ff); RhythmTrial.light(S, j); }
         [0, 60, 120, 180].forEach((d, i) => S.time.delayedCall(d, () => Sfx.play(S, 'rt_hit', { n: 4 + i * 2, perfect: true })));
         st.combo += 2; st.best = Math.max(st.best || 0, st.combo); st.kick = 1.2;
-        RhythmTrial.judge(S, 'TRILL!', '#c8a0ff');
+        RhythmTrial.judge(S, 'TRILL!', '#c8a0ff'); RhythmTrial.score(S, RhythmTrial.POINTS.trill);
         RhythmTrial.hurtCore(S, RhythmTrial.C.TRILL_N);   // (a note's worth a hop)
     }
 
@@ -1228,7 +1271,7 @@ class RhythmTrial {
         st.combo += 3; st.best = Math.max(st.best || 0, st.combo); st.kick = 1.6;
         RhythmTrial.banner(S, grade === 'perfect' ? 'GLISSANDO!' : 'GLISSANDO', grade === 'perfect' ? 'perfect slide' : null, '#7fe8ff', true);
         Sfx.play(S, 'fanfare'); S.cameras.main.shake(160, 0.006);
-        RhythmTrial.hurtCore(S, C.GLISS.DMG[grade === 'perfect' ? 0 : 1]);
+        RhythmTrial.hurtCore(S, C.GLISS.DMG[grade === 'perfect' ? 0 : 1]); RhythmTrial.score(S, RhythmTrial.POINTS.gliss[grade === 'perfect' ? 0 : 1]);
     }
     static glissClean(S) {
         const st = S._rtrial, gl = st?.gl;
@@ -1283,8 +1326,12 @@ class RhythmTrial {
         const st = S._rtrial;
         if (st?.lane) return RhythmTrial.finish(st.main, text, won);   // (the lover's run ends with yours)
         if (!st || st.done) return;
+        const P = RhythmTrial.POINTS, { diff, speed, inf } = RhythmTrial.settings(), m = RhythmTrial.DIFF_MULT[diff] * speed;
+        st.score = (st.score || 0) + Math.round(((st.coreDead ? P.core : 0) + (st.i >= st.R.length - 1 ? P.clear : 0)) * m);   // (the core shattered; the far side reached)
         st.done = true;
-        RhythmTrial.banner(S, text, won ? `BEST COMBO ${st.best || st.combo}` : null, won ? '#ffe14a' : '#ff8a6a');
+        st.scoreTxt?.setText(st.score.toLocaleString('en-US'));
+        RhythmTrial.banner(S, text, `${st.score.toLocaleString('en-US')} POINTS  ·  BEST COMBO ${st.best || st.combo}${inf ? '  ·  PRACTICE' : ''}`, won ? '#ffe14a' : '#ff8a6a');
+        if (!inf && st.score > 0) Cloud.post(RhythmTrial.board(), st.score).then(r => r.rank && S.showStatusText?.(S.player.x, S.player.y - 60, `#${r.rank} ON THE LEADERBOARD`, '#ffe14a'));
         Sfx.play(S, won ? 'fanfare' : 'deny');
         S.time.delayedCall(2600, () => { if (S._rtrial === st) RhythmTrial.stop(S); });
     }
@@ -1362,6 +1409,8 @@ class RhythmTrial {
         st.missTxt = pin(S.add.text(W / 2 + 100, 62, '', { fontSize: '16px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ff7a6a', stroke: '#07060a', strokeThickness: 5 }).setOrigin(0, 0.5).setDepth(46));   // the misses so far
         st.livesTxt = pin(S.add.text(W / 2, 62, '', { fontSize: '22px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ff5a6a', stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setDepth(46));
         st.raceTxt = pin(S.add.text(W / 2, 122, '', { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#e8d8b0', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 0).setDepth(46));
+        st.scoreTxt = pin(S.add.text(W - 110, H * 0.4 - 78, '0', { fontSize: '28px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffe14a', stroke: '#07060a', strokeThickness: 7 }).setOrigin(0.5).setDepth(48));   // the run's points, over the combo
+        st.scoreLbl = pin(S.add.text(W - 110, H * 0.4 - 54, 'POINTS', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#cdbf9f', stroke: '#07060a', strokeThickness: 4 }).setOrigin(0.5).setDepth(48));
         st.comboTxt = pin(S.add.text(W - 110, H * 0.4, '', { fontSize: '40px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffffff', stroke: '#07060a', strokeThickness: 8 }).setOrigin(0.5).setDepth(48));
         st.comboLbl = pin(S.add.text(W - 110, H * 0.4 + 28, 'COMBO', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#cdbf9f', stroke: '#07060a', strokeThickness: 4 }).setOrigin(0.5).setDepth(48).setVisible(false));
         st.grooveTxt = pin(S.add.text(W - 110, H * 0.4 + 52, '', { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#c8a0ff', stroke: '#07060a', strokeThickness: 5 }).setOrigin(0.5).setDepth(48));

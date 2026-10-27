@@ -308,7 +308,8 @@ class Training {
         const setO = d => { const v = Math.max(-500, Math.min(500, RhythmTrial.settings().offset + d)); RhythmTrial.set({ off: v }); of.setText(`${v} ms`); };
         btn(x0 + P + 66, y, 40, 20, '−10', () => setO(-10)); btn(x0 + P + IW - 40, y, 40, 20, '+10', () => setO(10));
         y += 30;
-        btn(x0 + P, y, IW, 30, 'START', () => RhythmTrial.start(S), null, { size: 13 });
+        btn(x0 + P, y, IW * 0.6 - 2, 30, 'START', () => RhythmTrial.play(S), null, { size: 13 });
+        btn(x0 + P + IW * 0.6 + 2, y, IW * 0.4 - 2, 30, 'HOW IT WORKS', () => RhythmTrial.guide(S, true), null, { size: 10 });   // (its guide, RhythmTrial.GUIDE)
         y += 40;
         text(x0 + P, y, 'THE HALL OF REFLECTIONS  (a first try)', 12, '#ffffff'); y += 18;
         text(x0 + P, y, 'No powers. They move only when nothing sees them.\nFind 5 of the 7 fragments and get back out.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 36;
