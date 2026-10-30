@@ -82,6 +82,7 @@ const Cloud = {
     },
     // the leaderboards: post one (signed in, named); each player's best on a board; where yours puts you
     async post(board, value) {
+        if (typeof Progress !== 'undefined' && Progress.devMode()) return { why: 'dev' };   // (dev mode's god mode, one-shots and floor skips: not for the boards)
         if (!this.db || !this.user) return { why: 'out' };
         if (!this.name) return { why: 'name' };
         const { error } = await this.db.from('scores').insert({ board, value });
@@ -126,7 +127,7 @@ const Cloud = {
         if (!this.el?.isConnected) return;
         const h = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]), p = document.createElement('div');
         p.className = 'p';
-        const wire = () => { this.el.replaceChildren(p); p.querySelector('input')?.focus(); };
+        const wire = () => { this.el.replaceChildren(p); const i = p.querySelector('input'); if (i) i.focus(); else { this.el.tabIndex = -1; this.el.focus({ preventScroll: true }); } };   // (focus in it, so Escape closes it, not the game behind)
         const btn = (sel, f) => p.querySelector(sel)?.addEventListener('click', f), say = t => { const m = p.querySelector('.msg'); if (m) m.textContent = t; };
         if (!this.db) { p.innerHTML = `<h2>ACCOUNT</h2><p>Can't reach the server right now. Your progress is still saved in this browser.</p><button class="x">CLOSE</button>`; wire(); return btn('.x', () => this.close()); }
         if (this.view === 'choose') {

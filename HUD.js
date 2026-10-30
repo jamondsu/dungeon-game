@@ -277,12 +277,85 @@ class HUD {
             const gem = (f, d) => { const o = this.add.image(x, y, 'ui_ultgem', `${el}_${f}`).setScrollFactor(0).setDepth(d).setScale(2); this._vfxSort?.(o); return o; };
             const glow = this.add.image(x, y, 'vfx_glow').setScrollFactor(0).setDepth(31.1).setBlendMode(Phaser.BlendModes.ADD).setTint(C.COLORS[el]).setVisible(false);
             this._vfxSort?.(glow);
-            return { el, x, y, r: R, key, react, glow, dark: gem('dark', 31.2), lit: gem('lit', 31.3) };
+            // its socket (ui_kit: a dark well, and its rim, tinted the element's colour), under what's drawn round it each frame
+            const sock = this.add.image(x, y, 'ui_kit', 'sock_ult').setScrollFactor(0).setDepth(30.95).setScale(2), rim = this.add.image(x, y, 'ui_kit', 'sock_ult_rim').setScrollFactor(0).setDepth(30.96).setScale(2);
+            this._vfxSort?.(sock); this._vfxSort?.(rim);
+            return { el, x, y, r: R, key, react, glow, sock, rim, dark: gem('dark', 31.2), lit: gem('lit', 31.3) };
         });
         this._ultLockText = this.add.text(W / 2, y - R - 14, '', {
             fontSize: '11px', fontFamily: 'monospace', color: '#cfd6e4',
             stroke: '#000000', strokeThickness: 2
         }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+    }
+
+    // ── LOCKED ACTIONS ───────────────────────────────────────────────────────
+    // Anything can lock the dash (every movement ability: the dash, cosmic's hops), the ults, the gadgets or element swapping
+    // for a while: lockActions(id, kinds, ms), or till unlockActions(id) when there's no ms. A kind is locked while any id locks
+    // it; 'ult' is all four gems, 'ult_<element>' one. Each of their keys asks actionLocked first, and while a kind is locked a
+    // red ban sign (ui_ban) sits over its piece of the HUD (_actLockTick). The disablers that were already there hold theirs
+    // through _actLockSync. All of them let go on death and on a restart (GameScene.create).
+    lockActions(id, kinds, ms) { (this._actLocks ||= {})[id] = { kinds: [...kinds], until: ms == null ? null : this.time.now + ms }; }
+    unlockActions(id) { if (this._actLocks) delete this._actLocks[id]; }
+    actionLocked(kind) {   // the id holding it (truthy), or false
+        const L = this._actLocks, now = this.time.now;
+        for (const id in L) {
+            const k = L[id];
+            if (k.until != null && now >= k.until) { delete L[id]; continue; }
+            if (k.kinds.includes(kind) || (kind.startsWith('ult_') && k.kinds.includes('ult'))) return id || true;
+        }
+        return false;
+    }
+    // A locked key pressed: its sign flashes and shakes, with the deny sound (each kind at most every 250ms)
+    _actionDenied(kind) {
+        const now = this.game.loop.time, F = this._actFlash ||= {};
+        if (now - (F[kind] ?? -1e9) >= 250) { F[kind] = now; Sfx.play(this, 'deny'); }
+        return false;
+    }
+    // What already stops an action, each held as a lock while it lasts (so it shows); each still refuses where it always did
+    _actLockSync() {
+        const now = this.time.now, ALL = ['dash', 'ult', 'gadget', 'swap'];
+        const inhibited = (this.enemies || []).some(e => (e.ultInhibitor || e.isUltAbsorber) && Math.hypot(e.x - this.playerX, e.y - this.playerY) <= (e.ultInhibitRadius || (e.isUltAbsorber ? 4 : 3)) + 0.25);   // (as activateUlt measures it)
+        for (const [id, on, kinds] of [
+            ['#lockout', now < (this._ultLockUntil || 0), ['ult_fire', 'ult_ice', 'ult_lightning']],   // the shared lockout after a cast (cosmic's ult ignores it)
+            ['#ascend', this._csAscending?.() && !(this._csStage?.() >= 2 && this._csLayers?.() >= 2), ['ult_cosmic']],   // Ascend running: not again (two layers held still transform)
+            ['#shell', (this._iceShellUntil || 0) > now, ALL],   // encased at the ice ult's end
+            ['#fork', !!this._forkStop, ['dash', 'ult']],        // the Fork's stopped time
+            ['#inhibit', inhibited, ['ult']],                    // an Ult Inhibitor's or Absorber's zone
+            ['#thunder', this.thunderheadActive, ['dash', 'swap']],
+            ['#beam', this.cosmicCharging || this.cosmicContinuousLaserActive, ['swap']],
+            ['#scorch', this.ignitionActive, ['swap']],          // the fire ult holds you in fire
+            ['#csform', this._csFormLock?.(), ['swap']],         // cosmic's transformation; rooted while it turns, aims and drops
+            ['#csroot', this._csRooted?.(), ['dash']],
+            ['#rooted', this._playerRooted, ['dash']],
+            ['#glued', this._glued?.(), ['dash']],               // a Glu, a Frost Slime's grid
+            ['#lift', this._lifting, ['dash']],                  // riding between floors
+        ]) on ? this.lockActions(id, kinds) : this.unlockActions(id);
+    }
+    // Every frame, paused or in stopped time too: the locks, then each sign over its piece, popping in as the lock starts, fading
+    // as it ends, flashing and shaking when a locked key is pressed; hidden under the pause menu
+    _actLockTick() {
+        if (this._deathScreenActive) this._actLocks = {};
+        else if (this.player) this._actLockSync();
+        if (!this.textures.exists('ui_ban')) return;
+        const now = this.game.loop.time, F = this._actFlash || {}, B = this._actBan ||= {}, sock = this._fkSock?.art || [];
+        const hide = this._pauseMenuOpen || this._deathScreenActive;
+        const spots = [['dash', 'dash', this._hudChev, 1], ['swap', 'swap', this._hudElIcon, 1],
+            ...(this._ultGemUI || []).map(u => ['ult_' + u.el, 'ult_' + u.el, u.sock, 2]), ['gadget0', 'gadget', sock[0], 2], ['gadget1', 'gadget', sock[3], 2]];
+        for (const [name, kind, o, sc] of spots) {
+            const on = !!(o?.active && o.visible && this.actionLocked(kind));
+            let s = B[name];
+            if (!s?.img.active) {
+                if (!on) continue;
+                s = B[name] = { img: this.add.image(0, 0, 'ui_ban', 'ban').setScrollFactor(0).setDepth(42), on: false, t: 0 };
+                this._vfxSort?.(s.img);
+            }
+            if (on !== s.on) { s.on = on; s.t = now; }
+            const a = on ? 1 : 1 - (now - s.t) / 220;
+            if (hide || a <= 0 || !o?.active) { s.img.setVisible(false); continue; }
+            const fl = Math.max(0, 1 - (now - (F[kind] ?? -1e9)) / 280), pop = on ? Phaser.Math.Easing.Back.Out(Math.min(1, (now - s.t) / 170)) : 1;
+            s.img.setVisible(true).setFrame(fl > 0.4 ? 'ban_hot' : 'ban').setAlpha(a).setScale(sc * pop * (1 + 0.3 * fl))
+                .setPosition(Math.round(o.x + Math.sin(now / 15) * 3 * fl), Math.round(o.y));
+        }
     }
 
     // ── STATUS ICONS OVER ENEMIES ────────────────────────────────────────────
@@ -303,6 +376,9 @@ class HUD {
             if (hex?.active) row(14, cy => hex.setY(cy));
             const ast = cs?.astral?.get(e);
             if (ast?.active) row(16, cy => ast.setY(cy));
+            if (e._rmIcon?.active) row(6, cy => e._rmIcon.setY(cy));   // (the Boreal Trident's Rime marks)
+            if (e._tlMark?.active) row(11, cy => e._tlMark.setY(cy));   // (held in the Pendulum's Time Lock: its stopped clock, and what it's stored over it)
+            if (e._tlTally?.active && e._tlTally.visible) row(12, cy => e._tlTally.setY(cy));
             if (e._stunIndicator?.active) row(10, cy => e._stunIndicator.setY(cy));
         }
     }
@@ -361,6 +437,7 @@ class HUD {
         const earned = Math.max(0, (this.totalGlorps || 0) - (R.glorps0 ?? (this.totalGlorps || 0)));
         const firstGl = this._firstClear ? (Progress.FIRST_CLEAR_GLORPS[lvl] || 0) : 0;
         const achGl = achs.reduce((a, x) => a + (x.reward?.glorps || 0), 0);
+        const btys = Bounties.doneThisRun(), btyGl = btys.filter(b => b.rs === R).reduce((a, b) => a + (b.reward?.glorps || 0), 0);   // (the bounties of the whole run; their glorps counted on the floor they were paid on)
         const frags = this._fragsThisLevel || 0;
         // the purse, top right: what you had, rising to what you have as the pieces land
         const purse = {}, PY = 22;
@@ -380,31 +457,31 @@ class HUD {
         // the cards: glorps, fragments, then each achievement (dust and books written on its card)
         const cards = [];
         if (earned > 0) cards.push({ k: 'glorp', label: 'GLORPS', v: earned, col: P.accentGold,
-            notes: [earned - firstGl - achGl > 0 && `drops  +${num(earned - firstGl - achGl)}`, firstGl && `first clear  +${num(firstGl)}`, achGl && `achievements  +${num(achGl)}`].filter(Boolean), ribbon: firstGl ? 'FIRST CLEAR' : null });
+            notes: [earned - firstGl - achGl - btyGl > 0 && `drops  +${num(earned - firstGl - achGl - btyGl)}`, firstGl && `first clear  +${num(firstGl)}`, achGl && `achievements  +${num(achGl)}`, btyGl && `bounties  +${num(btyGl)}`].filter(Boolean), ribbon: firstGl ? 'FIRST CLEAR' : null });
         if (frags > 0) cards.push({ k: 'fragment', label: 'FRAGMENTS', v: frags, col: 0x6cb4f0, notes: ['spent on ult stages'] });
         for (const a of achs.slice(0, 3)) cards.push({ k: 'ach', label: 'ACHIEVEMENT', name: a.name, col: Achievements.TIER_COL[a.tier] || P.accentGold, notes: [Achievements.rewardText(a)] });
         if (achs.length > 3) cards[cards.length - 1].notes.push(`and ${achs.length - 3} more`);
+        const btyRoom = Math.max(1, Math.floor((W - 22) / 214) - cards.length);   // (as many as fit across)
+        for (const b of btys.slice(0, btyRoom)) cards.push({ k: 'bty', label: 'BOUNTY', name: b.name, col: Achievements.TIER_COL[b.tier] || P.accentGold, notes: [Achievements.rewardText(b)], img: ['ui_bounty_paper', 'seal_' + b.tier], paper: true });   // (its own card: the board's plain notice)
+        if (btys.length > btyRoom) cards[cards.length - 1].notes.push(`and ${btys.length - btyRoom} more`);
         if (!cards.length) cards.push({ k: 'none', label: 'NO REWARDS', col: 0x6e6758, notes: ['this one was for the glory'] });
         const cw = 196, ch = 176, cg = 18, GAP = 760, cx0 = W / 2 - (cards.length * cw + (cards.length - 1) * cg) / 2, cy = 112;
         cards.forEach((c, i) => {
             const x = cx0 + i * (cw + cg), at = 450 + i * GAP, mid = x + cw / 2;
             const box = keep(this.add.container(mid, cy + ch / 2).setDepth(D + 3).setScale(0.5).setAlpha(0));
-            const g = this.add.graphics();
-            g.fillStyle(0x000000, 0.45).fillRoundedRect(-cw / 2 + 2, -ch / 2 + 3, cw, ch, 10);
-            g.fillStyle(0x0d0a14, 0.96).fillRoundedRect(-cw / 2, -ch / 2, cw, ch, 10);
-            g.fillStyle(c.col, 0.12).fillRoundedRect(-cw / 2, -ch / 2, cw, 30, { tl: 10, tr: 10, bl: 0, br: 0 });
-            g.lineStyle(2, c.col, 0.9).strokeRoundedRect(-cw / 2, -ch / 2, cw, ch, 10);
-            const glow = this.add.image(0, -14, 'vfx_glow').setTint(c.col).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.35).setScale(1.3);
-            const lab = this.add.text(0, -ch / 2 + 15, c.label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(c.col) }).setOrigin(0.5);
+            const fr = !c.paper && UIKit.nine(this, 'card', 'card_a', cw, ch, c.col), g = c.paper ? this.add.image(-cw / 2 - 8, -ch / 2 - 8, 'ui_bounty_paper', 'nt_win').setOrigin(0).setScale(2) : this.add.image(-cw / 2 - fr.pl, -ch / 2 - fr.pt, fr.key).setOrigin(0);   // (ui_kit 'card': its border and header wash in its colour; a bounty's, the plain notice)
+            const glow = this.add.image(0, -14, 'vfx_glow').setTint(c.col).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.35).setScale(1.3).setVisible(!c.paper);
+            const lab = this.add.text(0, -ch / 2 + 15, c.label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: c.paper ? '#6a4a2a' : UIKit._hex(c.col) }).setOrigin(0.5);
             const parts = [g, glow, lab];
             const ic = c.k === 'glorp' || c.k === 'fragment' ? UIKit.currencyIcon(this, c.k) : null;
             let icon = null, val = null;
             if (ic) icon = this.add.image(0, -18, ic[0], ic[1]).setScale(ic[2] * 1.6);
+            else if (c.img) icon = this.add.image(0, -18, c.img[0], c.img[1]).setScale(3);
             else icon = this.add.text(0, -18, c.k === 'ach' ? '★' : '-', { fontSize: '30px', color: UIKit._hex(c.col) }).setOrigin(0.5);
             parts.push(icon);
             if (c.v != null) { val = this.add.text(0, 18, '+0', { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f8f0dc', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5); parts.push(val); }
-            else if (c.name) parts.push(this.add.text(0, 16, c.name.toUpperCase(), { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f8f0dc', align: 'center', wordWrap: { width: cw - 20 } }).setOrigin(0.5));
-            (c.notes || []).forEach((n, j) => parts.push(this.add.text(0, 42 + j * 14, n, { fontSize: '10px', fontFamily: 'monospace', color: c.k === 'ach' ? '#9be08a' : '#a89c84', align: 'center', wordWrap: { width: cw - 16 } }).setOrigin(0.5, 0)));
+            else if (c.name) parts.push(this.add.text(0, 16, c.name.toUpperCase(), { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: c.paper ? '#36220f' : '#f8f0dc', align: 'center', wordWrap: { width: cw - 20 } }).setOrigin(0.5));
+            (c.notes || []).forEach((n, j) => parts.push(this.add.text(0, 42 + j * 14, n, { fontSize: '10px', fontFamily: 'monospace', fontStyle: c.paper ? 'bold' : 'normal', color: c.paper ? '#3a5a2a' : c.k === 'ach' ? '#9be08a' : '#a89c84', align: 'center', wordWrap: { width: cw - 16 } }).setOrigin(0.5, 0)));
             box.add(parts);
             if (c.ribbon) {   // a ribbon across the corner
                 const rb = this.add.text(cw / 2 - 8, -ch / 2 - 6, c.ribbon, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: '#1a120c', backgroundColor: '#ffd34a', padding: { x: 6, y: 3 } }).setOrigin(1, 0.5).setAngle(4);
@@ -413,7 +490,7 @@ class HUD {
             this.tweens.add({ targets: box, scale: 1, alpha: 1, duration: 340, delay: at, ease: 'Back.easeOut', onStart: () => Sfx.play(this, 'pop') });
             this.tweens.add({ targets: icon, y: icon.y - 6, duration: 520, delay: at + 340, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             this.tweens.add({ targets: glow, alpha: 0.6, scale: 1.6, duration: 900, delay: at, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            if (c.k === 'ach') { this.time.delayedCall(at, () => { if (box.active) VisualFX.ripple?.(this, mid, cy + ch / 2, 20, cw * 0.7, c.col, { depth: D + 2, duration: 600, alpha: 0.6 }); }); return; }
+            if (c.k === 'ach' || c.k === 'bty') { this.time.delayedCall(at, () => { if (box.active) VisualFX.ripple?.(this, mid, cy + ch / 2, 20, cw * 0.7, c.col, { depth: D + 2, duration: 600, alpha: 0.6 }); }); return; }
             if (!val) return;
             // the count, then the flight: pieces from the card to the purse, each adding its share on landing
             const cnt = { n: 0 }, cdur = Math.min(1000, 350 + c.v * 1.5);
@@ -530,8 +607,9 @@ class HUD {
             const by = y + r + 6;
             g.save(); g.translateCanvas(x, by); g.scaleCanvas(u.k, u.k); g.translateCanvas(-x, -by);
             // socket: the held element's rim lights up in its colour (white is the seal ring's)
-            g.fillStyle(0x070a12, 0.88); g.fillCircle(x, y, r + 6);
-            g.lineStyle(held ? 2 : 1.5, col, held ? 0.95 : 0.35); g.strokeCircle(x, y, r + 6);
+            const big = u.k > 1.3, sk = big ? 2 : 2 * u.k;   // (grown, the bigger socket at a whole 2x)
+            u.sock.setFrame(big ? 'sock_ult_big' : 'sock_ult').setPosition(x, by + (y - by) * u.k).setScale(sk);
+            u.rim.setFrame(big ? 'sock_ult_big_rim' : 'sock_ult_rim').setPosition(x, by + (y - by) * u.k).setScale(sk).setTint(col).setAlpha(held ? 0.95 : 0.35);
             // cosmic from ult stage 2: a ring a layer round it, each its own colour and further out (its own charge, the second, the
             // third: amethyst, gold, white), so how many are charged reads at a glance; a full one bright and breathing
             if (u.el === 'cosmic' && this._cs && (this._csStage?.() || 1) >= 2) {
@@ -692,7 +770,7 @@ class HUD {
         this._icicleBarLabel.setColor(chargeFrac >= 1 ? '#d8f6ff' : '#9fe8ff');
         this._icicleHealLabel.setVisible(healModeActive);
         if (healModeActive) {   // the shield's time left
-            UIKit.rBar(g, px - BAR_W / 2 + 4, py - 7 - BAR_H / 2, BAR_W - 4, (this._frostShieldUntil - now) / 5000, { col: 0xbff4ff, hot: 0xffffff, dark: 0x001122, time: now, h: BAR_H, ready: false, gem: false });
+            UIKit.rBar(g, px - BAR_W / 2 + 4, py - 7 - BAR_H / 2, BAR_W - 4, (this._frostShieldUntil - now) / (this._frostShieldMs || 5000), { col: 0xbff4ff, hot: 0xffffff, dark: 0x001122, time: now, h: BAR_H, ready: false, gem: false });
             this._icicleHealLabel.setAlpha(0.7 + 0.3 * Math.sin(now / 200));
         }
 
@@ -764,14 +842,10 @@ class HUD {
         }).setOrigin(0.5).setScrollFactor(0).setDepth(503);
         this._pauseObjs.push(sub);
 
-        const div = this.add.graphics().setScrollFactor(0).setDepth(503);
-        div.lineStyle(1.5, P.accentBlue, 0.35);
-        div.lineBetween(pxx + 36, pyy + 84, pxx + panelW - 36, pyy + 84);
-        // Centre diamond on the divider.
-        div.fillStyle(P.accentBlue, 0.8);
-        div.fillPoints([{ x: W / 2, y: pyy + 79 }, { x: W / 2 + 5, y: pyy + 84 },
-                        { x: W / 2, y: pyy + 89 }, { x: W / 2 - 5, y: pyy + 84 }], true);
-        this._pauseObjs.push(div);
+        // the divider (ui_kit: a hairline, a diamond in its middle)
+        const div = UIKit.nineImage(this, null, 'hair', pxx + 36, pyy + 84, panelW - 72, 1, P.accentBlue).setScrollFactor(0).setDepth(503).setAlpha(0.35);
+        const gem = this.add.image(Math.round(W / 2), Math.round(pyy + 84), 'ui_kit', 'diamond').setScrollFactor(0).setDepth(503).setTint(P.accentBlue).setAlpha(0.8);
+        this._pauseObjs.push(div, gem);
 
         // Named handles, so a scene reusing this menu can repoint a button without
         // index arithmetic over _pauseObjs. TowerDefenseScene uses _pauseBtns.restart.
@@ -836,6 +910,7 @@ class HUD {
             color: UIKit.CSS.textLo, stroke: '#000', strokeThickness: 2
         }).setOrigin(0.5).setScrollFactor(0).setDepth(503);
         this._pauseObjs.push(hint);
+        this._pauseObjs.push(...Bounties.pausePanel(this, pxx + panelW + 16, pyy, panelH));   // what's up, beside it (Bounties.js)
     }
 
 
@@ -1226,7 +1301,8 @@ class HUD {
             const T = (size, style) => this.add.text(0, 0, '', { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: style, color: '#f3e3b8', stroke: '#07060a', strokeThickness: 4 })
                 .setScrollFactor(0).setDepth(41).setAlpha(0);
             B = all[key] = { g: this.add.graphics().setScrollFactor(0).setDepth(40).setAlpha(0), title: T('18px', 'bold').setOrigin(0.5, 1),
-                sub: T('13px', 'italic').setOrigin(0.5, 0).setColor('#cdbf9f'), trail: frac, hitAt: 0, a: 0, y: null };
+                sub: T('13px', 'italic').setOrigin(0.5, 0).setColor('#cdbf9f'), trail: frac, hitAt: 0, a: 0, y: null,
+                frame: this.add.image(0, 0, '__DEFAULT').setOrigin(0).setScrollFactor(0).setDepth(39.95).setAlpha(0) };   // (its frame: ui_kit 'bossbar')
             this.tweens.add({ targets: B, a: 1, duration: 500 });
         }
         frac = Math.max(0, Math.min(1, frac));
@@ -1239,17 +1315,14 @@ class HUD {
         B.y = B.y == null ? want : B.y + (want - B.y) * 0.2;   // slides to its place when one above it goes
         const y = Math.round(B.y);
         const g = B.g; g.clear().setAlpha(B.a);
-        g.fillStyle(0x000000, 0.45); g.fillRoundedRect(x - 6, y - 5, BW + 12, BH + 10, 5);
-        g.fillStyle(0x1a1410, 1); g.fillRect(x, y, BW, BH);
+        const fr = UIKit.nine(this, 'bossbar', null, BW, BH);   // the backing, its trough, the brass rim and the end spikes
+        B.frame.setTexture(fr.key).setPosition(x - fr.pl, y - fr.pt).setAlpha(B.a);
         g.fillStyle(0xfff0d0, 0.8); g.fillRect(x, y, BW * B.trail, BH);
         g.fillStyle(col, 1); g.fillRect(x, y, BW * frac, BH);
         if (ice?.decay > 0) { g.fillStyle(0x9ae8ff, 0.85); g.fillRect(x + BW * frac, y, Math.min(BW * (1 - frac), BW * ice.decay), BH); }   // the health its cube's decay took, growing back
         g.fillStyle(0xffffff, 0.22); g.fillRect(x, y, BW * frac, 3);                    // a lit top edge
         g.fillStyle(0x000000, 0.25); g.fillRect(x, y + BH - 3, BW * frac, 3);
         g.fillStyle(0x07060a, 0.7); for (const f of [0.25, 0.5, 0.75]) g.fillRect(x + BW * f - 1, y, 2, BH);   // quarter notches
-        g.lineStyle(2, 0x8a7a5e, 1); g.strokeRect(x - 1, y - 1, BW + 2, BH + 2);
-        const th = BH / 2 + 2, tw = Math.round(th * 0.9);   // the end points, as tall as the bar and its rim
-        g.fillStyle(0xc9b48a, 1); for (const ex of [x - 4, x + BW + 4]) { g.fillTriangle(ex, y + BH / 2 - th, ex + (ex < W / 2 ? -tw : tw), y + BH / 2, ex, y + BH / 2 + th); }
         const chilled = ice?.chill > 0.005;
         if (chilled) {   // its chill, a frost strip under the bar (white while it's cubed)
             g.fillStyle(0x001222, 0.8); g.fillRect(x - 1, y + BH + 3, BW + 2, 6);
@@ -1269,7 +1342,7 @@ class HUD {
             const B = all[k];
             delete all[k];
             if (!B) continue;
-            const objs = [B.g, B.title, B.sub].filter(o => o?.active);
+            const objs = [B.g, B.frame, B.title, B.sub].filter(o => o?.active);
             this.tweens.add({ targets: objs, alpha: 0, duration: 600, delay: 300, onComplete: () => objs.forEach(o => o.destroy()) });
         }
     }
@@ -1306,6 +1379,7 @@ class HUD {
         if (base === 'volt' && vb?._asleep) t = this._voltWake(vb, t, at, S);
         at(t, () => {   // its roar
             Sfx.play(this, 'roar', { big: true }); this._introRoarAt = Date.now();
+            BossFX.roar?.(this, key);   // (Bosses.js: it roars, in its frames)
             cam.shake(380, 0.008); this._vfxFlash?.(bx, by, 140, col, 320, 0.85);
         });
         t += 250;
@@ -1402,7 +1476,7 @@ class HUD {
                 if (!p) return;
                 this._vfxHop?.(p, Math.abs(p.scaleY || 1.2), 200);
                 Sfx.play(this, 'pluck');
-                r = keep(this.add.image(p.x + 12, p.y + 10, A.rock).setDepth((p.depth ?? 1) + 0.02).setScale(1.6));
+                r = keep((this.textures.exists('boss_volt') ? this.add.sprite(p.x + 12, p.y + 10, 'boss_volt', 'rock_0').setScale(2) : this.add.image(p.x + 12, p.y + 10, A.rock).setScale(1.6)).setDepth((p.depth ?? 1) + 0.02));   // (a typed rock, tumbling by its frames)
                 S.tw.push(this.tweens.add({ targets: r, x: p.x + 2, y: p.y - 26, duration: 260, ease: 'Quad.easeOut', delay: 80 }));
             });
             at(c0 + 700, () => {   // up to no good: sly eyes, a giggle in notes, a bounce or two (cheekier each rock)
@@ -1421,7 +1495,8 @@ class HUD {
                 const x0 = r.x, y0 = r.y, h = head(), peak = Math.min(y0, h.y) - 80;
                 S.tw.push(this.tweens.addCounter({ from: 0, to: 1, duration: 550, onUpdate: tw => {
                     const v = tw.getValue(), q = 1 - v;
-                    r.setPosition(q * q * x0 + 2 * q * v * (x0 + h.x) / 2 + v * v * h.x, q * q * y0 + 2 * q * v * peak + v * v * h.y).setAngle(v * 720);
+                    r.setPosition(q * q * x0 + 2 * q * v * (x0 + h.x) / 2 + v * v * h.x, q * q * y0 + 2 * q * v * peak + v * v * h.y);
+                    BossFX.tumble(r, v * 2, BossFX.ROCK);
                 } }));
                 cam.pan(h.x, h.y + 30, 550, 'Sine.easeInOut', true);
             });
@@ -1431,7 +1506,7 @@ class HUD {
                 cam.shake(100 + n * 60, 0.003 + n * 0.002);
                 this._vfxHop?.(s, Math.abs(s?.scaleY || 4.5), 200);
                 if (u) u.expr = 'wince';
-                if (r?.active) S.tw.push(this.tweens.add({ targets: r, x: r.x - 40 - n * 6, y: r.y + 70, angle: r.angle - 300, duration: 520, ease: 'Quad.easeIn', onComplete: () => r.setAlpha(0.7) }));
+                if (r?.active) S.tw.push(this.tweens.add({ targets: r, x: r.x - 40 - n * 6, y: r.y + 70, duration: 520, ease: 'Quad.easeIn', onUpdate: tw => BossFX.tumble(r, 2 - tw.progress * 0.85, BossFX.ROCK), onComplete: () => r.setAlpha(0.7) }));
                 const bonk = keep(this.add.text(h.x - 30, h.y - 14, n < 3 ? 'bonk' : 'BONK!!', { fontSize: Math.round(18 + n * 6) + 'px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffe14a', stroke: '#1a1008', strokeThickness: 5, resolution: 2 })
                     .setOrigin(0.5).setDepth(7).setScale(0.3).setAngle(-12));
                 S.tw.push(this.tweens.add({ targets: bonk, scale: big + 0.25, duration: 140, ease: 'Back.easeOut', yoyo: true, hold: 120 }),
@@ -1473,6 +1548,7 @@ class HUD {
         at(b3 + 350, () => { if (u) u.expr = null; bubble('?!', 40, '#1a1420', 40, -40, 520); });
         at(b3 + 1000, () => {
             bubble('#@%&!', 48, '#d8202a', 50, -46, 700); Sfx.play(this, 'rage');
+            b._rage = true;   // (Bosses.js: its furious frame, still crownless)
             const h = head(), mark = keep(this.add.image(h.x + 34, h.y + 2, A.anger).setDepth(6).setScale(3));
             S.mark = mark;
             S.tw.push(this.tweens.add({ targets: mark, scale: 3.8, duration: 150, yoyo: true, repeat: 4 }));
@@ -1492,7 +1568,7 @@ class HUD {
         const wake = (instant) => {   // awake for real: lit up, crowned, its brood up and scared
             if (woke) return;
             woke = true;
-            b._asleep = false;
+            b._asleep = false; b._rage = false;
             LevelManager.grey(s, false);
             if (s?.active) { s.clearTint(); if (!instant) { s.setTintFill(0xffffff); this.tweens.addCounter({ from: 0, to: 1, duration: 120, onComplete: () => s.active && s.clearTint() }); } }
             if (u) u.expr = null;
@@ -1500,7 +1576,7 @@ class HUD {
             const cr = b._floorCrown; b._floorCrown = null;
             const crownOn = () => { if (cr?.active) cr.destroy(); if (u) CreatureFX.dress(u, 'volt'); };
             if (instant || !cr?.active) crownOn();
-            else { const h = head(); this.tweens.add({ targets: cr, x: h.x, y: h.y + 6, angle: 0, scale: cr.scale * 1.2, duration: 420, ease: 'Back.easeIn', onComplete: crownOn }); }
+            else { const h = head(); this.tweens.add({ targets: cr, x: h.x, y: h.y + 6, angle: 0, scale: cr.scale * 1.2, duration: 420, ease: 'Back.easeIn', onUpdate: tw => BossFX.tumble(cr, 1.25 - tw.progress * 1.25, BossFX.CROWN), onComplete: crownOn }); }   // (it flips upright as it hops on)
             for (const e of b._sleepers || []) {
                 if (!e.sprite?.active) continue;
                 e._asleep = false; e._moveCdMult = e._sleepHold; if (e.sprite._cfx) e.sprite._cfx.expr = null;
@@ -1518,7 +1594,7 @@ class HUD {
         at(b3 + 2700, () => {   // it smashes the ground
             this._vfxHop?.(s, Math.abs(s?.scaleY || 4.5), 300);
             Sfx.play(this, 'slam'); Sfx.play(this, 'boom', { big: true }); cam.shake(420, 0.012);
-            BossFX.blast?.(this, c.x, c.y + 10, 90, 'volt');
+            BossFX.voltBlast(this, c.x, c.y + 10, 90) || BossFX.blast?.(this, c.x, c.y + 10, 90, 'volt');
             if (S.mark?.active) S.tw.push(this.tweens.add({ targets: S.mark, alpha: 0, duration: 300 }));
         });
         for (let k = 0; k < 10; k++) at(b3 + 3000 + k * 55, () => {   // lightning from every side
@@ -1577,13 +1653,10 @@ class HUD {
         const cx = this.scale.width / 2;
         const ty = Math.floor(this.scale.height * 0.18);
 
-        // Thin horizontal rule above the name
-        const rule = this.add.graphics().setScrollFactor(0).setDepth(50).setAlpha(0);
-        const ruleW = 260;
-        rule.lineStyle(1, 0xaaaaaa, 0.55);
-        rule.beginPath(); rule.moveTo(cx - ruleW / 2, ty - 10); rule.lineTo(cx + ruleW / 2, ty - 10); rule.strokePath();
-        rule.lineStyle(1, 0xaaaaaa, 0.55);
-        rule.beginPath(); rule.moveTo(cx - ruleW / 2, ty + 26); rule.lineTo(cx + ruleW / 2, ty + 26); rule.strokePath();
+        // Thin rules above and below the name (ui_kit 'hair')
+        const ruleW = 260, line = yy => UIKit.nineImage(this, null, 'hair', cx - ruleW / 2, yy, ruleW, 1, 0xaaaaaa);
+        const rule = this.add.container(0, 0, [line(ty - 10), line(ty + 26)]).setScrollFactor(0).setDepth(50).setAlpha(0);
+        rule.list.forEach(o => o.setAlpha(0.55));
         this._roomNameRule = rule;
 
         const txt = this.add.text(cx, ty, name.toUpperCase(), {

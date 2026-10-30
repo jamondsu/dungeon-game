@@ -51,122 +51,8 @@ class WeaponSystem {
         this.lastFireballTime = currentTime;
     }
 
-    // The Magma Staff's shot: a 14px lump of lava rock, its crust dark, cracks running through
-    // it that glow orange to yellow and shift as it tumbles (4 frames). Drawn with the shop's
-    // pixel helper, so it gets the same outline as every other icon.
-    // Magma Staff's rocks: VARIANTS lumpy asteroids (each its own seeded outline, craters and
-    // seams), magma glowing in the seams and bulging out where they reach the edge.
-    static magmaRockKey(scene, v = 0) {
-        const key = 'wpn_magma_rock_' + v;
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 18, { k: '#1a0703', c: '#6a2a14', d: '#40180a', h: '#8a4424', o: '#ff6a1a', y: '#ffd24a', w: '#fff3c0', g: '#ff8a2a', r: '#c8320e' }, (m, f) => {
-            let seed = 7919 * (v + 1);
-            const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-            const ph = [rnd() * 6.28, rnd() * 6.28, rnd() * 6.28], am = [0.4 + rnd() * 0.6, 0.2 + rnd() * 0.4, 0.1 + rnd() * 0.25];
-            const R = th => 6.2 + am[0] * Math.sin(2 * th + ph[0]) + am[1] * Math.sin(3 * th + ph[1]) + am[2] * Math.sin(5 * th + ph[2]);
-            const out = [], inner = [];
-            for (let i = 0; i < 16; i++) { const th = i / 16 * Math.PI * 2, r = R(th); out.push([9 + Math.cos(th) * r, 9 + Math.sin(th) * r]); inner.push([8.4 + Math.cos(th) * r * 0.72, 8.4 + Math.sin(th) * r * 0.72]); }
-            m.poly(out, 'd'); m.poly(inner, 'c');
-            for (let i = 0; i < 2; i++) { const a = rnd() * 6.28, d = rnd() * 3; m.disc(9 + Math.cos(a) * d, 9 + Math.sin(a) * d, 1.2, 'd'); m.set(9 + Math.cos(a) * d - 1, 9 + Math.sin(a) * d - 1, 'h'); }
-            // seams: a wandering crack from near the core out past the crust, glow flowing outward
-            const seams = 2 + (v % 2);
-            for (let sI = 0; sI < seams; sI++) {
-                let a = rnd() * 6.28, x = 9 + Math.cos(a), y = 9 + Math.sin(a);
-                const len = R(a) + 0.5, steps = Math.ceil(len);
-                for (let k = 0; k < steps; k++) {
-                    a += (rnd() - 0.5) * 0.9;
-                    const nx = x + Math.cos(a), ny = y + Math.sin(a);
-                    m.line(x + 0.6, y + 0.6, nx + 0.6, ny + 0.6, 'r');   // the seam's glowing lip
-                    m.line(x, y, nx, ny, (k + f) % 4 === 0 ? 'y' : 'o');
-                    x = nx; y = ny;
-                }
-                // the ooze: a blob of magma swelling out of the seam's end, then sagging back
-                const sw = [0.8, 1.3, 1.7, 1.2][f];
-                m.disc(x + 0.5, y + 0.5, sw, 'o'); m.set(x, y, 'y');
-            }
-            m.disc(9, 9, 2.2, 'o'); m.disc(9, 9, 1.4, 'y'); m.set(9, 9, 'w');
-            for (let i = 0; i < 6; i++) { const th = 3.4 + i * 0.22, r = R(th) - 0.8; m.set(9 + Math.cos(th) * r, 9 + Math.sin(th) * r, 'h'); }   // a lit edge on the crust
-        }, 4);
-    }
     static MAGMA_VARIANTS = 4;
     static SURGE_MIN_HEAT = 18;   // Magma Surge needs at least this much heat (the staff's tier 2)
-
-    // Orb Emitter's orb: a caged plasma globe (24px, 8 frames). Dark glass, a hot core whose
-    // tendrils writhe out to touch the glass, and a brass cage turning round it in 3D.
-    static orbEmitterKey(scene) {
-        const key = 'wpn_tesla_orb';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 24, { k: '#120e1c', n: '#161d3a', m: '#26386e', c: '#5ad8ff', C: '#c8f8ff', y: '#ffe04a', Y: '#fff6b0', w: '#ffffff', b: '#5a4020', B: '#e8b44a', h: '#fff0b0', g: '#fffbe0' }, (m, f) => {
-            const O = 12, R = 8.4, tilt = 0.45, spin = f / 8 * Math.PI / 2;   // the cage turns a quarter (its symmetry) per loop
-            // a point on the sphere (latitude t, longitude p) seen from a little above: [x, y, front]
-            const at = (t, p, r) => {
-                const x = r * Math.cos(t) * Math.sin(p), y = r * Math.sin(t), z = r * Math.cos(t) * Math.cos(p);
-                return [O + x, O + y * Math.cos(tilt) - z * Math.sin(tilt), y * Math.sin(tilt) + z * Math.cos(tilt) > 0];
-            };
-            const cage = front => {
-                for (let k = 0; k < 120; k++) {
-                    const s = k / 120 * Math.PI * 2;
-                    for (const [x, y, fr] of [at(0, s, R + 0.9), at(s, spin, R + 0.9), at(s, spin + Math.PI / 2, R + 0.9)])
-                        if (fr === front) m.set(x, y, front ? (x < O - 2 && y < O ? 'h' : 'B') : 'b');
-                }
-            };
-            m.disc(O, O, R, 'n'); m.disc(O - 1.6, O - 1.8, R - 2.6, 'm');   // the glass, lit from the top left
-            for (let i = 0; i < 4; i++) {                                     // tendrils, touching the glass where they end
-                const a = i * Math.PI / 2 + f * 0.4 + 0.5 * Math.sin(f * 1.3 + i * 2);
-                let x = O + Math.cos(a) * 2, y = O + Math.sin(a) * 2;
-                for (let st = 0; st < 4; st++) {
-                    const r = 2 + (R - 2.8) * (st + 1) / 4, b = a + 0.45 * Math.sin(f * 2.1 + i * 3 + st * 1.9);
-                    const nx = O + Math.cos(b) * r, ny = O + Math.sin(b) * r;
-                    m.line(x, y, nx, ny, st < 2 ? 'C' : 'c'); x = nx; y = ny;
-                }
-                m.disc(x + 0.5, y + 0.5, 1.1, 'C'); m.set(x, y, 'w');
-            }
-            const pr = [2.6, 2.9, 3.2, 2.9][f % 4];                           // the core breathes
-            m.disc(O, O, pr, 'y'); m.disc(O, O, pr - 1, 'Y'); m.rect(O - 1, O - 1, 2, 2, 'w');
-            cage(true);
-            for (const t of [-Math.PI / 2, Math.PI / 2]) { const [x, y] = at(t, 0, R + 1.4); m.rect(x - 1, y - 1, 3, 2, 'B'); m.set(x, y - 1, 'h'); }   // the pole caps
-            m.set(O - 4, O - 5, 'w'); m.set(O - 5, O - 4, 'w'); m.set(O - 3, O - 5, 'C');   // a glint on the glass
-            if (f % 3 === 0) { const a = f * 0.8; m.set(O + Math.cos(a) * 11, O + Math.sin(a) * 11, 'g'); }
-        }, 8);
-    }
-    // Ball Lightning: a roiling plasma ball (32px, 8 frames). A rim that won't hold still, bright
-    // cells rolling over it, a white-hot core, and bolts leaping off the edge.
-    static ballLightningKey(scene) {
-        const key = 'wpn_ball_lightning';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 32, { k: '#0a0a24', v: '#3b2c9a', b: '#3d7bff', c: '#5ae6ff', C: '#c8fbff', w: '#ffffff', y: '#fff08a', g: '#e8fbff' }, (m, f) => {
-            const O = 16, ph = f / 8 * Math.PI * 2;
-            const R = th => 10 + 0.9 * Math.sin(3 * th + ph) + 0.6 * Math.sin(5 * th - 2 * ph) + 0.4 * Math.sin(7 * th + 3 * ph);
-            const shell = (k, c) => { const pts = []; for (let i = 0; i < 32; i++) { const th = i / 32 * Math.PI * 2; pts.push([O + Math.cos(th) * R(th) * k, O + Math.sin(th) * R(th) * k]); } m.poly(pts, c); };
-            shell(1, 'v'); shell(0.84, 'b'); shell(0.64, 'c');
-            for (let i = 0; i < 12; i++) { const th = 3.5 + i * 0.13, r = R(th) * 0.84 - 0.6; m.set(O + Math.cos(th) * r, O + Math.sin(th) * r, 'c'); }   // lit from the top left
-            for (let i = 0; i < 5; i++) {                                     // convection: bright cells rolling over the surface
-                const a = i * 1.2566 + ph * (i % 2 ? 1 : -0.7), d = 4.5 + 1.5 * Math.sin(ph * 2 + i);
-                m.disc(O + Math.cos(a) * d, O + Math.sin(a) * d, 1.6, 'C');
-            }
-            for (let i = 0; i < 3; i++) {                                     // and dark veins between them
-                let a = i * 2.09 + ph * 0.5, x = O + Math.cos(a) * 3, y = O + Math.sin(a) * 3;
-                for (let st = 0; st < 3; st++) { a += Math.sin(ph * 3 + i + st) * 0.8; const nx = x + Math.cos(a) * 2.2, ny = y + Math.sin(a) * 2.2; m.line(x, y, nx, ny, 'b'); x = nx; y = ny; }
-            }
-            const cr = 2.6 + 0.6 * Math.sin(ph * 2);
-            m.disc(O, O, cr + 1.3, 'y'); m.disc(O, O, cr, 'w');
-            for (let i = 0; i < 3; i++) {                                     // bolts off the rim ('g': no outline, so they stay thin)
-                const a = ((f * 5 + i * 11) % 16) / 16 * Math.PI * 2;
-                let r = R(a) - 1, x = O + Math.cos(a) * r, y = O + Math.sin(a) * r;
-                for (let st = 0; st < 3; st++) { const b = a + ((f * 7 + i * 3 + st * 5) % 5 - 2) * 0.22; r += 1.8; const nx = O + Math.cos(b) * r, ny = O + Math.sin(b) * r; m.line(x, y, nx, ny, 'g'); x = nx; y = ny; }
-            }
-        }, 8);
-    }
-    // The amp mark the orb leaves: a little bolt in a ring.
-    static superconductKey(scene) {
-        const key = 'wpn_superconduct';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 11, { y: '#ffe04a', w: '#fff8c0', c: '#aef4ff' }, (m) => {
-            m.ring(5.5, 5.5, 5.4, 1, 'c');
-            m.poly([[6, 1.5], [3, 6], [5.2, 6], [4.4, 9.5], [8, 4.6], [5.8, 4.6], [6.8, 1.5]], 'y');
-            m.set(5, 4, 'w'); m.set(5, 6, 'w');
-        });
-    }
 
     fireEquippedWeapon(targetX, targetY) {
         if (this.fractureCore?.state === 'rhythm') return;   // LevelManager: the Fracture Core's rhythm has the mouse
@@ -180,18 +66,22 @@ class WeaponSystem {
             case 'flame_sword':     this.flameSwordAttack(targetX, targetY); break;
             case 'magma_staff':     this.magmaStaffAttack(targetX, targetY); break;
             case 'ignition':        this.kindlingBrandAttack(targetX, targetY); break;
+            case 'ember_scythe':    Scythe.attack(this, targetX, targetY); break;
             case 'ice_fists':       this.iceFistsAttack(targetX, targetY); break;
             case 'icicle_cannon':   this.icicleStaffAttack(targetX, targetY); break;
-            case 'fractal_shard':   this.fractalShardAttack(targetX, targetY); break;
+            case 'fractal_shard':   Fractal.attack(this, targetX, targetY); break;
+            case 'rimeguard':       Rimeguard.attack(this, targetX, targetY); break;
+            case 'boreal_trident':  Trident.attack(this, targetX, targetY); break;
             case 'lightning_fists': this.lightningFistsAttack(targetX, targetY); break;
             case 'orb_emitter':     this.orbEmitterAttack(targetX, targetY); break;
             case 'ball_lightning': this.ballLightningAttack(targetX, targetY); break;
             case 'conductor':      this.conductorAttack(targetX, targetY); break;
+            case 'thunder_glaive': Glaive.attack(this, targetX, targetY); break;
             // Unreachable in the overworld -- no shop card, no equip path. Kept because
             // TowerDefenseScene sets this id and routes its Wrench upgrade tree through it.
             case 'engineering_degree': this.engineeringDegreeAttack(targetX, targetY); break;
-            // Cosmic.js casts all five (each one a boon); the old two stay for a scene without it.
-            case 'cosmic_fists': case 'barrier_staff': case 'astrolabe': case 'singularity_staff': case 'void_blade':
+            // Cosmic.js casts all six (each one a boon); the old two stay for a scene without it.
+            case 'cosmic_fists': case 'barrier_staff': case 'astrolabe': case 'singularity_staff': case 'void_blade': case 'pendulum':
                 if (this._csCast) { this._csCast?.(weapon, targetX, targetY); break; }
                 if (weapon === 'singularity_staff') this.singularityStaffFire(targetX, targetY);
                 else this.cosmicFistsAttack(targetX, targetY);
@@ -242,13 +132,8 @@ class WeaponSystem {
             const px = tile.x * this.TILE_SIZE + this.TILE_SIZE / 2;
             const py = tile.y * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-            // Small swipe visual on the tile itself
-            const swipeGfx = this.add.graphics().setDepth(3);
-            swipeGfx.x = px;
-            swipeGfx.y = py;
-            swipeGfx.fillStyle(0xff4400, 0.7);
-            swipeGfx.fillCircle(0, 0, this.TILE_SIZE * 0.4);
-            this.tweens.add({ targets: swipeGfx, alpha: 0, scaleX: 1.3, scaleY: 1.3, duration: 180, onComplete: () => swipeGfx.destroy() });
+            // the fist's flare on the tile, thrown the way you punched
+            WeaponSystem.firePunch(this, px, py, facingX, facingY);
 
             // Leave a single lava tile (spawn ignition trail directly, no 3x3 spread)
             this.spawnIgnitionTrail(px, py);
@@ -307,19 +192,8 @@ class WeaponSystem {
         const px = tile.x * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = tile.y * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // Ice tile visual — full tile blue flash, fades out (no persistent tile)
-        const iceFlash = this.add.graphics().setDepth(1.5);
-        iceFlash.fillStyle(0x44aaff, 0.7);
-        iceFlash.fillRect(
-            tile.x * this.TILE_SIZE, tile.y * this.TILE_SIZE,
-            this.TILE_SIZE, this.TILE_SIZE
-        );
-        iceFlash.fillStyle(0xccffff, 0.45);
-        iceFlash.fillRect(
-            tile.x * this.TILE_SIZE + 3, tile.y * this.TILE_SIZE + 3,
-            this.TILE_SIZE - 6, this.TILE_SIZE - 6
-        );
-        this.tweens.add({ targets: iceFlash, alpha: 0, duration: 300, onComplete: () => iceFlash.destroy() });
+        // the fist's frost on the tile, sprayed the way you punched
+        WeaponSystem.iceSlam(this, px, py, facingX, facingY);
 
         for (const enemy of [...this.enemies]) {
             if (this._phasedOut?.(enemy)) continue;
@@ -363,23 +237,11 @@ class WeaponSystem {
         const hitPx = tile.x * this.TILE_SIZE + this.TILE_SIZE / 2;
         const hitPy = tile.y * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // Yellow tile flash
-        const flash = this.add.graphics().setDepth(1.5);
-        flash.fillStyle(0xffff00, 0.55);
-        flash.fillRect(tile.x * this.TILE_SIZE, tile.y * this.TILE_SIZE, this.TILE_SIZE, this.TILE_SIZE);
-        this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
-
-        // Spark burst
-        for (let i = 0; i < 4; i++) {
-            const a = (Math.PI * 2 / 4) * i;
-            const spark = this.add.graphics().setDepth(2);
-            spark.lineStyle(1.5, 0xffff88, 0.9);
-            spark.beginPath();
-            spark.moveTo(hitPx, hitPy);
-            spark.lineTo(hitPx + Math.cos(a) * (6 + Math.random() * 4), hitPy + Math.sin(a) * (6 + Math.random() * 4));
-            spark.strokePath();
-            this.tweens.add({ targets: spark, alpha: 0, duration: 150, onComplete: () => spark.destroy() });
-        }
+        // the punch lands: a strike flaring off the knuckles, crackles thrown out the way it went, sparks
+        WeaponSystem.zapFlare(this, hitPx - facingX * 4, hitPy - facingY * 4, 'y', 1.7);
+        WeaponSystem.zapGlow(this, hitPx, hitPy, 0.32, 0xffd23a, 0.5, 160);
+        for (const s of [-1, 1]) WeaponSystem.bolt(this, hitPx, hitPy, hitPx + (facingX * 14 - facingY * s * 9), hitPy + (facingY * 14 + facingX * s * 9), 'y', { life: 150, thin: true, br: 0, glow: false });
+        WeaponSystem.zapSparks(this, 'y').emitParticleAt(hitPx, hitPy, 6);
 
         // WET BONUS. Standing in water makes an enemy take more from lightning -- but it
         // does NOT grant extra chain targets. Those are two different levers and the chain
@@ -453,7 +315,10 @@ class WeaponSystem {
             .slice(0, MAX_CHAINS);
 
         for (const { enemy: chainEnemy } of candidates) {
-            this.drawLightningBolt({ sprite: { x: hitPx, y: hitPy } }, chainEnemy);
+            Sfx.play(this, 'zap');   // the chain: a bolt jumping on to it, flaring where it lands
+            WeaponSystem.bolt(this, hitPx, hitPy, chainEnemy.sprite.x, chainEnemy.sprite.y + 4, 'y', { life: 200, br: 1 });
+            WeaponSystem.zapFlare(this, chainEnemy.sprite.x, chainEnemy.sprite.y + 4, 'y', 1.2);
+            WeaponSystem.zapSparks(this, 'y').emitParticleAt(chainEnemy.sprite.x, chainEnemy.sprite.y + 4, 3);
             const _cWet = (typeof this.isWaterAt === 'function' && this.isWaterAt(chainEnemy.x, chainEnemy.y));
             this.damageEnemy(chainEnemy, chainDmg * (_cWet ? WET_BONUS : 1));
             if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit * 0.5); // chain hits give half charge
@@ -1245,36 +1110,105 @@ class WeaponSystem {
         return pts;
     }
 
-    // A real FORK, not a bent line. The trunk runs to the target and dead-end BRANCHES split
-    // off it and fizzle out into empty space, recursing one level so branches have branches.
-    //
-    // This is the difference that matters visually: a single jagged polyline reads as a bent
-    // WIRE no matter how hard you jitter it, because real lightning is recognised by its
-    // branching, not by its waviness. The branches deliberately hit nothing -- they are what
-    // the discharge looks like, not what it does.
-    _strokeFork(g, fromX, fromY, toX, toY, colour, alpha, depth = 2) {
-        const scale = depth / 2;
-        const pts = this._arcPath(fromX, fromY, toX, toY, 7, 0.22);
-        this._strokeArc(g, pts, 6.0 * scale, 0xaaffff, alpha * 0.22);   // glow
-        this._strokeArc(g, pts, 2.6 * scale, colour,   alpha * 0.85);   // body
-        this._strokeArc(g, pts, 1.1 * scale, 0xffffff, alpha);          // core
-        if (depth <= 0) return pts;
+    // A real FORK, not a bent line: the trunk runs to the target and dead-end branches split off it and fizzle out
+    // (real lightning is recognised by its branching, not its waviness). Laid from the hand-drawn pieces
+    // (WeaponSystem.bolt); g only says how deep it sits. depth 2: a full bolt and two forks, 1: a thin one and a fork.
+    // life 0: this frame only (what's redrawn every frame).
+    _strokeFork(g, fromX, fromY, toX, toY, colour, alpha, depth = 2, life = 170) {
+        const pal = colour === 0xffffff ? 'w' : colour === 0xff9a3a ? 'o' : (colour & 0xff) > 0xc0 ? 'c' : 'y';
+        return WeaponSystem.bolt(this, fromX, fromY, toX, toY, pal, { life, a: alpha, d: g?.depth ?? 4.2, thin: depth < 2, br: depth });
+    }
 
-        const dx = toX - fromX, dy = toY - fromY;
-        const len = Math.hypot(dx, dy) || 1;
-        const base = Math.atan2(dy, dx);
-        const branches = 1 + Math.floor(Math.random() * 2);
-        for (let b = 0; b < branches; b++) {
-            const at = 1 + Math.floor(Math.random() * (pts.length - 2));
-            const root = pts[at];
-            const side = Math.random() < 0.5 ? -1 : 1;
-            const ang = base + side * (0.5 + Math.random() * 0.75);
-            const blen = len * (0.22 + Math.random() * 0.30);
-            this._strokeFork(g, root.x, root.y,
-                             root.x + Math.cos(ang) * blen, root.y + Math.sin(ang) * blen,
-                             colour, alpha * 0.55, depth - 1);
+    // ── LIGHTNING'S PIXELS (assets/art/fx_storm, typed by hand) ──────────────
+    // A pool of images for the pieces lightning is laid from, each shown for its life in ms (0: this frame only, for
+    // what's redrawn every frame), holding a moment, then flickering out; lag holds it back (a strike racing out
+    // along its bolt). One pool per depth, so nothing is re-sorted. Its clock is the loop's, so what's drawn while the scene
+    // clock is stopped (Fork's stopped time, a boss's entrance) still plays out; it sweeps before anything draws in a frame.
+    static zap(S, frame, x, y, life = 0, a = 1, d = 4.2, s = 1.5, flip = false, add = true, lag = 0, key = 'fx_storm') {
+        let P = S._zapPool;
+        if (!P) {
+            P = S._zapPool = { free: {}, live: [] };
+            const tick = () => {
+                const now = S.game.loop.time, odd = S.game.loop.frame & 1, L = P.live;
+                for (let i = L.length - 1; i >= 0; i--) {
+                    const q = L[i], age = now - q._t0;
+                    if (age >= q._life || !q.active) { if (q.active) { q.setVisible(false); (P.free[q.depth] ||= []).push(q); } L[i] = L[L.length - 1]; L.pop(); continue; }
+                    if (age < 0) continue;
+                    const k = age / q._life;
+                    q.setVisible(true).setAlpha(q._a * (k < 0.45 ? 1 : (1 - k) / 0.55 * (odd ? 0.55 : 1)));
+                }
+            };
+            S.events.on('preupdate', tick);
+            S.events.once('shutdown', () => { S.events.off('preupdate', tick); S._zapPool = null; });
         }
-        return pts;
+        const q = P.free[d]?.pop() || S.add.image(0, 0, key, frame).setDepth(d);
+        if (q.texture.key !== key) q.setTexture(key, frame); else if (q.frame.name !== frame) q.setFrame(frame);
+        q.setPosition(x, y).setScale(s).setFlip(flip, flip).setBlendMode(add ? 1 : 0).setAlpha(a).setVisible(lag <= 0).setTint(0xffffff);
+        q._t0 = S.game.loop.time + lag; q._life = life; q._a = a;
+        P.live.push(q);
+        return q;
+    }
+    // The art's own dice (a bolt's shape, a wire's crackle), so drawing lightning doesn't use up the game's (Math.random)
+    static vr() { let t = (WeaponSystem._vrS = (WeaponSystem._vrS + 0x6D2B79F5) | 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+    static _vrS = 1;
+    // A soft light (vfx_glow) for life, as zap
+    static zapGlow(S, x, y, s, col, a, life = 0, d = 4.15, lag = 0) { return WeaponSystem.zap(S, null, x, y, life, a, d, s, false, true, lag, 'vfx_glow').setTint(col); }
+    static ZAP_N = { b: [4, 3], s: [2, 2], t: [3, 2], u: [1, 1] };   // how many of each piece are drawn: [east, north-east]
+    static ZAP_DIR = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    static ZAP_COL = { y: 0xffd23a, c: 0x5ac8ff, o: 0xff9030, w: 0xb8dcff };
+    // A bolt from (x0, y0) to (x1, y1), laid piece by piece, each piece one of the eight ways (never turned): it heads
+    // for its mark veering off it and back, short pieces landing it, and br forks of twig fizzling off it.
+    // pal: y gold, c blue, o orange, w white. thin: all twig. One that lives (life > 0) strikes out from its start.
+    // key: the pieces' atlas (fx_fork: the lightning ult's heavier ones, gold and white only).
+    static bolt(S, x0, y0, x1, y1, pal = 'y', { life = 0, a = 1, d = 4.2, thin = false, br = 1, lag = 0, glow = true, key = 'fx_storm' } = {}) {
+        const K = 1.5, N = WeaponSystem.ZAP_N, D = WeaponSystem.ZAP_DIR, O = ['e', 'se', 's', 'ne'], col = WeaponSystem.ZAP_COL[pal];
+        const step = life > 0 ? 7 : 0, joints = [];
+        let x = Math.round(x0 / K) * K, y = Math.round(y0 / K) * K, side = WeaponSystem.vr() < 0.5 ? 1 : -1;
+        const lay = (k, full, twig, at, alpha) => {   // one piece from (x, y) the k-th way; returns its far end
+            const kind = twig ? (full ? 't' : 'u') : (full ? 'b' : 's'), o = O[k % 4], span = (full ? (k & 1 ? 9 : 11) : 5) * K;
+            const nx = x + D[k][0] * span, ny = y + D[k][1] * span, v = Math.floor(WeaponSystem.vr() * N[kind][k & 1]);
+            WeaponSystem.zap(S, `${kind}_${o}${v}_${pal}`, (x + nx) / 2, (y + ny) / 2, life, alpha, d, K, WeaponSystem.vr() < 0.5, true, at, key);
+            return [nx, ny];
+        };
+        for (let n = 0, max = 6 + Math.hypot(x1 - x0, y1 - y0) / 6; n < max; n++) {
+            const dx = x1 - x, dy = y1 - y, dd = Math.hypot(dx, dy);
+            if (dd < 4 * K) break;
+            let k = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8;
+            if (dd > 18 * K && WeaponSystem.vr() < 0.5) { k = (k + side + 8) % 8; side = -side; }   // off its line and back: the zigzag
+            const at = lag + n * step;
+            if (glow && !(n & 1)) WeaponSystem.zapGlow(S, x, y, thin ? 0.12 : 0.2, col, 0.16 * a, life, d - 0.05, at);
+            [x, y] = lay(k, dd > (k & 1 ? 12 : 10) * K, thin, at, a);
+            joints.push([x, y, k, at]);
+        }
+        for (let b = 0; b < br && joints.length > 1; b++) {   // the forks: off a joint, a turn of 45 or 90 degrees from the trunk, fizzling out
+            const j = joints[Math.floor(WeaponSystem.vr() * (joints.length - 1))];
+            const sx = x, sy = y; [x, y] = j;
+            let k = (j[2] + (WeaponSystem.vr() < 0.5 ? 1 : -1) * (WeaponSystem.vr() < 0.6 ? 1 : 2) + 8) % 8;
+            for (let m = 0, len = 1 + Math.floor(WeaponSystem.vr() * 3); m < len; m++) {
+                [x, y] = lay(k, m < len - 1 || WeaponSystem.vr() < 0.5, true, j[3] + (m + 1) * step, a * (0.75 - m * 0.15));
+                if (WeaponSystem.vr() < 0.4) k = (k + (WeaponSystem.vr() < 0.5 ? 1 : 7)) % 8;
+            }
+            x = sx; y = sy;
+        }
+        return { x, y };
+    }
+    // A strike's flare at (x, y): the hand-drawn burst, s times its size, mirrored at random so no two look alike
+    static zapFlare(S, x, y, pal = 'y', s = 1.5, d = 4.4) {
+        const key = 'zap_' + pal;
+        if (!S.anims.exists(key)) S.anims.create({ key, frames: [0, 1, 2, 3].map(i => ({ key: 'fx_storm', frame: `zap${i}_${pal}` })), frameRate: 26 });
+        const f = S.add.sprite(x, y, 'fx_storm', `zap0_${pal}`).setScale(s).setBlendMode(Phaser.BlendModes.ADD).setDepth(d).setFlip(WeaponSystem.vr() < 0.5, WeaponSystem.vr() < 0.5).play(key);
+        f.once('animationcomplete', () => f.destroy());
+        return f;
+    }
+    // Sparks (the hand-drawn ones) thrown off a strike, white-hot cooling through the bolt's colour, falling: the
+    // scene's emitter for that colour, made the first time
+    static zapSparks(S, pal = 'y') {
+        const F = S._zapSpk ||= {};
+        if (F[pal]?.active) return F[pal];
+        const C = { y: [0xffffff, 0xfff6b0, 0xffd23a, 0xa86a10], c: [0xffffff, 0xd4f6ff, 0x5ac8ff, 0x1a5090], o: [0xffffff, 0xffe0a8, 0xff9030, 0x8a3010], w: [0xffffff, 0xeef8ff, 0xb8dcff, 0x5a7ab0] }[pal];
+        return (F[pal] = S.add.particles(0, 0, 'fx_storm', { frame: [0, 1, 2, 3, 4, 5, 6, 7].map(i => 'spk_' + i), emitting: false, lifespan: { min: 140, max: 420 },
+            speed: { min: 40, max: 170 }, angle: { min: 0, max: 360 }, gravityY: 320, scale: { start: 1.6, end: 1.1 }, alpha: { start: 1, end: 0 },
+            color: C, colorEase: 'quad.out', blendMode: 'ADD', maxParticles: 500 }).setDepth(4.3));
     }
 
     _strokeArc(g, pts, width, colour, alpha) {
@@ -1451,7 +1385,7 @@ class WeaponSystem {
         const a = Math.atan2(e.sprite.y - py, e.sprite.x - px), fl = this.add.image(px, py, 'vfx_glow').setTint(C.HOT).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.3).setScale(0.15);   // the staff kicks: a flare, a spray of sparks down the line
         this.tweens.add({ targets: fl, scale: 0.55, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
         for (let k = 0; k < 8; k++) this._condSpark(px + Math.cos(a) * 8, py + Math.sin(a) * 8, 1);
-        VisualFX.ripple(this, px, py, 3, 16, C.COL, { duration: 160, alpha: 0.9 });
+        WeaponSystem.zapFlare(this, px, py, 'y', 1.1, 4.3);
     }
     // a fresh throw from (x, y) at enemy e: where the clamp is, which way it swings, the path it lays
     _condThrow(x, y, e) {
@@ -1509,7 +1443,7 @@ class WeaponSystem {
         }
         const w = this._condHover(), hint = this._condHint;
         if (!w) { hint?.setVisible(false); return; }
-        if (w.pts) { gl.lineStyle(3, 0xffffff, 0.55 + 0.2 * Math.sin(time / 90)); gl.strokePoints(w.pts, false); }
+        if (w.pts) WeaponSystem.cable(this, w.pts, 'w', 1.6, 0.55 + 0.2 * Math.sin(time / 90), 1.5, false);   // lit white
         const x = w.e.sprite.x, y = w.e.sprite.y - 4;
         gl.lineStyle(1.5, 0xffffff, 0.9); gl.strokeCircle(x, y, 13 + Math.sin(time / 120));
         const h = hint?.active ? hint : (this._condHint = this.add.text(0, 0, '', { fontSize: '9px', fontFamily: 'monospace', fontStyle: 'bold', color: '#fff8d8', stroke: '#05060a', strokeThickness: 3, resolution: 2 }).setOrigin(0.5, 0).setDepth(6));
@@ -1525,8 +1459,8 @@ class WeaponSystem {
         if (w.mode === 'cap') { w.store = 0; w.charge = 0; }
         w.mode = next;
         const x = w.e.sprite.x, y = w.e.sprite.y - 4, col = C.MCOL[next];
-        VisualFX.ripple(this, x, y, 4, 24, col, { duration: 220 });
-        this._condSpark(x, y, 8);
+        WeaponSystem.zapFlare(this, x, y, WeaponSystem.condPal(col), 1.6);
+        WeaponSystem.zapSparks(this, WeaponSystem.condPal(col)).emitParticleAt(x, y, 8);
         this.showStatusText(x, y - 26, { live: 'LIVE WIRE', ins: 'INSULATOR', cap: 'CAPACITOR' }[next], UIKit._hex(col));
         Sfx.play(this, 'clink');
     }
@@ -1538,12 +1472,13 @@ class WeaponSystem {
         if (w.mode === 'live') {
             const secs = Math.min(4, (this.time.now - (w.bite || this.time.now)) / 1000);
             this._condHit(e, (C.SNIP_LIVE + C.SNIP_LIVE_S * secs) * (w.closed ? w.hot : 1) * web.dmg * this.damageScaling);
-            if (w.pts) { const g = this.add.graphics().setDepth(4.3).setBlendMode(Phaser.BlendModes.ADD); g.lineStyle(4, 0xffffff, 1).strokePoints(w.pts, false); this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() }); }
+            if (w.pts) WeaponSystem.cable(this, w.pts, 'w', 2.5, 1, 4.3, false, 200);   // it cracks white all down the line
             this._vfxFlash?.(e.sprite.x, e.sprite.y, 60, C.COL, 220, 0.9);
             Sfx.play(this, 'zap'); Sfx.play(this, 'swing');
         } else if (w.mode === 'ins') {
             for (const o of this._condTargets()) if (o.sprite?.active && o.health > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= C.SNIP_R) this._condDaze(o, C.SNIP_DAZE * web.daze);
-            VisualFX.ripple(this, x, y, 6, C.SNIP_R * this.TILE_SIZE, C.MCOL.ins, { duration: 360 });
+            WeaponSystem.zapFlare(this, x, y, 'c', 2.6);
+            WeaponSystem.zapSparks(this, 'c').emitParticleAt(x, y, 16);
             Sfx.play(this, 'block');
         } else this._condCapBurst(w);
         w.on = false;
@@ -1564,112 +1499,90 @@ class WeaponSystem {
         (this._condPulses ||= []).push({ route, i: 0, d: 0, hit: new Set(), trail: [] });
         const { x, y } = this._condTip();
         this._condSpark(x, y, 10);
-        VisualFX.ripple(this, x, y, 4, 22, this._conductorCfg().HOT, { duration: 200 });
+        WeaponSystem.zapFlare(this, x, y, 'y', 1.3, 4.3);
         Sfx.play(this, 'zap');
     }
-    // sparks from the Conductor's own emitter
-    _condSpark(x, y, n) {
-        if (!this._condSparks?.active) this._condSparks = this.add.particles(0, 0, 'vfx_dot', {
-            emitting: false, lifespan: { min: 260, max: 560 }, speed: { min: 50, max: 170 }, gravityY: 320,
-            scale: { start: 0.75, end: 0 }, alpha: { start: 1, end: 0.2 }, tint: [0xffe14a, 0xfff8c0, 0xffffff], blendMode: 'ADD', maxParticles: 260,
-        }).setDepth(4.2);
-        this._condSparks.emitParticleAt(x, y, n);
-    }
+    // sparks (the hand-drawn ones, gold)
+    _condSpark(x, y, n) { WeaponSystem.zapSparks(this, 'y').emitParticleAt(x, y, n); }
     // a line let go: it whips down and fades
     _condSnap(w) {
         if (!w?.e?.sprite) return;
         const C = this._conductorCfg(), g = this.add.graphics().setDepth(1.5), x = w.e.sprite.x, y = w.e.sprite.y;
-        g.setBlendMode(Phaser.BlendModes.ADD); this._strokeFork(g, x, y - 4, x + (Math.random() - 0.5) * 30, y + 14, C.HOT, 0.9, 1);
+        this._strokeFork(g, x, y - 4, x + (Math.random() - 0.5) * 30, y + 14, C.HOT, 0.9, 1, 240);
         this.tweens.add({ targets: g, alpha: 0, duration: 240, onComplete: () => g.destroy() });
         this._condSpark(x, y - 4, 6);
     }
-    // a gold cable: a dark edge, two gold strands twisted round each other catching the light, and the current
-    // riding it in the clamp's colour (a glow, a flickering thread, brighter with k). g draws the copper, gl (additive)
-    // the current; pass the same graphics for both when there's only one. `fade` thins all of it out (a tap in a ring).
+    // a gold cable (WeaponSystem.cable) with the current riding it in the clamp's colour, brighter with k; `fade` thins
+    // it all out (a tap in a ring)
     _condCable(g, gl, pts, time, seed, k = 1, col, fade = 1) {
-        const C = this._conductorCfg(), c = col ?? C.COL, n = pts.length;
-        const off = (s, amp, f, ph) => pts.map((p, i) => {
-            if (!i || i === n - 1) return p;
-            const q = pts[i + 1], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1, o = s * amp * Math.sin(i * f + ph);
-            return { x: p.x - dy / L * o, y: p.y + dx / L * o };
-        });
-        g.lineStyle(5, 0x2e2004, fade); g.strokePoints(pts, false);
-        g.lineStyle(3.4, 0xb08a1c, fade); g.strokePoints(pts, false);
-        g.lineStyle(1.3, 0x7a5a0e, fade); g.strokePoints(off(1, 1.1, 2.2, seed), false);   // the twist: a dark strand and a bright one
-        g.lineStyle(1.3, 0xffd84a, fade); g.strokePoints(off(-1, 1.1, 2.2, seed), false);
-        for (let i = 1; i < n - 1; i += 2) { const p = pts[i], q = pts[i + 1]; g.lineStyle(1, 0xfff4c0, 0.85 * fade); g.lineBetween(p.x, p.y - 1.2, (p.x + q.x) / 2, (p.y + q.y) / 2 - 1.2); }   // light along its top
-        gl.lineStyle(9, c, 0.12 * k * fade); gl.strokePoints(pts, false);
-        const thread = pts.map((p, i) => !i || i === n - 1 ? p : { x: p.x + (Math.random() - 0.5) * 4, y: p.y + (Math.random() - 0.5) * 4 });
-        gl.lineStyle(1.2, c, Math.min(1, 0.75 * k) * fade); gl.strokePoints(thread, false);
+        WeaponSystem.cable(this, pts, WeaponSystem.condPal(col), k, fade);
     }
-    // The clamps' icons (pixel art, over the enemy's health bar and on the meter): a bolt for a live wire, a stack of
-    // ceramic discs for an insulator, a capacitor whose fill shows its charge (frames 0-4, empty to full)
-    static condArt(scene) {
-        const I = ShopScene.icon;
-        const live = I(scene, 'fx_cond_live', 11, { Y: '#ffe14a', y: '#d8a020', W: '#fffbe0' }, m => {
-            m.poly([[7, 0], [2, 6], [5, 6], [3, 11], [9, 4], [6, 4], [8, 0]], 'Y');
-            m.line(6, 1, 4, 5, 'W'); m.set(5, 6, 'y'); m.set(4, 8, 'y');
-        });
-        const ins = I(scene, 'fx_cond_ins', 11, { I: '#9fdcff', i: '#4a8ab8', W: '#e8f8ff', p: '#8a8478' }, m => {
-            m.rect(5, 0, 1, 11, 'p');
-            for (const [y, x0, w] of [[1, 1, 9], [4, 2, 7], [7, 3, 5]]) { m.rect(x0, y, w, 2, 'I'); m.rect(x0, y + 1, w, 1, 'i'); m.rect(x0 + 1, y, 2, 1, 'W'); }
-            m.rect(4, 10, 3, 1, 'p');
-        });
-        const cap = I(scene, 'fx_cond_cap', 11, { b: '#4a2008', o: '#ff9a3a', O: '#fff0c0', g: '#c8c8d0', s: '#ffd8a0' }, (m, f) => {
-            m.rect(4, 0, 1, 2, 'g'); m.rect(6, 0, 1, 2, 'g');   // its legs
-            m.rect(3, 2, 5, 8, 'b');
-            const n = Math.round(f / 4 * 6);   // the charge, rising inside it
-            if (n) { m.rect(4, 9 - n, 3, n, 'o'); m.rect(4, 9 - n, 3, 1, f === 4 ? 'O' : 's'); }
-            m.rect(7, 3, 1, 6, 's');   // its stripe
-        }, 5);
-        return { live, ins, cap };
+    static condPal(col) { return col === 0x7fd0ff ? 'c' : col === 0xff9a3a ? 'o' : col === 0xffffff ? 'w' : 'y'; }
+    // A wire along pts, laid from the hand-drawn pieces snapped to the art's pixels: its dark rim stamped all the way
+    // along, the two twisted gold strands over it, and the current (pal) crackling in it, a pixel every few, more and
+    // brighter with k. rim false: the current alone. For life ms (0: this frame).
+    static cable(S, pts, pal, k = 1, fade = 1, d = 1.5, rim = true, life = 0) {
+        const K = 1.5, at = [];
+        for (let i = 1; i < pts.length; i++) {
+            const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (K * 2)));
+            for (let j = 0; j < n; j++) at.push(Math.round((a.x + (b.x - a.x) * j / n) / K) * K, Math.round((a.y + (b.y - a.y) * j / n) / K) * K);
+        }
+        if (rim) {
+            for (let i = 0; i < at.length; i += 2) WeaponSystem.zap(S, 'cab_o', at[i], at[i + 1], life, fade, d, K, false, false);
+            for (let i = 0; i < at.length; i += 2) WeaponSystem.zap(S, (i >> 2) & 1 ? 'cab_1' : 'cab_0', at[i], at[i + 1], life, fade, d + 0.001, K, false, false);   // (two on, two off: the twist)
+        }
+        if (k > 0) for (let i = 2; i < at.length - 2; i += 2) {
+            if (WeaponSystem.vr() > 0.22 + 0.3 * k) continue;
+            const j = () => (WeaponSystem.vr() < 0.6 ? 0 : WeaponSystem.vr() < 0.5 ? K : -K);
+            WeaponSystem.zap(S, WeaponSystem.vr() < 0.25 * k ? 'pw_' + pal : 'px_' + pal, at[i] + K / 2 + j(), at[i + 1] + K / 2 + j(), life, Math.min(1, 0.55 + 0.3 * k) * fade, d + 0.002, K);
+        }
     }
+    // The clamp (hand-drawn, fx_storm clamp_*) pointing the k-th of eight ways (east first, clockwise): four typed,
+    // the other four those flipped both ways, never turned
+    static clamp(S, x, y, k, d = 1.52, a = 1) {
+        const [f, fl] = [['e', 0], ['se', 0], ['s', 0], ['sw', 0], ['e', 1], ['se', 1], ['s', 1], ['sw', 1]][((k % 8) + 8) % 8];
+        return WeaponSystem.zap(S, 'clamp_' + f, Math.round(x / 1.5) * 1.5, Math.round(y / 1.5) * 1.5, 0, a, d, 1.5, !!fl, false);
+    }
+    static dir8(dx, dy) { return ((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8; }
+    // The clamps' badges (hand-drawn, fx_storm; over the enemy's health bar and on the meter): a bolt for a live wire,
+    // a stack of ceramic discs for an insulator, a capacitor whose fill shows its charge k (empty to full)
+    static condBadge(mode, k = 0) { return mode === 'cap' ? 'ic_cap_' + Math.min(4, Math.floor(k * 5)) : 'ic_' + mode; }
     // a live clamp: current crawling over its enemy, a warm glow on it
     _condLiveDraw(gl, glow, x, y, time) {
         const col = this._conductorCfg().MCOL.live;
         glow(x, y + 2, 0.3, col, 0.28 + 0.08 * Math.sin(time / 45));
         for (let q = 0; q < 2; q++) {   // little arcs jumping over its skin
             const a = time / 90 + q * Math.PI + Math.random() * 0.6, b = a + 0.9 + Math.random() * 0.8;
-            const pts = this._arcPath(x + Math.cos(a) * 11, y + 2 + Math.sin(a) * 7, x + Math.cos(b) * 11, y + 2 + Math.sin(b) * 7, 5, 0.35);
-            this._strokeArc(gl, pts, 3, col, 0.35); this._strokeArc(gl, pts, 1.2, 0xffffff, 0.95);
+            WeaponSystem.bolt(this, x + Math.cos(a) * 11, y + 2 + Math.sin(a) * 7, x + Math.cos(b) * 11, y + 2 + Math.sin(b) * 7, 'y', { thin: q > 0, br: 0, d: 3.9, glow: false });
         }
     }
     // a capacitor clamp: a ring round its enemy filling with its charge, current drawn in to it, brighter as it fills
     _condCapDraw(gl, glow, w, x, y, time) {
         const C = this._conductorCfg(), k = w.charge || 0, col = C.MCOL.cap;
         glow(x, y + 2, 0.2 + 0.25 * k, col, 0.2 + 0.4 * k * (k > 0.8 ? 0.7 + 0.3 * Math.sin(time / 30) : 1));
-        if (k > 0) {
-            const pts = []; for (let i = 0; i <= 24; i++) { const a = -Math.PI / 2 + i / 24 * Math.PI * 2 * k; pts.push({ x: x + Math.cos(a) * 12, y: y + 2 + Math.sin(a) * 9 }); }
-            gl.lineStyle(4, col, 0.4); gl.strokePoints(pts, false); gl.lineStyle(1.5, 0xffffff, 0.95); gl.strokePoints(pts, false);
+        for (let q = 0; q < 2; q++) {   // charge streaming in from round it (its badge shows how full)
+            const a = Math.random() * Math.PI * 2, r = 22 - ((time / 6 + q * 9) % 12);
+            WeaponSystem.bolt(this, x + Math.cos(a) * r, y + 2 + Math.sin(a) * r * 0.7, x + Math.cos(a) * (r - 9), y + 2 + Math.sin(a) * (r - 9) * 0.7, 'o', { thin: true, br: 0, a: 0.5 + 0.5 * k, d: 3.9, glow: false });
         }
-        for (let q = 0; q < 2; q++) {   // charge streaming in from round it
-            const a = Math.random() * Math.PI * 2, r = 20 - ((time / 6 + q * 9) % 12);
-            gl.lineStyle(1.5, col, 0.5 + 0.4 * k).lineBetween(x + Math.cos(a) * r, y + 2 + Math.sin(a) * r * 0.7, x + Math.cos(a) * (r - 4), y + 2 + Math.sin(a) * (r - 4) * 0.7);
-        }
+        if (k > 0.75 && WeaponSystem.vr() < k) { const a = WeaponSystem.vr() * Math.PI * 2; WeaponSystem.bolt(this, x + Math.cos(a) * 12, y + 2 + Math.sin(a) * 8, x - Math.cos(a) * 12, y + 2 - Math.sin(a) * 8, 'o', { br: 0, d: 3.9, glow: false }); }   // near full it crackles right across
     }
     // an insulator clamp: a cool rubbery shell of light round its enemy, a sheen sliding over it
     _condInsDraw(gl, glow, x, y, time) {
         const col = this._conductorCfg().MCOL.ins;
         glow(x, y + 2, 0.32, col, 0.3);
-        gl.lineStyle(3, col, 0.22); gl.strokeEllipse(x, y + 2, 32, 22);
-        gl.lineStyle(1.5, col, 0.55 + 0.2 * Math.sin(time / 120)); gl.strokeEllipse(x, y + 2, 32, 22);
-        const a = time / 400 % (Math.PI * 2), pts = []; for (let i = 0; i <= 6; i++) { const t = a + i * 0.12; pts.push({ x: x + Math.cos(t) * 15, y: y + 2 + Math.sin(t) * 10 }); }
-        gl.lineStyle(2, 0xffffff, 0.75); gl.strokePoints(pts, false);   // the sheen
+        WeaponSystem.zap(this, 'shell_' + (Math.floor(time / 110) & 3), Math.round(x / 1.5) * 1.5, Math.round((y + 2) / 1.5) * 1.5, 0, 0.7 + 0.15 * Math.sin(time / 120), 3.9);   // (hand-drawn, its sheen going round)
     }
     // A capacitor letting go: a white-hot core, two rings, bolts flung out every way and on to what it hits, sparks,
     // a shake as big as the charge was
     _condBurstFx(x, y, hit, e, store) {
         const C = this._conductorCfg(), T = this.TILE_SIZE, col = C.MCOL.cap, ADD = Phaser.BlendModes.ADD;
-        const g = this.add.graphics().setDepth(4.6).setBlendMode(ADD);
-        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + Math.random() * 0.4, r = C.CAP_R * T * (0.55 + Math.random() * 0.35); this._strokeFork(g, x, y, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.75, col, 0.95, 1); }
-        for (const o of hit) if (o !== e) { this._strokeFork(g, x, y, o.sprite.x, o.sprite.y - 4, 0xffffff, 1, 2); this._strokeFork(g, x, y, o.sprite.x, o.sprite.y - 4, col, 0.9, 1); }
-        this.tweens.add({ targets: g, alpha: 0, duration: 260, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
-        const core = this.add.image(x, y, 'vfx_glow').setTint(0xffffff).setBlendMode(ADD).setDepth(4.7).setScale(0.2);
-        this.tweens.add({ targets: core, scale: 1.1, alpha: 0, duration: 260, ease: 'Quad.easeOut', onComplete: () => core.destroy() });
-        VisualFX.ripple(this, x, y, 8, C.CAP_R * T, col, { duration: 340 });
-        VisualFX.ripple(this, x, y, 4, C.CAP_R * T * 0.7, 0xffffff, { duration: 220, alpha: 0.8 });
-        this._vfxFlash?.(x, y, 110, col, 320, 1);
-        this._condSpark(x, y, 30);
+        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + Math.random() * 0.4, r = C.CAP_R * T * (0.55 + Math.random() * 0.35); WeaponSystem.bolt(this, x, y, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.75, 'o', { life: 260, thin: k & 1, br: 1, d: 4.6, glow: !(k & 1) }); }
+        for (const o of hit) if (o !== e) { WeaponSystem.bolt(this, x, y, o.sprite.x, o.sprite.y - 4, 'o', { life: 280, br: 2, d: 4.6 }); WeaponSystem.zapFlare(this, o.sprite.x, o.sprite.y - 4, 'o', 1.3, 4.7); }
+        const core = this.add.image(x, y, 'vfx_glow').setTint(col).setBlendMode(ADD).setDepth(4.7).setScale(0.2).setAlpha(0.7);
+        this.tweens.add({ targets: core, scale: 0.6, alpha: 0, duration: 260, ease: 'Quad.easeOut', onComplete: () => core.destroy() });
+        WeaponSystem.zapFlare(this, x, y, 'o', 2.6, 4.75);
+        this._vfxFlash?.(x, y, 90, col, 300, 0.55);
+        WeaponSystem.zapSparks(this, 'o').emitParticleAt(x, y, 24);
         const big = Math.min(1, store / 30);
         this.cameras.main.shake(90 + 60 * big + 15 * Math.min(4, hit.length), 0.003 + 0.004 * big);
         Sfx.play(this, 'blburst'); Sfx.play(this, 'zap');
@@ -1728,7 +1641,7 @@ class WeaponSystem {
             if (!w.on && w.hx === e.sprite.x && w.hy === e.sprite.y - 4) {   // it bites
                 w.on = true; w.bite = time; w.relax = null;
                 this.cameras.main.shake(50, 0.0015);
-                VisualFX.ripple(this, e.sprite.x, e.sprite.y - 4, 4, 26, C.HOT, { duration: 220 });
+                WeaponSystem.zapFlare(this, e.sprite.x, e.sprite.y - 4, 'y', 1.5);
                 this._condHit(e, C.LATCH_DMG * this.damageScaling);
                 this._condDaze(e, C.LAND_DAZE * this._condWebMul(wires.filter(q => q.on)).daze);
                 if (this._dmgLanded) this.gainUltCharge(this.ultChargePerLightningHit * 0.6, 'lightning');
@@ -1759,7 +1672,7 @@ class WeaponSystem {
         // keeps it for INS_SC after), a capacitor never does, so reactions for your other elements come from building the loop
         for (const w of on) if (w.closed && w.mode !== 'cap' && w.e.health > 0) this._condSC(w.e, w.mode === 'ins' ? C.INS_SC : 700);
         if (on.some(w => w.closed && !w.was)) {   // a loop just closed
-            for (const w of on) if (w.closed && !w.was) { this._condSpark(w.e.sprite.x, w.e.sprite.y - 4, 12); VisualFX.ripple(this, w.e.sprite.x, w.e.sprite.y - 4, 4, 22, 0xffffff, { duration: 220 }); }
+            for (const w of on) if (w.closed && !w.was) { this._condSpark(w.e.sprite.x, w.e.sprite.y - 4, 12); WeaponSystem.zapFlare(this, w.e.sprite.x, w.e.sprite.y - 4, 'w', 1.5); }
             if (!on.some(w => w.was)) this.showStatusText(this.player.x, this.player.y - 30, 'CIRCUIT', '#fff08a');
         }
         const big = Math.max(0, ...rings.map(r => r.length));   // a ring grown: say how big
@@ -1783,14 +1696,14 @@ class WeaponSystem {
             }
             this._condCable(g, gl, pts, time, w.seed, !w.on ? 0.5 : plucked ? 1.8 : w.tap ? 0.25 : w.closed ? 1.5 : 1, C.MCOL[w.mode], w.tap ? 0.32 : 1);   // a tap: still connected, faded see-through (the ring's current runs through the arcs, not along it)
             w.pts = pts;   // (a current rides it: _condPulse)
-            if (w.closed && !w.tap) { gl.lineStyle(2, 0xffffff, 0.55 + 0.25 * Math.sin(time / 70)); gl.strokePoints(pts, false); }   // a ring's legs run white-hot
+            if (w.closed && !w.tap) WeaponSystem.cable(this, pts, 'w', 1.2, 0.55 + 0.25 * Math.sin(time / 70), 1.5, false);   // a ring's legs run white-hot
             if (w.on) {
                 if (!w.tap) for (let q = 0; q < 2; q++) {   // current flowing out along it
                     const t = ((time / 520) + q / 2 + w.seed) % 1, p = pts[Math.floor(t * (pts.length - 1))];
                     glow(p.x, p.y, 0.16, C.COL, 0.9); glow(p.x, p.y, 0.06, 0xffffff, 1);
                 }
-                // the clamp: a ring of current biting into it
-                gl.lineStyle(2, C.HOT, 1); gl.strokeCircle(ex, ey, 5 + Math.sin(time / 50) * 0.8);
+                // the clamp, biting the way the wire comes in, in a glow of current
+                WeaponSystem.clamp(this, ex, ey, WeaponSystem.dir8(ex - pts[13].x, ey - pts[13].y));
                 glow(ex, ey, 0.28 + 0.05 * Math.sin(time / 60), C.COL, 0.55);
                 if (Math.random() < 0.12) this._condSpark(ex, ey, 1);
                 this._condLights.push({ x: ex, y: ey, r: 34, color: C.COL, a: 0.6, g: 0.25 }, { x: pts[8].x, y: pts[8].y, r: 26, color: C.COL, a: 0.35, g: 0.15 });
@@ -1801,26 +1714,24 @@ class WeaponSystem {
                 else this._condLiveDraw(gl, glow, ex, bm, time);
                 if (surge < 1) {   // the bite: a white surge rushing down the line to the clamp
                     const p = pts[Math.floor(Math.min(1, surge * 1.6) * (pts.length - 1))];
-                    gl.lineStyle(5, 0xffffff, 0.8 * (1 - surge)); gl.strokePoints(pts, false);
+                    WeaponSystem.cable(this, pts, 'w', 3, 0.8 * (1 - surge), 1.5, false);
                     glow(p.x, p.y, 0.35, C.HOT, 1); glow(p.x, p.y, 0.12, 0xffffff, 1);
                 }
             } else {   // the clamp in flight: a glowing copper barb, crackling, shedding sparks
                 const a = time / 45;   // the clamp tumbling through the air
-                for (const s of [-1, 1]) { const ba = a + Math.PI + s * 0.6; gl.lineStyle(2.5, C.HOT, 1).lineBetween(hx, hy, hx + Math.cos(ba) * 7, hy + Math.sin(ba) * 7); }
-                g.fillStyle(0xffffff, 1).fillCircle(hx, hy, 2.5);
+                WeaponSystem.clamp(this, hx, hy, Math.floor(time / 45));
                 glow(hx, hy, 0.3, C.COL, 0.8); glow(hx, hy, 0.1, 0xffffff, 1);
-                this._strokeFork(gl, hx, hy, hx + Math.cos(a) * 14 + (Math.random() - 0.5) * 10, hy + Math.sin(a) * 14 + (Math.random() - 0.5) * 10, C.HOT, 0.9, 1);
+                this._strokeFork(gl, hx, hy, hx + Math.cos(a) * 14 + (Math.random() - 0.5) * 10, hy + Math.sin(a) * 14 + (Math.random() - 0.5) * 10, C.HOT, 0.9, 1, 0);
                 this._condSpark(hx, hy, 1);
             }
         }
         if (on.length) glow(sx, sy, 0.2, C.COL, 0.7);
-        const icons = this._condIcons ||= new Map(), art = WeaponSystem.condArt(this);   // each clamp's icon, a badge at the left end of its enemy's health bar (above it, the current's damage numbers buried it)
+        const icons = this._condIcons ||= new Map();   // each clamp's icon, a badge at the left end of its enemy's health bar (above it, the current's damage numbers buried it)
         for (const w of on) {
             if (w.e._big) continue;
             let ic = icons.get(w);
-            if (!ic?.active) icons.set(w, ic = this.add.image(0, 0, art[w.mode], 0).setDepth(4.5));
-            ic.setPosition(w.e.sprite.x - 20, w.e.sprite.y + (w.e._hpBarYOff || 0)).setVisible(w.e.sprite.visible);
-            if (w.mode === 'cap') ic.setFrame(Math.min(4, Math.floor((w.charge || 0) * 5)));
+            if (!ic?.active) icons.set(w, ic = this.add.image(0, 0, 'fx_storm', 'ic_live').setDepth(4.5));
+            ic.setPosition(w.e.sprite.x - 20, w.e.sprite.y + (w.e._hpBarYOff || 0)).setVisible(w.e.sprite.visible).setFrame(WeaponSystem.condBadge(w.mode, w.charge || 0));
         }
         for (const [w, ic] of icons) if (!on.includes(w) || w.e._big) { ic.destroy(); icons.delete(w); }
         for (const m of [...(this._condMisses || [])]) {   // a missed throw: out, slack on the floor, reeled back
@@ -1839,7 +1750,7 @@ class WeaponSystem {
             pts.forEach((p, i) => { p.y += droop * Math.sin(i / 16 * Math.PI) * (age > fly ? 1 : 0.6); });
             this._condCable(g, gl, pts, time, m.seed, 0.35, C.MCOL[m.mode]);
             const hx = pts[16].x, hy = pts[16].y;
-            for (const s of [-1, 1]) { const ba = time / 45 + s * 0.6; g.lineStyle(2, 0xffd84a, 1).lineBetween(hx, hy, hx + Math.cos(ba) * 6, hy + Math.sin(ba) * 6); }   // the clamp, tumbling
+            WeaponSystem.clamp(this, hx, hy, age > fly ? WeaponSystem.dir8(hx - pts[13].x, hy - pts[13].y) : Math.floor(time / 45));   // the clamp, tumbling, then lying where it fell
             if (age > fly && age < fly + 40) this._condSpark(hx, hy, 4);   // it hits the floor
         }
         for (const P of [...(this._condPulses || [])]) {   // currents: a big blob running the circuit
@@ -1852,9 +1763,10 @@ class WeaponSystem {
             let d = Math.min(P.d, L), x = pts[0].x, y = pts[0].y;
             for (let i = 1; i < pts.length; i++) { const sl = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (d <= sl) { const f = d / (sl || 1); x = pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f; y = pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f; break; } d -= sl; x = pts[i].x; y = pts[i].y; }
             P.trail.unshift({ x, y }); if (P.trail.length > 6) P.trail.pop();
-            P.trail.forEach((q, k) => glow(q.x, q.y, 0.34 - k * 0.045, C.COL, 0.6 - k * 0.08));
-            glow(x, y, 0.5, C.HOT, 0.8); glow(x, y, 0.16, 0xffffff, 1);
-            for (let k = 0; k < 2; k++) { const fa = Math.random() * Math.PI * 2; this._strokeFork(gl, x, y, x + Math.cos(fa) * 12, y + Math.sin(fa) * 12, 0xffffff, 0.9, 1); }
+            P.trail.forEach((q, k) => glow(q.x, q.y, 0.26 - k * 0.035, C.COL, 0.5 - k * 0.07));
+            glow(x, y, 0.36, C.HOT, 0.6);
+            WeaponSystem.zap(this, `zap${(this.game.loop.frame >> 1) & 1}_y`, x, y, 0, 1, 4.3, 1.2, WeaponSystem.vr() < 0.5);   // the current itself: a strike racing down the wire, crackling
+            for (let k = 0; k < 2; k++) { const fa = Math.random() * Math.PI * 2; this._strokeFork(gl, x, y, x + Math.cos(fa) * 12, y + Math.sin(fa) * 12, 0xffffff, 0.9, 1, 0); }
             if (Math.random() < 0.5) this._condSpark(x, y, 1);
             if (P.d >= L) {   // reached the end of this stretch: if it's an enemy, it's hit
                 const hit = seg.w ? (seg.back ? null : seg.w.e) : seg.b;
@@ -1864,7 +1776,7 @@ class WeaponSystem {
                     this._condHit(hit, C.PULSE_DMG * web.dmg * this.damageScaling);
                     this._condDaze(hit, C.PULSE_DAZE * web.daze);
                     if ((this._condWires || []).find(q => q.e === hit)?.mode !== 'cap') this._condSC(hit, C.PULSE_SC);   // a current renews the mark on what it runs through (capacitors aside)
-                    VisualFX.ripple(this, hit.sprite.x, hit.sprite.y - 4, 6, 30, C.HOT, { duration: 260 });
+                    WeaponSystem.zapFlare(this, hit.sprite.x, hit.sprite.y - 4, 'y', 1.8);
                     this._vfxFlash?.(hit.sprite.x, hit.sprite.y, 60, C.COL, 240, 0.9);
                     this._condSpark(hit.sprite.x, hit.sprite.y - 4, 10);
                 }
@@ -1874,8 +1786,8 @@ class WeaponSystem {
         }
         for (const [wa, wb] of pairs) {   // the arcs: raw lightning between the clamps, closing the loop
             const a = wa.e.sprite, b = wb.e.sprite, pts = this._arcPath(a.x, a.y - 4, b.x, b.y - 4, 9, 0.14);
-            gl.lineStyle(10, C.COL, 0.2); gl.strokePoints(pts, false);
-            this._strokeFork(gl, a.x, a.y - 4, b.x, b.y - 4, 0xffffff, 0.95, 2);
+            for (let i = 1; i < pts.length - 1; i += 2) glow(pts[i].x, pts[i].y, 0.3, C.COL, 0.35);   // its light along the floor
+            this._strokeFork(gl, a.x, a.y - 4, b.x, b.y - 4, 0xffffff, 0.95, 2, 0);
             pts.hot = wb.hot; segs.push(pts);
         }
         // who's touching a line (not a wired one)
@@ -1889,7 +1801,7 @@ class WeaponSystem {
             }
         }
         for (const e of touch.keys()) {   // shocked: it crackles where the line runs through it
-            for (let k = 0; k < 2; k++) { const fa = Math.random() * Math.PI * 2; this._strokeFork(gl, e.sprite.x, e.sprite.y - 4, e.sprite.x + Math.cos(fa) * 13, e.sprite.y - 4 + Math.sin(fa) * 13, 0xffffff, 0.9, 1); }
+            for (let k = 0; k < 2; k++) { const fa = Math.random() * Math.PI * 2; this._strokeFork(gl, e.sprite.x, e.sprite.y - 4, e.sprite.x + Math.cos(fa) * 13, e.sprite.y - 4 + Math.sin(fa) * 13, 0xffffff, 0.9, 1, 0); }
             glow(e.sprite.x, e.sprite.y - 4, 0.22, C.COL, 0.6);
         }
         for (let i = used; i < pool.length; i++) pool[i].setVisible(false);
@@ -1933,8 +1845,8 @@ class WeaponSystem {
         const ix = this.player.x + 31, iy = this.player.y - 14, mode = this._condMode || 'live', mc = C.MCOL[mode];   // what the next clamp is
         bar.fillStyle(0x14100a, 0.85).fillRect(ix - 8, iy - 7, 16, 14);
         bar.lineStyle(1, mc, 1).strokeRect(ix - 8, iy - 7, 16, 14);
-        const mi = this._condModeIcon?.active ? this._condModeIcon : (this._condModeIcon = this.add.image(0, 0, WeaponSystem.condArt(this).live).setDepth(6.1));   // its icon (the capacitor's shown full)
-        mi.setTexture(WeaponSystem.condArt(this)[mode], mode === 'cap' ? 4 : 0).setPosition(ix, iy);
+        const mi = this._condModeIcon?.active ? this._condModeIcon : (this._condModeIcon = this.add.image(0, 0, 'fx_storm', 'ic_live').setDepth(6.1));   // its icon (the capacitor's shown full)
+        mi.setFrame(WeaponSystem.condBadge(mode, 1)).setPosition(ix, iy);
     }
     // R: on (a current at once, then one each time it's ready: _conductorTick) or off. It won't go on with no wire out.
     _conductorToggle() {
@@ -1994,38 +1906,33 @@ class WeaponSystem {
         if (!g?.active) return;
         const f = Math.max(0, orb.charge / orb.maxCharge);
         const t = (this.time.now - orb.born) / 1000;
-        // The ball is pixel art (ballLightningKey) in a soft glow; it shrinks and dims as it drains.
+        // The ball is pixel art (fx_storm ball_0-3, hand-drawn, roiling) in a soft glow; it shrinks and dims as it drains.
         if (!orb.spr) {
-            const key = WeaponSystem.ballLightningKey(this);
-            orb.spr = this.add.sprite(g.x, g.y, key, '0').setDepth(3.95);
-            if (this.anims.exists(key)) { orb.spr.play(key); orb.spr.anims.timeScale = 2.5; }
+            if (!this.anims.exists('storm_ball')) this.anims.create({ key: 'storm_ball', frames: [0, 1, 2, 3].map(i => ({ key: 'fx_storm', frame: 'ball_' + i })), frameRate: 16, repeat: -1 });
+            orb.spr = this.add.sprite(g.x, g.y, 'fx_storm', 'ball_0').setDepth(3.95).play('storm_ball');
             orb.glow = this.add.image(g.x, g.y, 'vfx_glow').setTint(0x5ac8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(3.9);
             g.once('destroy', () => { orb.spr.destroy(); orb.glow.destroy(); });
         }
         const sc = (0.7 + 0.5 * f) * (1 + Math.sin(t * 9) * 0.04);
-        orb.spr.setPosition(g.x, g.y).setScale(sc).setAlpha(0.6 + 0.4 * f);
+        orb.spr.setPosition(g.x, g.y).setScale(1.25 * sc).setAlpha(0.6 + 0.4 * f);
         orb.glow.setPosition(g.x, g.y).setScale((0.4 + 0.3 * f) * (1 + Math.sin(t * 7) * 0.08)).setAlpha(0.3 + 0.3 * f);
-        g.clear();
 
-        // ── LIVE ARCS: jagged, re-randomised every frame so the edge writhes; how many is the
+        // ── LIVE ARCS: thin bolts leaping off the rim, laid fresh every frame so the edge writhes; how many is the
         // charge readout.
-        const r = 11 * sc;
+        const r = 14 * sc;
         const arcs = Math.round(2 + f * 4);
         for (let k = 0; k < arcs; k++) {
             const a = Math.random() * Math.PI * 2;
             const out = r * (1.3 + Math.random() * 1.1);
-            const pts = this._arcPath(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9,
-                                      Math.cos(a + 0.3) * out, Math.sin(a + 0.3) * out, 3, 0.35);
-            this._strokeArc(g, pts, 2, 0x5ae6ff, 0.25 + f * 0.25);
-            this._strokeArc(g, pts, 1, 0xffffff, 0.6 + f * 0.3);
+            WeaponSystem.bolt(this, g.x + Math.cos(a) * r * 0.85, g.y + Math.sin(a) * r * 0.85, g.x + Math.cos(a + 0.3) * out, g.y + Math.sin(a + 0.3) * out,
+                k & 1 ? 'c' : 'w', { thin: true, br: 0, a: 0.55 + f * 0.45, d: 3.97, glow: false });
         }
         // ── SPARKS riding the corona, so the silhouette is never a clean circle
         const sparks = Math.round(2 + f * 3);
-        g.fillStyle(0xe8fbff, 0.7 + f * 0.3);
         for (let k = 0; k < sparks; k++) {
             const a = t * 3.5 + (k / sparks) * Math.PI * 2;
             const rr = r * (1.45 + Math.sin(t * 6 + k) * 0.25);
-            g.fillRect(Math.round(Math.cos(a) * rr), Math.round(Math.sin(a) * rr), 2, 2);
+            WeaponSystem.zap(this, k & 1 ? 'spk_4' : 'spk_7', g.x + Math.cos(a) * rr, g.y + Math.sin(a) * rr, 0, 0.7 + f * 0.3, 3.97);
         }
     }
 
@@ -2070,12 +1977,14 @@ class WeaponSystem {
             }
             if (host) { this._embedBall(orb, host, C); continue; }
             // A boss or a queen is not in this.enemies: the orb flew straight through them and
-            // never touched one. Meeting one, it stops there and grinds (every discharge arcs into
-            // it, see _ballDischarge) until its charge runs out, or bursts if the boss leaves it.
+            // never touched one. A boss it buries itself in, as in any enemy. A queen it stops at and
+            // grinds (every discharge arcs into it, see _ballDischarge) until its charge runs out,
+            // or bursts if the queen leaves it.
+            const boss = [this.voltslimeBoss, this.voidSovereignBoss].find(b => b?.active && b.container?.visible
+                && Math.hypot(b.container.x - orb.gfx.x, b.container.y - 14 - orb.gfx.y) <= TS * 1.6);
+            if (boss) { this._embedBall(orb, boss, C, true); continue; }
             {
-                const near = [this.voltslimeBoss, this.voidSovereignBoss].find(b => b?.active && b.container?.visible
-                        && Math.hypot(b.container.x - orb.gfx.x, b.container.y - 14 - orb.gfx.y) <= TS * 1.6)
-                    || (this.portals || []).find(q => q.active && this._portalCoversTile?.(q, tx, ty));
+                const near = (this.portals || []).find(q => q.active && this._portalCoversTile?.(q, tx, ty));
                 if (near && !orb._onBoss) { orb._onBoss = near; orb.vx = 0; orb.vy = 0; }
                 else if (!near && orb._onBoss) { this._burstBallLightning(orb, C); continue; }
             }
@@ -2128,8 +2037,7 @@ class WeaponSystem {
                 // work rather than just noticing more damage numbers than usual.
                 const arcCol = link.viaWater ? 0x66ddff : colour;
                 this._strokeFork(g, link.fx, link.fy, tx, ty, arcCol, alpha, link.tier === 0 ? 2 : 1);
-                g.fillStyle(0xffffff, 0.8 - link.tier * 0.2);
-                g.fillCircle(tx, ty, 3 - link.tier * 0.6);
+                WeaponSystem.zap(this, link.tier ? 'spk_4' : 'spk_6', tx, ty, 150, 0.9 - link.tier * 0.2, g.depth);   // a spark where it lands
                 arcs++;
 
                 const dmg = baseDmg * Math.pow(C.FORK_FALLOFF, link.tier) * this.damageScaling;
@@ -2242,25 +2150,29 @@ class WeaponSystem {
     // the victim. It also means the correct target is a body on the EDGE of a pack, not the one
     // you most want dead, which is a genuinely different aiming instinct from every other
     // weapon in the game.
-    _embedBall(orb, host, C) {
+    _embedBall(orb, host, C, boss = false) {
         if (orb._done || orb._embedded) return;
         orb._embedded = true;
         orb.host = host;
+        orb.boss = boss;   // (a boss: no sprite and no health of its own here, so hits go through damageBossAtTile)
         host._ballHost = orb;
+        const at = this._ballHostAt(orb);
 
         // Contact damage is decent -- the host is not getting away with being a carrier.
-        const _rdEmbed = this.resolveElementalHit(host, C.EMBED_HIT * this.damageScaling, 'lightning');
-        if (_rdEmbed !== null) {
-            host.health -= _rdEmbed;
-            this.showDamageNumber(host.sprite.x, host.sprite.y - 12, Math.round(_rdEmbed), '#ffffff');
-            this.updateEnemyHealthBar(host);
-            this.gainUltCharge(this.ultChargePerLightningHit);
+        if (boss) this.damageBossAtTile(host.tileX, host.tileY, C.EMBED_HIT * this.damageScaling, undefined, 'lightning');
+        else {
+            const _rdEmbed = this.resolveElementalHit(host, C.EMBED_HIT * this.damageScaling, 'lightning');
+            if (_rdEmbed !== null) {
+                host.health -= _rdEmbed;
+                this.showDamageNumber(at.x, at.y - 12, Math.round(_rdEmbed), '#ffffff');
+                this.updateEnemyHealthBar(host);
+                this.gainUltCharge(this.ultChargePerLightningHit);
+            }
         }
-        this.showStatusText?.(host.sprite.x, host.sprite.y - 24, 'EMBEDDED', '#ffee66');
+        this.showStatusText?.(at.x, at.y - 24, 'EMBEDDED', '#ffee66');
 
-        const flash = this.add.circle(host.sprite.x, host.sprite.y, 6, 0xffffff, 0.9).setDepth(5);
-        this.tweens.add({ targets: flash, radius: 22, alpha: 0, duration: 200,
-                          onComplete: () => flash.destroy() });
+        WeaponSystem.zapFlare(this, at.x, at.y, 'w', 2, 5);   // it buries itself: a white strike, sparks
+        WeaponSystem.zapSparks(this, 'c').emitParticleAt(at.x, at.y, 8);
         this.cameras.main.shake(70, 0.002);
 
         orb.embedEnd = this.time.now + C.EMBED_MS;
@@ -2272,25 +2184,32 @@ class WeaponSystem {
         orb.hostDpsAt = this.time.now;
         // If the host dies early the orb detonates where it stood -- the payload is not lost
         // just because the carrier did not survive its own delivery.
-        orb._hostWasAt = { x: host.sprite.x, y: host.sprite.y };
+        orb._hostWasAt = at;
+    }
+
+    // Where the orb's host is now, or null once it's gone (dead, phased out, a boss left the fight).
+    _ballHostAt(orb) {
+        const h = orb.host;
+        if (orb.boss) return h?.active && h.container?.visible ? { x: h.container.x, y: h.container.y - 14 } : null;
+        return h?.sprite?.active && !this._phasedOut(h) ? { x: h.sprite.x, y: h.sprite.y } : null;
     }
 
     // Per-frame while embedded. Split out of updateBallLightnings because an embedded orb shares
     // almost nothing with a travelling one: it does not move, does not spend charge on distance,
     // and ends on a timer rather than on geometry.
     _updateEmbeddedBall(orb, time, C) {
-        const host = orb.host;
-        if (host?.sprite?.active && !this._phasedOut(host)) {
-            orb.gfx.x = host.sprite.x;
-            orb.gfx.y = host.sprite.y;
-            orb._hostWasAt = { x: host.sprite.x, y: host.sprite.y };
+        const host = orb.host, at = this._ballHostAt(orb);
+        if (at) {
+            orb.gfx.x = at.x;
+            orb.gfx.y = at.y;
+            orb._hostWasAt = at;
         } else {
             // Host died mid-carry: detonate at its last position immediately.
             this._detonateEmbedded(orb, C);
             return;
         }
         this._drawBallGfx(orb, C);
-        this._superconduct(host, 1000);   // embedded, it amps its host for as long as it's lodged there (and a second after)
+        if (!orb.boss) this._superconduct(host, 1000);   // embedded, it amps its host for as long as it's lodged there (and a second after)
 
         // ── PERSISTENT DPS ON THE HOST ───────────────────────────────────────
         // It is burning a hole in whatever it is lodged in for the whole duration, so carrying
@@ -2305,7 +2224,9 @@ class WeaponSystem {
             const frac = C.EMBED_DPS_FLOOR +
                 (1 - C.EMBED_DPS_FLOOR) * Math.min(1, spread / C.EMBED_DPS_FULL_AT);
             const tick = C.EMBED_HOST_DPS * frac * dtSec * this.damageScaling;
-            const _rdHostDps = this.resolveElementalHit(host, tick, 'lightning');
+            // a boss takes it in a lump on each arc tick (a hit a frame would be a boss-hit sound a frame)
+            if (orb.boss) orb._bossOwed = (orb._bossOwed || 0) + tick;
+            const _rdHostDps = orb.boss ? null : this.resolveElementalHit(host, tick, 'lightning');
             if (_rdHostDps !== null) {
                 host.health -= _rdHostDps;
                 // Accumulate into a visible number rather than spamming a 0.15 every frame.
@@ -2326,6 +2247,7 @@ class WeaponSystem {
 
         if (time - orb.lastEmbedTick >= C.EMBED_TICK_MS) {
             orb.lastEmbedTick = time;
+            if (orb.boss && orb._bossOwed > 0) { this.damageBossAtTile(host.tileX, host.tileY, orb._bossOwed, undefined, 'lightning'); orb._bossOwed = 0; }
             const TS = this.TILE_SIZE;
             const R = C.PULSE_R * TS;
             // Arcs go to OTHERS, not the host: the host is the emitter now.
@@ -2362,13 +2284,15 @@ class WeaponSystem {
         orb._done = true;
         const host = orb.host;
         if (host) host._ballHost = null;
-        const at = (host?.sprite?.active)
-            ? { x: host.sprite.x, y: host.sprite.y }
-            : (orb._hostWasAt || { x: orb.gfx.x, y: orb.gfx.y });
+        const hostAt = host ? this._ballHostAt(orb) : null;
+        const at = hostAt || orb._hostWasAt || { x: orb.gfx.x, y: orb.gfx.y };
         const TS = this.TILE_SIZE;
         const R = C.DETONATE_R * TS;
 
-        VisualFX.impact(this, at.x, at.y, 'lightning', R * 0.45);
+        // it goes off: a big strike, bolts torn out of it every way, sparks, a flash of light
+        WeaponSystem.zapFlare(this, at.x, at.y, 'y', 3, 4.5);
+        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + WeaponSystem.vr() * 0.5, r = R * (0.3 + WeaponSystem.vr() * 0.2); WeaponSystem.bolt(this, at.x, at.y, at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, k & 1 ? 'c' : 'y', { life: 260, thin: k & 1, br: 1, d: 4.4, glow: !(k & 1) }); }
+        WeaponSystem.zapSparks(this, 'y').emitParticleAt(at.x, at.y, 14);
         this._vfxFlash?.(at.x, at.y, R * 0.7, 0xffe14a, 260, 0.6);
         this.cameras.main.shake(160, 0.005);
 
@@ -2387,7 +2311,8 @@ class WeaponSystem {
         });
 
         // The host takes only a fraction. It carried the bomb; it is not the target.
-        if (host?.sprite?.active) {
+        if (hostAt && orb.boss) this.damageBossAtTile(host.tileX, host.tileY, C.DETONATE_DMG * C.DETONATE_HOST_FRAC * this.damageScaling + (orb._bossOwed || 0), undefined, 'lightning');   // (and what it burned since the last tick)
+        else if (hostAt) {
             const raw = C.DETONATE_DMG * C.DETONATE_HOST_FRAC * this.damageScaling;
             const _rdHost = this.resolveElementalHit(host, raw, 'lightning');
             if (_rdHost !== null) {
@@ -2412,7 +2337,8 @@ class WeaponSystem {
         const ox = originAt ? originAt.x : orb.gfx.x, oy = originAt ? originAt.y : orb.gfx.y;
         Sfx.play(this, 'blburst');
 
-        VisualFX.impact(this, ox, oy, 'lightning', 28);
+        WeaponSystem.zapFlare(this, ox, oy, 'c', 2.4, 4.5);   // it bursts: a blue strike, sparks
+        WeaponSystem.zapSparks(this, 'c').emitParticleAt(ox, oy, 10);
         this.cameras.main.shake(90, 0.003);
 
         // Clear the per-burst saturation counters, or an enemy hit by an earlier burst would
@@ -2430,8 +2356,13 @@ class WeaponSystem {
             const slot = (i / count) * Math.PI * 2;
             const a = slot + (Math.random() - 0.5) * (Math.PI * 2 / count) * 2.8;
             const spd = C.SEEK_SPEED * (0.62 + Math.random() * 0.76);
-            const sg = this.add.graphics().setDepth(4);
-            sg.x = ox; sg.y = oy;   // body and trail are drawn per frame in updateBallSeekers
+            // the seeker: a little crackling ball (fx_storm seek_0-2) and its streak, drawn the way it flies (8 ways, never turned)
+            if (!this.anims.exists('storm_seek')) this.anims.create({ key: 'storm_seek', frames: [0, 1, 0, 2].map(i => ({ key: 'fx_storm', frame: 'seek_' + i })), frameRate: 18, repeat: -1 });
+            const sg = this.add.sprite(ox, oy, 'fx_storm', 'seek_0').setDepth(4).setScale(1.5).setBlendMode(Phaser.BlendModes.ADD).play({ key: 'storm_seek', startFrame: i & 3 });
+            const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, [tf, fl] = [['e', 0], ['se', 0], ['s', 0], ['ne', 1], ['e', 1], ['se', 1], ['s', 1], ['ne', 0]][k];
+            sg._trail = this.add.image(ox, oy, 'fx_storm', 'trail_' + tf).setDepth(3.99).setScale(1.5).setBlendMode(Phaser.BlendModes.ADD).setFlip(!!fl, !!fl).setAlpha(0.85);
+            sg._back = WeaponSystem.ZAP_DIR[(k + 4) % 8];
+            sg.once('destroy', () => sg._trail.destroy());
             this.ballSeekers.push({
                 gfx: sg, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
                 // Stagger the birth times slightly so they do not all leave on the same frame.
@@ -2512,33 +2443,9 @@ class WeaponSystem {
                 }
             }
             if (s._done) continue;
-            // Redrawn every frame as a small CRACKLING ball, not a dot with a line behind it.
-            // Each one is a miniature of the parent orb -- glow, body, hot core, and two short
-            // arcs writhing off the surface that re-randomise per frame. A plain circle at this
-            // size reads as a bullet; the arcs are what say "electricity".
-            const g = s.gfx;
-            const r = C.SEEK_R;
-            g.clear();
-            const back = Math.hypot(s.vx, s.vy) || 1;
-            const bx = -(s.vx / back) * 13, by = -(s.vy / back) * 13;
-            g.lineStyle(r * 1.3, 0xffee66, 0.18); g.lineBetween(0, 0, bx, by);
-            g.lineStyle(1.4, 0xffffcc, 0.55);     g.lineBetween(0, 0, bx * 0.55, by * 0.55);
-
-            g.fillStyle(0xaaffff, 0.16); g.fillCircle(0, 0, r * 1.7);
-            g.fillStyle(0xffee66, 0.62); g.fillCircle(0, 0, r);
-            g.fillStyle(0xfff6b0, 0.85); g.fillCircle(0, 0, r * 0.62);
-            g.fillStyle(0xffffff, 1.00); g.fillCircle(0, 0, r * 0.30);
-            // ONE arc, and only on some frames. At seventy seekers, two arc paths each per
-            // frame is 140 path builds plus 280 strokes every 16ms -- the crackle is not worth
-            // that. Drawing it ~60% of frames costs a third as much AND flickers, which reads
-            // as more electrical than a steady pair of arcs did.
-            if (Math.random() < 0.6) {
-                const a = (s.phase || 0) + Math.random() * Math.PI * 2;
-                const pts = this._arcPath(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5,
-                                          Math.cos(a) * r * 2.1, Math.sin(a) * r * 2.1, 3, 0.4);
-                this._strokeArc(g, pts, 1.6, 0x99eeff, 0.35);
-                this._strokeArc(g, pts, 0.8, 0xffffff, 0.8);
-            }
+            // the crackling ball (it animates itself) and its streak trailing behind it
+            const g = s.gfx, tr = g._trail;
+            if (tr) { tr.setPosition(g.x + g._back[0] * 7, g.y + g._back[1] * 7).setVisible(time >= s.born); g.setVisible(time >= s.born); }
         }
     }
 
@@ -2551,9 +2458,7 @@ class WeaponSystem {
         const TS = this.TILE_SIZE;
         const hx = seeker.gfx.x, hy = seeker.gfx.y;
 
-        const g = this.add.graphics().setDepth(3.6);
-        g.fillStyle(0xffffff, 0.9); g.fillCircle(hx, hy, 3.5);
-        g.fillStyle(0xffee66, 0.35); g.fillCircle(hx, hy, 7);
+        WeaponSystem.zapFlare(this, hx, hy, 'y', 1, 3.6);   // it pops on what it hit
 
         // Direct target first, at full seeker damage. Named _rd* because the resistance check scans
         // for `.health -=` whose value did not come out of resolveElementalHit -- a local called
@@ -2577,7 +2482,7 @@ class WeaponSystem {
         }
         near.sort((a, b) => a.d - b.d);
         for (const { e } of near.slice(0, C.SEEK_ZAP_N)) {
-            this._strokeFork(g, hx, hy, e.sprite.x, e.sprite.y + 4, 0xffffcc, 0.75, 1);
+            WeaponSystem.bolt(this, hx, hy, e.sprite.x, e.sprite.y + 4, 'y', { life: 170, a: 0.75, thin: true, br: 1, d: 3.6 });
             const _rdZap = this.resolveElementalHit(e, C.SEEK_ZAP_DMG * this.damageScaling, 'lightning');
             if (_rdZap === null) continue;
             e.health -= _rdZap;
@@ -2585,9 +2490,6 @@ class WeaponSystem {
             this.updateEnemyHealthBar(e);
             if (e.health <= 0) this.killEnemy(e);
         }
-
-        this.tweens.add({ targets: g, alpha: 0, duration: 200,
-                          onComplete: () => g.destroy() });
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -2792,18 +2694,16 @@ class WeaponSystem {
         const FORK_RANGE = 3 + 0.5 * WeaponLevels.perk('orb_emitter', 'forks'); // tiles
         const MAX_BOUNCES = 10;
 
-        // The orb: a tesla sphere (orbEmitterKey) in a glow, with live arcs drawn each frame
+        // The orb: the hand-drawn tesla globe (fx_storm orb_0-3, its cage turning) in a glow; its arcs are laid each frame
         const gfx = this.add.container(px, py).setDepth(4);
-        const okey = WeaponSystem.orbEmitterKey(this);
+        if (!this.anims.exists('storm_orb')) this.anims.create({ key: 'storm_orb', frames: [0, 1, 2, 3].map(i => ({ key: 'fx_storm', frame: 'orb_' + i })), frameRate: 14, repeat: -1 });
         const glow = this.add.image(0, 0, 'vfx_glow').setTint(0xffd84a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3).setAlpha(0.55);
-        const body = this.add.sprite(0, 0, okey, '0');
-        if (this.anims.exists(okey)) { body.play(okey); body.anims.timeScale = 2.5; }
-        const arcs = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
-        gfx.add([glow, arcs, body]);
-        gfx._glow = glow; gfx._arcs = arcs; gfx._body = body;
-        // muzzle: a snap of light at the slime
-        const flash = this.add.image(px + dx / len * 10, py + dy / len * 10, 'vfx_glow').setTint(0xfff6b0).setBlendMode(Phaser.BlendModes.ADD).setDepth(4).setScale(0.15);
-        this.tweens.add({ targets: flash, scale: 0.4, alpha: 0, duration: 160, onComplete: () => flash.destroy() });
+        const body = this.add.sprite(0, 0, 'fx_storm', 'orb_0').setScale(1.5).play('storm_orb');
+        gfx.add([glow, body]);
+        gfx._glow = glow; gfx._body = body;
+        // muzzle: a strike flaring at the slime, sparks
+        WeaponSystem.zapFlare(this, px + dx / len * 10, py + dy / len * 10, 'y', 1.2, 4.1);
+        WeaponSystem.zapSparks(this, 'y').emitParticleAt(px + dx / len * 10, py + dy / len * 10, 3);
 
         if (!this.lightningOrbs) this.lightningOrbs = [];
         this.lightningOrbs.push({
@@ -2819,54 +2719,25 @@ class WeaponSystem {
         this.cameras.main.shake(15, 0.001);
     }
 
+    // The tesla orb in flight: arcs reaching for what's close (blue, thin, re-laid every frame so they writhe) and
+    // crackling off its cage
     _drawOrbEmitterGfx(gfx) {
-        if (gfx._arcs) {   // the tesla orb: arcs reaching for what's close, and crawling over the shell
-            const g = gfx._arcs, TS = this.TILE_SIZE, now = this.time.now;
-            g.clear();
-            gfx._glow.setScale(0.28 + 0.04 * Math.sin(now * 0.04) + Math.random() * 0.03);
-            let n = 0;
-            for (const e of this.enemies || []) {
-                if (this._phasedOut?.(e)) continue;
-                if (n >= 3 || !e.sprite?.active) continue;
-                const ex = e.sprite.x - gfx.x, ey = e.sprite.y - gfx.y;
-                if (ex * ex + ey * ey > (TS * 2.6) ** 2 || Math.random() < 0.35) continue;
-                const pts = this._arcPath(0, 0, ex, ey, 5, 0.3);
-                this._strokeArc(g, pts, 4, 0x88ddff, 0.25);
-                this._strokeArc(g, pts, 1.4, 0xffffff, 0.85);
-                n++;
-            }
-            for (let i = 0; i < 2; i++) {
-                if (Math.random() < 0.4) continue;
-                const a = Math.random() * Math.PI * 2, r0 = 10, r1 = 15 + Math.random() * 8;
-                const pts = this._arcPath(Math.cos(a) * r0, Math.sin(a) * r0, Math.cos(a + 0.6) * r1, Math.sin(a + 0.6) * r1, 3, 0.4);
-                this._strokeArc(g, pts, 2.5, 0xffe066, 0.3);
-                this._strokeArc(g, pts, 1, 0xfffbe0, 0.9);
-            }
-            return;
+        const TS = this.TILE_SIZE, now = this.time.now, x = gfx.x, y = gfx.y;
+        gfx._glow.setScale(0.28 + 0.04 * Math.sin(now * 0.04) + Math.random() * 0.03);
+        let n = 0;
+        for (const e of this.enemies || []) {
+            if (this._phasedOut?.(e)) continue;
+            if (n >= 3 || !e.sprite?.active) continue;
+            const ex = e.sprite.x - x, ey = e.sprite.y - y;
+            if (ex * ex + ey * ey > (TS * 2.6) ** 2 || Math.random() < 0.35) continue;
+            WeaponSystem.bolt(this, x, y, e.sprite.x, e.sprite.y, 'c', { thin: true, br: 0, a: 0.85, d: 3.95, glow: false });
+            n++;
         }
-        gfx.clear();
-        // Outer glow
-        gfx.fillStyle(0xffff00, 0.20);
-        gfx.fillCircle(0, 0, 14);
-        // Mid ring
-        gfx.fillStyle(0xffdd00, 0.50);
-        gfx.fillCircle(0, 0, 9);
-        // Core
-        gfx.fillStyle(0xffffff, 0.95);
-        gfx.fillCircle(0, 0, 5);
-        // Electric arc lines
-        gfx.lineStyle(1.5, 0xffff88, 0.80);
-        for (let i = 0; i < 5; i++) {
-            const a = (i / 5) * Math.PI * 2;
-            const r = 7 + Math.random() * 4;
-            gfx.beginPath();
-            gfx.moveTo(Math.cos(a)*4, Math.sin(a)*4);
-            gfx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
-            gfx.strokePath();
+        for (let i = 0; i < 2; i++) {
+            if (Math.random() < 0.4) continue;
+            const a = Math.random() * Math.PI * 2, r1 = 15 + Math.random() * 8;
+            WeaponSystem.bolt(this, x + Math.cos(a) * 10, y + Math.sin(a) * 10, x + Math.cos(a + 0.6) * r1, y + Math.sin(a + 0.6) * r1, 'y', { thin: true, br: 0, d: 4.05, glow: false });
         }
-        // Orbit ring
-        gfx.lineStyle(1.5, 0xffdd00, 0.55);
-        gfx.strokeCircle(0, 0, 11);
     }
 
     // Amp an enemy (lightning carries further from it): the Orb Emitter's hits, and
@@ -2878,7 +2749,7 @@ class WeaponSystem {
         enemy.isSuperConducted = true;
         enemy.superConductUntil = Math.max(enemy.superConductUntil || 0, this.time.now + ms);
         if (enemy.superConductVisual?.container?.active) return;
-        const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 18, WeaponSystem.superconductKey(this)).setDepth(3).setScale(1.3);
+        const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 18, 'fx_storm', 'amp').setDepth(3).setScale(1.3);
         this.tweens.add({ targets: mark, alpha: 0.45, duration: 600, yoyo: true, repeat: -1 });
         enemy.superConductVisual = { container: mark, g: mark };
     }
@@ -2902,7 +2773,7 @@ class WeaponSystem {
         Sfx.play(this, 'orbhit');
         const FORK_DMG = hitDamage * 0.38;
         for (const e of this.enemies.filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - tx, e.y - ty) <= orb.forkRange)) {
-            this.drawLightningBolt(from, e);
+            WeaponSystem.orbFork(this, px, py, e);
             this.damageEnemy(e, FORK_DMG, 'lightning');
             if (this._dmgLanded && e.health > 0) this._superconduct(e);
         }
@@ -2927,11 +2798,12 @@ class WeaponSystem {
         orb.damage = orb.damage * FALLOFF; // reduce for next bounce
 
         this._superconduct(enemy);
-        // the impact: a white-hot snap and a ring of sparks
+        // the impact: a strike flaring white-hot in a snap of light, sparks
         Sfx.play(this, 'orbhit');
-        const snap = this.add.image(ex, ey, 'vfx_glow').setTint(0xfff3a0).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.2).setScale(0.2);
-        this.tweens.add({ targets: snap, scale: 0.38, alpha: 0, duration: 180, onComplete: () => snap.destroy() });
-        this._vfxTrail?.lightning?.emitParticleAt(ex, ey, 8);
+        const snap = this.add.image(ex, ey, 'vfx_glow').setTint(0xfff3a0).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.2).setScale(0.18);
+        this.tweens.add({ targets: snap, scale: 0.3, alpha: 0, duration: 180, onComplete: () => snap.destroy() });
+        WeaponSystem.zapFlare(this, ex, ey, 'y', 1.8);
+        WeaponSystem.zapSparks(this, 'y').emitParticleAt(ex, ey, 8);
 
         // Damage. Typed: an orb still flying after you switch element used to hit (and burn, and
         // charge) as the new one. And paid only for a hit that landed.
@@ -2953,7 +2825,7 @@ class WeaponSystem {
         );
         this._zapBosses(enemy, FORK_DMG, FORK_R, []);   // and Queens and bosses in reach
         for (const forkTarget of forkCandidates) {
-            this.drawLightningBolt({ sprite: { x: ex, y: ey } }, forkTarget);
+            WeaponSystem.orbFork(this, ex, ey, forkTarget);
             this.damageEnemy(forkTarget, FORK_DMG, 'lightning');
             // Forks amp what they hit, so the orb can bounce on into the crowd (the bounce
             // goes only to amped enemies, and only a direct hit used to make one).
@@ -2976,11 +2848,8 @@ class WeaponSystem {
                 orb.vx = (tdx/tlen) * 320;
                 orb.vy = (tdy/tlen) * 320;
                 orb.bouncesLeft--;
-                // Bounce arc flash
-                const arc = this.add.graphics().setDepth(3.5);
-                arc.lineStyle(2, 0xffff00, 0.70);
-                arc.beginPath(); arc.moveTo(ex, ey); arc.lineTo(bb.x, bb.y); arc.strokePath();
-                this.tweens.add({ targets: arc, alpha: 0, duration: 120, onComplete: () => arc.destroy() });
+                // the way it bounces: a thin bolt flicking out ahead of it
+                WeaponSystem.bolt(this, ex, ey, bb.x, bb.y, 'y', { life: 140, thin: true, br: 0, a: 0.8, d: 3.5 });
                 return; // keep orb alive, heading to bounce target
             }
         }
@@ -2988,6 +2857,12 @@ class WeaponSystem {
         orb._done = true;
     }
 
+    // An orb's fork on to enemy e from (x, y): a bolt and a flare where it lands
+    static orbFork(S, x, y, e) {
+        Sfx.play(S, 'zap');
+        WeaponSystem.bolt(S, x, y, e.sprite.x, e.sprite.y + 4, 'y', { life: 190, br: 1 });
+        WeaponSystem.zapFlare(S, e.sprite.x, e.sprite.y + 4, 'y', 1.1);
+    }
     // The next amped enemy for a bounce, nearest first: not one already hit, not one that won't live till it
     // arrives (a sliver of health that's burning, or already at nothing)
     _orbBounceTarget(orb, x, y) {
@@ -3010,18 +2885,15 @@ class WeaponSystem {
                     // Death burst — snapshot position before destroying, draw at local (0,0)
                     const bx = orb.gfx.x, by = orb.gfx.y;
                     orb.gfx.destroy();
-                    // the orb pops: a flash, a ring, and arcs thrown out in every direction
+                    // the orb pops: a flash of light, the strike flaring, bolts thrown out every way, sparks
                     const glow = this.add.image(bx, by, 'vfx_glow').setTint(0xffe066).setBlendMode(Phaser.BlendModes.ADD).setDepth(5).setScale(0.3);
-                    this.tweens.add({ targets: glow, scale: 0.9, alpha: 0, duration: 260, onComplete: () => glow.destroy() });
-                    if (typeof VisualFX !== 'undefined') VisualFX.ripple(this, bx, by, 6, 30, 0xffe066, { depth: 5, duration: 300 });
-                    const burst = this.add.graphics().setDepth(5).setBlendMode(Phaser.BlendModes.ADD);
-                    burst.x = bx; burst.y = by;
+                    this.tweens.add({ targets: glow, scale: 0.7, alpha: 0, duration: 260, onComplete: () => glow.destroy() });
+                    WeaponSystem.zapFlare(this, bx, by, 'y', 2.2, 5);
                     for (let k = 0; k < 6; k++) {
-                        const a = k / 6 * Math.PI * 2 + Math.random() * 0.5, r = 18 + Math.random() * 14;
-                        const pts = this._arcPath(0, 0, Math.cos(a) * r, Math.sin(a) * r, 4, 0.35);
-                        this._strokeArc(burst, pts, 3, 0x88ddff, 0.35); this._strokeArc(burst, pts, 1.2, 0xffffff, 0.95);
+                        const a = k / 6 * Math.PI * 2 + Math.random() * 0.5, r = 20 + Math.random() * 14;
+                        WeaponSystem.bolt(this, bx, by, bx + Math.cos(a) * r, by + Math.sin(a) * r, k & 1 ? 'c' : 'y', { life: 220, thin: k > 2, br: 0, d: 5, glow: k < 2 });
                     }
-                    this.tweens.add({ targets: burst, alpha: 0, duration: 220, onComplete: () => burst.destroy() });
+                    WeaponSystem.zapSparks(this, 'y').emitParticleAt(bx, by, 10);
                     Sfx.play(this, 'zap');
                 }
                 this.lightningOrbs.splice(i, 1);
@@ -3252,9 +3124,9 @@ class WeaponSystem {
     }
 
     // Stun indicator — spinning stars above a stunned enemy's head. Stun is
-    // binary (not stacking like chill) and a stunned enemy doesn't move, so this
-    // only needs to be created once when stun starts and removed when it ends —
-    // no per-frame position tracking needed.
+    // binary (not stacking like chill), so this is created once when stun starts and
+    // removed when it ends; a stunned enemy can still be carried or shoved, so it
+    // follows with the other marks (EnemyManager._syncEnemyMarks).
     _showStunIndicator(enemy) {
         if (!enemy.sprite?.active || enemy._stunIndicator) return; // already showing
         const container = this.add.container(enemy.sprite.x, enemy.sprite.y - 32).setDepth(6);
@@ -3495,388 +3367,211 @@ class WeaponSystem {
         }
     }
 
-    fractalShardAttack(targetX, targetY) {
-        const currentTime = this.time.now, FC = this._fractalCfg(), cd = WeaponLevels.cdMult('fractal_shard');
-        const mode = (this._fracMode?.until || 0) > currentTime ? this._fracMode.kind : null;   // R's gamble: every shot one attack, quicker
-        if (currentTime - (this.lastFractalShardTime || 0) < (mode === 'spike' ? FC.SPIKE_CD : 600) * cd) return;
-        this.lastFractalShardTime = currentTime;
-        if (mode) this._fractalPhase = mode === 'spike' ? 0 : 1;
-        this._gearFiredAt = currentTime;   // the held weapon swings now (Creatures.gear)
-
-        if (this._fractalPhase === undefined) this._fractalPhase = 0;
-
-        const playerPx = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
-        const playerPy = this._shotY();
-        const worldX = targetX + this.cameras.main.scrollX;
-        const worldY = targetY + this.cameras.main.scrollY;
-        const angle = Math.atan2(worldY - playerPy, worldX - playerPx);
-        if (mode === 'spike') { this._fractalDeadly(worldX, worldY); this._fractalPhase = 0; return; }
-
-        if (this._fractalPhase === 0) {
-            // ── PHASE 1: PIERCING FREEZE SPIKE ───────────────────────────
-            this._fractalPhase = 1;
-
-            // ── ANIME IMPACT FRAME ──────────────────────────────────────
-            // Layer 1: hard white screen flash (tiny duration, sells the impact)
-            const flash = this.add.rectangle(0, 0, this.scale.width * 2, this.scale.height * 2, 0xffffff, 0.18)
-                .setScrollFactor(0).setDepth(10).setOrigin(0.5);
-            this.tweens.add({ targets: flash, alpha: 0, duration: 60, onComplete: () => flash.destroy() });
-
-            // Layer 2: spiky rotating star at muzzle — 8 long sharp points alternating long/short
-            const star = this.add.graphics().setDepth(9);
-            star.x = playerPx; star.y = playerPy;
-            const SPIKES = 8, LONG = 28, SHORT = 11;
-            star.fillStyle(0xffffff, 1.0);
-            star.beginPath();
-            for (let i = 0; i < SPIKES * 2; i++) {
-                const sa = (i / (SPIKES * 2)) * Math.PI * 2 - Math.PI / 2;
-                const r = i % 2 === 0 ? LONG : SHORT;
-                if (i === 0) star.moveTo(Math.cos(sa)*r, Math.sin(sa)*r);
-                else star.lineTo(Math.cos(sa)*r, Math.sin(sa)*r);
-            }
-            star.closePath(); star.fillPath();
-            // Inner star tinted ice-blue
-            star.fillStyle(0xaaeeff, 0.80);
-            star.beginPath();
-            for (let i = 0; i < SPIKES * 2; i++) {
-                const sa = (i / (SPIKES * 2)) * Math.PI * 2 - Math.PI / 2;
-                const r = i % 2 === 0 ? LONG * 0.55 : SHORT * 0.55;
-                if (i === 0) star.moveTo(Math.cos(sa)*r, Math.sin(sa)*r);
-                else star.lineTo(Math.cos(sa)*r, Math.sin(sa)*r);
-            }
-            star.closePath(); star.fillPath();
-            // Bright core
-            star.fillStyle(0xffffff, 1.0); star.fillCircle(0, 0, 6);
-            // Rotate and expand outward, fading fast
-            this.tweens.add({
-                targets: star,
-                angle: 45, scaleX: 2.2, scaleY: 2.2, alpha: 0,
-                duration: 160, ease: 'Quad.easeOut',
-                onComplete: () => star.destroy()
-            });
-
-            // Layer 3: shockwave ring expanding outward
-            const ring = this.add.graphics().setDepth(8);
-            ring.x = playerPx; ring.y = playerPy;
-            ring.lineStyle(3.5, 0xffffff, 0.90); ring.strokeCircle(0, 0, 8);
-            ring.lineStyle(1.5, 0x88ddff, 0.70); ring.strokeCircle(0, 0, 14);
-            this.tweens.add({ targets: ring, scaleX: 4.5, scaleY: 4.5, alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-
-            // Layer 4: speed lines — 6 long streaks blasting backward away from fire direction
-            const lines = this.add.graphics().setDepth(8);
-            lines.x = playerPx; lines.y = playerPy;
-            for (let i = 0; i < 6; i++) {
-                const sa = angle + Math.PI + (i - 2.5) * 0.22; // fan backward
-                const len = 20 + Math.random() * 22;
-                lines.lineStyle(1.5 - i * 0.1, i % 2 === 0 ? 0xffffff : 0x88ddff, 0.85 - i * 0.05);
-                lines.beginPath(); lines.moveTo(Math.cos(sa)*6, Math.sin(sa)*6); lines.lineTo(Math.cos(sa)*len, Math.sin(sa)*len); lines.strokePath();
-            }
-            this.tweens.add({ targets: lines, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 130, onComplete: () => lines.destroy() });
-
-            // Fire 3 pierce spikes in a tight shotgun spread instead of a single needle.
-            // Shared volleyId lets boss-hit logic ensure only ONE freeze-or-shatter event
-            // happens per volley, even though all 3 needles can land base damage on the
-            // same target like a shotgun.
-            // One shard, and up to two more with Splinter, spread a little either side. Only the
-            // centre one plants the totem, so a volley leaves one pillar.
-            // Three PARALLEL spikes (2026-10-20): the middle one on your aim, one half a tile either side, all flying straight.
-            // The longest, fastest sniper shot in the game; they cube what they hit. (The gold and purple marks are gone:
-            // marking an enemy for more damage is Hex's job, and it plants no totem any more.) Splinter: they hit harder.
-            // Deadly Accuracy (R): five of them, closer set, harder, every shot.
-            const volleyId = Math.random().toString(36).slice(2), off = this.TILE_SIZE * (mode ? 0.4 : 0.5), nx = -Math.sin(angle) * off, ny = Math.cos(angle) * off;
-            this._fractalSpikeDmg = 8 * (1 + 0.2 * WeaponLevels.perk('fractal_shard', 'shards')) * (mode ? FC.SPIKE_MULT : 1);
-            for (const k of (mode ? [-2, -1, 0, 1, 2] : [-1, 0, 1])) this._spawnPierceSpike(playerPx + nx * k, playerPy + ny * k, angle, volleyId, false);
-            if (mode) this._fractalPhase = 0;
-
-        } else {
-            // ── PHASE 2: UNSTABLE SPLITTER ────────────────────────────────
-            this._fractalPhase = mode ? 1 : 0;
-            // Phase 2 has a longer effective cooldown — override timer (Shard Storm: FAN_CD between fans)
-            this.lastFractalShardTime = mode ? currentTime - 600 * cd + FC.FAN_CD * cd : currentTime + 1400 * cd; // total ~2s before next shot (Rapid Facets: both strikes)
-
-            // Muzzle flash — unstable crackling burst (Shard Storm: a small spark, at four fans a second the full one whited out the screen)
-            if (mode) this._vfxFlash?.(playerPx, playerPy, 22, 0x9fe8ff, 90, 0.5);
-            const muzzle = this.add.graphics().setDepth(4).setVisible(!mode);
-            muzzle.x = playerPx; muzzle.y = playerPy;
-            muzzle.fillStyle(0xffffff, 0.85); muzzle.fillCircle(0, 0, 8);
-            muzzle.fillStyle(0xaaeeff, 0.40); muzzle.fillCircle(0, 0, 18);
-            for (let i = 0; i < 8; i++) {
-                const sa = angle + (i / 8) * Math.PI * 2;
-                muzzle.lineStyle(2.0, i % 2 === 0 ? 0xffffff : 0x44bbff, 0.88);
-                muzzle.beginPath(); muzzle.moveTo(Math.cos(sa)*5, Math.sin(sa)*5); muzzle.lineTo(Math.cos(sa)*22, Math.sin(sa)*22); muzzle.strokePath();
-                if (i % 2 === 0) {
-                    const cx = Math.cos(sa)*14, cy = Math.sin(sa)*14;
-                    muzzle.lineStyle(1.0, 0xbbefff, 0.65);
-                    muzzle.beginPath(); muzzle.moveTo(cx - Math.sin(sa)*5, cy + Math.cos(sa)*5); muzzle.lineTo(cx + Math.sin(sa)*5, cy - Math.cos(sa)*5); muzzle.strokePath();
-                }
-            }
-            muzzle.lineStyle(1.5, 0x88ddff, 0.55); muzzle.strokeCircle(0, 0, 20);
-            this.tweens.add({ targets: muzzle, scaleX: 3.0, scaleY: 3.0, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => muzzle.destroy() });
-
-            // ── A 60-DEGREE FORWARD FAN, not a 360 nova ──────────────────────
-            // The old version fired 8 seeds in a full ring for a second, boosted, aim-free pass.
-            // boosted pass. Two problems with that under the current ice identity. A nova has no
-            // aim, so the weapon had no direction to be good or bad at -- and now that ice's job
-            // is APPLYING brittle rather than dealing damage, an omnidirectional applicator makes
-            // position irrelevant, which is the one thing ice is supposed to care about. The
-            // recall also meant every cast covered the same ground twice, so there was nothing to
-            // decide after firing.
-            //
-            // A fan you point sweeps a direction and commits to it. Combined with phase 1's
-            // totem, the pair reads as: plant the chill field, then sweep the lane you want.
-            // 60 degrees, not 90. And the count drops with it: narrowing the cone ALONE is not a
-            // nerf, because shards pierce and each enemy can be hit once per shard -- squeezing 7
-            // shards into a tighter arc means more of them overlap a single target, so the weapon
-            // loses area and GAINS single-target burst. Holding angular density fixed at 15 deg
-            // apart (7 over 90 -> 5 over 60) cuts coverage without handing back focused damage.
-            const FAN_COUNT = (mode ? FC.FAN_N : 5) + 2 * WeaponLevels.perk('fractal_shard', 'fan');   // Burst Fan: more (Shard Storm: a wide one)
-            this._fractalVolley = Math.random().toString(36).slice(2);   // the burst's shards fall off on one target
-            const FAN_HALF  = (mode ? FC.FAN_HALF : Math.PI / 6) * Enchants.spread('fractal_shard');      // 30 deg either side = a 60 deg fan (True Aim narrows it)
-            for (let i = 0; i < FAN_COUNT; i++) {
-                const t = FAN_COUNT === 1 ? 0.5 : i / (FAN_COUNT - 1);
-                this._spawnSplitterShard(playerPx, playerPy, angle - FAN_HALF + t * (FAN_HALF * 2), 0);
-            }
-        }
-    }
-
-    // The Fractal Shard's pixel art (ShopScene.icon, outlined like the weapon icons), all pointing up: the spike's crystal
-    // needle, the fan's jagged shard in five shades (it darkens each time it splits), and the mark's floating crystal.
+    // The Fractal Shard's art (assets/art/fx_fractal, typed by hand: tools/fractal_bake.mjs) and its animations, made once
     static fractalArt(scene) {
-        if (WeaponSystem._fracArt && scene.textures.exists('fx_frac_spike')) return WeaponSystem._fracArt;
-        const I = ShopScene.icon;
-        const spike = I(scene, 'fx_frac_spike', 16, { I: '#5fb8e0', i: '#bff4ff', d: '#2a6a9a' }, m => {
-            m.poly([[8, 0], [10, 5], [10, 13], [8.6, 16], [7.4, 16], [6, 13], [6, 5]], 'I');
-            m.rect(7, 3, 1, 10, 'i'); m.line(9, 6, 9, 13, 'd');
-            m.poly([[8, 0], [9.2, 3], [6.8, 3]], 'W'); m.set(7, 6, 'W'); m.set(7, 10, 'W');
-        });
-        const SH = [['#88ddff', '#ddf8ff', '#ffffff'], ['#44bbdd', '#aaeeff', '#ddf8ff'], ['#2299bb', '#77ccee', '#bbefff'], ['#116688', '#44aacc', '#88ddee'], ['#0a3344', '#226688', '#55aabb']];
-        const shard = SH.map(([B, L, R], k) => I(scene, 'fx_frac_shard_' + k, 12, { B, L, R }, m => {
-            m.poly([[6, 0], [9.5, 4], [8.5, 8], [6.5, 11.5], [4.5, 9], [2.5, 4.5]], 'B');
-            m.line(5, 2, 4, 8, 'L'); m.line(6, 3, 6, 9, 'L');
-            m.set(6, 1, 'R'); m.set(6, 2, 'R'); if (k < 3) m.set(5, 5, 'R');
-        }));
-        const mark = I(scene, 'fx_frac_mark', 10, { i: '#9fe8ff', I: '#5fb8e0' }, m => {
-            m.poly([[5, 0], [9, 5], [5, 10], [1, 5]], 'i'); m.poly([[5, 0], [9, 5], [5, 10]], 'I'); m.set(4, 3, 'W'); m.set(3, 5, 'W');
-        });
-        const lance = I(scene, 'fx_frac_lance', 22, { k: '#06121c', D: '#1e5a86', I: '#4aa8dc', i: '#9fe4ff', W: '#ffffff', g: '#dff8ff' }, m => {   // Deadly Accuracy's: a long faceted lance, its edge lit
-            m.poly([[11, 0], [14, 6], [13.5, 17], [11, 22], [8.5, 17], [8, 6]], 'D');
-            m.poly([[11, 0], [14, 6], [13.5, 17], [11, 22]], 'I');
-            m.poly([[11, 1], [12.5, 6], [11, 18]], 'i');
-            m.line(11, 2, 11, 19, 'W'); m.set(12, 4, 'W'); m.set(12, 9, 'g'); m.set(10, 13, 'g');
-            m.poly([[11, 22], [9, 19], [13, 19]], 'D');
-        });
-        return (WeaponSystem._fracArt = { spike, shard, mark, lance });
+        const A = scene.anims, mk = (key, frames, rate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: frames.map(f => ({ key: 'fx_fractal', frame: f })), frameRate: rate, repeat }); };
+        mk('frac_tumble', ['shard_0', 'shard_1', 'shard_2', 'shard_3'], 14, -1);
+        mk('frac_burst', ['burst_0', 'burst_1', 'burst_2', 'burst_3'], 22);
+        mk('frac_grow', ['crystal_0', 'crystal_1', 'crystal_2'], 24);
+        mk('frac_glass', ['glass_0', 'glass_1', 'glass_2'], 24);
+        mk('frac_chunk', ['chunk_0', 'chunk_1', 'chunk_2', 'chunk_3'], 16, -1);
+        return { key: 'fx_fractal' };
     }
-    // A spike hit: crystal chips spraying off the target, spinning as they fall
+    // The needle drawn the way it flies, to the nearest eighth of a turn (east, south-east, south typed; the rest those
+    // flipped both ways): never the art turned
+    static fracAim(spr, a) {
+        const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, [f, fl] = [['spike_e', 0], ['spike_se', 0], ['spike_s', 0], ['spike_ne', 1], ['spike_e', 1], ['spike_se', 1], ['spike_s', 1], ['spike_ne', 0]][k];
+        if (spr.frame.name !== f || spr.flipX !== !!fl) spr.setFrame(f).setFlip(!!fl, !!fl);
+    }
+    // Frost, the scene's particle emitters (made the first time): glints flaring and going (the hand-drawn ones) and a
+    // pale mist, both light added; and frost with no outline (haze_*, drawn normally, pale cyan cooling to deep blue), so
+    // where it crowds it runs together into one body, never a heap of pieces: haze lies still (trails), puff is thrown out
+    // (bursts); k sizes the next ones
+    static frost(S) {
+        if (S._fracFx?.glint?.active) return S._fracFx;
+        const ADD = Phaser.BlendModes.ADD;
+        const glint = S.add.particles(0, 0, 'fx_fractal', { frame: ['glint_0', 'glint_1', 'glint_2'], emitting: false, lifespan: { min: 180, max: 420 },
+            speed: { min: 5, max: 40 }, angle: { min: 0, max: 360 }, gravityY: 20, scale: { start: 2, end: 0.6 }, alpha: { start: 1, end: 0 },
+            color: [0xffffff, 0xdff8ff, 0x9fe4ff, 0x4a90c8], blendMode: ADD }).setDepth(3.45);
+        const mist = S.add.particles(0, 0, 'vfx_glow', { emitting: false, lifespan: { min: 220, max: 380 }, speed: { min: 0, max: 15 },
+            scale: { start: 0.28, end: 0.1 }, alpha: { start: 0.22, end: 0 }, color: [0xdff8ff, 0x7fd0ff, 0x2a6a9a], blendMode: ADD }).setDepth(3.4);
+        const fx = { glint, mist, k: 1 }, H = ['haze_0', 'haze_1', 'haze_2', 'haze_3', 'haze_4', 'haze_5'], COLS = [0xa8e8ff, 0x6cc8f4, 0x4aa8e8, 0x2a78c0, 0x1e5a96];
+        const size = (lo, hi, end) => ({   // (mirrored at random, never turned)
+            scaleX: { onEmit: p => (p._sx = (Math.random() < 0.5 ? -1 : 1) * fx.k * (lo + Math.random() * (hi - lo))), onUpdate: (p, key, t) => p._sx * (1 + (end - 1) * t) },
+            scaleY: { onEmit: p => (p._sy = Math.abs(p._sx) * (0.8 + Math.random() * 0.4)), onUpdate: (p, key, t) => p._sy * (1 + (end - 1) * t) } });
+        fx.haze = S.add.particles(0, 0, 'fx_fractal', { frame: H, emitting: false, lifespan: { min: 150, max: 300 }, speed: { min: 0, max: 5 }, angle: { min: 0, max: 360 },
+            ...size(1.1, 1.7, 0.6), alpha: { start: 0.6, end: 0 }, color: COLS, colorEase: 'quad.out' }).setDepth(3.3);
+        fx.puff = S.add.particles(0, 0, 'fx_fractal', { frame: H, emitting: false, lifespan: { min: 260, max: 520 }, speed: { min: 14, max: 64 }, angle: { min: 0, max: 360 },
+            ...size(1.4, 2.2, 1.5), alpha: { start: 0.62, end: 0 }, color: COLS, colorEase: 'quad.out' }).setDepth(4.55);
+        return (S._fracFx = fx);
+    }
+    // Frost laid along what flew from (x0, y0) to (x1, y1), a puff every gap px (k their size): one unbroken tail, thinning as it ages
+    static frostTrail(S, x0, y0, x1, y1, gap, k = 1) {
+        const F = WeaponSystem.frost(S), n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / gap));
+        F.k = k; for (let i = 1; i <= n; i++) F.haze.emitParticleAt(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, 1); F.k = 1;
+    }
+    // A burst of frost at (x, y): n puffs thrown out (from within r px), running together into one cloud
+    static frostPuff(S, x, y, n, k = 1, r = 6) {
+        const F = WeaponSystem.frost(S); F.k = k;
+        for (let i = 0; i < n; i++) F.puff.emitParticleAt(x + (Math.random() - 0.5) * r, y + (Math.random() - 0.5) * r, 1);
+        F.k = 1;
+    }
+    // A big chip of crystal (fx_fractal's shard, outlined: the few crisp pieces in a break) tumbling from (x, y) to d px away
+    static fracChip(S, x, y, d, scale = 1.7) {
+        WeaponSystem.fractalArt(S);
+        const a = Math.random() * Math.PI * 2, c = S.add.sprite(x, y, 'fx_fractal', 'shard_0').setScale(scale).setDepth(4.6).play('frac_tumble');
+        c.anims.setProgress(Math.random());
+        S.tweens.add({ targets: c, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.7 + 6, alpha: 0, scale: scale * 0.6, duration: 360 + Math.random() * 160, ease: 'Quad.easeOut', onComplete: () => c.destroy() });
+    }
+    // A big chunk of crystal (outlined) thrown from (x, y) out along a (give or take) d px, hopping, tumbling: the bloom's shatter
+    static fracChunk(S, x, y, a, d) {
+        WeaponSystem.fractalArt(S);
+        const b = a + (Math.random() - 0.5) * 0.9, ex = x + Math.cos(b) * d, ey = y + Math.sin(b) * d * 0.75, h = 14 + Math.random() * 16;
+        const c = S.add.sprite(x, y, 'fx_fractal', 'chunk_0').setScale(2).setDepth(4.6).setFlipX(Math.random() < 0.5).play('frac_chunk');
+        c.anims.setProgress(Math.random());
+        S._vfxSort?.(c);
+        S.tweens.addCounter({ from: 0, to: 1, duration: 420 + Math.random() * 160, ease: 'Quad.easeOut', onUpdate: tw => {
+            const u = tw.getValue(); c.setPosition(x + (ex - x) * u, y + (ey - y) * u - h * 4 * u * (1 - u)).setAlpha(Math.min(1, (1 - u) / 0.3));
+        }, onComplete: () => c.destroy() });
+    }
+    // A crack of light shot through the floor from (x, y) the way a points, to the nearest eighth (e, se, s, ne typed; the
+    // rest those flipped both ways, the root kept at the point): it flares and fades
+    static fracCrack(S, x, y, a, scale, delay = 0) {
+        const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, [f, fl, ox, oy] = [['crack_e', 0, 0, 0.5], ['crack_se', 0, 0, 0], ['crack_s', 0, 0.5, 0], ['crack_ne', 1, 0, 1],
+            ['crack_e', 1, 0, 0.5], ['crack_se', 1, 0, 0], ['crack_s', 1, 0.5, 0], ['crack_ne', 0, 0, 1]][k];
+        const c = S.add.image(x, y, 'fx_fractal', f).setOrigin(fl ? 1 - ox : ox, fl ? 1 - oy : oy).setFlip(!!fl, !!fl).setScale(scale)
+            .setBlendMode(Phaser.BlendModes.ADD).setDepth(0.5).setAlpha(0);
+        S._vfxSort?.(c);
+        S.tweens.add({ targets: c, alpha: 1, delay, duration: 40, onComplete: () => S.tweens.add({ targets: c, alpha: 0, delay: 140, duration: 420, ease: 'Quad.easeIn', onComplete: () => c.destroy() }) });
+    }
+    // A burst of ice at (x, y): the hand-drawn flare blooming into a ring of shards, a cloud of frost thrown out with it (big: the spikes')
+    static fracMuzzle(S, x, y, big) {
+        WeaponSystem.fractalArt(S);
+        const b = S.add.sprite(x, y, 'fx_fractal', 'burst_0').setScale(big ? 2.4 : 1.7).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6).play('frac_burst');
+        b.once('animationcomplete', () => b.destroy());
+        WeaponSystem.frostPuff(S, x, y, big ? 7 : 4, big ? 1 : 0.8);
+        WeaponSystem.frost(S).glint.emitParticleAt(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10, 2);
+        if (big) S.cameras.main.shake(40, 0.002);
+    }
+    // A shard breaking (on a hit, on a wall): one cloud of frost bursting off it, a big chip or two of crystal tumbling out
+    // (the only outlined pieces: its fan is the rest), a glint, (the crystal's own break) a flash
     static fractalBurst(scene, x, y, crit) {
-        const A = WeaponSystem.fractalArt(scene);
-        for (let i = 0; i < (crit ? 7 : 4); i++) {
-            const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 16;
-            const c = scene.add.image(x, y, A.shard[Math.floor(Math.random() * 3)]).setScale(0.55).setRotation(a).setDepth(4.6);
-            scene.tweens.add({ targets: c, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.7 + 6, rotation: a + 4, alpha: 0, scale: 0.3, duration: 320 + Math.random() * 120, ease: 'Quad.easeOut', onComplete: () => c.destroy() });
-        }
-        if (crit) scene._vfxFlash?.(x, y, 40, 0xffffff, 140, 0.8);
+        WeaponSystem.frostPuff(scene, x, y, crit ? 9 : 6, crit ? 1.1 : 0.9);
+        for (let i = 0; i < (crit ? 2 : 1); i++) WeaponSystem.fracChip(scene, x, y, 16 + Math.random() * 16);
+        WeaponSystem.frost(scene).glint.emitParticleAt(x + (Math.random() - 0.5) * 8, y + (Math.random() - 0.5) * 8, crit ? 2 : 1);
+        if (crit) scene._vfxFlash?.(x, y, 40, 0x9fe4ff, 140, 0.8);
     }
 
-    // ── FRACTAL SHARD'S R (2026-10-20): the combo, and a gamble ──────────────
-    // A spike MARKS what it hits (a charge mark, no damage: that's Hex's job). A fan shard on a marked enemy uses the mark
-    // up for a charge (one a fan); CHARGES of them fill R. R flips a coin for MODE_MS: DEADLY ACCURACY (every shot a five-spike volley,
-    // SPIKE_CD apart, xSPIKE_MULT) or SHARD STORM (every shot a FAN_N-shard fan, FAN_HALF either side, FAN_CD apart).
-    // DEADLY ACCURACY: five shards orbit you; a click lines them up a tile apart facing the cursor, and they converge on that point
-    // and fly on past it, every hit a crit (_fractalDeadly). The gamble is a slot machine (_fractalGamble): a reel that slows, then lands.
-    // SHARD STORM is the ult charger: it heals STORM_HEAL of max HP when it lands (no overheal), ice ult charge xSTORM_ULT while it
-    // runs, and chip fans (xSTORM_DMG damage) every FAN_CD.
-    _fractalCfg() { return { MARK_MS: 6000, CHARGES: 5, MODE_MS: 6000, SPIKE_CD: 420, SPIKE_MULT: 1.5, FAN_CD: 350, FAN_N: 7, FAN_HALF: Math.PI / 4, FORM_MS: 190, ORBIT_R: 34,
-        STORM_HEAL: 0.1, STORM_ULT: 2, STORM_DMG: 0.5 }; }   // (STORM_ULT 2.5 with splitting shards filled ~45% of a gem a storm)
-    _fractalMark(e) {
-        if (!e?.sprite?.active || this._phasedOut(e)) return;
-        e._fracMarkUntil = this.time.now + this._fractalCfg().MARK_MS;
-        if (!e._fracMarkG?.active) { e._fracMarkG = this.add.image(e.sprite.x, e.sprite.y - 26, WeaponSystem.fractalArt(this).mark).setDepth(4.4); this._vfxSort?.(e._fracMarkG); }
-        (this._fracMarked ||= new Set()).add(e);
-    }
-    // An ice shard landing on a boss counts toward its weapon's signature as one on an enemy does (boss hits never did):
-    // an icicle toward the Frost Shield, a Fractal spike marks the boss, a fan shard on that mark charges R
+    // ── FRACTAL SHARD'S R: FRACTAL BLOOM ─────────────────────────────────────
+    // CHARGES shots whose chain broke all the way down (Fractal.js) make R ready: FRACTAL BLOOM. A seed crystal flies to where
+    // you aim (BLOOM_RANGE tiles at most, short of a wall) and blooms: a snowflake of crystal bursting up out of the floor,
+    // six arms of ARM[0] tiles growing out from it, each forking at its end into two of ARM[1] (a sixth of a turn either
+    // way), and those again into two of ARM[2]: a fractal, each fork smaller. The crystals race out a tile every BLOOM_STEP;
+    // each cracks what stands on its tile (BLOOM_DMG and BLOOM_CHILL of a chill bar), the last forks' tips freeze it into a
+    // cube. BLOOM_HOLD after the last has grown the whole flake shatters at once: BLOOM_SHATTER to everything standing in it.
+    _fractalCfg() { return { CHARGES: 5, BLOOM_RANGE: 9, SEED_MS: 220, ARM: [3, 2, 1], BLOOM_STEP: 55, BLOOM_DMG: 16, BLOOM_CHILL: 0.34, BLOOM_HOLD: 900, BLOOM_SHATTER: 28 }; }
+    // An icicle landing on a boss counts toward the Frost Shield as one on an enemy does (boss hits never did)
     _shardBossSig(s) {
         if (s.isCannonShard && !(this._frostShieldUntil > this.time.now)) { this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1); this._updateIcicleChargeBar(); }
-        const b = [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore].find(o => o?.active && o.container);
-        if (!b) return;
-        const m = b._fracPseudo ||= {};
-        m.sprite = { x: b.container.x, y: b.container.y - 40, active: true };
-        if (s.isPierceSpike) this._fractalMark(m); else if (s.isSplitter) this._fractalConsume(m);
     }
-    _fractalConsume(e) {
-        if (!((e?._fracMarkUntil || 0) > this.time.now)) return;
-        if ((this._fracMode?.until || 0) > this.time.now) return;   // (no charging while R runs)
-        if (this._fracChargedBy === this._fractalVolley) return;   // one charge a fan, so a pack fills it no faster than one enemy (the other marks wait)
-        this._fracChargedBy = this._fractalVolley;
-        const FC = this._fractalCfg();
-        e._fracMarkUntil = 0; e._fracMarkG?.destroy(); e._fracMarkG = null; this._fracMarked?.delete(e);
-        this._fracCharge = Math.min(FC.CHARGES, (this._fracCharge || 0) + 1);
-        if (this._fracCharge >= FC.CHARGES) Sfx.play(this, 'rready', { el: 'ice' });
-        const p = e.sprite; if (p?.active) { this._vfxFlash?.(p.x, p.y, 36, 0x9fe8ff, 160, 0.7); this.showStatusText(p.x, p.y - 30, this._fracCharge >= FC.CHARGES ? 'R READY' : `+1  ${this._fracCharge}/${FC.CHARGES}`, '#bff4ff'); }
-    }
-    _fractalGamble() {
-        const FC = this._fractalCfg(), p = this.player;
-        if (this._fracSpin) return;
+    _fractalBloom() {
+        const FC = this._fractalCfg(), p = this.player, T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
         if ((this._fracCharge || 0) < FC.CHARGES) { this.showStatusText(p.x, p.y - 28, `NOT CHARGED  ${this._fracCharge || 0}/${FC.CHARGES}`, '#8ab8d0'); return; }
-        this._fracCharge = 0; this._fracSpin = true;
-        const kind = Math.random() < 0.5 ? 'spike' : 'fan', W = this.scale.width, cx = W / 2, cy = Math.round(this.scale.height * 0.24), D = 40;
-        const NAME = { spike: 'DEADLY ACCURACY', fan: 'SHARD STORM' }, COL = { spike: '#ffffff', fan: '#9fe8ff' };
-        // the machine: an iron-dark frame, an ice rim, a reel window, the name rolling in it
-        const box = this.add.graphics().setScrollFactor(0).setDepth(D);
-        const drawBox = (glow) => { box.clear(); box.fillStyle(0x06101a, 0.92); box.fillRoundedRect(cx - 190, cy - 34, 380, 68, 10);
-            box.lineStyle(3, glow, 1); box.strokeRoundedRect(cx - 190, cy - 34, 380, 68, 10); box.lineStyle(1, 0xdff8ff, 0.35); box.strokeRoundedRect(cx - 176, cy - 24, 352, 48, 6); };
-        drawBox(0x5fb8e0);
-        const label = this.add.text(cx, cy, '', { fontFamily: UIKit.FONT.title, fontSize: '30px', fontStyle: 'bold', color: '#ffffff', stroke: '#06101a', strokeThickness: 6 }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
-        const objs = [box, label]; objs.forEach(o => this._vfxSort?.(o));
-        const gaps = [45, 50, 55, 62, 70, 80, 92, 106, 124, 146, 172, 205, 245, 300];   // the reel slowing
-        const other = kind === 'spike' ? 'fan' : 'spike';   // the reel flips gaps.length + 1 times before it stops: start where that lands on `kind`
-        let face = (gaps.length + 1) % 2 === 1 ? other : kind, i = 0;
-        const tick = () => {
-            face = face === 'spike' ? 'fan' : 'spike';
-            label.setText(NAME[face]).setColor(COL[face]).setY(cy - 10).setAlpha(0.6);
-            this.tweens.add({ targets: label, y: cy, alpha: 1, duration: Math.min(90, gaps[Math.min(i, gaps.length - 1)] * 0.7) });
-            Sfx.play(this, 'click');
-            if (i < gaps.length) { this.time.delayedCall(gaps[i++], tick); return; }
-            // it lands: boom
-            this._fracSpin = false;
-            this._fracMode = { kind, until: this.time.now + FC.MODE_MS };
-            if (kind === 'spike') this._fractalDeadlyOpen();
-            if (kind === 'fan' && this.health > 0) {   // Shard Storm lands with a heal (never past max)
-                const before = this.health; this.health = Math.min(this.maxHealth, this.health + this.maxHealth * FC.STORM_HEAL);
-                const h = Math.round(this.health - before); if (h > 0 && this.player?.active) this.showStatusText(this.player.x, this.player.y - 30, `+${h} HP`, '#7dff9a');
-                this.updateHUD?.();
+        if (this._fracBlooming) return;
+        this._fracCharge = 0; this._fracBlooming = true; this._gearFiredAt = this.time.now;
+        WeaponSystem.fractalArt(this);
+        // where it blooms: toward the cursor, BLOOM_RANGE at most, short of a wall
+        const cam = this.cameras.main, ox = this._shotX(), oy = this._shotY();   // (aimed as the shots are: the pointer, plus the camera)
+        const mx = (this.pointerX ?? 0) + cam.scrollX, my = (this.pointerY ?? 0) + cam.scrollY, ang = Math.atan2(my - oy, mx - ox);
+        const want = Math.min(FC.BLOOM_RANGE, Math.hypot(mx - ox, my - oy) / T);
+        let cx = this.playerX, cy = this.playerY;
+        for (let d = 0.5; d <= want; d += 0.5) { const x = Math.round(this.playerX + Math.cos(ang) * d), y = Math.round(this.playerY + Math.sin(ang) * d); if (this.world[x]?.[y] !== this.FLOOR) break; cx = x; cy = y; }
+        // the flake: every tile it grows on, when, and whether it's a last fork's tip; a branch stops at a wall (and doesn't fork)
+        // (a knot: the middle and each arm's end, where it forks)
+        const cells = new Map(), put = (x, y, t, tip, knot) => { const c = cells.get(x + ',' + y); if (!c || c.t > t) cells.set(x + ',' + y, { x, y, t, tip, knot }); };
+        const grow = (x0, y0, a, gen, t) => {
+            let lx = x0, ly = y0;
+            for (let k = 1; k <= FC.ARM[gen]; k++) {
+                const x = Math.round(x0 + Math.cos(a) * k), y = Math.round(y0 + Math.sin(a) * k);
+                if (this.world[x]?.[y] !== this.FLOOR) return;
+                t += FC.BLOOM_STEP; put(x, y, t, gen === FC.ARM.length - 1 && k === FC.ARM[gen], gen === 0 && k === FC.ARM[0]); lx = x; ly = y;
             }
-            drawBox(kind === 'spike' ? 0xffffff : 0x9fe8ff);
-            label.setScale(1.7); this.tweens.add({ targets: label, scale: 1, duration: 260, ease: 'Back.easeOut' });
-            const flash = this.add.rectangle(W / 2, this.scale.height / 2, W, this.scale.height, kind === 'spike' ? 0xffffff : 0x9fe8ff, 0.35).setScrollFactor(0).setDepth(D - 1);
-            this._vfxSort?.(flash); this.tweens.add({ targets: flash, alpha: 0, duration: 320, onComplete: () => flash.destroy() });
-            this.cameras.main.shake(260, 0.012);
-            const pp = this.player; if (pp?.active) { this._vfxBursts?.ice?.explode(40, pp.x, pp.y); this._vfxFlash?.(pp.x, pp.y, 160, kind === 'spike' ? 0xffffff : 0x9fe8ff, 400, 0.9); }
-            Sfx.play(this, 'shatter'); Sfx.play(this, 'freeze');
-            this.time.delayedCall(900, () => { for (const o of objs) this.tweens.add({ targets: o, alpha: 0, duration: 260, onComplete: () => o.destroy() }); });
+            if (gen + 1 < FC.ARM.length) for (const sd of [-1, 1]) grow(lx, ly, a + sd * Math.PI / 3, gen + 1, t);
         };
-        tick();
-    }
-    // Deadly Accuracy's shot: the orbiting shards form a line a tile apart, facing the point you clicked, then each flies through
-    // that point and on to the end of its range. Every one crits (s._crit).
-    // Deadly Accuracy opening: a crystal sigil blooms out under you, six lances rise out of it in a ring of light and
-    // take their places round you
-    _fractalDeadlyOpen() {
-        const p = this.player; if (!p?.active) return;
-        const ADD = Phaser.BlendModes.ADD, cx = p.x, cy = p.y + 4;
-        const g = this.add.graphics().setDepth(1.05).setBlendMode(ADD).setPosition(cx, cy), t = { k: 0 };
-        this.tweens.add({ targets: t, k: 1, duration: 520, ease: 'Cubic.easeOut', onUpdate: () => {
-            const k = t.k, R = 70 * k; g.clear();
-            for (let ring = 0; ring < 3; ring++) {   // three hexagons, each turned and a size down
-                const r = R * (1 - ring * 0.28), rot = ring * Math.PI / 6 + k * 0.6, pts = [];
-                for (let i = 0; i <= 6; i++) { const a = rot + i * Math.PI / 3; pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * 0.5 }); }
-                g.lineStyle(2 - ring * 0.5, ring ? 0x9fe8ff : 0xffffff, (1 - k) * 0.9 + 0.1).strokePoints(pts, false);
-            }
-            for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + k; g.lineStyle(1, 0xdff8ff, 0.6 * (1 - k)).lineBetween(Math.cos(a) * R * 0.25, Math.sin(a) * R * 0.12, Math.cos(a) * R, Math.sin(a) * R * 0.5); }
-        }, onComplete: () => this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() }) });
-        const flash = this.add.image(cx, cy - 6, 'vfx_glow').setTint(0xdff8ff).setBlendMode(ADD).setDepth(4.7).setScale(0.3);
-        this.tweens.add({ targets: flash, scale: 1.6, alpha: 0, duration: 420, onComplete: () => flash.destroy() });
-        for (let i = 0; i < 18; i++) {   // splinters thrown out
-            const a = Math.random() * Math.PI * 2, d = 30 + Math.random() * 50;
-            const sh = this.add.image(cx, cy - 6, WeaponSystem.fractalArt(this).shard[i % 5]).setDepth(4.6).setScale(0.7).setRotation(a);
-            this.tweens.add({ targets: sh, x: cx + Math.cos(a) * d, y: cy - 6 + Math.sin(a) * d * 0.6, rotation: a + 4, alpha: 0, scale: 0.2, duration: 500 + Math.random() * 200, ease: 'Quad.easeOut', onComplete: () => sh.destroy() });
-        }
-        this.cameras.main.shake(90, 0.003);
-    }
-    _fractalDeadly(tx, ty) {
-        const FC = this._fractalCfg(), T = this.TILE_SIZE, p = this.player, ADD = Phaser.BlendModes.ADD;
-        const ang = Math.atan2(ty - p.y, tx - p.x), px = -Math.sin(ang), py = Math.cos(ang), orbs = this._fracOrbs || [];
-        this._fracOrbBusy = this.time.now + FC.FORM_MS + 300;
-        this._fracHalo?.clear();
-        const spots = [-2, -1, 0, 1, 2].map(k => ({ x: p.x + px * k * T * 0.55, y: p.y - 4 + py * k * T * 0.55 }));
-        // they snap into a line facing the click, each drawing a thin aim line to the point; a crosshair closes on it
-        const aim = this.add.graphics().setDepth(4.5).setBlendMode(ADD), mark = this.add.graphics().setDepth(4.7).setPosition(tx, ty);
-        const t = { k: 0 };
-        this.tweens.addCounter({ from: 0, to: 1, duration: FC.FORM_MS, onUpdate: tw => {
-            const k = tw.getValue();
-            aim.clear(); mark.clear();
-            orbs.forEach(o => { if (o?.active) { aim.lineStyle(1, 0xffffff, 0.15 + 0.5 * k).lineBetween(o.x, o.y, tx, ty); } });
-            const r = 22 - 14 * k;
-            mark.lineStyle(2, 0xffffff, 0.5 + 0.5 * k).strokeCircle(0, 0, r);
-            for (const q of [0, 1, 2, 3]) { const qa = q * Math.PI / 2 + k * 0.8; mark.lineBetween(Math.cos(qa) * (r + 2), Math.sin(qa) * (r + 2), Math.cos(qa) * (r + 7), Math.sin(qa) * (r + 7)); }
-        } });
-        spots.forEach((s, k) => { const o = orbs[k]; if (o?.active) this.tweens.add({ targets: o, x: s.x, y: s.y, rotation: ang + Math.PI / 2, scale: 1.1, alpha: 1, duration: FC.FORM_MS * 0.8, ease: 'Back.easeOut' }); });
-        this.time.delayedCall(FC.FORM_MS, () => {
-            aim.destroy();
-            this.tweens.add({ targets: mark, scale: 1.6, alpha: 0, duration: 260, onComplete: () => mark.destroy() });
-            const volleyId = Math.random().toString(36).slice(2);
-            this._fractalSpikeDmg = 8 * (1 + 0.2 * WeaponLevels.perk('fractal_shard', 'shards')) * FC.SPIKE_MULT;
-            for (const s of spots) {
-                const a2 = Math.atan2(ty - s.y, tx - s.x);
-                this._spawnPierceSpike(s.x, s.y, a2, volleyId, false);
-                const sh = this.iceShards[this.iceShards.length - 1]; if (sh) sh._crit = true;
-                const streak = this.add.graphics().setDepth(4.6).setBlendMode(ADD);   // a white-hot streak down its line
-                const ex = s.x + Math.cos(a2) * T * 9, ey = s.y + Math.sin(a2) * T * 9;
-                streak.lineStyle(5, 0x4aa8dc, 0.35).lineBetween(s.x, s.y, ex, ey);
-                streak.lineStyle(2.5, 0x9fe8ff, 0.7).lineBetween(s.x, s.y, ex, ey);
-                streak.lineStyle(1, 0xffffff, 1).lineBetween(s.x, s.y, ex, ey);
-                for (let d = 18; d < T * 9; d += 22) {   // crystal flecks hanging in its wake, shimmering out one after another
-                    const fx = s.x + Math.cos(a2) * d, fy = s.y + Math.sin(a2) * d;
-                    const fl = this.add.image(fx + (Math.random() - 0.5) * 6, fy + (Math.random() - 0.5) * 6, WeaponSystem.fractalArt(this).shard[Math.floor(Math.random() * 3)]).setScale(0.45).setRotation(Math.random() * 6).setDepth(4.55).setAlpha(0.9);
-                    this.tweens.add({ targets: fl, alpha: 0, scale: 0.15, y: fl.y - 6, delay: d * 0.6, duration: 380, onComplete: () => fl.destroy() });
+        put(cx, cy, 0, false, true);
+        for (let i = 0; i < 6; i++) grow(cx, cy, ang + i * Math.PI / 3, 0, 0);
+        // the seed, flung there trailing frost
+        const tx = cx * T + T / 2, ty = cy * T + T / 2, seed = this.add.image(ox, oy, 'fx_fractal', 'mark').setScale(2.2).setDepth(4.6), F = WeaponSystem.frost(this);
+        WeaponSystem.fracMuzzle(this, ox, oy, false);
+        Sfx.play(this, 'w_fractal_shard');
+        let lx = ox, ly = oy;
+        this.tweens.add({ targets: seed, x: tx, y: ty - 6, duration: FC.SEED_MS, ease: 'Quad.easeIn', onUpdate: () => { WeaponSystem.frostTrail(this, lx, ly, seed.x, seed.y, 5, 1.1); lx = seed.x; ly = seed.y; F.mist.emitParticleAt(seed.x, seed.y, 1); },
+            onComplete: () => {
+                seed.destroy();
+                WeaponSystem.fracMuzzle(this, tx, ty, true);
+                Sfx.play(this, 'freeze'); this.cameras.main.shake(140, 0.005);
+                const crystals = [], hit = new Set(), dmg = FC.BLOOM_DMG * (this.damageScaling || 1);
+                let last = 0, bossHit = false;
+                for (const c of cells.values()) {
+                    last = Math.max(last, c.t);
+                    this.time.delayedCall(c.t, () => {   // a crystal bursting up out of the floor, cracking what stands on it
+                        if (this._deathScreenActive) return;
+                        const px = c.x * T + T / 2, py = c.y * T + T / 2 + 8;
+                        // grown thick with no outline (so the arms run together into one body of crystal), the outlined crystal only at the knots
+                        const cr = this.add.sprite(px, py, 'fx_fractal', c.knot ? 'crystal_0' : 'glass_0').setOrigin(0.5, 1).setScale(c.knot ? 2.2 : 1.5 + Math.random() * 0.5).setFlipX(Math.random() < 0.5).setDepth(2.4 + c.y * 0.0001 + (c.knot ? 0.00005 : 0)).play(c.knot ? 'frac_grow' : 'frac_glass');
+                        crystals.push({ c, cr });
+                        if (Math.random() < 0.5) F.glint.emitParticleAt(px + (Math.random() - 0.5) * T, py - 10 - Math.random() * 14, 1);
+                        F.mist.emitParticleAt(px, py - 8, 1);
+                        if (c.t % (FC.BLOOM_STEP * 2) < FC.BLOOM_STEP) Sfx.play(this, 'ice_crack', { soft: true });
+                        for (const e of [...this.enemies]) {
+                            if (e.x !== c.x || e.y !== c.y || !e.sprite?.active || e.health <= 0 || this._phasedOut?.(e)) continue;
+                            this.damageEnemy(e, dmg, 'ice');
+                            if (e.sprite?.active && e.health > 0) this.applyChill?.(e, c.tip ? 1 : FC.BLOOM_CHILL);   // (a tip: a full bar, a cube)
+                        }
+                        if (!bossHit && this.damageBossAtTile?.(c.x, c.y, dmg)) bossHit = true;
+                    });
                 }
-                this.tweens.add({ targets: streak, alpha: 0, duration: 200, ease: 'Quad.easeIn', onComplete: () => streak.destroy() });
-                const flash = this.add.image(s.x, s.y, 'vfx_glow').setTint(0xdff8ff).setBlendMode(ADD).setDepth(4.7).setScale(0.25);
-                this.tweens.add({ targets: flash, scale: 0.35, alpha: 0, duration: 160, onComplete: () => flash.destroy() });
-            }
-            for (const o of orbs) if (o?.active) o.setAlpha(0).setScale(0.9);
-            this.cameras.main.shake(70, 0.003);
-            Sfx.play(this, 'w_fractal_shard');
-        });
+                this.time.delayedCall(last + FC.BLOOM_HOLD, () => {   // and the whole flake shatters at once
+                    this._fracBlooming = false;
+                    if (this._deathScreenActive) { crystals.forEach(o => o.cr.destroy()); return; }
+                    Sfx.play(this, 'shatter'); Sfx.play(this, 'boom', { big: true }); this.time.delayedCall(70, () => Sfx.play(this, 'ice_crack'));   // a crack, a boom, the ice ringing out
+                    this.cameras.main.shake(240, 0.013);
+                    const sdmg = FC.BLOOM_SHATTER * (this.damageScaling || 1);
+                    // a white flash at its heart, cracks of light shot through the floor from it (all eight ways) and on out from each arm's knot
+                    const fl = this.add.image(tx, ty - 8, 'vfx_glow').setTint(0xffffff).setBlendMode(ADD).setDepth(4.7).setScale(1.2);
+                    this._vfxSort?.(fl);
+                    this.tweens.add({ targets: fl, scale: 3.2, alpha: 0, duration: 120, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
+                    for (let k = 0; k < 8; k++) WeaponSystem.fracCrack(this, tx, ty, k * Math.PI / 4, 2.2);
+                    F.k = 1.2;
+                    crystals.forEach(({ c, cr }, i) => {   // the knots burst into big chunks thrown outward, the rest is gone in a thin quick haze
+                        const px = cr.x, py = cr.y - 10, a = c.x === cx && c.y === cy ? null : Math.atan2(c.y - cy, c.x - cx);
+                        if (c.knot) {
+                            const b = this.add.sprite(px, py, 'fx_fractal', 'burst_0').setScale(2.6).setBlendMode(ADD).setDepth(4.6).play('frac_burst');
+                            this._vfxSort?.(b);
+                            b.once('animationcomplete', () => b.destroy());
+                            if (a !== null) WeaponSystem.fracCrack(this, c.x * T + T / 2, c.y * T + T / 2, a, 1.5, 50);
+                            for (let k = 0; k < 3; k++) WeaponSystem.fracChunk(this, px, py, a ?? Math.random() * Math.PI * 2, 40 + Math.random() * 40);
+                        } else if (i % 2) F.haze.emitParticleAt(px, py, 1);
+                        cr.destroy();
+                        for (const e of [...this.enemies]) {
+                            if (e.x !== c.x || e.y !== c.y || hit.has(e) || !e.sprite?.active || e.health <= 0 || this._phasedOut?.(e)) continue;
+                            hit.add(e); this.damageEnemy(e, sdmg, 'ice');
+                        }
+                    });
+                    F.k = 1;
+                    this._vfxFlash?.(tx, ty, T * 7, 0xffffff, 200, 1);
+                });
+            } });
+        this._updateFractalBar();
     }
-    // Every frame: the marks over their enemies (gone when they lapse or die) and, while it's out, the charge over you
+
+    // Every frame, while it's out: the charge over you
     _updateFractalBar() {
         const now = this.time.now, FC = this._fractalCfg();
-        for (const e of [...(this._fracMarked || [])]) {
-            const g = e._fracMarkG;
-            if (!e.sprite?.active || !((e._fracMarkUntil || 0) > now) || !g?.active) { g?.destroy(); e._fracMarkG = null; this._fracMarked.delete(e); continue; }
-            const s = e.sprite, k = (e._fracMarkUntil - now) / FC.MARK_MS;   // a little crystal bobbing and turning, fading as it lapses
-            g.setPosition(s.x, s.y - 26 + Math.sin(now * 0.008) * 1.5).setScale(Math.abs(Math.cos(now * 0.004)) * 0.6 + 0.4, 1).setAlpha(0.5 + 0.5 * Math.min(1, k * 3));
-        }
         const out = this.currentElement === 'ice' && this.equippedWeapons?.ice === 'fractal_shard' && this.player?.active;
-        // Deadly Accuracy's five shards, circling you while it lasts (they form up and fire in _fractalDeadly)
-        const deadly = out && this._fracMode?.kind === 'spike' && this._fracMode.until > now;
-        if (deadly) {
-            const art = WeaponSystem.fractalArt(this);
-            if (!this._fracOrbs?.[0]?.active) this._fracOrbs = Array.from({ length: 5 }, () => this.add.image(this.player.x, this.player.y, art.lance).setDepth(4.6).setScale(0.9));
-            const halo = this._fracHalo ||= this.add.graphics().setDepth(1.05).setBlendMode(Phaser.BlendModes.ADD);   // under you
-            const scope = this._fracScope ||= this.add.graphics().setDepth(5.5).setBlendMode(Phaser.BlendModes.ADD);   // on the cursor
-            halo.clear(); scope.clear();
-            const cx = this.player.x, cy = this.player.y + 6, pulse = 0.5 + 0.5 * Math.sin(now / 200);
-            for (let ring = 0; ring < 2; ring++) {   // a slowly turning crystal sigil on the floor
-                const r = (ring ? 24 : 36), rot = (ring ? -1 : 1) * now * 0.0008 + ring * Math.PI / 6, pts = [];
-                for (let i = 0; i <= 6; i++) { const a = rot + i * Math.PI / 3; pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r * 0.45 }); }
-                halo.lineStyle(ring ? 1 : 1.5, ring ? 0x9fe8ff : 0xdff8ff, (ring ? 0.35 : 0.5) + 0.2 * pulse).strokePoints(pts, false);
-                if (!ring) for (const q of pts.slice(0, 6)) halo.fillStyle(0xffffff, 0.5 + 0.4 * pulse).fillRect(q.x - 1, q.y - 1, 2, 2);
-            }
-            if (now >= (this._fracOrbBusy || 0)) {   // the lances circle you, points out, each with a fading trail
-                this._fracOrbs.forEach((o, i) => {
-                    const a = now * 0.0028 + i * Math.PI * 2 / 5, x = cx + Math.cos(a) * FC.ORBIT_R, y = cy - 14 + Math.sin(a) * FC.ORBIT_R * 0.5;
-                    o.setPosition(x, y + Math.sin(now / 160 + i) * 2).setRotation(a + Math.PI / 2).setAlpha(Math.min(1, o.alpha + 0.08));
-                    if (Math.random() < 0.3) {
-                        const ghost = this.add.image(o.x, o.y, art.lance).setRotation(o.rotation).setScale(0.9).setDepth(4.55).setTint(0x7fd8ff).setAlpha(0.35).setBlendMode(Phaser.BlendModes.ADD);
-                        this.tweens.add({ targets: ghost, alpha: 0, duration: 260, onComplete: () => ghost.destroy() });
-                    }
-                });
-            }
-            const cam = this.cameras.main, ap = this._aim?.(this.input.activePointer), mx = ap ? ap.x + cam.scrollX : cx, my = ap ? ap.y + cam.scrollY : cy;
-            const r0 = 14, spin = now * 0.002;   // a scope on your cursor: a ring, four ticks closing and opening, a dot
-            scope.lineStyle(1.5, 0xffffff, 0.75).strokeCircle(mx, my, r0);
-            scope.lineStyle(1, 0x9fe8ff, 0.5).strokeCircle(mx, my, r0 + 5);
-            for (let q = 0; q < 4; q++) { const a = spin + q * Math.PI / 2, i0 = r0 - 6 - 2 * pulse; scope.lineStyle(2, 0xffffff, 0.9).lineBetween(mx + Math.cos(a) * i0, my + Math.sin(a) * i0, mx + Math.cos(a) * (r0 + 9), my + Math.sin(a) * (r0 + 9)); }
-            scope.fillStyle(0xffffff, 1).fillRect(mx - 1, my - 1, 2, 2);
-        } else if (this._fracOrbs) { for (const o of this._fracOrbs) o?.destroy(); this._fracOrbs = null; this._fracHalo?.destroy(); this._fracHalo = null; this._fracScope?.destroy(); this._fracScope = null; }
         if (!out) { if (this._fracBar?.active) this._fracBar.destroy(); this._fracBar = null; return; }
         if (!this._fracBar?.active) this._fracBar = this.add.graphics().setDepth(6);
-        const g = this._fracBar.clear(), x0 = this.player.x - 21, y0 = this.player.y - (this._fracOrbs ? 34 : 16), mode = (this._fracMode?.until || 0) > now ? this._fracMode : null;
-        if (mode) return UIKit.rBar(g, x0, y0, 42, (mode.until - now) / FC.MODE_MS, { col: mode.kind === 'spike' ? 0xffffff : 0x7fe0ff, hot: 0xffffff, dark: 0x08141c, time: now, ready: false, gem: false });   // R running: the time left
-        UIKit.rBar(g, x0 + 3, y0, 39, (this._fracCharge || 0) / FC.CHARGES, { col: 0x9fe8ff, hot: 0xffffff, dark: 0x08141c, time: now, segs: FC.CHARGES });   // a notch a combo
+        UIKit.rBar(this._fracBar.clear(), this.player.x - 18, this.player.y - 16, 39, (this._fracCharge || 0) / FC.CHARGES, { col: 0x9fe8ff, hot: 0xffffff, dark: 0x08141c, time: now, segs: FC.CHARGES });   // a notch a combo
     }
 
     // ── PHASE 1: Piercing freeze spike ────────────────────────────────────
@@ -4008,42 +3703,6 @@ class WeaponSystem {
         this.tweens.add({ targets: mv, scaleX: 1.3, scaleY: 1.3, alpha: 0.55, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
-    _spawnPierceSpike(x, y, angle, volleyId = null, plantsTotem = false) {
-        const SPEED  = 900;  // the fastest shot in the game (580 till 2026-10-20)
-        const DAMAGE = (this._fractalSpikeDmg || 12) * this.damageScaling;
-        const vx = Math.cos(angle) * SPEED;
-        const vy = Math.sin(angle) * SPEED;
-
-        // pixel art (WeaponSystem.fractalArt): a crystal needle, pointing up; rotated to its flight each frame
-        const g = this.add.image(x, y, WeaponSystem.fractalArt(this).spike).setDepth(3.5).setScale(1.3);
-        g._glow = null;
-
-        const shardObj = {
-            sprite: g, vx, vy,
-            startX: x, startY: y,
-            damage: DAMAGE,
-            createdAt: this.time.now,
-            lastTrailTime: 0,
-            _lastAfterimageTime: 0,
-            isCannonShard: true,
-            isPierceSpike: true,
-            _plantsTotem: plantsTotem,
-            // NO isPiercing FLAG, deliberately. I added one here and it was wrong: both fractal
-            // phases ALREADY pierce, through a different mechanism entirely. Their collision
-            // branches keep a `hitEnemies` Set, skip anything already in it, and simply never
-            // destroy the shard -- pierce by omission. The isPiercing/maxPierces pair belongs to
-            // other shard types (nova, heal) and adding it here stacked a second, conflicting
-            // pierce system on top of the working one.
-            //
-            // Lesson for next time: a flag being unset does not mean the behaviour is absent.
-            // Read the collision branch, not the constructor.
-            volleyId,
-            hitEnemies: new Set(),
-            piercedEnemies: new Set(),
-        };
-        this.iceShards.push(shardObj);
-    }
-
     // ── FROST TOTEM — spawns on first pierce spike hit ─────────────────────
     _spawnFrostTotem(px, py) {
         const TOTEM_DUR      = 5000;   // 5s
@@ -4157,158 +3816,6 @@ class WeaponSystem {
         this._activeFrostTotem = totemObj;
     }
 
-    // ── PHASE 2: Unstable splitter ─────────────────────────────────────────
-    // Each shard splits into 2 after SPLIT_INTERVAL ms. Capped at gen 4
-    // (1 → 2 → 4 → 8 → 16, max 31 total projectiles per shot).
-    _spawnSplitterShard(x, y, angle, gen) {
-        // ── WHY THIS IS SO MUCH SMALLER THAN IT WAS ──────────────────────────
-        // Every shard split into TWO, four times over. One seed therefore became
-        // 1+2+4+8+16 = 31 shards, and every split also detonated an AoE at its own position.
-        // Five seeds in the fan meant 155 piercing shards and 75 explosions per cast.
-        //
-        // That was survivable while phase 2 was a 360 ring, because the shards sprayed away from
-        // each other and any single enemy only met a few. Narrowing it to a 60 degree fan pointed
-        // the entire cascade down one lane -- so nerfing the ARC was a large buff to the damage
-        // anything in front of you actually took. That is why it melted.
-        //
-        // Two generations instead of four: 7 shards per seed, 35 per cast, 15 explosions. Ice's
-        // payoff is meant to be the shatter, so the fan's job is covering ground with CHILL.
-        const MAX_GEN      = 2;
-        const SPLIT_INTERVAL = 250; // ms between splits
-        const SPEEDS     = [160, 130, 105, 85, 70];
-        // x0.5 (was 5 / 3 / 2 / 1 / 1). x0.65 measured with purple at 1.5x on
-        // these shards only; purple reaches every source now and the fan chills (cubes: brittle),
-        // and at x0.65 it was still the best group weapon in the game (290 against the staff's 262).
-        // ×0.72 again (2026-10-18): at 217 on packs it still out-crowded Ball Lightning
-        const DAMAGES    = [3.75, 2.35, 1.55, 0.8, 0.8];   // ×1.7 (2026-10-18): the burst is the medium AoE now, the spike only sets up
-        const SIZES      = [8,    6,   5,   4,  3];
-
-        const speed  = SPEEDS[gen];
-        const storm = this._fracMode?.kind === 'fan' && this._fracMode.until > this.time.now;   // Shard Storm's fans chip
-        const damage = DAMAGES[gen] * this.damageScaling * (storm ? (this._fractalCfg?.().STORM_DMG ?? 1) : 1);
-        const size   = SIZES[gen];
-        const vx = Math.cos(angle) * speed;
-        const vy = Math.sin(angle) * speed;
-
-        // Visual: jagged unstable crystal — darker and more fractured each gen
-        // Colour shifts from bright white-blue (gen0) to deep teal (gen3)
-        const colours = [
-            { body: 0x88ddff, mid: 0xddf8ff, rim: 0xffffff },
-            { body: 0x44bbdd, mid: 0xaaeeff, rim: 0xddf8ff },
-            { body: 0x2299bb, mid: 0x77ccee, rim: 0xbbefff },
-            { body: 0x116688, mid: 0x44aacc, rim: 0x88ddee },
-            { body: 0x0a3344, mid: 0x226688, rim: 0x55aabb },
-        ];
-        const col = colours[Math.min(gen, colours.length - 1)];
-
-        // pixel art (WeaponSystem.fractalArt): a jagged crystal, darker and smaller each split
-        const g = this.add.image(x, y, WeaponSystem.fractalArt(this).shard[Math.min(gen, 4)]).setDepth(3 + gen * 0.05).setScale(size * 2 / 12);
-        g._glow = null;
-
-        const shardObj = {
-            sprite: g, vx, vy,
-            startX: x, startY: y,
-            damage,
-            createdAt: this.time.now,
-            lastTrailTime: 0,
-            isCannonShard: true,
-            isSplitter: true,
-            volleyId: this._fractalVolley,   // the burst it came from (_volleyMult)
-            splitterGen: gen,
-            splitterCanSplit: gen < MAX_GEN && !storm,   // (Shard Storm's don't split: four fans a second of splitting shards was hundreds of them)
-            splitterAngle: angle,
-            hitEnemies: new Set(),
-            piercedEnemies: new Set(),
-            isRecalling: false,
-        };
-
-        // Schedule the split
-        if (gen < MAX_GEN) {
-            shardObj._splitTimer = this.time.delayedCall(SPLIT_INTERVAL, () => {
-                if (!shardObj.sprite?.active) return;
-                this._triggerSplitterSplit(shardObj);
-            });
-        }
-
-        // ── RECALL, measured in DISTANCE rather than on a timer ──────────────
-        // The old version flipped after a flat 1200ms. At the final generation's speed that is
-        // roughly 125px -- barely past arm's reach, so fragments turned around while still on top
-        // of you and the return pass re-hit the same enemies as the outbound one.
-        //
-        // Distance is also the honest unit: it does not silently change meaning when a
-        // generation's speed is retuned, which a hardcoded duration does.
-        if (gen === MAX_GEN) {
-            shardObj._isFinalGen    = true;
-            shardObj._recallAfterPx = 260;
-            shardObj._travelledPx   = 0;
-            shardObj._recallDmgMult = 2.2;   // boosted return damage
-        }
-
-        this.iceShards.push(shardObj);
-    }
-
-    _triggerSplitterSplit(s) {
-        if (!s.splitterCanSplit || !s.sprite?.active) return;
-        const x = s.sprite.x, y = s.sprite.y;
-        const nextGen = s.splitterGen + 1;
-        const baseAngle = s.splitterAngle;
-
-        // Split into 2 at ±25° spread — feels like unstable fragmentation
-        const SPREAD = Math.PI / 7.2; // 25°
-        this._spawnSplitterShard(x, y, baseAngle - SPREAD, nextGen);
-        this._spawnSplitterShard(x, y, baseAngle + SPREAD, nextGen);
-
-        // ── AoE ice explosion at every split point ──
-        const AOE_R = 22 + (4 - s.splitterGen) * 5; // gen0 splits are bigger
-        const splitDmg = s.damage * 0.3;   // every split detonates; 0.5 compounded far too hard
-        // Visual
-        // a crisp ring and a frost star rather than filled discs: a fan's cascade lands dozens of these together, and
-        // stacked fills (with the bloom on top) blew the whole area out to white. Past a handful at once, rings only.
-        const burst = this.add.graphics().setDepth(5), now = this.time.now;
-        this._splitFx = (this._splitFx || []).filter(t => now - t < 120); this._splitFx.push(now);
-        const busy = this._splitFx.length > 5;
-        burst.x = x; burst.y = y;
-        if (!busy) {
-            burst.fillStyle(0xaaeeff, 0.12); burst.fillCircle(0, 0, AOE_R * 0.9);
-            burst.fillStyle(0xffffff, 0.8); burst.fillCircle(0, 0, 2 + s.splitterGen);
-            for (let i = 0; i < 6; i++) {
-                const sa = baseAngle + (i / 6) * Math.PI * 2;
-                burst.lineStyle(1.2, i % 2 === 0 ? 0xe8faff : 0x88ddff, 0.7);
-                burst.beginPath(); burst.moveTo(Math.cos(sa)*3, Math.sin(sa)*3); burst.lineTo(Math.cos(sa)*(AOE_R*0.8), Math.sin(sa)*(AOE_R*0.8)); burst.strokePath();
-            }
-        }
-        burst.lineStyle(busy ? 1 : 1.5, 0xddf8ff, busy ? 0.45 : 0.8); burst.strokeCircle(0, 0, AOE_R * 0.9);
-        this.tweens.add({ targets: burst, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => burst.destroy() });
-
-        // Damage enemies in AoE radius at split point
-        for (const enemy of [...this.enemies]) {
-            if (!enemy.sprite?.active) continue;
-            const edx = enemy.sprite.x - x, edy = enemy.sprite.y - y;
-            if (edx*edx + edy*edy > AOE_R*AOE_R) continue;
-            if (enemy.iceImmune || enemy.fireImmune || enemy.elementImmune) continue;
-            if (enemy.isFrozen) {
-                this._triggerShatterBurst(enemy, 1.6); // Fractal Shard — buffed shatter damage
-            } else {
-                if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                // Tagged 'physical' until now, so the splitter -- an ICE weapon's AoE --
-                // sailed straight past ice resistance at full damage while the same
-                // weapon's spikes and shatter were cut to 0.40x.
-                const _rd2406 = this.resolveElementalHit(enemy, splitDmg, 'ice');
-                if (_rd2406 === null) continue;
-                enemy.health -= _rd2406;
-                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rd2406), '#aaeeff');
-                this.updateEnemyHealthBar(enemy);
-                this.gainUltCharge(this.ultChargePerHit);
-                if (enemy.health <= 0) this.killEnemy(enemy);
-            }
-        }
-
-        // Remove the parent shard cleanly
-        const idx = this.iceShards.indexOf(s);
-        if (idx !== -1) this.iceShards.splice(idx, 1);
-        this.destroyIceShard(s);
-    }
-
     icicleStaffAttack(targetX, targetY) {
         const currentTime = this.time.now;
 
@@ -4349,6 +3856,7 @@ class WeaponSystem {
         const SPLASH_DMG    = shardDmg * 0.35;
         const baseAngle = Math.atan2(cursorDy, cursorDx);
         const volleyId = Math.random().toString(36).slice(2);   // one shot's icicles fall off on one target (_volleyMult)
+        const cracked = new Set();   // (one crack of ice off each target a shot: every icicle's own heaped up into a pile of chips)
 
         // ── Fire PELLETS pellets ───────────────────────────────────────────────
         for (let s = 0; s < PELLETS; s++) {
@@ -4357,30 +3865,10 @@ class WeaponSystem {
             const vx = Math.cos(angle) * pelletSpeed;
             const vy = Math.sin(angle) * pelletSpeed;
 
-            // Pellet visual — bright ice diamond
+            // the icicle (fat or slim, hand-drawn), drawn the way it flies
             const container = this.add.container(playerPx, playerPy).setDepth(3);
-            const g = this.add.graphics();
-            container.add(g);
-            container.setAngle(Math.random() * 360);
-            const scale = 0.8 + Math.random() * 0.3;
-            const R = (inZone ? 6 : 5) * scale; // slightly bigger inside zone
-            const v = Math.random();
-            const shadow = v < 0.33 ? 0x1155aa : v < 0.66 ? 0x0d4488 : 0x1a5599;
-            const body   = v < 0.33 ? 0x2277cc : v < 0.66 ? 0x1a88dd : 0x3366bb;
-            const lit    = v < 0.33 ? 0x55aaee : v < 0.66 ? 0x44bbff : 0x6699dd;
-            const spec   = v < 0.33 ? 0xaaddff : v < 0.66 ? 0x88eeff : 0xbbccff;
-            // Inside zone: brighter tint
-            const brightMult = inZone ? 1.15 : 1.0;
-            g.fillStyle(shadow, 0.90);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.closePath(); g.fillPath();
-            g.fillStyle(body, 1.0);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.lineTo(-R,0); g.closePath(); g.fillPath();
-            g.fillStyle(lit, 0.70);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(-R,0); g.lineTo(0,R*2.0); g.closePath(); g.fillPath();
-            if (inZone) { g.fillStyle(0xffffff, 0.55); g.fillCircle(-R*0.2, -R*0.6, R*0.28); } // extra highlight inside zone
-            g.fillStyle(0xffffff, 0.85); g.fillCircle(-R*0.25, -R*0.5, R*0.18);
-            g.lineStyle(1.0, spec, 0.85);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.lineTo(-R,0); g.closePath(); g.strokePath();
+            const lag = (Math.random() - 0.5) * 10;   // (drawn a little ahead or behind where it hits, so a volley isn't one rigid line)
+            container.add(WeaponSystem.aim8(this.add.image(Math.cos(angle) * lag, Math.sin(angle) * lag, WeaponSystem.iceArt(this), 'ice_e').setScale(1.1 + Math.random() * 0.3), angle, Math.random() < 0.5 ? 'ice_' : 'isl_'));
 
             const capturedInZone   = inZone;
             const capturedDmg      = shardDmg;
@@ -4402,7 +3890,6 @@ class WeaponSystem {
                 maxPierces: capturedPiercing ? 2 : 0,
                 isHealShot: false,
                 isHoming: false,
-                rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (1.5 + Math.random() * 2.0),
                 hitEnemies: new Set(),
                 piercedEnemies: new Set(),
                 _onHit: (enemy) => {
@@ -4413,8 +3900,7 @@ class WeaponSystem {
                     // ── Accuracy zone splash ─────────────────────────────────
                     if (capturedInZone && enemy.sprite?.active) {
                         const sx = enemy.sprite.x, sy = enemy.sprite.y;
-                        // Splash visual
-                        VisualFX.impact(this, sx, sy - 4, 'ice', SPLASH_RADIUS * 0.8);   // a bigger crack of shards
+                        if (!cracked.has(enemy)) { cracked.add(enemy); WeaponSystem.iceChips(this, sx, sy - 4, 5, SPLASH_RADIUS * 0.8); }   // a crack of ice off it
 
                         // Splash damage + 1 chill stack to nearby enemies
                         for (const nearEnemy of [...this.enemies]) {
@@ -4445,22 +3931,6 @@ class WeaponSystem {
                         }
                     }
 
-                    // Impact fragments
-                    if (enemy.sprite?.active) {
-                        const ix = enemy.sprite.x, iy = enemy.sprite.y;
-                        const ic = capturedInZone ? 0x55ccff : 0x88ddff;
-                        for (let f = 0; f < (capturedInZone ? 4 : 3); f++) {
-                            const fa = Math.random() * Math.PI * 2;
-                            const fd = 6 + Math.random() * (capturedInZone ? 12 : 8);
-                            const fg = this.add.graphics().setDepth(4);
-                            fg.x = ix; fg.y = iy;
-                            fg.fillStyle(f % 2 === 0 ? ic : 0xffffff, 0.85);
-                            fg.fillRect(-1, -2, 2, 4);
-                            fg.setRotation(fa);
-                            this.tweens.add({ targets: fg, x: ix + Math.cos(fa)*fd, y: iy + Math.sin(fa)*fd, alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 180, ease: 'Cubic.easeOut', onComplete: () => fg.destroy() });
-                        }
-                    }
-
                     // each icicle that lands is one of the 28 that charge the Frost Shield
                     if (!(this._frostShieldUntil > this.time.now)) this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1);   // (not while the shield is up)
                     this._updateIcicleChargeBar();
@@ -4468,282 +3938,14 @@ class WeaponSystem {
             });
         }
 
-        // ── Muzzle flash ──────────────────────────────────────────────────────
-        const puffG = this.add.graphics().setDepth(4);
-        puffG.x = playerPx; puffG.y = playerPy;
-        const chipCol  = inZone ? 0x55ccff : 0x88ccff;
-        const chipCol2 = inZone ? 0xbbf0ff : 0xddf4ff;
-        for (let bi = 0; bi < (inZone ? 7 : 5); bi++) {
-            const ba = baseAngle + (Math.random() - 0.5) * spreadHalf * 3.0;
-            const bl = (inZone ? 6 : 4) + Math.random() * 8;
-            puffG.fillStyle(bi % 2 === 0 ? chipCol : chipCol2, 0.90);
-            const bx2 = Math.cos(ba) * (2 + Math.random() * 4);
-            const by2 = Math.sin(ba) * (2 + Math.random() * 4);
-            puffG.fillRect(bx2 - 1, by2 - 1, 2, 2);
-            puffG.lineStyle(1.0, bi % 2 === 0 ? chipCol : chipCol2, 0.80);
-            puffG.beginPath();
-            puffG.moveTo(Math.cos(ba)*2, Math.sin(ba)*2);
-            puffG.lineTo(Math.cos(ba)*bl, Math.sin(ba)*bl);
-            puffG.strokePath();
-        }
-        puffG.fillStyle(0xffffff, 0.90); puffG.fillCircle(0, 0, inZone ? 4 : 3);
-        this.tweens.add({ targets: puffG, scaleX: 1.8, scaleY: 1.8, alpha: 0, duration: 100, onComplete: () => puffG.destroy() });
+        // ── the cannon's puff of frost at the muzzle, a cloud of frost and a glint thrown out with the icicles ──
+        const mx = playerPx + Math.cos(baseAngle) * 10, my = playerPy + Math.sin(baseAngle) * 10;
+        const puff = this.add.sprite(mx, my, 'fx_ice_w', 'imuz_0').setScale(1.5).setAlpha(0.9).setDepth(4).play('iw_muz');
+        puff.once('animationcomplete', () => puff.destroy());
+        WeaponSystem.frostPuff(this, mx + Math.cos(baseAngle) * 6, my + Math.sin(baseAngle) * 6, 4, 0.8);
+        WeaponSystem.frost(this).glint.emitParticleAt(mx + Math.cos(baseAngle) * 8, my + Math.sin(baseAngle) * 8, 1);
 
         this.cameras.main.shake(inZone ? 25 : 12, 0.001);
-    }
-
-    // ── Heal shard — fired when heal mode is active ───────────────────────────
-    // ── Charged Nova Burst — fires a full ring of icicle shards in every ──
-    // ── direction around the player. Damages + heals on every hit, exactly ──
-    // ── like the old heal shard's payload, but instant and all-around. ──
-    _fireIcicleNovaBurst(ox, oy) {
-        const NOVA_COUNT  = 16;           // shards in the ring
-        const NOVA_SPEED  = 260;
-        const NOVA_DMG    = 4.5 * this.damageScaling;
-        const HEAL_ON_HIT = 5;
-        const SPLASH_R    = 40; // super shot impact radius — larger reach per enemy hit
-
-        this.showStatusText(ox, oy - 34, '❄ NOVA BURST', '#00ff88');
-        this.cameras.main.shake(70, 0.006);
-
-        // Big expanding ring shockwave visual at the origin — scaled up to match the larger radius
-        const ringG = this.add.graphics().setDepth(5);
-        ringG.x = ox; ringG.y = oy;
-        ringG.lineStyle(4, 0x00ffaa, 0.85); ringG.strokeCircle(0, 0, 12);
-        ringG.lineStyle(2, 0xffffff, 0.70); ringG.strokeCircle(0, 0, 18);
-        this.tweens.add({ targets: ringG, scaleX: 8, scaleY: 8, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => ringG.destroy() });
-
-        for (let i = 0; i < NOVA_COUNT; i++) {
-            const angle = (i / NOVA_COUNT) * Math.PI * 2;
-            const vx = Math.cos(angle) * NOVA_SPEED;
-            const vy = Math.sin(angle) * NOVA_SPEED;
-
-            // Shard visual — green-tinted icicle, oriented along travel direction
-            const container = this.add.container(ox, oy).setDepth(3.4);
-            const g = this.add.graphics();
-            container.add(g);
-            container.setAngle(angle * (180 / Math.PI));
-            const R = 5.5 + Math.random() * 1.5;
-            g.fillStyle(0x007744, 0.90);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.closePath(); g.fillPath();
-            g.fillStyle(0x00cc66, 1.0);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.lineTo(-R,0); g.closePath(); g.fillPath();
-            g.fillStyle(0x55ffbb, 0.75);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(-R,0); g.lineTo(0,R*2.0); g.closePath(); g.fillPath();
-            g.fillStyle(0xffffff, 0.85); g.fillCircle(-R*0.25, -R*0.5, R*0.20);
-            g.lineStyle(1.0, 0x88ffcc, 0.85);
-            g.beginPath(); g.moveTo(0,-R*2.0); g.lineTo(R,0); g.lineTo(0,R*2.0); g.lineTo(-R,0); g.closePath(); g.strokePath();
-
-            const novaObj = {
-                sprite: container, vx, vy,
-                damage: NOVA_DMG,
-                startX: ox, startY: oy,
-                createdAt: this.time.now,
-                isCannonShard: true,
-                isNovaShard: true,
-                isPiercing: true,
-                bounces: 0, maxBounces: 1,
-                pierceCount: 0, maxPierces: 2,
-                isHoming: false,
-                rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (2.0 + Math.random() * 2.0),
-                hitEnemies: new Set(),
-                piercedEnemies: new Set(),
-                _onHit: (enemy) => {
-                    if (!enemy.sprite?.active) return;
-                    if (enemy.isFrozen) {
-                        this._triggerShatterBurst(enemy, 1 / 7.5);
-                    } else if (!enemy.iceImmune) {
-                        if (this._phasedOut(enemy)) return;   // phased out: not in the world
-                        const _rd2719 = this.resolveElementalHit(enemy, NOVA_DMG, 'ice');
-                        if (_rd2719 === null) return;
-                        enemy.health -= _rd2719;
-                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rd2719), '#44ffaa');
-                        this.updateEnemyHealthBar(enemy);
-                        if (enemy.health <= 0) { this.killEnemy(enemy); return; }
-                        // The melt timer here was dead weight: it fired at 10s and tested
-                        // isFrozen, which a cube never sets. shatterIceCube owns the water now.
-                        this.applyChill(enemy, this._chillCfg().SPLASH);
-                    }
-                    // Heal on every enemy hit — keeps the sustain identity of the old heal shard
-                    this.health = Math.min((this.maxHealth || 100) + 25, this.health + HEAL_ON_HIT);
-                    if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
-                    const hbG = this.add.graphics().setDepth(5);
-                    hbG.x = enemy.sprite.x; hbG.y = enemy.sprite.y;
-                    hbG.fillStyle(0x00ff88, 0.70); hbG.fillCircle(0, 0, 10);
-                    hbG.fillStyle(0xffffff, 0.85); hbG.fillCircle(0, 0, 4);
-                    this.tweens.add({ targets: hbG, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 250, onComplete: () => hbG.destroy() });
-
-                    // Splash on impact — larger radius (super shot)
-                    const burstG = this.add.graphics().setDepth(4.5);
-                    burstG.x = enemy.sprite.x; burstG.y = enemy.sprite.y;
-                    burstG.fillStyle(0x00ffaa, 0.30); burstG.fillCircle(0, 0, SPLASH_R);
-                    this.tweens.add({ targets: burstG, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 220, onComplete: () => burstG.destroy() });
-
-                    // Splash damage to nearby enemies within SPLASH_R
-                    for (const other of [...this.enemies]) {
-                        if (this._phasedOut?.(other)) continue;
-                        if (other === enemy || !other.sprite?.active) continue;
-                        const edx = other.sprite.x - enemy.sprite.x, edy = other.sprite.y - enemy.sprite.y;
-                        if (edx*edx + edy*edy > SPLASH_R*SPLASH_R) continue;
-                        if (other.iceImmune || other.fireImmune || other.elementImmune) continue;
-                        const splashDmg = NOVA_DMG * 0.5;
-                        const _rd2776 = this.resolveElementalHit(other, splashDmg, 'ice');
-                        if (_rd2776 === null) continue;
-                        other.health -= _rd2776;
-                        this.showDamageNumber(other.sprite.x, other.sprite.y - 10, Math.round(_rd2776), '#44ffaa');
-                        this.updateEnemyHealthBar(other);
-                        if (other.health <= 0) this.killEnemy(other);
-                    }
-                },
-            };
-            this.iceShards.push(novaObj);
-        }
-    }
-
-    _fireIcicleHealShard(ox, oy, worldX, worldY) {
-        const baseAngle = Math.atan2(worldY - oy, worldX - ox);
-        const HEAL_SHARD_SPEED = 220;
-        const HEAL_SHARD_DMG   = 2.5 * this.damageScaling;
-        const HEAL_ON_HIT      = 5;
-        const SPLASH_R         = 32;
-        const MINI_COUNT       = 6;
-
-        this.showStatusText(ox, oy - 30, '✦ HEAL SHARD', '#00ff88');
-        this.cameras.main.shake(40, 0.002);
-
-        // Visual — large glowing green crystal
-        const container = this.add.container(ox, oy).setDepth(3.5);
-        const g = this.add.graphics();
-        container.add(g);
-        const R = 9;
-        g.fillStyle(0x007744, 0.90);
-        g.beginPath(); g.moveTo(0,-R*2.2); g.lineTo(R*1.1,0); g.lineTo(0,R*2.2); g.closePath(); g.fillPath();
-        g.fillStyle(0x00cc66, 1.0);
-        g.beginPath(); g.moveTo(0,-R*2.2); g.lineTo(R*1.1,0); g.lineTo(0,R*2.2); g.lineTo(-R*1.1,0); g.closePath(); g.fillPath();
-        g.fillStyle(0x44ffaa, 0.75);
-        g.beginPath(); g.moveTo(0,-R*2.2); g.lineTo(-R*1.1,0); g.lineTo(0,R*2.2); g.closePath(); g.fillPath();
-        g.fillStyle(0xffffff, 0.90); g.fillCircle(-R*0.25, -R*0.6, R*0.28);
-        g.lineStyle(1.5, 0xaaffcc, 0.90);
-        g.beginPath(); g.moveTo(0,-R*2.2); g.lineTo(R*1.1,0); g.lineTo(0,R*2.2); g.lineTo(-R*1.1,0); g.closePath(); g.strokePath();
-        // Glow ring
-        const glowG = this.add.graphics();
-        container.add(glowG);
-        glowG.lineStyle(3, 0x00ff88, 0.45); glowG.strokeCircle(0, 0, R * 1.8);
-
-        const vx = Math.cos(baseAngle) * HEAL_SHARD_SPEED;
-        const vy = Math.sin(baseAngle) * HEAL_SHARD_SPEED;
-
-        const onImpact = (ix, iy) => {
-            if (!container.active) return;
-            container.destroy();
-
-            // Big AoE burst visual
-            const burstG = this.add.graphics().setDepth(5);
-            burstG.x = ix; burstG.y = iy;
-            burstG.fillStyle(0x00ffaa, 0.35); burstG.fillCircle(0, 0, SPLASH_R * 1.4);
-            burstG.fillStyle(0xffffff, 0.80); burstG.fillCircle(0, 0, SPLASH_R * 0.38);
-            burstG.lineStyle(2, 0x44ffaa, 0.80); burstG.strokeCircle(0, 0, SPLASH_R * 1.0);
-            for (let ri = 0; ri < 8; ri++) {
-                const ra = (ri / 8) * Math.PI * 2;
-                burstG.lineStyle(1.5, 0x00ff88, 0.65);
-                burstG.beginPath(); burstG.moveTo(Math.cos(ra)*6, Math.sin(ra)*6); burstG.lineTo(Math.cos(ra)*SPLASH_R*1.1, Math.sin(ra)*SPLASH_R*1.1); burstG.strokePath();
-            }
-            this.tweens.add({ targets: burstG, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 350, ease: 'Quad.easeOut', onComplete: () => burstG.destroy() });
-
-            // AoE damage + heal on every enemy in radius
-            for (const enemy of [...this.enemies]) {
-                if (!enemy.sprite?.active) continue;
-                if (enemy.fireImmune || enemy.elementImmune) continue;
-                const edx = enemy.sprite.x - ix, edy = enemy.sprite.y - iy;
-                if (edx*edx + edy*edy > SPLASH_R*SPLASH_R) continue;
-                if (enemy.isFrozen) {
-                    this._triggerShatterBurst(enemy, 1 / 7.5);
-                } else if (!enemy.iceImmune) {
-                    if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                    const _rd2831 = this.resolveElementalHit(enemy, HEAL_SHARD_DMG, 'ice');
-                    if (_rd2831 === null) continue;
-                    enemy.health -= _rd2831;
-                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, Math.round(_rd2831), '#44ffaa');
-                    this.updateEnemyHealthBar(enemy);
-                    if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
-                    // 1 chill stack from splash
-                    this.applyChill(enemy, this._chillCfg().SPLASH);
-                }
-                // Heal per enemy hit
-                this.health = Math.min((this.maxHealth || 100) + 25, this.health + HEAL_ON_HIT);
-                if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
-                const hbG = this.add.graphics().setDepth(5);
-                hbG.x = enemy.sprite.x; hbG.y = enemy.sprite.y;
-                hbG.fillStyle(0x00ff88, 0.70); hbG.fillCircle(0, 0, 10);
-                hbG.fillStyle(0xffffff, 0.85); hbG.fillCircle(0, 0, 4);
-                this.tweens.add({ targets: hbG, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 250, onComplete: () => hbG.destroy() });
-            }
-
-            // ── Spawn 6 mini shards in fixed outward directions ───────────────
-            const MINI_SPEED  = 190;
-            const MINI_DMG    = 0.6 * this.damageScaling;
-            const MINI_HEAL   = 1;
-            for (let m = 0; m < MINI_COUNT; m++) {
-                // Fixed evenly-spaced angles — no randomness so they always spread outward cleanly
-                const outAngle = (m / MINI_COUNT) * Math.PI * 2;
-                const mvx = Math.cos(outAngle) * MINI_SPEED;
-                const mvy = Math.sin(outAngle) * MINI_SPEED;
-
-                // Mini shard visual — small green crystal
-                const mc = this.add.container(ix, iy).setDepth(3.2);
-                const mg = this.add.graphics();
-                mc.add(mg);
-                mc.setAngle(outAngle * (180 / Math.PI)); // orient along travel direction
-                const mR = 3.0 + Math.random() * 1.2;
-                mg.fillStyle(0x007744, 0.90);
-                mg.beginPath(); mg.moveTo(0,-mR*2); mg.lineTo(mR,0); mg.lineTo(0,mR*2); mg.closePath(); mg.fillPath();
-                mg.fillStyle(0x00cc66, 1.0);
-                mg.beginPath(); mg.moveTo(0,-mR*2); mg.lineTo(mR,0); mg.lineTo(0,mR*2); mg.lineTo(-mR,0); mg.closePath(); mg.fillPath();
-                mg.fillStyle(0x55ffbb, 0.75);
-                mg.beginPath(); mg.moveTo(0,-mR*2); mg.lineTo(-mR,0); mg.lineTo(0,mR*2); mg.closePath(); mg.fillPath();
-                mg.fillStyle(0xffffff, 0.85); mg.fillCircle(-mR*0.25, -mR*0.55, mR*0.22);
-                mg.lineStyle(0.8, 0x88ffcc, 0.85);
-                mg.beginPath(); mg.moveTo(0,-mR*2); mg.lineTo(mR,0); mg.lineTo(0,mR*2); mg.lineTo(-mR,0); mg.closePath(); mg.strokePath();
-
-                const miniShardObj = {
-                    sprite: mc, vx: mvx, vy: mvy,
-                    damage: MINI_DMG,
-                    startX: ix, startY: iy,
-                    createdAt: this.time.now,
-                    isCannonShard: true,
-                    isMiniHealShard: true,  // fixed direction, no homing, consumed on first hit
-                    isHoming: false,
-                    _healAmount: MINI_HEAL,
-                    rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (3.0 + Math.random() * 2.0),
-                    hitEnemies: new Set(),
-                    piercedEnemies: new Set(),
-                    bounces: 0,
-                    maxBounces: 0,
-                    isPiercing: false,
-                };
-                this.iceShards.push(miniShardObj);
-            }
-        };
-
-        // Store onImpact so updateIceShards can call it on wall hit
-        const shardObj = {
-            sprite: container, vx, vy,
-            damage: HEAL_SHARD_DMG,
-            startX: ox, startY: oy,
-            createdAt: this.time.now,
-            isHealShard: true,
-            isCannonShard: true,
-            isHoming: true,
-            rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (1.2 + Math.random() * 0.8),
-            hitEnemies: new Set(),
-            piercedEnemies: new Set(),
-            _onImpact: onImpact,
-            _onHit: (enemy) => {
-                if (!container.active) return;
-                onImpact(enemy.sprite.x, enemy.sprite.y);
-            }
-        };
-        this.iceShards.push(shardObj);
     }
 
     // ── Accuracy circle — drawn each frame while icicle cannon is equipped ────
@@ -4758,6 +3960,125 @@ class WeaponSystem {
         }
     }
 
+    // ── THE FIRE WEAPONS' ART ────────────────────────────────────────────────
+    // Typed by hand (assets/art/fx_fire_w: the flames, the fist's flare, the sword's ember, the staff's rock, the
+    // flamethrower's fire, the kindle mark and its pillar, lava); its animations, made once.
+    static fireArt(S) {
+        const A = S.anims, n = (p, k) => Array.from({ length: k }, (_, i) => p + i);
+        const mk = (key, names, rate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: names.map(f => ({ key: 'fx_fire_w', frame: f })), frameRate: rate, repeat }); };
+        mk('fw_punch_e', n('punch_e_', 4), 20); mk('fw_punch_s', n('punch_s_', 4), 20);
+        mk('fw_rock', n('rock_', 4), 12, -1); mk('fw_pebble', n('pebble_', 4), 6, -1); mk('fw_muz', n('muz_', 4), 22);
+        mk('fw_drip', n('drip_', 3), 8); mk('fw_bub', n('bub_', 4), 9);
+        mk('fw_jet', n('jet_', 5), 10); mk('fw_jot', n('jot_', 5), 10); mk('fw_jetb', n('jetb_', 5), 10); mk('fw_jotb', n('jotb_', 5), 10);
+        mk('fw_lick', ['lick_0', 'lick_1', 'lick_2', 'lick_3', 'lick_2', 'lick_1'], 10, -1); mk('fw_crown', n('crown_', 3), 8, -1);
+        mk('fw_pillar', n('pillar_', 5), 13); mk('fw_spark', n('sp_', 4), 8); mk('fw_sparkb', n('spb_', 4), 8);
+        return 'fx_fire_w';
+    }
+    // Fire, the scene's particle emitters (made the first time): the hand-drawn flames (ten shapes, each its own size and
+    // stretch) burning down from pale yellow through orange and red to nothing as they rise, light added so they burn
+    // hottest where they crowd; low ones that stay where they caught; a heat glow under them. The b* ones are Blue Flame's.
+    static flames(S) {
+        if (S._fwFx?.flame?.active) return S._fwFx;
+        WeaponSystem.fireArt(S);
+        const ADD = Phaser.BlendModes.ADD, FL = Array.from({ length: 10 }, (_, i) => 'fl_' + i), FB = FL.map(f => 'flb' + f.slice(2));
+        const FIRE = { color: [0xffd890, 0xffb050, 0xff7a28, 0xd84418, 0x901c0c, 0x380e06], colorEase: 'quad.out' };
+        const BLUE = { color: [0xbfe8ff, 0x8ac8ff, 0x5a9aff, 0x3a6ae8, 0x2238b0, 0x0c1440], colorEase: 'quad.out' };
+        const size = (lo, hi) => ({ scaleX: { onEmit: p => (p._sx = lo + Math.random() * (hi - lo)), onUpdate: (p, k, t) => (p._sx || lo) * (1 - 0.7 * t) },
+            scaleY: { onEmit: p => (p._sy = (p._sx || lo) * (0.85 + Math.random() * 0.6)), onUpdate: (p, k, t) => (p._sy || lo) * (1 - 0.6 * t) } });
+        const em = (frame, o) => S.add.particles(0, 0, 'fx_fire_w', { frame, emitting: false, angle: { min: 0, max: 360 }, rotate: { min: -25, max: 25 }, blendMode: ADD, ...o }).setDepth(3.1);
+        const flame = (fr, c) => em(fr, { lifespan: { min: 220, max: 420 }, speed: { min: 10, max: 50 }, gravityY: -220, ...size(1.1, 2), alpha: { start: 0.7, end: 0 }, ...c });
+        const small = (fr, c) => em(fr, { lifespan: { min: 160, max: 320 }, speed: { min: 6, max: 30 }, gravityY: -180, ...size(0.8, 1.4), alpha: { start: 0.38, end: 0 }, ...c });
+        const lick = (fr, c) => em(fr, { lifespan: { min: 150, max: 280 }, speed: { min: 0, max: 12 }, gravityY: -70, ...size(1, 1.8), alpha: { start: 0.65, end: 0 }, ...c });   // (a flame that stays where it caught: a swing's edge, a ring on the floor)
+        const glow = c => S.add.particles(0, 0, 'vfx_glow', { emitting: false, lifespan: { min: 200, max: 360 }, speed: { min: 0, max: 18 }, gravityY: -50,
+            scale: { start: 0.42, end: 0.18 }, alpha: { start: 0.12, end: 0 }, color: c, blendMode: ADD }).setDepth(3.09);
+        return (S._fwFx = { flame: flame(FL, FIRE), small: small(FL, FIRE), lick: lick(FL, FIRE), glow: glow([0xffa040, 0xff5a1a, 0x801808]),
+            bflame: flame(FB, BLUE), bsmall: small(FB, BLUE), blick: lick(FB, BLUE), bglow: glow([0x8ac8ff, 0x3a6aff, 0x101850]) });
+    }
+    // An ember flung from (x, y) at (vx, vy) px a second: the hand-drawn spark cooling to a red speck over ms (blue: Blue Flame's)
+    static ember(S, x, y, vx, vy, ms, blue = false) {
+        WeaponSystem.fireArt(S);
+        const p = S.add.sprite(x, y, 'fx_fire_w', blue ? 'spb_0' : 'sp_0').setScale(1.2 + Math.random() * 0.7).setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD);
+        p.play({ key: blue ? 'fw_sparkb' : 'fw_spark', frameRate: 4000 / ms });
+        S.tweens.add({ targets: p, x: x + vx * ms / 1000 + (Math.random() - 0.5) * 12, y: y + vy * ms / 1000 - 10, duration: ms, ease: 'Quad.easeOut', onComplete: () => p.destroy() });
+        S.tweens.add({ targets: p, alpha: 0, duration: ms * 0.3, delay: ms * 0.7 });
+    }
+    // A ring of fire racing out from (x, y), r0 to r1 over ms: flames thrown down round circles (squashed to `flat` on the
+    // floor) growing outward, the glow with them
+    static fireRing(S, x, y, r0, r1, ms, n, blue = false, flat = 1) {
+        const F = WeaponSystem.flames(S), fl = blue ? F.blick : F.lick, gl = blue ? F.bglow : F.glow, STEPS = 6;
+        for (let k = 0; k <= STEPS; k++) S.time.delayedCall(ms * k / STEPS, () => {
+            const R = r0 + (r1 - r0) * k / STEPS;
+            for (let i = 0; i < n; i++) { const b = Math.random() * Math.PI * 2, R2 = R + (Math.random() - 0.5) * 10; fl.emitParticleAt(x + Math.cos(b) * R2, y + Math.sin(b) * R2 * flat, 1); }
+            for (let i = 0; i < n / 6; i++) { const b = Math.random() * Math.PI * 2; gl.emitParticleAt(x + Math.cos(b) * R, y + Math.sin(b) * R * flat, 1); }
+        });
+    }
+    // The art drawn the way it flies, to the nearest eighth of a turn (east, south-east, south and north-east typed as
+    // `pre`e, `pre`se, `pre`s, `pre`ne; the other four those flipped both ways): never the art turned
+    static aim8(spr, a, pre) {
+        const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, [f, fl] = [['e', 0], ['se', 0], ['s', 0], ['ne', 1], ['e', 1], ['se', 1], ['s', 1], ['ne', 0]][k];
+        return spr.setFrame(pre + f).setFlip(!!fl, !!fl);
+    }
+    // A fist landing on the tile at (x, y), punched (fx, fy) (one of the four ways): its flare thrown that way (typed east
+    // and south, west and north those flipped both ways), flames catching on the tile, embers flung on, a flash of light
+    static firePunch(S, x, y, fx, fy) {
+        const F = WeaponSystem.flames(S), T = S.TILE_SIZE, sd = fy !== 0, back = fx < 0 || fy < 0;
+        const p = S.add.sprite(x - fx * T * 0.1, y - fy * T * 0.1, 'fx_fire_w', sd ? 'punch_s_0' : 'punch_e_0').setScale(1.6).setFlip(back, back).setDepth(3.15);
+        p.play(sd ? 'fw_punch_s' : 'fw_punch_e'); p.once('animationcomplete', () => p.destroy());
+        for (let i = 0; i < 4; i++) F.small.emitParticleAt(x + fx * 6 + (Math.random() - 0.5) * T * 0.7, y + fy * 6 + (Math.random() - 0.5) * T * 0.6, 1);
+        F.glow.emitParticleAt(x, y, 1);
+        for (let i = 0; i < 4; i++) { const a = Math.atan2(fy, fx) + (Math.random() - 0.5) * 1.4, v = 60 + Math.random() * 80; WeaponSystem.ember(S, x, y, Math.cos(a) * v, Math.sin(a) * v - 20, 300 + Math.random() * 300); }
+        S._vfxFlash?.(x, y, 30, 0xff8a2a, 140, 0.45);
+    }
+    // The fire a blade sheds sweeping from angle a0 to a1 round (x, y), between radii r0 and r1: small soft flames across
+    // its outer span, big ones along the edge, embers flung off the tip
+    static fireSweep(S, x, y, a0, a1, r0, r1) {
+        const F = WeaponSystem.flames(S), n = Math.max(1, Math.ceil(Math.abs(a1 - a0) * r1 / 7)), turn = Math.sign(a1 - a0) || 1;
+        for (let i = 1; i <= n; i++) {
+            const b = a0 + (a1 - a0) * i / n, c = Math.cos(b), s = Math.sin(b), any = (lo, hi) => { const r = lo + Math.random() * (hi - lo); return [x + c * r, y + s * r]; };
+            if (Math.random() < 0.6) F.small.emitParticleAt(...any(r0 + (r1 - r0) * 0.3, r1 - 4), 1);
+            F.lick.emitParticleAt(...any(r0 + (r1 - r0) * 0.72, r1 + 2), 1);
+            if (Math.random() < 0.3) { const v = 50 + Math.random() * 70, o = b + turn * Math.PI / 2; WeaponSystem.ember(S, x + c * r1, y + s * r1, Math.cos(o) * v + c * 30, Math.sin(o) * v + s * 30 - 20, 300 + Math.random() * 250); }
+        }
+    }
+    // A burst of fire at (x, y) (the staff's muzzle; a Surge bigger): the hand-drawn flare, flames thrown out round it, light
+    static fireMuzzle(S, x, y, k = 1) {
+        const F = WeaponSystem.flames(S);
+        const b = S.add.sprite(x, y, 'fx_fire_w', 'muz_0').setScale(1.6 * k).setDepth(4.6).play('fw_muz');
+        b.once('animationcomplete', () => b.destroy());
+        for (let i = 0; i < 3 * k; i++) F.flame.emitParticleAt(x + (Math.random() - 0.5) * 10 * k, y + (Math.random() - 0.5) * 10 * k, 1);
+        F.glow.emitParticleAt(x, y, 1);
+        S._vfxFlash?.(x, y, 30 * k, 0xff8a2a, 160, 0.5);
+    }
+
+    // ── THE ICE WEAPONS' ART ─────────────────────────────────────────────────
+    // Typed by hand (assets/art/fx_ice_w: the fist's frost, the icicles, the cannon's puff, chips, flakes, the Frost
+    // Shield's dome and its cracks); its animations, made once. The glints and mist are the Fractal Shard's (frost).
+    static iceArt(S) {
+        const A = S.anims, n = (p, k) => Array.from({ length: k }, (_, i) => p + i);
+        const mk = (key, names, rate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: names.map(f => ({ key: 'fx_ice_w', frame: f })), frameRate: rate, repeat }); };
+        mk('iw_slam_e', n('slam_e_', 4), 18); mk('iw_slam_s', n('slam_s_', 4), 18); mk('iw_muz', n('imuz_', 4), 24);
+        mk('iw_chip', n('chip_', 4), 14, -1); mk('iw_flake', n('flake_', 3), 6);
+        return 'fx_ice_w';
+    }
+    // A fist landing on the tile at (x, y), punched (fx, fy): its frost sprayed that way (typed east and south, west and
+    // north those flipped both ways), glints and a breath of mist off it
+    static iceSlam(S, x, y, fx, fy) {
+        WeaponSystem.iceArt(S);
+        const T = S.TILE_SIZE, sd = fy !== 0, back = fx < 0 || fy < 0;
+        const p = S.add.sprite(x - fx * T * 0.15, y - fy * T * 0.15, 'fx_ice_w', sd ? 'slam_s_0' : 'slam_e_0').setScale(1.5).setFlip(back, back).setDepth(3.15);
+        p.play(sd ? 'iw_slam_s' : 'iw_slam_e'); p.once('animationcomplete', () => p.destroy());
+        const F = WeaponSystem.frost(S);
+        for (let i = 0; i < 3; i++) F.glint.emitParticleAt(x + fx * 6 + (Math.random() - 0.5) * T * 0.8, y + fy * 6 + (Math.random() - 0.5) * T * 0.7, 1);
+        for (let i = 0; i < 3; i++) F.mist.emitParticleAt(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 8, 1);
+        S._vfxFlash?.(x, y, 30, 0x9fe4ff, 140, 0.6);
+    }
+    // Ice breaking at (x, y), as big as n: one cloud of frost bursting off it (to about r px), a big chip of ice tumbling
+    // out for every four of n (the only outlined pieces: a heap of small ones read as a pile of beans), a glint or two
+    static iceChips(S, x, y, n, r = 16) {
+        WeaponSystem.frostPuff(S, x, y, Math.ceil(n * 0.8), 0.6 + r / 40, r * 0.5);
+        for (let i = 0; i < Math.max(1, Math.round(n / 4)); i++) WeaponSystem.fracChip(S, x, y, r * (0.7 + Math.random() * 0.6), 1.5 + Math.random() * 0.3);
+        WeaponSystem.frost(S).glint.emitParticleAt(x + (Math.random() - 0.5) * 12, y + (Math.random() - 0.5) * 10, Math.min(2, Math.ceil(n / 5)));
+    }
 
     flameSwordAttack(targetX, targetY) {
         const currentTime = this.time.now;
@@ -4831,41 +4152,18 @@ class WeaponSystem {
 
         const damage = 20 * this.damageScaling;   // was 12, see MAX_TILES
 
-        // ── Arc sweep visual ───────────────────────────────────────────────
-        // A crescent of flame that chases the blade's edge: a white-hot leading edge, banded
-        // yellow, orange and ember red behind it, thinning toward its tail, embers off the tip.
+        // ── The swing: fire shed all along the arc the blade sweeps (fireSweep), thick across its span and hottest at
+        // the edge, embers flung off the tip ──
         const T = this.TILE_SIZE, rOut = (ARC ? 2.9 : 2.3) * T, rIn0 = 0.62 * T;
-        const arcGfx = this.add.graphics().setDepth(3).setPosition(playerPx, playerPy);
         const SWING_DURATION = 170;
         const startAngle = facingAngle + halfSpread, endAngle = facingAngle - halfSpread, sweep = endAngle - startAngle;
-        const BANDS = [[0xfffbe8, 1], [0xffe680, 0.95], [0xffb838, 0.9], [0xff8a1e, 0.82], [0xf2661a, 0.7], [0xd84a14, 0.58], [0xb0320e, 0.45], [0x84200a, 0.32], [0x5a1406, 0.2]];
-        const band = (a0, a1, rIn, col, al) => {
-            arcGfx.fillStyle(col, al).beginPath();
-            arcGfx.arc(0, 0, rOut, a0, a1, a1 < a0); arcGfx.arc(0, 0, rIn, a1, a0, a0 < a1);
-            arcGfx.closePath(); arcGfx.fillPath();
-        };
-        const draw = (t) => {
-            const lead = startAngle + sweep * t, step = Math.abs(sweep) / 10 * Math.sign(sweep);
-            arcGfx.clear();
-            for (let i = BANDS.length - 1; i >= 0; i--) {
-                const a0 = lead - step * (i + 1), a1 = lead - step * i;
-                if ((a1 - startAngle) * Math.sign(sweep) <= 0) continue;   // not yet swept
-                const from = (a0 - startAngle) * Math.sign(sweep) < 0 ? startAngle : a0;
-                band(from, a1, rIn0 + (rOut - rIn0) * (i / BANDS.length) * 0.75, BANDS[i][0], BANDS[i][1]);
-            }
-        };
+        let swept = startAngle;
         this.tweens.addCounter({ from: 0, to: 1, duration: SWING_DURATION, ease: 'Cubic.easeOut',
-            onUpdate: tw => {
-                const t = tw.getValue(); draw(t);
-                const a = startAngle + sweep * t, r = rOut * (0.75 + Math.random() * 0.25);   // embers flung off the edge
-                const m = this.add.image(playerPx + Math.cos(a) * r, playerPy + Math.sin(a) * r, 'vfx_dot').setTint(Math.random() < 0.5 ? 0xffd060 : 0xff7a20).setDepth(3.1).setBlendMode(Phaser.BlendModes.ADD);
-                const out = a - Math.sign(sweep) * Math.PI / 2;
-                this.tweens.add({ targets: m, x: m.x + Math.cos(a) * 14 + Math.cos(out) * 10, y: m.y + Math.sin(a) * 14 + Math.sin(out) * 10 - 6, alpha: 0, scale: 0.4, duration: 300 + Math.random() * 200, onComplete: () => m.destroy() });
-            },
-            onComplete: () => this.tweens.add({ targets: arcGfx, alpha: 0, duration: 110, onComplete: () => arcGfx.destroy() }) });
+            onUpdate: tw => { const a = startAngle + sweep * tw.getValue(); WeaponSystem.fireSweep(this, playerPx, playerPy, swept, a, rIn0, rOut); swept = a; } });
 
         // ── Hit tiles ─────────────────────────────────────────────────────
-        const hitEnemies = new Set();
+        const hitEnemies = new Set(), swing = {};   // (swing: the boss takes one hit a swing, however many of its tiles the arc covers)
+        let bossHit = false;
         for (const tile of swipeTiles) {
             const { x: tx, y: ty } = tile;
             if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT) continue;
@@ -4880,7 +4178,8 @@ class WeaponSystem {
             // Hit portal if on this tile
             const p = this.getPortalAt(tx, ty);
             if (p) this.damagePortal(p, damage);
-            if (this.damageBossAtTile(tx, ty, damage)) {
+            if (this.damageBossAtTile(tx, ty, damage, swing)) {
+                bossHit = true;
                 if (typeof this.applyBurnStackBoss === 'function') this.applyBurnStackBoss();
             }
 
@@ -4905,11 +4204,11 @@ class WeaponSystem {
         const B = { N: 3, SPREAD: 0.26, SPEED: 300, RANGE: 7, DMG: 6 };
         for (let i = 0; i < B.N; i++) {
             const a = facingAngle + (i - (B.N - 1) / 2) * B.SPREAD, sx = playerPx + Math.cos(a) * T * 0.9, sy = playerPy + Math.sin(a) * T * 0.9;
-            const container = this.add.container(sx, sy).setDepth(2).setScale(0.5), fireGraphics = this.add.graphics();
-            container.add(fireGraphics);
-            this.fireballs.push({ sprite: container, fireGraphics, vx: Math.cos(a) * B.SPEED, vy: Math.sin(a) * B.SPEED, dirX: Math.cos(a), dirY: Math.sin(a),
+            const container = this.add.container(sx, sy).setDepth(2);   // the hand-drawn ember, drawn the way it flies
+            container.add(WeaponSystem.aim8(this.add.image(0, 0, WeaponSystem.fireArt(this), 'bolt_e').setScale(1.4), a, 'bolt_'));
+            this.fireballs.push({ sprite: container, fireGraphics: null, vx: Math.cos(a) * B.SPEED, vy: Math.sin(a) * B.SPEED, dirX: Math.cos(a), dirY: Math.sin(a),
                 damage: B.DMG * this.damageScaling, startX: sx, startY: sy, splitCount: 0, piercedEnemies: new Set(hitEnemies), createdAt: currentTime, lastFlameTime: 0,
-                _swordBolt: true, _range: B.RANGE });
+                _swordBolt: true, _range: B.RANGE, _noBoss: bossHit });   // (nor the boss the blade just hit)
         }
 
         this.cameras.main.shake(60, 0.005);
@@ -4942,13 +4241,8 @@ class WeaponSystem {
         // no longer multiply (see below), so the low end no longer has to fund the top.
         const baseDmg = C.BASE_DMG * this.damageScaling;
 
-        // Muzzle flash
-        // at the player in the world (it used to be pinned at screen coords and drawn off its own
-        // origin, so the grow tween flung it to the bottom right of the screen)
-        const muzzle = this.add.graphics().setDepth(4).setPosition(playerPx, playerPy);
-        muzzle.fillStyle(0xff8800, 0.8); muzzle.fillCircle(0, 0, 10);
-        muzzle.fillStyle(0xffff44, 0.6); muzzle.fillCircle(0, 0, 5);
-        this.tweens.add({ targets: muzzle, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 180, onComplete: () => muzzle.destroy() });
+        // the burst of fire it goes off with, a little out from you toward your aim
+        WeaponSystem.fireMuzzle(this, playerPx + Math.cos(baseAngle) * 10, playerPy + Math.sin(baseAngle) * 10);
 
         // Fire fireballs sequentially with slight random spread.
         // At max tier (6 shots), each shot becomes a tight 3-pellet shotgun burst
@@ -4977,14 +4271,11 @@ class WeaponSystem {
                     const vx = Math.cos(angle) * SPEED;
                     const vy = Math.sin(angle) * SPEED;
 
-                    const container = this.add.container(playerPx, playerPy);
-                    const fireGraphics = this.add.graphics().setDepth(1.5);
-                    container.add(fireGraphics);
-                    container.setDepth(2);
+                    const container = this.add.container(playerPx, playerPy).setDepth(2);   // (its rock goes in it as it flies)
 
                     this.fireballs.push({
                         sprite:        container,
-                        fireGraphics:  fireGraphics,
+                        fireGraphics:  null,
                         vx, vy,
                         damage:        pelletDmg,
                         dirX:          Math.cos(angle),
@@ -5097,7 +4388,7 @@ class WeaponSystem {
             // chance of 8 pellets works out to ~11.5 pellets/sec against 7.7 baseline, so
             // the cap arrives in ~2.6s instead of ~3.8s. The ceiling is what is being held
             // steady across these changes, not this constant.
-            STORE:      3.0,    // (0.42 over the old 60-pellet bar: rescaled so a full 20-tick bar pays what 60 pellets did)
+            STORE:      1.25,   // (3.0 till 2026-10-28: a full bar paid ~650, the burst of a T5 on a T4; 0.42 over the old 60-pellet bar)
             STORE_OLD:  0.42,   // (0.45 before RAMP_DMG moved ~6% of a full mark's payout into the pellets)
             RAMP_DMG:   0.9,    // past RAMP_FROM of the bar a pellet chips up to this much more, rising to the cap: the gun isn't dead while it builds
             RAMP_FROM:  0.3,   // payload banked per pellet, before the exponent (0.21: level with the T3 staff)
@@ -5128,7 +4419,7 @@ class WeaponSystem {
             FUEL_MS:    9000,   // a full tank: this long lit (a fill plus the second ring fits with room to spare)
             REFUEL_MS:  4000,   // empty to full while it's out
             DRY_MS:     1500,   // run dry and it can't relight for this long
-            DET_PCT:    0.06,   // a full bar's detonation also takes 6% of the target's max HP (x the overheat: up to 24%); less on a full bar
+            DET_PCT:    0.03,   // a full bar's detonation also takes 3% of the target's max HP (x the overheat: up to 12%; 6% till 2026-10-28)
             DET_BOSS:   0.25,   // story bosses take a quarter of that share
             IGNITE_DUR: 5000 + 1000 * WeaponLevels.perk('ignition', 'burst'),   // Blue Flame (R): this long (Long Flame: +1s a level)
             // ── THE FLAMETHROWER (2026-10-20: it was a machine gun) ── a fan of fire JET_R tiles long, JET_ARC radians either side
@@ -5138,7 +4429,7 @@ class WeaponSystem {
             // (TICK_PCT: every tick on a mark also takes this share of its max HP)
             STORE_MAX: 0.4,   // overkindled and still fed, a second ring fills, up to this share of a bar: the mark starts there again once detonated
             MELT_PCT: 0.002, OVER_BURN: 0.5,   // an overkindled tick: MELT + this share of max HP (instead of TICK_PCT), and this burn chance (instead of JET_BURN)
-            JET_R: 7.2 + 0.8 * WeaponLevels.perk('ignition', 'reach'), JET_ARC: 0.62 * (1 + 0.15 * WeaponLevels.perk('ignition', 'spray')), TICK_PCT: 0.001, TICK: 225, BLUE_TICK: 150, MARK_N: 2, CHIP: 1.6, CHIP_RAMP: 2.4, MELT: 20,
+            JET_R: 7.2 + 0.8 * WeaponLevels.perk('ignition', 'reach'), JET_ARC: 0.62 * (1 + 0.15 * WeaponLevels.perk('ignition', 'spray')), TICK_PCT: 0.001, TICK: 225, BLUE_TICK: 150, MARK_N: 2, CHIP: 1.6, CHIP_RAMP: 2.4, MELT: 10,
             JET_BURN: 0.12 + 0.04 * WeaponLevels.perk('ignition', 'mix'), BLUE_BURN: 0.05,   // perks: Long Nozzle, Wide Spray, Hot Mix
             PASS:       0.8,    // a mark whose target dies hands this share of its heat to the nearest enemy...
             PASS_R:     5,      // ...within this many tiles (in waves the target often died first and the bank was lost)
@@ -5258,28 +4549,6 @@ class WeaponSystem {
             }
         }
     }
-    // The jet's pixel fire: 5 frames of 10px blobs, each a ragged pixel shape with hard colour bands, burning down from a white
-    // core to embers and smoke (blue: Blue Flame's). Played over a particle's life (the anim of the same key).
-    static jetPixKey(scene, blue) {
-        const key = blue ? 'fx_jetpx_b' : 'fx_jetpx', N = 5, S = 10;
-        if (scene.textures.exists(key)) return key;
-        const t = scene.textures.createCanvas(key, S * N, S), c = t.getContext(), R = MenuArt.rng(blue ? 717 : 313);
-        const PAL = blue ? [['#ffffff', '#d8f0ff', '#8ac8ff'], ['#d8f0ff', '#8ac8ff', '#4a8aff'], ['#8ac8ff', '#4a8aff', '#2a4ad8'], ['#4a8aff', '#2a4ad8', '#141e5a'], ['#3a4058', '#2a2e40', '#1a1c28']]
-                          : [['#fffbe0', '#ffe08a', '#ffb040'], ['#ffe08a', '#ffb040', '#ff7a20'], ['#ffb040', '#ff6a1a', '#c8381a'], ['#ff6a1a', '#c8381a', '#5a1a0c'], ['#4a3a32', '#2e2420', '#1a1412']];
-        const RAD = [3.2, 4.2, 4.6, 4.2, 4.4];
-        for (let f = 0; f < N; f++) {
-            const [core, mid, rim] = PAL[f], r0 = RAD[f];
-            for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-                const d = Math.hypot(x + 0.5 - S / 2, y + 0.5 - S / 2) + (R() - 0.5) * 1.3;   // ragged edge
-                if (d > r0 || (f >= 3 && R() < 0.12 * (f - 2))) continue;   // late frames break up into embers
-                c.fillStyle = d < r0 * 0.4 ? core : d < r0 * 0.75 ? mid : rim; c.fillRect(f * S + x, y, 1, 1);
-            }
-        }
-        t.refresh();
-        for (let f = 0; f < N; f++) t.add(f, 0, f * S, 0, S, S);
-        if (!scene.anims.exists(key)) scene.anims.create({ key, frames: Array.from({ length: N }, (_, f) => ({ key, frame: f })), frameRate: 10, repeat: 0 });
-        return key;
-    }
     // The jet's look: a CONTINUOUS stream of fire while you hold (the damage ticks underneath, but the flame doesn't pulse
     // with them): a soft body going white-hot to yellow, orange, red and dark at the tip; teardrop tongues licking along it;
     // dark smoke rolling off the end; a glow at the nozzle. Blue Flame swaps to the blue set. One watcher per scene follows
@@ -5289,16 +4558,16 @@ class WeaponSystem {
         this._jetOn = now + (blue ? C.BLUE_TICK : C.TICK) * 1.6; this._jetBlue = blue;
         if (this._jetS?.core?.scene) return;
         const life = 520, v = C.JET_R * T / (life / 1000) / 0.95, ADD = Phaser.BlendModes.ADD;   // (fast enough, and visible long enough, to reach the full JET_R)
-        const fire = WeaponSystem.jetPixKey(this, false), blueK = WeaponSystem.jetPixKey(this, true);
-        // pixel-art fire: chunky hand-placed blobs that burn down white -> yellow -> orange -> red -> smoke over their life
-        const body = key => this.add.particles(0, 0, key, { anim: key, lifespan: { min: life * 0.85, max: life }, speed: { min: v * 0.85, max: v * 1.02 },
+        const fire = WeaponSystem.fireArt(this), red = ['fw_jet', 'fw_jot'], blueA = ['fw_jetb', 'fw_jotb'];
+        // the hand-drawn fire, two shapes, each burning down white -> yellow -> orange -> red -> smoke over its life
+        const body = anim => this.add.particles(0, 0, fire, { anim, lifespan: { min: life * 0.85, max: life }, speed: { min: v * 0.85, max: v * 1.02 },
             scale: { start: 1.3, end: 2.6 }, alpha: { start: 1, end: 0.35, ease: 'Cubic.easeIn' }, frequency: 12, quantity: 1, emitting: false }).setDepth(4.4);
-        const tongues = key => this.add.particles(0, 0, key, { anim: key, lifespan: { min: life * 0.5, max: life * 0.75 }, speed: { min: v * 0.7, max: v * 0.9 },
+        const tongues = anim => this.add.particles(0, 0, fire, { anim, lifespan: { min: life * 0.5, max: life * 0.75 }, speed: { min: v * 0.7, max: v * 0.9 },
             scale: { start: 1, end: 1.8 }, alpha: { start: 1, end: 0.5 }, blendMode: ADD, frequency: 30, quantity: 1, emitting: false }).setDepth(4.45);
-        const smoke = this.add.particles(0, 0, fire, { frame: 4, lifespan: { min: 700, max: 950 }, speed: { min: v * 0.35, max: v * 0.5 }, scale: { start: 1.6, end: 3 },
+        const smoke = this.add.particles(0, 0, fire, { frame: ['jet_4', 'jot_4'], lifespan: { min: 700, max: 950 }, speed: { min: v * 0.35, max: v * 0.5 }, scale: { start: 1.6, end: 3 },
             alpha: { start: 0.35, end: 0 }, frequency: 45, quantity: 1, emitting: false, gravityY: -40 }).setDepth(4.3);
         const glow = this.add.image(0, 0, 'vfx_glow').setBlendMode(ADD).setDepth(4.46).setVisible(false);
-        const S = this._jetS = { core: body(fire), tong: tongues(fire), coreB: body(blueK), tongB: tongues(blueK), smoke, glow, on: false, blue: false };
+        const S = this._jetS = { core: body(red), tong: tongues(red), coreB: body(blueA), tongB: tongues(blueA), smoke, glow, on: false, blue: false };
         // walls stop the flame like they stop its damage: a blob dies entering a tile that isn't floor (3.60 hands death zones world positions)
         const wall = (wx, wy) => !!this.world && this.world[Math.floor(wx / T)]?.[Math.floor(wy / T)] !== this.FLOOR;
         for (const em of [S.core, S.tong, S.coreB, S.tongB, S.smoke]) em.addDeathZone({ type: 'onEnter', source: { contains: wall } });
@@ -5318,55 +4587,6 @@ class WeaponSystem {
             S.glow.setVisible(on).setPosition(nx, ny).setTint(b ? 0x7ab8ff : 0xff8a2a).setScale(0.22 + 0.04 * Math.sin(t * 0.05)).setAlpha(0.45 + 0.15 * Math.sin(t * 0.07));
         };
         this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));
-    }
-
-    // One round. Hitscan with a tracer rather than a travelling projectile: at this fire
-    // rate a real bullet would be in flight for less than a frame at close range, and it
-    // would need its own update loop and collision pass for no visible difference.
-    // One pellet. A REAL projectile now, not a hitscan with a tracer drawn after the
-    // fact: it travels, it can miss, and its 4px hitbox means a machine gun at this
-    // cadence still rewards aim. Hitscan made the weapon feel like a beam, which is the
-    // opposite of what a stream of individual rounds should feel like.
-    _fireKindleRound(targetX, targetY) {
-        const C = this._kindlingCfg();
-        const worldX = targetX + this.cameras.main.scrollX;
-        const worldY = targetY + this.cameras.main.scrollY;
-        const px = this._shotX();   // where the slime is drawn (mid-dash it's still on its way)
-        const py = this._shotY();
-
-        // Triangular, not uniform: averaging two randoms clusters shots near the centre
-        // line with the occasional wider one, which is what a real burst looks like.
-        // A flat distribution scatters evenly across the cone and reads as the gun being
-        // broken rather than as recoil.
-        const jitter = ((Math.random() + Math.random()) / 2 - 0.5) * C.SPREAD * 2 * Enchants.spread('ignition');   // True Aim narrows it
-        const ang = Math.atan2(worldY - py, worldX - px) + jitter;
-        const g = this.add.graphics().setDepth(2.4);
-        g.x = px; g.y = py; g.rotation = ang;
-        // Drawn once in LOCAL space and rotated, so the bolt always points along travel.
-        // Built back-to-front as a flame rather than a cartridge: a long translucent wind
-        // streak tapering behind, then the ember body, then a white-hot head. The taper is
-        // what sells the speed -- a uniform bar just looks like a stick.
-        for (let t = 0; t < 5; t++) {
-            const k = t / 4;                       // 0 at the head end of the tail
-            const len = 5 + t * 5;                 // each band reaches further back
-            const h   = 3.2 * (1 - k * 0.72);      // and is thinner
-            g.fillStyle(t < 2 ? 0xff7a1e : 0xc23a08, 0.30 * (1 - k) + 0.05);
-            g.fillRoundedRect(-len, -h / 2, len - (t ? 5 + (t - 1) * 5 : 0) + 5, h, h / 2);
-        }
-        g.fillStyle(0xff4d0a, 0.85); g.fillRoundedRect(-7, -2.6, 12, 5.2, 2.6);   // outer flame
-        g.fillStyle(0xff9c2b, 0.98); g.fillRoundedRect(-4, -1.9, 9.5, 3.8, 1.9);  // body
-        g.fillStyle(0xffe6a0, 1);    g.fillRoundedRect(1, -1.25, 5.5, 2.5, 1.25); // hot core
-        g.fillStyle(0xfff6e0, 1);    g.fillCircle(5.8, 0, 1.5);                   // head
-
-        if (!this._kindleBullets) this._kindleBullets = [];
-        const glow = this.textures.exists('vfx_glow') ? this.add.image(px, py, 'vfx_glow').setTint(0xff7a1e).setBlendMode(Phaser.BlendModes.ADD).setDepth(2.35).setScale(0.22, 0.12).setRotation(ang) : null;   // its heat haze
-        g.setBlendMode(Phaser.BlendModes.ADD);
-        this._kindleBullets.push({
-            g, glow, x: px, y: py,
-            vx: Math.cos(ang) * C.SPEED, vy: Math.sin(ang) * C.SPEED,
-            life: (C.RANGE * this.TILE_SIZE) / C.SPEED * 1000,
-        });
-        this._kindleMuzzle(px, py, ang);
     }
 
     // Per-frame flight, collision and expiry for the pellets.
@@ -5462,21 +4682,6 @@ class WeaponSystem {
                 b.glow?.destroy();
                 list.splice(i, 1);
             }
-        }
-    }
-
-    // The shot leaving the barrel (the gun's own tip where it's drawn): a four-point flash, a puff of smoke, and now and
-    // then a spent casing spun out the side.
-    _kindleMuzzle(px, py, ang) {
-        const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null, x = tip?.x ?? px + Math.cos(ang) * 10, y = tip?.y ?? py + Math.sin(ang) * 10, ADD = Phaser.BlendModes.ADD;
-        const m = this.add.graphics().setDepth(2.5).setBlendMode(ADD).setPosition(x, y).setRotation(ang);
-        m.fillStyle(0xff8a2a, 0.9); m.fillTriangle(0, -3, 0, 3, 14, 0); m.fillTriangle(-3, 0, 3, 0, 0, -7); m.fillTriangle(-3, 0, 3, 0, 0, 7);
-        m.fillStyle(0xfff0c0, 1); m.fillTriangle(0, -1.5, 0, 1.5, 9, 0); m.fillCircle(0, 0, 2.4);
-        this.tweens.add({ targets: m, alpha: 0, scaleX: 1.4, scaleY: 0.6, duration: 70, onComplete: () => m.destroy() });
-        if (Math.random() < 0.4) { const sm = this.add.circle(x, y, 2.5, 0x3a302a, 0.35).setDepth(2.45); this.tweens.add({ targets: sm, x: x + Math.cos(ang) * 6, y: y - 8, scale: 2.2, alpha: 0, duration: 420, onComplete: () => sm.destroy() }); }
-        if (Math.random() < 0.3) {   // a casing, kicked out to the side and bouncing
-            const side = ang + Math.PI / 2 * (Math.cos(ang) >= 0 ? -1 : 1), c = this.add.rectangle(px, py, 3, 1.5, 0xd8a84a).setDepth(2.4);
-            this.tweens.add({ targets: c, x: px + Math.cos(side) * 12, y: py + Math.sin(side) * 6 - 6, angle: 540, duration: 260, ease: 'Quad.easeOut', onComplete: () => this.tweens.add({ targets: c, y: c.y + 10, alpha: 0, duration: 260, ease: 'Bounce.easeOut', onComplete: () => c.destroy() }) });
         }
     }
 
@@ -5669,24 +4874,19 @@ class WeaponSystem {
         return true;
     }
 
-    // A mark going off: a pillar of fire in the colour its heat reached, a shockwave, petals of flame thrown out, smoke
-    // rising, a scorch left on the floor. Bigger the fuller it was (t, 0..1).
+    // A mark going off: a column of fire (hand-drawn) erupting in the colour its heat reached, a ring of flame thrown out
+    // over the floor, embers flung, smoke rising, a scorch left on the floor. Bigger the fuller it was (t, 0..1).
     _kindleBlast(x, y, t) {
-        const ADD = Phaser.BlendModes.ADD, col = this._kindleHeatColor(t), s = 0.7 + 0.8 * t;
-        const pil = this.add.rectangle(x, y + 6, 16 * s, 70 * s, col, 0.85).setOrigin(0.5, 1).setDepth(4.6).setBlendMode(ADD);
-        this.tweens.add({ targets: pil, scaleX: 2.2, scaleY: 1.3, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => pil.destroy() });
-        const core = this.add.rectangle(x, y + 6, 6 * s, 56 * s, 0xfff4d8, 1).setOrigin(0.5, 1).setDepth(4.61).setBlendMode(ADD);
-        this.tweens.add({ targets: core, scaleX: 0.2, alpha: 0, duration: 260, onComplete: () => core.destroy() });
-        const wave = this.add.ellipse(x, y + 8, 20, 9).setStrokeStyle(3, col, 1).setDepth(3.5).setBlendMode(ADD);
-        this.tweens.add({ targets: wave, scale: 4 + 3 * t, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => wave.destroy() });
-        for (let k = 0; k < 10 + Math.round(8 * t); k++) {   // petals of flame
-            const a = Math.random() * Math.PI * 2, d = (24 + Math.random() * 24) * s, pt = this.add.ellipse(x, y, 6, 3, k % 3 ? col : 0xffb040).setRotation(a).setDepth(4.5).setBlendMode(ADD);
-            this.tweens.add({ targets: pt, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.6 - 8, scaleX: 0.3, alpha: 0, duration: 380 + Math.random() * 200, ease: 'Quad.easeOut', onComplete: () => pt.destroy() });
-        }
-        for (let k = 0; k < 4; k++) { const sm = this.add.circle(x + (Math.random() - 0.5) * 20, y - 6, 4, 0x2a2420, 0.4).setDepth(4.4); this.tweens.add({ targets: sm, y: sm.y - 40, scale: 3, alpha: 0, duration: 900 + k * 120, onComplete: () => sm.destroy() }); }
-        const sc = this.add.ellipse(x, y + 8, 34 * s, 14 * s, 0x140a06, 0.5).setDepth(0.62);
+        const ADD = Phaser.BlendModes.ADD, col = this._kindleHeatColor(t), s = 0.7 + 0.8 * t, blue = t >= 0.9;
+        WeaponSystem.fireArt(this);
+        const pil = this.add.sprite(x, y + 8, 'fx_fire_w', 'pillar_0').setOrigin(0.5, 1).setScale(1.4 * s).setTint(MenuArt.mix(col, 0xffffff, 0.45), MenuArt.mix(col, 0xffffff, 0.45), col, col).setAlpha(0.9).setDepth(4.6).play('fw_pillar');
+        pil.once('animationcomplete', () => pil.destroy());
+        WeaponSystem.fireRing(this, x, y + 6, 6, (24 + 20 * t) * s, 300, 5 + Math.round(5 * t), blue, 0.5);
+        for (let k = 0; k < 8 + Math.round(8 * t); k++) { const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 90; WeaponSystem.ember(this, x, y - 4, Math.cos(a) * v, Math.sin(a) * v * 0.6 - 30, 400 + Math.random() * 300, blue); }
+        for (let k = 0; k < 4; k++) { const sm = this.add.image(x + (Math.random() - 0.5) * 20, y - 6, 'fx_fire_w', k % 2 ? 'jet_4' : 'jot_4').setScale(1.4).setAlpha(0.5).setDepth(4.4); this.tweens.add({ targets: sm, y: sm.y - 40, scale: 3.4, alpha: 0, duration: 900 + k * 120, onComplete: () => sm.destroy() }); }
+        const sc = this.add.image(x, y + 8, 'fx_fire_w', 'scorch').setScale(1.2 * s).setDepth(0.62);
         this.tweens.add({ targets: sc, alpha: 0, delay: 1200, duration: 1200, onComplete: () => sc.destroy() });
-        this._vfxFlash?.(x, y, 90 * s, col, 320, 0.9);
+        this._vfxFlash?.(x, y, 70 * s, col, 300, 0.6);
         Sfx.play(this, 'kindle_boom');
     }
 
@@ -5739,55 +4939,58 @@ class WeaponSystem {
         return (ch(1) << 16) | (ch(2) << 8) | ch(3);
     }
 
-    // The kindle mark: a ring of fire at its feet that fills round it as the pellets pile up, its colour the heat
-    // (_kindleHeatColor: ember, orange, white-hot, blue at the cap), flame tongues rising off the lit part, the fuse as a
-    // thin arc closing, and once it's overkindled a crown of blue flame over it. Drawn every frame (_updateKindling).
+    // The kindle mark: a ring of coals at its feet that catches round it as the flame piles up, tongues of fire (the
+    // hand-drawn ones) in the colour its heat has reached (_kindleHeatColor: ember, orange, white-hot, blue at the cap),
+    // smoke and sparks off it, the fuse as a thin arc closing, and once it's overkindled a crown of blue flame over it and
+    // the stored second ring filling above the first. Drawn every frame (_updateKindling).
     _updateKindleIndicator(enemy) {
-        if (!enemy._kindleGfx) { enemy._kindleGfx = this.add.graphics().setDepth(1.05).setBlendMode(Phaser.BlendModes.ADD); this._vfxSort?.(enemy._kindleGfx); }
+        if (!enemy._kindleGfx) {
+            WeaponSystem.fireArt(this);
+            const c = enemy._kindleGfx = this.add.container(0, 0).setDepth(1.05), ADD = Phaser.BlendModes.ADD;
+            c._ring = this.add.image(0, 0, 'fx_fire_w', 'ring').setAlpha(0.9);
+            c._ring2 = this.add.image(0, -6, 'fx_fire_w', 'ring').setTint(0x6aaaff).setBlendMode(ADD).setVisible(false);
+            c._fuse = this.add.graphics();
+            c._crown = this.add.sprite(0, -28, 'fx_fire_w', 'crown_0').setOrigin(0.5, 1).setBlendMode(ADD).setVisible(false).play('fw_crown');
+            c._licks = []; c._licks2 = [];
+            c.add([c._ring, c._ring2, c._fuse, c._crown]);
+            this._vfxSort?.(c);
+        }
         enemy._kindleBump = this.time.now;
         this._drawKindleMark(enemy, this.time.now);
     }
     _drawKindleMark(e, now) {
-        const g = e._kindleGfx, p = this._kindlePos(e); if (!g?.active || !p) return;
-        const C = this._kindlingCfg(), t = Math.min(1, (e._kindleHits || 0) / C.MAX_HITS), col = this._kindleHeatColor(t), TAU = Math.PI * 2;
-        const bump = Math.max(0, 1 - (now - (e._kindleBump || 0)) / 140), rx = 15 + 2 * bump, ry = 6 + 0.8 * bump, top = -Math.PI / 2;
-        g.clear().setPosition(p.x, p.y + 10);
-        g.lineStyle(2, 0x2a1408, 0.6); g.strokeEllipse(0, 0, rx * 2, ry * 2);   // the unlit ring
-        const seg = 28, lit = Math.round(seg * Math.max(0.04, t));
-        for (let k = 0; k < lit; k++) {   // the lit part, and a flame tongue off every other segment
-            const a0 = top + k / seg * TAU, a1 = top + (k + 1) / seg * TAU;
-            g.lineStyle(3, col, 0.95); g.lineBetween(Math.cos(a0) * rx, Math.sin(a0) * ry, Math.cos(a1) * rx, Math.sin(a1) * ry);
-            if (k % 2 === 0) {
-                const a = (a0 + a1) / 2, x = Math.cos(a) * rx, y = Math.sin(a) * ry, h = (3 + 5 * t) * (0.6 + 0.4 * Math.sin(now * 0.025 + k * 1.7));
-                g.fillStyle(col, 0.85); g.fillTriangle(x - 1.6, y, x + 1.6, y, x + Math.sin(now * 0.02 + k) * 1.2, y - h);
-                g.fillStyle(0xfff4d8, 0.7); g.fillTriangle(x - 0.6, y, x + 0.6, y, x, y - h * 0.5);
+        const c = e._kindleGfx, p = this._kindlePos(e); if (!c?.active || !p) return;
+        const C = this._kindlingCfg(), t = Math.min(1, (e._kindleHits || 0) / C.MAX_HITS), col = this._kindleHeatColor(t), TAU = Math.PI * 2, top = -Math.PI / 2, SEG = 14;
+        const bump = Math.max(0, 1 - (now - (e._kindleBump || 0)) / 140), k = 1 + 0.12 * bump, rx = 15 * k, ry = 6 * k;
+        c.setPosition(p.x, p.y + 10).setDepth((e.sprite?.depth ?? 1.06) - 0.01); c._ring.setScale(k);   // (at its feet, under it)
+        // the tongues round the ring, the lit part of it: one more for every fourteenth of the bar
+        const licks = (list, n, oy, tint, sc) => {
+            for (let i = 0; i < Math.max(n, list.length); i++) {
+                let l = list[i];
+                if (!l && i < n) { l = list[i] = this.add.sprite(0, 0, 'fx_fire_w', 'lick_0').setOrigin(0.5, 1).setBlendMode(Phaser.BlendModes.ADD).play({ key: 'fw_lick', startFrame: (i * 3) % 6 }); c.addAt(l, 1 + c.list.indexOf(oy ? c._ring2 : c._ring)); }
+                if (!l) continue;
+                const a = top + (i + 0.5) / SEG * TAU;
+                l.setVisible(i < n).setPosition(Math.cos(a) * rx, Math.sin(a) * ry + oy + 1).setScale(sc * (0.9 + 0.2 * Math.sin(now * 0.02 + i * 1.7))).setTint(0xfff4d8, 0xfff4d8, tint, tint);
             }
-        }
+        };
+        licks(c._licks, Math.max(1, Math.round(SEG * t)), 0, col, 1 + 0.25 * t);
         if (Math.random() < 0.04 + 0.25 * t) {   // it smokes, more as it fills, and spits sparks once it's past halfway
-            const sm = this.add.circle(p.x + (Math.random() - 0.5) * 14, p.y - 4, 2.5 + 2 * t, t > 0.5 ? 0x4a2a1a : 0x2a2420, 0.35).setDepth(4.3);
-            this.tweens.add({ targets: sm, y: sm.y - 22 - 14 * t, x: sm.x + (Math.random() - 0.5) * 8, scale: 2.2, alpha: 0, duration: 800, onComplete: () => sm.destroy() });
-            if (t > 0.5) { const sp = this.add.rectangle(p.x, p.y - 4, 2, 2, col).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.31); const a = Math.random() * Math.PI * 2; this.tweens.add({ targets: sp, x: p.x + Math.cos(a) * 14, y: p.y - 10 + Math.sin(a) * 8, alpha: 0, duration: 300, onComplete: () => sp.destroy() }); }
+            const sm = this.add.image(p.x + (Math.random() - 0.5) * 14, p.y - 4, 'fx_fire_w', Math.random() < 0.5 ? 'jet_4' : 'jot_4').setScale(1 + t).setAlpha(0.4).setDepth(4.3);
+            this.tweens.add({ targets: sm, y: sm.y - 22 - 14 * t, x: sm.x + (Math.random() - 0.5) * 8, scale: sm.scale * 1.8, alpha: 0, duration: 800, onComplete: () => sm.destroy() });
+            if (t > 0.5) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, v = 40 + Math.random() * 30; WeaponSystem.ember(this, p.x, p.y - 4, Math.cos(a) * v, Math.sin(a) * v, 320, t >= 1); }
         }
         if (t > 0.25 && e.sprite?.active && e.sprite.setTint && !e._iceCube && !e.isFrozen) e.sprite.setTint(MenuArt.mix(e.sprite._cfxTint?.base ?? 0xffffff, col, Math.min(0.55, t * 0.6)));   // it glows hotter as it fills, from its own colour (from white, a Rooter or a sniper lost theirs)
         const full = (e._kindleHits || 0) >= C.MAX_HITS, idle = now - (e._kindleFedAt || now);
         // the arc: overkindled, the window running out; otherwise the time before it starts cooling (gone while it cools)
         const fuse = full ? Math.max(0, ((e._kindleUntil || now) - now) / C.OVER_MS) : Math.max(0, 1 - idle / C.COOL_DELAY);
-        g.lineStyle(1, 0xffe8b0, 0.7); g.beginPath(); g.arc(0, 0, rx + 4, top, top + fuse * TAU, false); g.strokePath();
-        if (t >= 1) {   // overkindled: a crown of blue flame over it, and the ring throbbing
-            const cy2 = -26, f2 = 0.5 + 0.5 * Math.sin(now * 0.03);
-            for (let k = 0; k < 5; k++) { const x = (k - 2) * 4, h = 6 + (k === 2 ? 4 : 0) + 2 * Math.sin(now * 0.03 + k); g.fillStyle(0x7fd4ff, 0.9); g.fillTriangle(x - 2, cy2, x + 2, cy2, x, cy2 - h); g.fillStyle(0xffffff, 0.8); g.fillTriangle(x - 0.8, cy2, x + 0.8, cy2, x, cy2 - h * 0.55); }
-            g.lineStyle(2, 0xdff2ff, 0.4 + 0.5 * f2); g.strokeEllipse(0, 0, rx * 2 + 6, ry * 2 + 3);
-        }
+        c._fuse.clear().lineStyle(1, 0xffe8b0, 0.7).beginPath().arc(0, 0, rx + 4, top, top + fuse * TAU, false).strokePath();
+        // overkindled: the crown of blue flame over it, the ring throbbing, and the second ring stacked on the first, its
+        // stored part burning white-hot over blue
+        c._crown.setVisible(t >= 1).setScale(1 + 0.08 * Math.sin(now * 0.03));
+        c._ring.setAlpha(t >= 1 ? 0.75 + 0.25 * Math.sin(now * 0.03) : 0.9);
         const st = (e._kindleStore || 0) / Math.round(C.MAX_HITS * C.STORE_MAX);
-        if (t >= 1) {   // the second ring, stacked on top of the first: its empty track, then the stored part, white-hot over a blue glow
-            const oy = -6, n2 = Math.round(seg * st);
-            g.lineStyle(2, 0x2a3a58, 0.7); g.strokeEllipse(0, oy, rx * 2, ry * 2);
-            for (let k = 0; k < n2; k++) {
-                const a0 = top + k / seg * TAU, a1 = top + (k + 1) / seg * TAU, x0 = Math.cos(a0) * rx, y0 = Math.sin(a0) * ry + oy, x1 = Math.cos(a1) * rx, y1 = Math.sin(a1) * ry + oy;
-                g.lineStyle(5, 0x4a9aff, 0.45); g.lineBetween(x0, y0, x1, y1);
-                g.lineStyle(2, 0xffffff, 0.95); g.lineBetween(x0, y0, x1, y1);
-            }
-        }
+        c._ring2.setVisible(t >= 1).setScale(k);
+        licks(c._licks2, t >= 1 ? Math.round(SEG * st) : 0, -6, 0x4a9aff, 0.9);
     }
 
     // R key. The spender: attack speed goes supersonic so you can actually reach MAX_HITS
@@ -5885,9 +5088,10 @@ class WeaponSystem {
         if (this._fuel > 0) return;
         this._fuel = 0; this._jetLit = false; this._fuelDryUntil = now + C.DRY_MS;
         const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null, x = tip?.x ?? this.player.x, y = tip?.y ?? this.player.y - 6;
+        WeaponSystem.fireArt(this);
         for (let k = 0; k < 6; k++) {   // a puff of smoke off the nozzle
-            const sm = this.add.circle(x, y, 2 + Math.random() * 2, 0x4a4440, 0.7).setDepth(4.3);
-            this.tweens.add({ targets: sm, x: x + (Math.random() - 0.5) * 16, y: y - 8 - Math.random() * 14, scale: 2.4, alpha: 0, duration: 600 + k * 60, onComplete: () => sm.destroy() });
+            const sm = this.add.image(x, y, 'fx_fire_w', k % 2 ? 'jet_4' : 'jot_4').setScale(0.8 + Math.random() * 0.4).setAlpha(0.7).setDepth(4.3);
+            this.tweens.add({ targets: sm, x: x + (Math.random() - 0.5) * 16, y: y - 8 - Math.random() * 14, scale: 2, alpha: 0, duration: 600 + k * 60, onComplete: () => sm.destroy() });
         }
         Sfx.play(this, 'click');
         this.showStatusText(this.player.x, this.player.y - 34, 'OUT OF FUEL', '#ff8a5a');
@@ -5923,20 +5127,21 @@ class WeaponSystem {
         const word = this.add.text(p.x, p.y - 40, 'BLUE FLAME', { fontSize: '22px', fontFamily: UIKit.FONT.title, fontStyle: 'bold italic', color: '#eaf6ff', stroke: '#2a5ac8', strokeThickness: 5 }).setOrigin(0.5).setDepth(10).setScale(1.8).setAlpha(0);
         this._vfxSort?.(word);
         this.tweens.add({ targets: word, scale: 1, alpha: 1, duration: 160, ease: 'Back.easeOut', onComplete: () => this.tweens.add({ targets: word, y: word.y - 16, alpha: 0, delay: 500, duration: 400, onComplete: () => word.destroy() }) });
-        const ring = this.add.ellipse(p.x, p.y + 10, 24, 10).setStrokeStyle(3, 0x8ac8ff, 1).setBlendMode(ADD).setDepth(1.04);
-        this.tweens.add({ targets: ring, scale: 5, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+        WeaponSystem.fireRing(this, p.x, p.y + 10, 14, 62, 380, 5, true, 0.42);   // a ring of blue flame bursting out over the floor
         const haze = this.textures.exists('vfx_glow') ? this.add.image(p.x, p.y, 'vfx_glow').setTint(0x3a6aff).setBlendMode(ADD).setDepth(p.depth - 0.02).setScale(0.55).setAlpha(0) : null;
-        const g = this.add.graphics().setBlendMode(ADD);
+        const barrel = this.add.image(p.x, p.y, 'vfx_glow').setTint(0x8ac8ff).setBlendMode(ADD).setScale(0.12).setVisible(false);
+        const F = WeaponSystem.flames(this);
         const tick = () => {
             const now = this.time.now, left = ms - (now - t0);
-            if (left <= 0 || !p.active) { this.events.off('update', tick); haze?.destroy(); g.destroy(); return; }
+            if (left <= 0 || !p.active) { this.events.off('update', tick); haze?.destroy(); barrel.destroy(); return; }
             const fade = Math.min(1, (now - t0) / 150, left / 300);
             haze?.setPosition(p.x, p.y + 4).setAlpha(0.3 * fade * (0.8 + 0.2 * Math.sin(now * 0.03))).setScale(0.5 + 0.05 * Math.sin(now * 0.02));
-            g.clear().setDepth(p.depth + 0.01).setAlpha(fade);
-            for (let k = 0; k < 6; k++) { const x = p.x - 12 + k * 4.8, h = 6 + 5 * (0.5 + 0.5 * Math.sin(now * 0.03 + k * 2.1)), y = p.y + 12; g.fillStyle(0x4a8aff, 0.8); g.fillTriangle(x - 2, y, x + 2, y, x + Math.sin(now * 0.02 + k), y - h); g.fillStyle(0xffd27a, 0.8); g.fillTriangle(x - 1, y, x + 1, y, x, y - h * 0.55); }
-            const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null;
-            if (tip) { g.fillStyle(0x6ab0ff, 0.6); g.fillCircle(tip.x, tip.y, 5); g.fillStyle(0xeaf6ff, 0.9); g.fillCircle(tip.x, tip.y, 2.2); }   // the barrel, white-hot
-            if (Math.random() < 0.4) { const e = this.add.rectangle(p.x + (Math.random() - 0.5) * 22, p.y + 8, 2, 2, Math.random() < 0.5 ? 0xbfe8ff : 0x4a8aff).setBlendMode(ADD).setDepth(p.depth + 0.02); this.tweens.add({ targets: e, y: e.y - 24 - Math.random() * 14, alpha: 0, duration: 520, onComplete: () => e.destroy() }); }
+            if (Math.random() < 0.7 * fade) F.bsmall.emitParticleAt(p.x + (Math.random() - 0.5) * 24, p.y + 12, 1);   // blue flames licking up off you
+            if (Math.random() < 0.2 * fade) F.bflame.emitParticleAt(p.x + (Math.random() - 0.5) * 18, p.y + 10, 1);
+            const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null;   // the barrel, white-hot
+            barrel.setVisible(!!tip).setDepth(p.depth + 0.03).setAlpha(0.7 * fade * (0.8 + 0.2 * Math.sin(now * 0.05)));
+            if (tip) barrel.setPosition(tip.x, tip.y);
+            if (Math.random() < 0.12 * fade) WeaponSystem.ember(this, p.x + (Math.random() - 0.5) * 22, p.y + 8, (Math.random() - 0.5) * 20, -40 - Math.random() * 30, 520, true);
         };
         this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));
         Sfx.play(this, 'ult');
@@ -6037,7 +5242,7 @@ class WeaponSystem {
             // BLUE BURN (Ignition's Blue Flame): blue stacks sit among the ordinary ones but don't tick. Once the hold ends, a burn
             // with any blue in it doesn't lose stacks: every BLUE_INFECT_MS one more turns blue; all blue, one pops every
             // BLUE_POP_MS for BLUE_BURST + BLUE_PCT of max HP (bosses BOSS_PCT of that), through resistance.
-            BLUE_INFECT_MS: 600, BLUE_POP_MS: 400, BLUE_BURST: 25, BLUE_PCT: 0.02,
+            BLUE_INFECT_MS: 600, BLUE_POP_MS: 400, BLUE_BURST: 14, BLUE_PCT: 0.012,   // (25 and 2% till 2026-10-28)
             HOLD_MS: 4000,
             DECAY_MS: 1000,
             LAVA_MS: 800,   // standing in lava: one burn stack per 0.8s, no damage of its own
@@ -6082,12 +5287,11 @@ class WeaponSystem {
         if (enemy.iceImmune) return;
         if (this._phasedOut(enemy)) return;
         const B = this._burnCfg(), now = this.time.now;
+        if (this._superBurnHolds(enemy, now)) return;   // Super Burn has taken over: the stack only keeps it alight
         this._burnDecay(enemy, now);
         enemy.burnStacks = Math.min(B.MAX, (enemy.burnStacks || 0) + n);
         enemy.lastBurnStackTime = now;
         Sfx.play(this, 'ignite');
-        // Super Burn (the fire ult's) is kept alight by ordinary burn, never added to by it: its hold starts again
-        if (enemy.superBurn > 0) { this._superBurnDecay(enemy, now); if (enemy.superBurn > 0) enemy._sbDecayAt = now + this._superBurnCfg().HOLD; }
         enemy._burnDecayAt = now + B.HOLD_MS;
         enemy.isBurning = true;
         this._recalcMagmaFireballCount();
@@ -6098,6 +5302,7 @@ class WeaponSystem {
     applyBlueBurn(enemy) {
         if (!enemy?.sprite?.active || enemy.health <= 0 || enemy.iceImmune || this._phasedOut(enemy)) return;
         const B = this._burnCfg(), now = this.time.now;
+        if (this._superBurnHolds(enemy, now)) return;
         this._burnDecay(enemy, now);
         if ((enemy.burnStacks || 0) < B.MAX) enemy.burnStacks = (enemy.burnStacks || 0) + 1;
         enemy.blueBurn = Math.min(enemy.burnStacks, (enemy.blueBurn || 0) + 1);
@@ -6127,6 +5332,10 @@ class WeaponSystem {
         if (!enemy?.sprite?.active || enemy.health <= 0 || enemy.iceImmune || this._phasedOut(enemy)) return;
         const B = this._superBurnCfg(), now = this.time.now;
         this._superBurnDecay(enemy, now);
+        if ((enemy.burnStacks || 0) > 0) {   // it takes over from the ordinary burn: those stacks are gone at once
+            enemy.burnStacks = 0; enemy.blueBurn = 0;
+            this._burnDecay(enemy, now); this._clearBurnStackIndicator?.(enemy); this._recalcMagmaFireballCount();
+        }
         enemy.superBurn = Math.min(B.MAX, (enemy.superBurn || 0) + n);
         Sfx.play(this, 'sburn');
         enemy._sbDecayAt = now + B.HOLD;
@@ -6144,13 +5353,20 @@ class WeaponSystem {
                         this._scorchHeal();
                         if (enemy.sprite?.active) this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, '#ffe08a');
                         this.updateEnemyHealthBar(enemy);
-                        if (enemy.health <= 0) { this.killEnemy(enemy); return; }
+                        if (enemy.health <= 0) { this.killEnemy(enemy); if (!(enemy.sprite?.active && enemy.health > 0)) return; }   // (one brought back, a Training dummy, burns on: else its stacks hung there, ticking nothing)
                     }
                 }
                 enemy._sbTimer = this.time.delayedCall(B.TICK, tick);
             };
             enemy._sbTimer = this.time.delayedCall(B.TICK, tick);
         }
+    }
+    // An enemy can't Burn while it Super Burns: a burn stack landing on one only starts its Super Burn's hold again (true: it did)
+    _superBurnHolds(enemy, now) {
+        this._superBurnDecay(enemy, now);
+        if (!(enemy.superBurn > 0)) return false;
+        enemy._sbDecayAt = now + this._superBurnCfg().HOLD;
+        return true;
     }
     _superBurnDecay(o, now) {
         if (!((o.superBurn || 0) > 0)) { o.superBurn = 0; return; }
@@ -6368,7 +5584,7 @@ class WeaponSystem {
                     this._scorchHeal();   // Scorch: burn ticks heal you
                     if (enemy.sprite?.active) this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, enemy._purpleMarked ? '#ff44ff' : '#ff8800');
                     this.updateEnemyHealthBar(enemy);
-                    if (enemy.health <= 0) { this.killEnemy(enemy); return; }
+                    if (enemy.health <= 0) { this.killEnemy(enemy); if (!(enemy.sprite?.active && enemy.health > 0)) return; }   // (one brought back, a Training dummy, burns on: else its stacks hung there, ticking nothing)
                 }
             }
             enemy._burnDoTTimer = this.time.delayedCall(B.TICK_MS, tick);
@@ -6457,12 +5673,11 @@ class WeaponSystem {
             });
         }
 
-        // Shockwave visual
-        const wave = this.add.graphics().setDepth(4).setPosition(playerPx, playerPy);
-        wave.lineStyle(4, 0xff6600, 0.9); wave.strokeCircle(0, 0, 12);
-        this.tweens.add({ targets: wave, scaleX: RADIUS * 2.4, scaleY: RADIUS * 2.4, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => wave.destroy() });
-        const core = this.add.circle(playerPx, playerPy, 16, 0xffaa00, 0.7).setDepth(4);
-        this.tweens.add({ targets: core, radius: 40, alpha: 0, duration: 200, onComplete: () => core.destroy() });
+        // the surge: a burst of fire off you, a ring of flame racing out over the lava as it rises, embers thrown on out
+        const T = this.TILE_SIZE;
+        WeaponSystem.fireMuzzle(this, playerPx, playerPy - 4, 2.2);
+        WeaponSystem.fireRing(this, playerPx, playerPy, T * 0.6, (RADIUS + 0.3) * T, RADIUS * RING_INTERVAL, 5 + RADIUS * 3, false, 0.85);
+        for (let i = 0; i < 8 + RADIUS * 3; i++) { const a = Math.random() * Math.PI * 2, v = 90 + Math.random() * 120; WeaponSystem.ember(this, playerPx + Math.cos(a) * 10, playerPy + Math.sin(a) * 8, Math.cos(a) * v, Math.sin(a) * v - 20, 400 + Math.random() * 400); }
         this.cameras.main.shake(120, 0.009);
 
         // Fling nearby enemies
@@ -6549,13 +5764,12 @@ class WeaponSystem {
             this._magmaOrbGraphics = [];
             if (count > 0) {
                 for (let i = 0; i < count; i++) {
-                    // a little lava rock (magmaRockKey), bigger and hotter with the heat
-                    const key = WeaponSystem.magmaRockKey(this, i % WeaponSystem.MAGMA_VARIANTS);
+                    // a pebble of lava rock (the hand-drawn one, its core pulsing), bigger and hotter with the heat
+                    WeaponSystem.fireArt(this);
                     const g = this.add.container(0, 0).setDepth(5);
                     const glow = this.add.image(0, 0, 'vfx_glow').setTint(count <= 2 ? 0xff7a1a : count <= 4 ? 0xff4a10 : 0xff2200).setBlendMode(Phaser.BlendModes.ADD).setScale(0.12 + count * 0.02).setAlpha(0.8);
-                    const rock = this.add.sprite(0, 0, key, String(i % 4)).setScale(0.55 + count * 0.07);
-                    if (this.anims.exists(key)) rock.play({ key, startFrame: i % 4 });
-                    g.add([glow, rock]); g._rock = rock;
+                    const rock = this.add.sprite(0, 0, 'fx_fire_w', 'pebble_0').setScale(1 + count * 0.1).play({ key: 'fw_pebble', startFrame: i % 4 });
+                    g.add([glow, rock]);
                     this._magmaOrbGraphics.push(g);
                 }
             }
@@ -6574,7 +5788,6 @@ class WeaponSystem {
             const angle = baseAngle + (i / this._magmaOrbCount) * Math.PI * 2;
             g.x = px + Math.cos(angle) * ORBIT_R;
             g.y = py + Math.sin(angle) * ORBIT_R;
-            if (g._rock) g._rock.rotation = angle * 1.7 + i;
             // Pulse alpha with a slight phase offset per orb
             g.alpha = 0.7 + Math.sin(time * 0.006 + i * 1.2) * 0.3;
         }
@@ -6606,183 +5819,6 @@ class WeaponSystem {
         UIKit.rBar(this._magmaRippleBarBg.clear(), px - BAR_W / 2 + 4, py - 3, BAR_W, pct, { col: 0xff5a14, hot: 0xffc060, dark: 0x1a0806, time: this.time.now, ready });
         this._magmaRippleLabel.x   = px; this._magmaRippleLabel.y   = py + 7;
         this._magmaRippleLabel.setColor(ready ? '#ffcc44' : '#ff8844');
-    }
-
-    _magmaExplosion(centerTileX, centerTileY, damage, lavaShort = 2000, lavaLong = 9000) {
-        const cpx = centerTileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const cpy = centerTileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-        // Outer ring
-        const ring = this.add.circle(cpx, cpy, 8, 0xff4400, 0).setDepth(5);
-        ring.setStrokeStyle(4, 0xff8800, 1);
-        this.tweens.add({ targets: ring, radius: this.TILE_SIZE * 3.5, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-
-        // Core flash
-        VisualFX.impact(this, cpx, cpy, 'fire', this.TILE_SIZE * 1.8);
-        this._vfxFlash?.(cpx, cpy, this.TILE_SIZE * 4, 0xff8a2a, 320, 0.8);
-
-        // Debris
-        for (let i = 0; i < 16; i++) {
-            const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.3;
-            const spd = 1.5 + Math.random() * 2.5;
-            const debris = this.add.rectangle(cpx, cpy, 6, 6, i % 2 === 0 ? 0xff4400 : 0xffcc44, 1).setDepth(4);
-            this.tweens.add({ targets: debris, x: cpx + Math.cos(angle) * spd * this.TILE_SIZE, y: cpy + Math.sin(angle) * spd * this.TILE_SIZE, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 400 + Math.random() * 200, ease: 'Quad.easeOut', onComplete: () => debris.destroy() });
-        }
-
-        this.cameras.main.shake(200, 0.012);
-
-        // Circular explosion — radius 2.5 tiles, tiles animate outward from centre
-        const EXP_RADIUS = 2.5;
-        const EXP_SCAN   = Math.ceil(EXP_RADIUS);
-        const hitEnemies = new Set();
-
-        for (let ox = -EXP_SCAN; ox <= EXP_SCAN; ox++) {
-            for (let oy = -EXP_SCAN; oy <= EXP_SCAN; oy++) {
-                const dist = Math.sqrt(ox * ox + oy * oy);
-                if (dist > EXP_RADIUS) continue;
-                const tx = centerTileX + ox, ty = centerTileY + oy;
-                if (tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT) continue;
-                if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
-
-                // Delay proportional to distance so wave expands outward
-                const waveDelay = (dist / EXP_RADIUS) * 180;
-
-                this.time.delayedCall(waveDelay, () => {
-                    if (this._deathScreenActive) return;
-                    const tpx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
-                    const tpy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
-                    this.spawnIgnitionTrail(tpx, tpy, lavaShort);
-
-                    const ef = this.add.graphics().setDepth(2.5);
-                    ef.fillStyle(0xff4400, 0.75);
-                    ef.fillRect(tx * this.TILE_SIZE, ty * this.TILE_SIZE, this.TILE_SIZE, this.TILE_SIZE);
-                    ef.fillStyle(0xffdd44, 0.4);
-                    ef.fillRect(tx * this.TILE_SIZE + 3, ty * this.TILE_SIZE + 3, this.TILE_SIZE - 6, this.TILE_SIZE - 6);
-                    this.tweens.add({ targets: ef, alpha: 0, duration: 300, onComplete: () => ef.destroy() });
-
-                    // Damage queen spawner on this tile
-                    const portalOnTile = this.getPortalAt(tx, ty);
-                    if (portalOnTile) this.damagePortal(portalOnTile, damage);
-                    this.damageBossAtTile(tx, ty, damage);
-
-                    for (const enemy of [...this.enemies]) {
-                        if (enemy.x !== tx || enemy.y !== ty || hitEnemies.has(enemy)) continue;
-                        hitEnemies.add(enemy);
-                        if (enemy.iceImmune || enemy.fireImmune || enemy.elementImmune) {
-                            const imCol = enemy.iceImmune ? '#88eeff' : '#ff8844';
-                            this.showStatusText(enemy.sprite.x, enemy.sprite.y - 10, 'IMMUNE', imCol);
-                            if (enemy.iceImmune && this.isIceTutorial) this._triggerIceImmuneGlerpReaction();
-                            continue;
-                        }
-                        if (this._roomGated() && enemy.tutorialRoomIndex !== undefined &&
-                            enemy.tutorialRoomIndex !== this.getCurrentPlayerRoom()) continue;
-                        if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                        const _rd4467 = this.resolveElementalHit(enemy, damage, 'fire');
-                        if (_rd4467 === null) continue;
-                        enemy.health -= _rd4467;
-                        this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd4467, '#ffffff');
-                        this.updateEnemyHealthBar(enemy);
-                        if (enemy.health <= 0) this.killEnemy(enemy);
-                    }
-                });
-            }
-        }
-
-        // ── Lava rock scatter: 2-4 rocks land on random tiles within 10×10 ─
-        const rockCount = 2 + Math.floor(Math.random() * 3);
-        const rockDmg = 20 * this.damageScaling;
-        for (let r = 0; r < rockCount; r++) {
-            let landTileX, landTileY, attempts = 0;
-            do {
-                landTileX = centerTileX + Math.floor(Math.random() * 11) - 5;
-                landTileY = centerTileY + Math.floor(Math.random() * 11) - 5;
-                attempts++;
-                const distFromCentre = Math.abs(landTileX - centerTileX) + Math.abs(landTileY - centerTileY);
-            } while (
-                attempts < 30 &&
-                (landTileX < 0 || landTileX >= this.WORLD_WIDTH ||
-                 landTileY < 0 || landTileY >= this.WORLD_HEIGHT ||
-                 this.world[landTileX]?.[landTileY] !== this.FLOOR ||
-                 // exclude within 3 Manhattan tiles of explosion — must land outside the pool
-                 Math.abs(landTileX - centerTileX) + Math.abs(landTileY - centerTileY) <= 3)
-            );
-            if (attempts >= 30) continue;
-
-            const landPx = landTileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const landPy = landTileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-            // Stagger each rock's flight slightly
-            const flightDelay = r * 120 + Math.random() * 80;
-            const flightDur   = 380 + Math.random() * 160;
-
-            // Shadow on ground showing where it will land
-            const shadow = this.add.ellipse(landPx, landPy + 6, 18, 8, 0x000000, 0.45).setDepth(0.4);
-            this.tweens.add({ targets: shadow, scaleX: 0.3, scaleY: 0.3, alpha: 0, duration: flightDelay + flightDur, onComplete: () => shadow.destroy() });
-
-            // The rock itself — starts above explosion centre, arcs down to land tile
-            this.time.delayedCall(flightDelay, () => {
-                if (this._deathScreenActive) return;
-
-                const rock = this.add.graphics().setDepth(6);
-                rock.fillStyle(0xcc3300, 1);
-                rock.fillCircle(0, 0, 7);
-                rock.fillStyle(0xff6600, 0.7);
-                rock.fillCircle(-2, -2, 4);
-                rock.fillStyle(0xffaa44, 0.5);
-                rock.fillCircle(-3, -3, 2);
-                rock.x = cpx + (Math.random() - 0.5) * 10;
-                rock.y = cpy - 8;
-
-                // Arc: tween x to land, y goes up then down via two chained tweens
-                const peakY = Math.min(rock.y, landPy) - 40 - Math.random() * 30;
-
-                this.tweens.add({
-                    targets: rock,
-                    x: landPx, y: peakY,
-                    duration: flightDur * 0.45,
-                    ease: 'Quad.easeOut',
-                    onComplete: () => {
-                        this.tweens.add({
-                            targets: rock,
-                            y: landPy,
-                            duration: flightDur * 0.55,
-                            ease: 'Quad.easeIn',
-                            onComplete: () => {
-                                rock.destroy();
-                                // Impact flash
-                                const impact = this.add.circle(landPx, landPy, 6, 0xff4400, 0.85).setDepth(5);
-                                this.tweens.add({ targets: impact, radius: 18, alpha: 0, duration: 220, onComplete: () => impact.destroy() });
-                                // Small shake
-                                this.cameras.main.shake(60, 0.004);
-                                // Lava tile — long duration for rock craters
-                                this.spawnIgnitionTrail(landPx, landPy, lavaLong);
-                                // Damage queen spawner on landing tile
-                                const rockPortal = this.getPortalAt(landTileX, landTileY);
-                                if (rockPortal) this.damagePortal(rockPortal, rockDmg);
-                                this.damageBossAtTile(landTileX, landTileY, rockDmg);
-                                // Damage enemies on landing tile
-                                for (const enemy of [...this.enemies]) {
-                                    if (enemy.x !== landTileX || enemy.y !== landTileY) continue;
-                                    if (enemy.iceImmune || enemy.fireImmune || enemy.elementImmune) continue;
-                                    if (this._roomGated() && enemy.tutorialRoomIndex !== undefined &&
-                                        enemy.tutorialRoomIndex !== this.getCurrentPlayerRoom()) continue;
-                                    if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                                    const _rd4555 = this.resolveElementalHit(enemy, rockDmg, 'fire');
-                                    if (_rd4555 === null) continue;
-                                    enemy.health -= _rd4555;
-                                    this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 10, _rd4555, '#ff8800');
-                                    this.updateEnemyHealthBar(enemy);
-                                    if (enemy.health <= 0) this.killEnemy(enemy);
-                                }
-                            }
-                        });
-                    }
-                });
-
-                // Rotation as it flies
-                this.tweens.add({ targets: rock, angle: 360 * (Math.random() > 0.5 ? 1 : -1), duration: flightDur, ease: 'Linear' });
-            });
-        }
     }
 
     shootFireball(targetX, targetY) {
@@ -7040,6 +6076,7 @@ class WeaponSystem {
             if (s.rotSpeed) s.sprite.rotation += s.rotSpeed * ds;
             if (s.sprite._glow)     { s.sprite._glow.x = s.sprite.x; s.sprite._glow.y = s.sprite.y; }
             if (s.sprite._innerOrb) { s.sprite._innerOrb.x = s.sprite.x; s.sprite._innerOrb.y = s.sprite.y; }
+            if (s.isCannonShard && !s.isHealShard) WeaponSystem.frostTrail(this, oldX, oldY, s.sprite.x, s.sprite.y, 3, 0.8);   // the icicle's tail of frost, unbroken
 
             // Frost trail
             if (time - s.lastTrailTime > 60) {
@@ -7083,17 +6120,10 @@ class WeaponSystem {
                         onComplete: () => sp.destroy()
                     });
                 } else if (s.isCannonShard) {
-                    // Ice chip trail — tiny shard fragment spinning behind the pellet
-                    const trailCol = s.isHealShot ? 0x44dd99 : (Math.random() > 0.5 ? 0x55aaee : 0x88ccff);
-                    const tg = this.add.graphics().setDepth(1.5);
-                    tg.x = s.sprite.x + (Math.random() - 0.5) * 3;
-                    tg.y = s.sprite.y + (Math.random() - 0.5) * 3;
-                    const ts = 1.0 + Math.random() * 1.2;
-                    tg.fillStyle(trailCol, 0.75);
-                    tg.beginPath(); tg.moveTo(0,-ts*2); tg.lineTo(ts,0); tg.lineTo(0,ts*2); tg.lineTo(-ts,0); tg.closePath(); tg.fillPath();
-                    tg.fillStyle(0xffffff, 0.50); tg.fillCircle(-ts*0.3, -ts*0.5, ts*0.35);
-                    tg.setRotation(Math.random() * Math.PI * 2);
-                    this.tweens.add({ targets: tg, alpha: 0, scaleX: 0.2, scaleY: 0.2, rotation: tg.rotation + (Math.random() > 0.5 ? 2 : -2), duration: 200 + Math.random() * 80, ease: 'Cubic.easeOut', onComplete: () => tg.destroy() });
+                    // a glint now and then off the icicle (its tail is laid every frame, above) and a breath of mist
+                    const FR = WeaponSystem.frost(this);
+                    if (Math.random() < 0.35) FR.glint.emitParticleAt(s.sprite.x + (Math.random() - 0.5) * 4, s.sprite.y + (Math.random() - 0.5) * 4, 1);
+                    if (Math.random() < 0.5) FR.mist.emitParticleAt(s.sprite.x, s.sprite.y, 1);
                 } else {
                     const t = this.add.rectangle(s.sprite.x, s.sprite.y, 4, 4, 0xaaddff, 0.5);
                     t.setDepth(0.5);
@@ -7256,7 +6286,7 @@ class WeaponSystem {
             if (s.isSplitter && s.isRecalling) {
                 if (time - (s._recallAt ??= time) > 2500) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
                 s.sprite.setAlpha(this.world[tileX]?.[tileY] === this.FLOOR ? 1 : 0.4);
-                if (hitWallX || hitWallY) { s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2); continue; }
+                if (hitWallX || hitWallY) { if (!s.isSplitter) s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2); continue; }
             }
             if ((hitWallX || hitWallY) && !s.isHealShard) VisualFX.wallImpact(this, s.sprite.x, s.sprite.y, 'ice', s.vx, s.vy);
 
@@ -7321,10 +6351,9 @@ class WeaponSystem {
                 continue;
             }
 
-            // Rotate shard to match velocity direction
-            if (!s.isBlock) {
-                s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2);
-            }
+            // Rotate shard to match velocity direction (the Fractal Shard's are drawn their way, or tumble: never turned)
+            if (s.isPierceSpike) WeaponSystem.fracAim(s.sprite, Math.atan2(s.vy, s.vx));
+            else if (!s.isBlock && !s.isSplitter && !s.isCannonShard) s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2);   // (an icicle is drawn the way it flies: turned too, it flew side-on)
 
             // Keep shatter mark visuals pinned to their enemies each frame
             for (const enemy of this.enemies) {
@@ -7334,13 +6363,13 @@ class WeaponSystem {
                 }
             }
 
-            // ── Pierce spike afterimages — ghost copies fading behind ──
-            if (s.isPierceSpike && time - (s._lastAfterimageTime || 0) > 30) {   // a pixel ghost of the needle, fading behind it
+            // ── Frost behind the needle (and now and then off a fan shard): glints and a pale mist ──
+            if (s.isPierceSpike && time - (s._lastAfterimageTime || 0) > 16) {
                 s._lastAfterimageTime = time;
-                const af = this.add.image(s.sprite.x, s.sprite.y, s.sprite.texture.key).setRotation(s.sprite.rotation).setScale(s.sprite.scaleX * 0.9)
-                    .setTint(s._crit ? 0xffffff : 0x7fd0ff).setAlpha(0.5).setDepth(3.0).setBlendMode(Phaser.BlendModes.ADD);
-                this.tweens.add({ targets: af, alpha: 0, scaleX: af.scaleX * 0.6, scaleY: af.scaleY * 0.6, duration: 110, ease: 'Quad.easeOut', onComplete: () => af.destroy() });
-            }
+                const F = WeaponSystem.frost(this);
+                F.glint.emitParticleAt(s.sprite.x + (Math.random() - 0.5) * 6, s.sprite.y + (Math.random() - 0.5) * 6, 1);
+                F.mist.emitParticleAt(s.sprite.x, s.sprite.y, 1);
+            } else if (s.isSplitter && Math.random() < 0.08) WeaponSystem.frost(this).glint.emitParticleAt(s.sprite.x, s.sprite.y, 1);
 
             // ── Homing splinter: after burst delay, curve toward nearest enemy ──
             if (s.isHealSplinter && time - s._spawnTime > s._homingDelay) {
@@ -7477,9 +6506,7 @@ class WeaponSystem {
                             if (this._phasedOut(enemy)) continue;   // phased out: not in the world
                             // full damage to the first enemy it pierces, 35% to the rest: the
                             // shard is the single-target half of the weapon, the burst the crowd half
-                            this._forceCrit = !!s._crit;   // Deadly Accuracy: every shard crits
                             const _rd5235 = this.resolveElementalHit(enemy, s.damage * (s.hitEnemies.size > 1 ? 0.35 : 1) * this._volleyMult(enemy, s.volleyId), 'ice');
-                            this._forceCrit = false;
                             if (_rd5235 === null) continue;
                             enemy.health -= _rd5235;
                             this.showDamageNumber(ex, ey - 10, Math.round(_rd5235), '#aaeeff');
@@ -7487,7 +6514,6 @@ class WeaponSystem {
                             if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
 
                             WeaponSystem.fractalBurst(this, ex, ey, !!s._crit);
-                            this._fractalMark?.(enemy);   // R's charge: a fan shard on this mark
                             // Freeze if not already frozen
                             if (!enemy._iceCube) {
                                 this._destroyChillIndicator(enemy);
@@ -7540,7 +6566,6 @@ class WeaponSystem {
                         // Splitter fragment — damages, shatters frozen, small AoE, pierces
                         if (s.hitEnemies.has(enemy)) continue;
                         s.hitEnemies.add(enemy);
-                        this._fractalConsume?.(enemy);   // a spike's mark: R charges
                         const hitDmg = (s.isRecalling ? (s._recallDamage || s.damage * 2.2) : s.damage) * this._volleyMult(enemy, s.volleyId);
                         // Shatter mark multiplier — 4× purple, 3× gold
                         // Marks: purple is x1.5 on everything now (in the resolve), so the splitter adds
@@ -7565,25 +6590,9 @@ class WeaponSystem {
                                 this.killEnemy(enemy);
                             }
                         }
-                        // Small AoE ice explosion on each fragment hit — also scales with mark (not drawn in Shard Storm: dozens a second whited out the screen)
+                        // Small AoE ice explosion on each fragment hit: a little burst of ice (the hand-drawn flare)
                         const AOE_RADIUS = 28;
-                        const aoeG = this.add.graphics().setDepth(4.5).setVisible(!((this._fracMode?.until || 0) > this.time.now));
-                        aoeG.x = ex; aoeG.y = ey;
-                        // Marked hits flash gold/yellow instead of blue
-                        const aoeCol = enemy._purpleMarked ? 0xaa22ff : enemy._shatterMarked ? 0xffdd44 : s.isRecalling ? 0xffffff : 0xaaeeff;
-                        const aoeMid = enemy._purpleMarked ? 0xdd88ff : enemy._shatterMarked ? 0xffff88 : s.isRecalling ? 0xffffff : 0xddf8ff;
-                        // rings and a star, not filled discs (a volley's hits overlap, and stacked fills read as one flat blob)
-                        const marked = enemy._purpleMarked || enemy._shatterMarked, R2 = AOE_RADIUS * (marked ? 1.2 : 1);
-                        aoeG.fillStyle(aoeCol, marked ? 0.14 : 0.1); aoeG.fillCircle(0, 0, R2 * 0.7);
-                        aoeG.fillStyle(0xffffff, 0.8); aoeG.fillCircle(0, 0, 2.5);
-                        aoeG.lineStyle(marked ? 2 : 1.4, aoeMid, 0.85); aoeG.strokeCircle(0, 0, R2 * 0.8);
-                        if (marked) { aoeG.lineStyle(1, aoeCol, 0.6); aoeG.strokeCircle(0, 0, R2 * 0.55); }
-                        for (let ai = 0; ai < 5; ai++) {
-                            const aa = (ai / 5) * Math.PI * 2 + ex * 0.01;
-                            aoeG.lineStyle(1, ai % 2 ? aoeMid : 0xffffff, 0.7);
-                            aoeG.beginPath(); aoeG.moveTo(Math.cos(aa)*4, Math.sin(aa)*4); aoeG.lineTo(Math.cos(aa)*R2*0.75, Math.sin(aa)*R2*0.75); aoeG.strokePath();
-                        }
-                        this.tweens.add({ targets: aoeG, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => aoeG.destroy() });
+                        WeaponSystem.fracMuzzle(this, ex, ey, false);
                         // Damage nearby enemies in AoE radius
                         for (const nearEnemy of [...this.enemies]) {
                             if (this._phasedOut?.(nearEnemy)) continue;
@@ -7817,21 +6826,10 @@ class WeaponSystem {
         return Math.hypot(px - closestX, py - closestY);
     }
 
+    // An icicle landing (or glancing off): a puff of frost off it, a glint (a volley's run together into one cloud)
     spawnBounceImpact(x, y) {
-        const ring = this.add.circle(x, y, 4, 0xaaddff, 0.7);
-        ring.setStrokeStyle(1, 0xffffff, 0.9);
-        this.tweens.add({ targets: ring, radius: 10, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-        // A couple of tiny shards flying off
-        for (let i = 0; i < 3; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const sp = this.add.rectangle(x, y, 3, 6, 0xccffff, 0.9);
-            sp.setDepth(1);
-            this.tweens.add({
-                targets: sp,
-                x: x + Math.cos(angle) * 12, y: y + Math.sin(angle) * 12,
-                alpha: 0, duration: 200, ease: 'Quad.easeOut', onComplete: () => sp.destroy()
-            });
-        }
+        WeaponSystem.frostPuff(this, x, y, 3, 0.7);
+        WeaponSystem.frost(this).glint.emitParticleAt(x, y, 1);
     }
 
     destroyIceShard(s) {
@@ -7871,22 +6869,39 @@ class WeaponSystem {
                 continue;
             }
 
-            // Magma Staff: a spinning lump of lava rock, its cracks glowing, in a heat haze. The fire ult's
-            // shots are the same meteors, a size up; its stage-2 supernova a great one burning blue.
-            if (((fireball.isStaffBall && !fireball._isSupernova) || fireball._isShotgun) && fireball.sprite?.active) {
+            // Magma Staff: a lump of lava rock tumbling (the hand-drawn frames, never the art turned), magma glowing in
+            // its cracks, in a heat haze, fire streaming off behind it and drops of magma falling from it
+            if (fireball.isStaffBall && !fireball._isSupernova && !fireball._isShotgun && fireball.sprite?.active) {
+                const F = WeaponSystem.flames(this);
+                if (!fireball._rock) {
+                    const haze = this.add.image(0, 0, 'vfx_glow').setTint(0xff6a1a).setBlendMode(Phaser.BlendModes.ADD).setScale(0.42).setAlpha(0.45);
+                    const rock = this.add.sprite(0, 0, 'fx_fire_w', 'rock_0').setScale(1.6).play({ key: 'fw_rock', startFrame: Math.floor(Math.random() * 4), frameRate: 10 + Math.random() * 6 });
+                    fireball.sprite.add([haze, rock]);
+                    fireball._rock = rock; fireball._haze = haze; fireball._hazeS = haze.scale;
+                }
+                const bx = fireball.sprite.x - fireball.dirX * 8, by = fireball.sprite.y - fireball.dirY * 8;
+                if (Math.random() < 0.5) F.small.emitParticleAt(bx + (Math.random() - 0.5) * 6, by + (Math.random() - 0.5) * 6, 1);
+                if (Math.random() < 0.12) F.flame.emitParticleAt(bx + (Math.random() - 0.5) * 6, by + (Math.random() - 0.5) * 6, 1);
+                if (Math.random() < 0.12) {   // a drop of magma sagging off it and cooling
+                    const drop = this.add.sprite(bx + (Math.random() - 0.5) * 8, by + (Math.random() - 0.5) * 6, 'fx_fire_w', 'drip_0').setScale(1.5).setDepth(fireball.sprite.depth - 0.01).play('fw_drip');
+                    this.tweens.add({ targets: drop, y: drop.y + 8, alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => drop.destroy() });
+                }
+                fireball._haze.setScale(fireball._hazeS * (0.95 + 0.12 * Math.sin(this.time.now * 0.03)));
+            }
+            // The fire ult's shots: the same molten rock as its meteors; its stage-2 supernova a great one burning blue.
+            else if (((fireball.isStaffBall && !fireball._isSupernova) || fireball._isShotgun) && fireball.sprite?.active) {
                 if (!fireball._rock) {
                     const v = (this._magmaRockN = ((this._magmaRockN || 0) + 1) % WeaponSystem.MAGMA_VARIANTS);
-                    const key = ElementSystem.meteorKey(this, v % 3), nova = fireball._isSupernova, big = fireball._isShotgun;   // the same molten rock as the fire ult's meteors
-                    fireball._spin = (0.006 + Math.random() * 0.01) * (Math.random() < 0.5 ? -1 : 1);
+                    const nova = fireball._isSupernova, big = fireball._isShotgun;   // the same molten rock as the fire ult's meteors, tumbling
+                    ElementSystem.ultArt(this);
                     const haze = this.add.image(0, 0, 'vfx_glow').setTint(nova ? 0x4a8aff : 0xff6a1a).setBlendMode(Phaser.BlendModes.ADD).setScale(nova ? 0.7 : big ? 0.52 : 0.42).setAlpha(0.45);
-                    const rock = this.add.image(0, 0, key).setScale((nova ? 2.3 : big ? 1.75 : 1.4) * 18 / 32);
+                    const rock = this.add.sprite(0, 0, 'fx_ult_fi', 'met_0').setScale(nova ? 2.3 : big ? 1.75 : 1.4).play({ key: 'uf_met', startFrame: v % 3 });
                     if (nova) rock.setTint(0xaaccff);
                     fireball._hazeS = haze.scale;
                     fireball.fireGraphics?.clear();
                     fireball.sprite.add([haze, rock]);
                     fireball._rock = rock; fireball._haze = haze;
                 }
-                fireball._rock.rotation += delta * fireball._spin;
                 // magma dripping off it: a droplet that sags and cools behind the rock
                 if (Math.random() < 0.18) {
                     const dx = fireball.sprite.x - fireball.dirX * 8 + (Math.random() - 0.5) * 8, dy = fireball.sprite.y - fireball.dirY * 8 + (Math.random() - 0.5) * 8;
@@ -7895,6 +6910,12 @@ class WeaponSystem {
                 }
                 fireball._haze.setScale(fireball._hazeS * (0.95 + 0.12 * Math.sin(this.time.now * 0.03)));
                 if (Math.random() < 0.5) this._vfxTrail?.fire?.emitParticleAt(fireball.sprite.x - fireball.dirX * 6, fireball.sprite.y - fireball.dirY * 6, 1);
+            }
+            // The Flame Sword's ember: its fire streaming off behind it
+            else if (fireball._swordBolt) {
+                const F = WeaponSystem.flames(this), bx = fireball.sprite.x - fireball.dirX * 5, by = fireball.sprite.y - fireball.dirY * 5;
+                if (Math.random() < 0.45) F.small.emitParticleAt(bx + (Math.random() - 0.5) * 4, by + (Math.random() - 0.5) * 4, 1);
+                if (Math.random() < 0.08) WeaponSystem.ember(this, bx, by, -fireball.dirX * 30 + (Math.random() - 0.5) * 40, -fireball.dirY * 30 - 20, 300);
             }
             // Draw fireball visual
             else if (this.time.now - fireball.lastFlameTime > 25) {
@@ -8078,7 +7099,7 @@ class WeaponSystem {
                 }
             }
             // Also check boss — fireballs deal full damage on contact
-            if (!hitEnemy && this.damageBossAtTile(tileX, tileY, fireball.damage * this._volleyMult(this._bossVolleyKey(), fireball.volleyId), undefined, 'fire')) {
+            if (!hitEnemy && !fireball._noBoss && this.damageBossAtTile(tileX, tileY, fireball.damage * this._volleyMult(this._bossVolleyKey(), fireball.volleyId), undefined, 'fire')) {
                 hitEnemy = true;
                 // Staff balls apply burn stack to boss on hit
                 if (fireball.isStaffBall && typeof this.applyBurnStackBoss === 'function') {

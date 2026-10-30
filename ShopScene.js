@@ -93,7 +93,7 @@ class ShopScene extends Phaser.Scene {
         const sw = 340, sx = W / 2 - sw / 2;
         sign.lineStyle(2, UIKit.PALETTE.ironHi, 1);
         sign.lineBetween(sx + 30, 0, sx + 30, 12); sign.lineBetween(sx + sw - 30, 0, sx + sw - 30, 12);
-        this._plank(sign, sx, 10, sw, 48, 0x5a3a20);
+        this._plank(sx, 10, sw, 48, 0x5a3a20, 10);
         this.add.text(W / 2, 34, "GLURP'S WARES", {
             fontSize: '28px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#f6d58a',
             stroke: '#2a1608', strokeThickness: 6,
@@ -115,9 +115,10 @@ class ShopScene extends Phaser.Scene {
             // each sign hangs from its top edge, so it can drop and swing as one piece
             const c = this.add.container(x, tabY - 15).setDepth(10);
             const g = this.add.graphics();
+            const pOn = this._plank(-tabW / 2, 0, tabW, 30, 0x6a4626, 0), pOff = this._plank(-tabW / 2, 0, tabW, 30, 0x3e2a18, 0);
             const t = this.add.text(0, 15, label, { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit.CSS.textMid }).setOrigin(0.5);
-            c.add([g, t]);
-            const o = { x, c, g, t, on: null };
+            c.add([pOff, pOn, g, t]);
+            const o = { x, c, g, t, pOn, pOff, on: null };
             const hit = this.add.zone(x, tabY, tabW, 30).setInteractive({ useHandCursor: true }).setDepth(12);
             hit.on('pointerdown', () => { Sfx.play(this, 'click'); this.switchShopTab(i); });
             hit.on('pointerover', () => {
@@ -140,7 +141,7 @@ class ShopScene extends Phaser.Scene {
         const styleTabs = () => this._tabObjs.forEach((o, i) => {
             const on = i === this._shopTab;
             o.g.clear();
-            this._plank(o.g, -tabW / 2, 0, tabW, 30, on ? 0x6a4626 : 0x3e2a18);
+            o.pOn.setVisible(on); o.pOff.setVisible(!on);
             if (on) { o.g.fillStyle(UIKit.PALETTE.accentGold, 1); o.g.fillRect(-tabW / 2 + 8, 29, tabW - 16, 2); }
             o.t.setColor(on ? '#f6d58a' : UIKit.CSS.textMid);
             if (o.on === on) return;
@@ -162,37 +163,30 @@ class ShopScene extends Phaser.Scene {
         // Back wall (dark boards), posts, the shelf, the counter. Static.
         const stall = this.add.graphics().setDepth(1);
         stall.fillStyle(0x000000, 0.45); stall.fillRect(S.x0 + 6, S.beam, S.x1 - S.x0, CT - S.beam + 10);
-        this.add.image(S.x0, S.beam, ShopScene.stallWall(this, S.x1 - S.x0, CT - S.beam)).setOrigin(0).setScale(2).setDepth(0.95);   // under the shelf, posts and brackets (the graphics at depth 1)
+        ShopScene.wall(this, S.x0, S.beam, S.x1 - S.x0, CT - S.beam, 0.95);   // under the shelf, posts and brackets (depth 1)
         // the shelf: a plank on two iron brackets
-        // the main shelf, its own graphics so a tab can take it down (the relic case brings its own)
-        const shelf = this._mainShelf = this.add.graphics().setDepth(1);
-        this._plank(shelf, S.x0 + 24, SHELF_Y, S.x1 - S.x0 - 48, 14, 0x6a4626);
-        for (const bx of [S.x0 + 60, S.x1 - 60]) this._bracket(shelf, bx, SHELF_Y + 14);
+        // the main shelf, its own container so a tab can take it down (the relic case brings its own)
+        const shelf = this._mainShelf = this.add.container(0, 0).setDepth(1);
+        shelf.add([this._plank(S.x0 + 24, SHELF_Y, S.x1 - S.x0 - 48, 14, 0x6a4626, 0), ...[S.x0 + 60, S.x1 - 60].map(bx => this._bracket(bx, SHELF_Y + 14, 0))]);
         // posts either side
-        for (const px of [S.x0 - 14, S.x1 - 4]) this._plank(stall, px, S.top, 18, CT - S.top, 0x4a3018, true);
+        for (const px of [S.x0 - 14, S.x1 - 4]) this._plank(px, S.top, 18, CT - S.top, 0x4a3018, 1, true);
         // two lanterns on the posts, flickering
         for (const lx of [S.x0 + 14, S.x1 - 26]) {
-            const ly = S.beam + 70, lk = ShopScene.icon(this, 'shop_lantern', 16, { i: '#3a3a48', I: '#6a6a7a', y: '#ffd060', Y: '#fff2b0', o: '#ff9a30' }, (m, f) => {
-                m.rect(7, 0, 2, 2, 'i'); m.rect(5, 2, 6, 2, 'I'); m.rect(4, 4, 8, 9, 'i'); m.rect(5, 5, 6, 7, f % 2 ? 'o' : 'y'); m.rect(6, 6, 4, 5, f % 3 ? 'y' : 'Y'); m.rect(7, 7, 2, 3, 'Y');
-                m.rect(4, 13, 8, 2, 'I'); m.line(4, 4, 4, 12, 'I');
-            }, 4);
+            const ly = S.beam + 70, lk = 'shop_lantern';
+            if (!this.anims.exists(lk)) this.anims.create({ key: lk, frames: this.anims.generateFrameNames(lk, { start: 0, end: 3 }), frameRate: 6, repeat: -1 });
             const glow = this.add.image(lx + 8, ly + 18, 'mn_glow').setTint(0xffb050).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(170, 170).setAlpha(0.35).setDepth(1.5);
             this.tweens.add({ targets: glow, alpha: 0.22, duration: 140, yoyo: true, repeat: -1, repeatDelay: 300, ease: 'Stepped' });
             this.add.sprite(lx + 8, ly + 18, lk, '0').setScale(2.5).setDepth(2).play(lk);
             stall.lineStyle(2, 0x3a3a48, 1); stall.lineBetween(lx + 8, S.beam, lx + 8, ly);
         }
         // cobwebs in the top corners of the case
-        for (const [cx, dir] of [[S.x0 + 4, 1], [S.x1 - 8, -1]]) {
-            stall.lineStyle(1, 0xc8c0b0, 0.35);
-            for (let k = 0; k < 4; k++) { const a = (k / 3) * Math.PI / 2; stall.lineBetween(cx, S.beam + 2, cx + dir * Math.cos(a) * 46, S.beam + 2 + Math.sin(a) * 46); }
-            for (const r of [14, 26, 38]) { stall.beginPath(); for (let k = 0; k <= 6; k++) { const a = k / 6 * Math.PI / 2; const px = cx + dir * Math.cos(a) * r, py = S.beam + 2 + Math.sin(a) * r; k ? stall.lineTo(px, py) : stall.moveTo(px, py); } stall.strokePath(); }
-        }
+        for (const [cx, dir] of [[S.x0 + 4, 1], [S.x1 - 8, -1]]) this.add.image(cx, S.beam + 2, 'shop_stall', 'cobweb').setOrigin(dir > 0 ? 0 : 1, 0).setFlipX(dir < 0).setScale(2).setDepth(1);
         // the counter, in front of everything, across the whole floor
         const counter = this.add.graphics().setDepth(6);
         counter.fillStyle(0x000000, 0.5); counter.fillRect(0, CT - 4, W, 8);
-        this._plank(counter, -4, CT, W + 8, 18, 0x7a5230);
-        for (let y = CT + 18, k = 0; y < H; y += 26, k++) this._plank(counter, -4, y, W + 8, 26, k % 2 ? 0x4e321c : 0x563820);
-        for (let x = 40; x < W; x += 180) { counter.fillStyle(UIKit.PALETTE.iron, 1); counter.fillRect(x, CT + 18, 6, H - CT - 18); }
+        this._plank(-4, CT, W + 8, 18, 0x7a5230, 6);
+        for (let y = CT + 18, k = 0; y < H; y += 26, k++) this._plank(-4, y, W + 8, 26, k % 2 ? 0x4e321c : 0x563820, 6);
+        for (let x = 40; x < W; x += 180) this.add.image(x, CT + 18, 'shop_stall', 'strap').setOrigin(0).setScale(2).setDepth(6);
         this._hint = this.add.text(S.cx, H - 18, '', {
             fontSize: '12px', fontFamily: 'monospace', color: '#c8a878',
         }).setOrigin(0.5, 1).setDepth(7).setAlpha(0.8);
@@ -206,16 +200,20 @@ class ShopScene extends Phaser.Scene {
         this.add.text(gx, CT + 40, 'GLURP · weapons dealer', {
             fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#e8c890',
         }).setOrigin(0.5, 0).setDepth(7);
-        const bw = Math.min(230, S.x0 - 24), by = CT - 220;
-        const bub = this.add.graphics().setDepth(8);
-        bub.fillStyle(0x000000, 0.4); bub.fillRoundedRect(gx - bw / 2 + 3, by + 4, bw, 92, 10);
-        bub.fillStyle(0xe8d6ae, 1); bub.fillRoundedRect(gx - bw / 2, by, bw, 92, 10);
-        bub.fillTriangle(gx - 10, by + 91, gx + 10, by + 91, gx, by + 110);
-        bub.lineStyle(2, 0x6a4a26, 1); bub.strokeRoundedRect(gx - bw / 2, by, bw, 92, 10);
+        const bw = Math.min(230, S.x0 - 24, 2 * (S.x0 - 20 - gx)), by = CT - 220;   // (clear of the stall's post and the stats boards)
+        const bubS = this.add.nineslice(gx - bw / 2 + 3, by + 4, 'shop_stall', 'bubble', bw / 2, 46, 5, 5, 5, 5).setOrigin(0).setScale(2).setDepth(8).setTint(0).setAlpha(0.4);
+        const bubB = this.add.nineslice(gx - bw / 2, by, 'shop_stall', 'bubble', bw / 2, 46, 5, 5, 5, 5).setOrigin(0).setScale(2).setDepth(8);
+        const bubT = this.add.image(gx, by, 'shop_stall', 'bubtail').setOrigin(0.5, 0).setScale(2).setDepth(8);
         this.glurpDialogue = this.add.text(gx, by + 46, '', {
             fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold', color: '#3b2716', align: 'center',
             wordWrap: { width: bw - 20 }, lineSpacing: 2,
         }).setOrigin(0.5).setDepth(9);
+        // the bubble, `h` tall: it grows down (its tail with it) to hold a long line
+        this._bubble = (h) => {
+            bubS.setSize(bw / 2, h / 2); bubB.setSize(bw / 2, h / 2); bubT.setY(by + h);
+            this.glurpDialogue.setY(by + h / 2);
+        };
+        this._bubble(92);
 
         // ── WEAPONS TAB ───────────────────────────────────────────────────
         // Everything the stall shows for the selected element and weapon, rebuilt when either
@@ -265,9 +263,7 @@ class ShopScene extends Phaser.Scene {
                     track(weaponObjs, this.add.text(x, SHELF_Y + 20, '★', { fontSize: '14px', color: '#7fd06a' }).setOrigin(0.5, 0).setDepth(3));
                 }
                 if (on) {
-                    const mk = track(weaponObjs, this.add.graphics().setDepth(3));
-                    mk.fillStyle(acc, 1); mk.fillTriangle(x - 7, SHELF_Y - 70, x + 7, SHELF_Y - 70, x, SHELF_Y - 60);
-                    this.tweens.add({ targets: mk, y: 4, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                    track(weaponObjs, this._pointer(x, SHELF_Y - 70, acc));
                 }
                 const hit = track(weaponObjs, this.add.zone(x, SHELF_Y - 26, 64, 64).setInteractive({ useHandCursor: true }).setDepth(12));
                 hit.on('pointerdown', () => { if (k !== this._shopWi) goTo(k); });
@@ -281,8 +277,8 @@ class ShopScene extends Phaser.Scene {
             if (owned && ttIcon) this._enchAura(ttIcon, w.id).forEach(o => weaponObjs.push(o));   // and on the turntable
 
             // The price tag, hanging from the awning on a string.
-            this._drawTag(TAG, w, el, acc, { owned, equipped, canBuy, sealed, list, idx: this._shopWi, glyph: EL[el].glyph, elName: EL[el].name },
-                          () => activate()).forEach(o => weaponObjs.push(o));
+            this._ownTag(weaponObjs, redraw => this._drawTag(TAG, w, el, acc, { owned, equipped, canBuy, sealed, list, idx: this._shopWi, glyph: EL[el].glyph, elName: EL[el].name },
+                          () => activate(), redraw));
 
             this.setGlurpDialogue(sealed ? `"${ShopScene.SEALED[el].glurp}"` : equipped ? `"The ${w.name}! Your current pick. Good taste."`
                 : owned ? `"You own the ${w.name}. Want it back on?"`
@@ -345,17 +341,20 @@ class ShopScene extends Phaser.Scene {
         for (const [k, d] of [['UP', -1], ['W', -1], ['DOWN', 1], ['S', 1]]) this.input.keyboard.on('keydown-' + k, onTab(4, () => this._relicNav(0, d)));
         for (const [k, d] of [['Q', -1], ['E', 1]]) this.input.keyboard.on('keydown-' + k, onTab(4, () => this._relicNav(0, 0, d)));
         for (const k of ['ENTER', 'SPACE']) this.input.keyboard.on('keydown-' + k, onTab(4, () => this._relicActivate()));
+        // TAB turns the tag's page (an owned weapon's upgrades or what it does; a long description's next page)
+        this.input.keyboard.on('keydown-TAB', (e) => { e?.preventDefault?.(); this._tagTurn?.(); });
 
         // Purchases update the stall in place. They used to restart the scene, and the
         // restart's fade-in read as the whole screen blinking on every buy and equip.
         this._refreshStall = () => renderWeapon(0);
-        const HINTS = ['← →  weapons     ↑ ↓  element     Enter  buy / equip', 'hover anything for the details',
+        const HINTS = ['← →  weapons     ↑ ↓  element     Enter  buy / equip     Tab  tag page', 'hover anything for the details',
                        '↑ ↓  element     ← →  stage     Enter  upgrade', '← →  gadgets     Q / F  pick a slot     Enter  unlock / slot',
                        '← →  relics     ↑ ↓  tiers     Q E  up / down the list     Enter  buy / wear'];
 
         // ── TAB SWITCHING ─────────────────────────────────────────────────
         this.switchShopTab = (i) => {
             this._hideTip?.();
+            this._tagTurn = null;   // (the new tab's tag sets its own)
             this._shopTab = i;
             styleTabs();
             this._mainShelf?.setVisible(i !== 4);   // the relic case has its own shelves
@@ -460,115 +459,85 @@ class ShopScene extends Phaser.Scene {
     }
     _enchAura(follow, weaponId) { return ShopScene.enchAura(this, follow, weaponId); }
 
-    // ── THE STALL'S ART (painted once, at half size, drawn 2x like the map) ──────
-    // The back wall: upright boards, each its own shade, with grain, knots, nail heads and dark
-    // gaps between; darker toward the top under the awning, and toward the sides.
-    static stallWall(scene, w, h) {
-        const W = Math.ceil(w / 2), H = Math.ceil(h / 2);
-        return MenuArt.tex(scene, `shop_wall2_${W}x${H}`, W, H, P => {
-            const R = MenuArt.rng(5), BW = 10;
-            const boards = [];
-            for (let b = 0; b * BW < W; b++) boards.push({ base: MenuArt.mix(0x2c1d12, 0x3a2717, R()), grain: [2 + Math.floor(R() * 3), 6 + Math.floor(R() * 2)], knot: R() < 0.35 ? [b * BW + 3 + Math.floor(R() * 4), Math.floor(R() * H)] : null });
-            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-                const b = Math.floor(x / BW), bx = x - b * BW, B = boards[b];
-                let c = MenuArt.mix(B.base, 0x120a06, 0.35 * (1 - y / H) * (1 - y / H));    // shade from the awning, smooth
-                if (B.grain.includes(bx) && (y + b * 7) % 23 > 3) c = MenuArt.mix(c, 0x120a06, 0.22);   // a couple of long grain lines a board
-                if (B.knot && Math.hypot((x - B.knot[0]) * 1.4, (y - B.knot[1]) * 0.6) < 1.5) c = MenuArt.mix(c, 0x120a06, 0.5);
-                if (bx === 0) c = 0x0c0705; else if (bx === 1) c = MenuArt.mix(c, 0x000000, 0.25); else if (bx === BW - 1) c = MenuArt.mix(c, 0xffffff, 0.06);
-                if ((y === 5 || y === H - 6) && (bx === 3 || bx === 7)) c = 0x5a5a68;   // nail heads
-                const side = Math.max(0, 1 - Math.min(x, W - x) / (W * 0.1));
-                if (side > 0) c = MenuArt.mix(c, 0x050302, side * 0.45);
-                P.put(x, y, c);
-            }
-        });
+    // ── THE STALL'S ART (shop_stall / shop_wall, drawn 2x like the map) ──────────
+    // The back wall: the boards tiled, darker toward the top under the awning, and toward the sides. Returns its objects.
+    static wall(scene, x, y, w, h, depth) {
+        const t = scene.add.tileSprite(x, y, Math.ceil(w / 2), Math.ceil(h / 2), 'shop_wall').setOrigin(0).setScale(2).setDepth(depth);
+        const g = scene.add.graphics().setDepth(depth), sw = Math.round(w * 0.1);
+        g.fillGradientStyle(0x120a06, 0x120a06, 0x120a06, 0x120a06, 0.35, 0.35, 0, 0); g.fillRect(x, y, w, h * 0.5);
+        g.fillGradientStyle(0x050302, 0x050302, 0x050302, 0x050302, 0.45, 0, 0.45, 0); g.fillRect(x, y, sw, h);
+        g.fillGradientStyle(0x050302, 0x050302, 0x050302, 0x050302, 0, 0.45, 0, 0.45); g.fillRect(x + w - sw, y, sw, h);
+        return [t, g];
     }
-    // The awning: striped canvas in folds (each stripe lit on one side, shadowed on the other),
-    // a scalloped hem with a stitched band, and a gold tassel where the scallops meet.
-    static awningTex(scene, w, h, acc) {
-        const W = Math.ceil(w / 2), H = Math.ceil(h / 2), N = 10, sw = W / N, r = sw / 2;
-        return MenuArt.tex(scene, `shop_awning_${W}x${H}_${acc.toString(16)}`, W, H + Math.ceil(r) + 7, P => {
-            const colA = MenuArt.mix(acc, 0x1b1612, 0.25), colB = 0xe8d6ae, n = MenuArt.noise(23);
-            for (let y = 0; y < H + r; y++) for (let x = 0; x < W; x++) {
-                const k = Math.floor(x / sw), fx = (x - k * sw) / sw, cx = k * sw + r;
-                if (y >= H && Math.hypot(x + 0.5 - cx, y - H) > r) continue;   // the scallop
-                let c = k % 2 ? colB : colA;
-                const fold = Math.cos(fx * Math.PI);           // lit on the left of each stripe, dark on the right
-                c = MenuArt.mix(c, fold > 0 ? 0xffffff : 0x000000, Math.abs(fold) * (fold > 0 ? 0.12 : 0.3));
-                if (MenuArt.noise(24)(x * 0.4, y * 1.2) > 0.78) c = MenuArt.mix(c, 0x000000, 0.12);   // weave
-                if (y < 3) c = MenuArt.mix(c, 0x000000, 0.35 - y * 0.1);
-                const dEdge = y >= H ? r - Math.hypot(x + 0.5 - cx, y - H) : H + r;
-                if (y >= H - 4 || dEdge < 3.2) {                 // the hem band, stitched
-                    const band = y >= H ? dEdge < 3.2 : y >= H - 4;
-                    if (band) { c = MenuArt.mix(c, 0x000000, 0.18); if ((x + y) % 3 === 0 && (dEdge > 1.2 && dEdge < 2.2 || y === H - 2)) c = 0xf0dca0; }
-                }
-                if (dEdge < 1) c = MenuArt.mix(c, 0x000000, 0.45);
-                P.put(x, y, c);
-            }
-            for (let k = 1; k < N; k++) {                        // tassels between the scallops
-                const tx = Math.round(k * sw), ty = Math.round(H + 1);
-                P.put(tx, ty, 0x8a6a20); P.put(tx - 1, ty + 1, 0xf0c050); P.put(tx, ty + 1, 0xffe08a); P.put(tx + 1, ty + 1, 0xf0c050);
-                for (let j = 2; j < 6; j++) { P.put(tx - 1, ty + j, j % 2 ? 0xd8a838 : 0xb08020); P.put(tx, ty + j, 0xf0c050); P.put(tx + 1, ty + j, j % 2 ? 0xb08020 : 0xd8a838); }
-            }
-        });
+    // The awning's and banners' cloth for an accent (shop_stall has one per accent; anything else is brass).
+    static cloth(acc) {
+        return { [UIKit.PALETTE.accentOrange]: 'orange', [UIKit.PALETTE.accentBlue]: 'blue', [UIKit.PALETTE.accentGold]: 'gold', [UIKit.PALETTE.accentPurple]: 'violet' }[acc] || 'brass';
     }
-    // A hanging banner: cloth in folds, a swallowtail, gold trim when it's the chosen one, fringe.
-    static bannerTex(scene, w, h, col, on) {
-        const W = Math.ceil(w / 2), H = Math.ceil(h / 2);
-        return MenuArt.tex(scene, `shop_banner_${W}x${H}_${col.toString(16)}_${on ? 1 : 0}`, W, H + 3, P => {
-            const base = on ? MenuArt.mix(col, 0x1b1612, 0.2) : MenuArt.mix(col, 0x1b1612, 0.6);
-            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-                const notch = H - 7 + Math.abs(x - W / 2) / (W / 2) * 7;
-                if (y > notch) continue;
-                const fold = Math.sin(x / W * Math.PI * 3);
-                let c = MenuArt.mix(base, fold > 0 ? 0xffffff : 0x000000, Math.abs(fold) * (fold > 0 ? 0.1 : 0.25));
-                if (x === 0 || x === W - 1 || y > notch - 1) c = MenuArt.mix(base, 0x000000, 0.5);
-                if (on && (x === 2 || x === W - 3 || (y > notch - 3 && y <= notch - 2)) && y > 2) c = 0xf0c050;   // gold trim
-                P.put(x, y, c);
-            }
-            for (let x = 1; x < W - 1; x += 2) {                 // fringe along the tails
-                const y = Math.round(H - 7 + Math.abs(x - W / 2) / (W / 2) * 7);
-                P.put(x, y + 1, on ? 0xf0c050 : 0x8a7050); P.put(x, y + 2, on ? 0xb08020 : 0x5a4a38);
-            }
-        });
+    // A dark plaque w x h at (x, y), its rim in `rim` (a 9-slice and its rim, tinted). Returns its objects.
+    static plaque(scene, x, y, w, h, rim, depth, alpha = 1) {
+        const n = k => scene.add.nineslice(x, y, 'shop_stall', k, Math.round(w / 2), Math.round(h / 2), 4, 4, 4, 4).setOrigin(0).setScale(2).setDepth(depth);
+        return [n('plaque').setAlpha(alpha), n('plaque_rim').setTint(rim)];
+    }
+    // The marker bobbing over the chosen thing on a shelf, in its colour, its point at y + 10.
+    _pointer(x, y, col) {
+        const p = this.add.image(x, y, 'shop_stall', 'pointer').setOrigin(0.5, 0).setScale(2).setDepth(3).setTint(col);
+        this.tweens.add({ targets: p, y: y + 4, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        return p;
+    }
+    // An iron shelf bracket under a plank at (x, y).
+    _bracket(x, y, depth) { return this.add.image(x, y, 'shop_stall', 'bracket').setOrigin(0.5, 0).setScale(2).setDepth(depth); }
+    // A wooden plank w x h at (x, y) in its wood `col`: nailed ends and grain stretched between them (a 3-slice of a
+    // shop_stall plank of that thickness). Upright ones are the same plank turned, lit edge to the left.
+    _plank(x, y, w, h, col, depth, vertical = false) {
+        const t = vertical ? w : h, len = vertical ? h : w;
+        const p = this.add.nineslice(0, 0, 'shop_stall', `pk${t / 2}_${col.toString(16).padStart(6, '0')}`, Math.round(len / 2), t / 2, 6, 6).setOrigin(0).setScale(2).setDepth(depth);
+        return vertical ? p.setAngle(-90).setPosition(x, y + h) : p.setPosition(x, y);
     }
 
-    // A wooden plank, in 2px pixels: its colour, grain streaks running along it, a knot or two,
-    // a lit edge and a shadowed one, nail heads at the ends.
-    // An iron shelf bracket: a scrolled arm under the shelf.
-    _bracket(g, x, y) {
-        g.fillStyle(0x2a2a34, 1); g.fillRect(x - 2, y, 4, 22); g.fillRect(x - 10, y, 20, 3);
-        g.lineStyle(3, 0x2a2a34, 1); g.beginPath(); g.arc(x + 6, y + 10, 6, Math.PI, Math.PI * 1.5); g.strokePath(); g.beginPath(); g.arc(x - 6, y + 10, 6, Math.PI * 1.5, 0); g.strokePath();
-        g.fillStyle(0x6a6a7a, 1); g.fillRect(x - 1, y + 2, 2, 2); g.fillRect(x - 1, y + 16, 2, 2);
-    }
-    _plank(g, x, y, w, h, col, vertical = false) {
-        // a few long grain lines (not noise), a lit edge, a shadowed one, nails at the ends
-        const R = MenuArt.rng(Math.round(x * 7 + y * 13 + w * 3 + h)), L = vertical ? h : w, T = vertical ? w : h;
-        const rect = (a, b, la, tb, c, al = 1) => { g.fillStyle(c, al); if (vertical) g.fillRect(x + b, y + a, tb, la); else g.fillRect(x + a, y + b, la, tb); };
-        rect(0, 0, L, T, col);
-        rect(0, 2, L, Math.max(2, Math.floor(T / 2 / 2) * 2 - 2), MenuArt.mix(col, 0xffffff, 0.05));   // the upper half a touch lighter
-        if (T >= 10) for (let i = 0, n = Math.max(1, Math.round(L / 140)); i < n; i++) {
-            const a = Math.floor(R() * L * 0.6 / 2) * 2, b = 4 + Math.floor(R() * (T - 8) / 2) * 2;
-            rect(a, b, Math.floor(L * (0.25 + R() * 0.3) / 2) * 2, 2, MenuArt.mix(col, 0x000000, 0.18));
-        }
-        rect(0, 0, L, 2, MenuArt.mix(col, 0xffffff, 0.18));                 // lit edge
-        rect(0, T - 2, L, 2, MenuArt.mix(col, 0x000000, 0.45));              // shadowed edge
-        if (T >= 10 && L > 30) for (const a of [4, L - 8]) { rect(a, Math.floor(T / 2 / 2) * 2 - 1, 4, 4, 0x3a3a46); rect(a, Math.floor(T / 2 / 2) * 2 - 1, 2, 2, 0x8a8a9c); }
-    }
-
-    // The price tag: parchment on a string, with the weapon's name, element and tier, what it
-    // does, how hard it hits (its measured damage, as bars), and the
-    // stamp that buys or equips it. Returns its objects.
-    _drawTag(T, w, el, acc, st, onStamp) {
+    // The price tag: parchment on a string, with the weapon's name, element and tier, what it does, how hard it hits (its
+    // measured damage, as bars), and the stamp that buys or equips it. An owned weapon's tag has two pages, on tabs under
+    // its name: what it does, and its upgrades (it opens on those; TAB turns). Words that don't fit hang the tag longer,
+    // step down to 11px, then turn in pages; so do upgrade rows. `redraw` draws the tag again. Returns its objects.
+    _drawTag(T, w, el, acc, st, onStamp, redraw) {
         const objs = [], keep = o => { objs.push(o); return o; };
-        const D = 8, INK = '#3b2716';
-        // an owned weapon with several perks lists its upgrades in place of the ratings; when they and its description still
-        // don't fit, it's crowded: the tag hangs longer, EQUIP moves up beside YOURS and the description steps down a size
-        const perky = st.owned && (WeaponLevels.PERKS[w.id] || []).length >= 2, ROW_MIN = 34;
-        const nRows = (WeaponLevels.NO_POWER.includes(w.id) ? 0 : 1) + (WeaponLevels.PERKS[w.id] || []).length + 1;   // (Power, the perks, enchants: as listed below)
-        const descStyle = fs => ({ fontSize: fs + 'px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: fs > 12 ? 4 : 3 });
-        const descH = fs => { const t = this.add.text(0, 0, w.desc.replace(/\n/g, ' ').replace(/\*([^*]+)\*/g, '$1'), descStyle(fs)), h = t.height; t.destroy(); return h; };
-        const crowded = perky && 98 + descH(13) + 16 + 42 + nRows * 38 + 84 > T.h;   // (98: the header down to the description; 42: the ledger's rule and YOURS; 84: the stamp)
-        if (crowded) T = { ...T, h: Math.min(this.scale.height - 36 - T.y, T.h + 80) };
+        const D = 8, INK = '#3b2716', W0 = T.w - 40;
+        const page = st.owned ? (this._tagPage ??= 'up') : 'about';
+        const desc = w.desc.replace(/\n/g, ' ');
+        const descStyle = fs => ({ fontSize: fs + 'px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: W0 }, lineSpacing: fs > 12 ? 4 : 3 });
+        const hOf = (s, style) => this._textH(s, style);
+        // what it's good at (RATINGS), or why a cosmic weapon isn't rated
+        const rt = ShopScene.RATINGS[w.id];
+        const util = el === 'cosmic' ? 'Pure utility: a buff you cast, then switch back to fight. No damage of its own to rate.' : 'Not rated yet.';
+        const utilStyle = { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'italic', color: '#6a4a26', wordWrap: { width: W0 } };
+        const rtH = rt ? 57 + (ShopScene.DPS[w.id] ? 14 : 0) : hOf(util, utilStyle) + 6;
+        const ledgerH = st.owned ? 22 : (3 + (st.sealed ? 1 : 0)) * 22;
+        // the upgrades (Stats.js WeaponLevels): Power, no cap (none on cosmic weapons); each perk, capped; its enchants. What
+        // you've bought (o) and how much of it you're using (u): any of it can be turned down, even off, and back up.
+        // A row's value: what's on, then what the next one bought adds (short: the next alone); turned down, how much of it.
+        const rows = [];
+        if (page === 'up') {
+            const val = (u, o, say, more) => {
+                if (u < o) { const now = `using ${u} of ${o}: ${u ? say(u) : 'off'}`; return { full: now, short: now }; }
+                return { full: o && more ? `${say(o)}  →  ${say(o + 1)}` : more ? '→ ' + say(1) : say(o), short: more ? '→ ' + say(o + 1) : say(o) };
+            };
+            if (!WeaponLevels.NO_POWER.includes(w.id)) {
+                const o = WeaponLevels.ownedLevel(w.id), u = WeaponLevels.level(w.id);
+                rows.push({ label: `POWER  LV ${o}`, ...val(u, o, n => `+${Math.round(n * WeaponLevels.PER * 100)}% damage`, true), cost: WeaponLevels.dmgCost(w.id), key: null, u, o });
+            }
+            for (const [key, name, cap, , , say] of WeaponLevels.PERKS[w.id] || []) {
+                const o = WeaponLevels.ownedPerk(w.id, key), u = WeaponLevels.perk(w.id, key), lock = WeaponLevels.needs(w.id, key);
+                rows.push({ label: `${name.toUpperCase()}  ${o}/${cap}`, ...(lock ? { full: lock, short: lock } : val(u, o, say, o < cap)), cost: WeaponLevels.perkCost(w.id, key), key, u, o, lock });
+            }
+            const en = Enchants.on(w.id), es = Enchants.slots(w.id), et = en.length ? en.map(b => `${Enchants.def(b.id).name} ${Enchants.roman(b.lvl)}`).join(', ') : `none yet  ·  ${Enchants.books()} sealed book${Enchants.books() === 1 ? '' : 's'}`;
+            rows.push({ label: `ENCHANTS  ${en.length}/${es}`, full: et, short: et, cost: 0, key: '__ench', o: 0 });   // enchanting is at the Isle
+        }
+        // a row: its label and button on a line; under them the level in use (− n +) and the value
+        const valStyle = (r) => ({ fontSize: '11px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: W0 - (r.o ? 76 : 0) } });
+        const rowH = (r, short) => 38 + Math.max(20, hOf(short ? r.short : r.full, valStyle(r)));
+        const rowsH = short => rows.reduce((s, r) => s + rowH(r, short), 0);
+        const head = 98 + (st.owned ? 28 : 0);   // (the header down to the words: element, name, rule, and the page tabs)
+        const need = page === 'up' ? head + rowsH(false) + 84 : head + hOf(desc, descStyle(13)) + 16 + rtH + 20 + ledgerH + 84;
+        if (need > T.h) T = { ...T, h: Math.min(this.scale.height - 36 - T.y, T.h + 80) };   // a full tag hangs longer
         const g = this._tagSheet(T, keep, D);
 
         const L = T.x + 20, R = T.x + T.w - 20;
@@ -581,99 +550,113 @@ class ShopScene extends Phaser.Scene {
         keep(this.add.text(R, y, `${st.idx + 1} / ${st.list.length}`, { fontSize: '11px', fontFamily: 'monospace', color: '#7a5a34' })
             .setOrigin(1, 0).setDepth(D + 1));
         y += 18;
-        keep(this.add.text(L, y, w.name, {
-            fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: INK, wordWrap: { width: T.w - 40 },
-        }).setDepth(D + 1));
-        y += 40;
+        y += this._tagName(keep, L, y, w.name, W0, D + 1);
         g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(L, y, R, y);
         y += 10;
-        const roomy = !perky;
-        let fs = 13;
-        while (crowded && fs > 11 && 98 + descH(fs) + 16 + 42 + nRows * ROW_MIN + 24 > T.h) fs--;
-        y += this._richText(keep, L, y, w.desc.replace(/\n/g, ' '), descStyle(fs), D + 1) + 16;
-
-        // What it's good at, rated out of 10 on three axes (ShopScene.RATINGS): one target,
-        // crowds, and utility (control, setup, sustain). Cosmic weapons are buffs: no bars.
-        const rt = ShopScene.RATINGS[w.id];
-        if (!roomy) { /* the ratings are on the tag before you buy it */ }
-        else if (rt) {
-            [['ONE TARGET', rt[0]], ['CROWD', rt[1]], ['UTILITY', rt[2]]].forEach(([label, v]) => {
-                keep(this.add.text(L, y, label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D + 1));
-                const bx = L + 92, pw = (R - bx) / 10;
-                for (let i = 0; i < 10; i++) {
-                    g.fillStyle(i < v ? MenuArt.mix(acc, 0x3b2716, 0.2) : 0x3b2716, i < v ? 1 : 0.15);
-                    g.fillRect(bx + i * pw, y + 2, pw - 2, 10);
-                }
-                y += 19;
+        this._tagTurn = null;
+        // the page tabs: the open one inked dark and underlined in the element's colour
+        if (st.owned) {
+            const flip = () => { this._tagPage = page === 'up' ? 'about' : 'up'; Sfx.play(this, 'e_flip'); redraw(); };
+            const tw = (R - L - 8) / 2;
+            [['about', 'WHAT IT DOES'], ['up', 'UPGRADES']].forEach(([k, label], i) => {
+                const on = page === k, x = L + i * (tw + 8);
+                g.fillStyle(0x6a4a26, on ? 0.16 : 0.06); g.fillRect(x, y - 2, tw, 22);
+                if (on) { g.fillStyle(MenuArt.mix(acc, 0x3b2716, 0.2), 1); g.fillRect(x, y + 18, tw, 2); }
+                keep(this.add.text(x + tw / 2, y + 9, label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: on ? INK : '#9a7a54' }).setOrigin(0.5).setDepth(D + 1));
+                if (!on) keep(this.add.zone(x + tw / 2, y + 9, tw, 22).setInteractive({ useHandCursor: true }).setDepth(D + 3)).on('pointerdown', flip);
             });
-            const m = ShopScene.DPS[w.id];
-            if (m) {
-                keep(this.add.text(R, y - 1, `measured: ${Math.round(m[0])} / ${Math.round(m[1])} damage per second`, {
-                    fontSize: '10px', fontFamily: 'monospace', color: '#7a5a34' }).setOrigin(1, 0).setDepth(D + 1));
-                y += 14;
-            }
-        } else if (roomy) {
-            keep(this.add.text(L, y, el === 'cosmic' ? 'Pure utility: a buff you cast, then switch back to fight. No damage of its own to rate.' : 'Not rated yet.', {
-                fontSize: '12px', fontFamily: 'monospace', fontStyle: 'italic', color: '#6a4a26', wordWrap: { width: R - L },
-            }).setDepth(D + 1));
-            y += 34;
+            y += 28;
+            this._tagTurn = flip;
         }
 
-        // Price and standing, as a ledger.
-        y += 10;
-        g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(L, y, R, y);
-        y += 10;
-        const row = (k, v, col = INK) => {
-            keep(this.add.text(L, y, k, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D + 1));
-            keep(this.add.text(R, y, v, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col }).setOrigin(1, 0).setDepth(D + 1));
-            y += 22;
-        };
-        let stampRoom = roomy;
-        if (!st.owned) {
-            row('PRICE', w.defaultWeapon ? 'Free (starter)' : `✦ ${w.cost}`);
-            row('YOURS', 'Not yet', '#8a2a1a');
-            row('YOUR PURSE', `✦ ${this.glorps}`, st.canBuy ? '#3a7a2a' : '#8a2a1a');
-            if (st.sealed) row('SEALED', ShopScene.SEALED[el].short, '#8a2a1a');
-        } else {
-            // Upgrades (Stats.js WeaponLevels): Power, no cap (none on cosmic weapons); each perk, capped.
-            if (crowded && !st.equipped && !st.sealed) {   // the stamp, small, where "Owned" would say so
-                objs.push(...UIKit.button(this, { x: R - 44, y: y + 8, w: 88, h: 26, label: 'EQUIP', accent: UIKit.PALETTE.accentGreen, fontSize: '12px', depth: D + 2, fireOn: 'down', onClick: onStamp }).objs);
-                row('YOURS', '');
-                y += 4;
+        const row = (k, v, col = INK) => { y += this._tagRow(keep, L, R, y, k, v, col, D + 1); };
+        if (page === 'about') {
+            // the words get what the ratings, the ledger and the stamp leave; a size smaller, then pages
+            const room = T.y + T.h - 84 - ledgerH - 20 - rtH - 16 - y;
+            let fs = 13;
+            while (fs > 11 && hOf(desc, descStyle(fs)) > room) fs--;
+            const words = this._pagedText(keep, L, y, room, desc, descStyle(fs), D + 1, w.id, redraw);
+            if (!st.owned && words.turn) this._tagTurn = words.turn;
+            y += words.h + 16;
+
+            // What it's good at, rated out of 10 on three axes (ShopScene.RATINGS): one target,
+            // crowds, and utility (control, setup, sustain). Cosmic weapons are buffs: no bars.
+            if (rt) {
+                [['ONE TARGET', rt[0]], ['CROWD', rt[1]], ['UTILITY', rt[2]]].forEach(([label, v]) => {
+                    keep(this.add.text(L, y, label, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D + 1));
+                    const bx = L + 92, pw = (R - bx) / 10;
+                    for (let i = 0; i < 10; i++) {
+                        g.fillStyle(i < v ? MenuArt.mix(acc, 0x3b2716, 0.2) : 0x3b2716, i < v ? 1 : 0.15);
+                        g.fillRect(bx + i * pw, y + 2, pw - 2, 10);
+                    }
+                    y += 19;
+                });
+                const m = ShopScene.DPS[w.id];
+                if (m) {
+                    keep(this.add.text(R, y - 1, `measured: ${Math.round(m[0])} / ${Math.round(m[1])} damage per second`, {
+                        fontSize: '10px', fontFamily: 'monospace', color: '#7a5a34' }).setOrigin(1, 0).setDepth(D + 1));
+                    y += 14;
+                }
+            } else {
+                keep(this.add.text(L, y, util, utilStyle).setDepth(D + 1));
+                y += rtH;
+            }
+
+            // Price and standing, as a ledger.
+            y += 10;
+            g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(L, y, R, y);
+            y += 10;
+            if (!st.owned) {
+                row('PRICE', w.defaultWeapon ? 'Free (starter)' : `✦ ${w.cost}`);
+                row('YOURS', 'Not yet', '#8a2a1a');
+                row('YOUR PURSE', `✦ ${this.glorps}`, st.canBuy ? '#3a7a2a' : '#8a2a1a');
+                if (st.sealed) row('SEALED', ShopScene.SEALED[el].short, '#8a2a1a');
             } else row('YOURS', st.equipped ? 'Equipped' : 'Owned', '#3a7a2a');
-            const rows = [];
-            if (!WeaponLevels.NO_POWER.includes(w.id)) {
-                const lv = WeaponLevels.level(w.id);
-                rows.push([`POWER  LV ${lv}`, `+${Math.round(lv * WeaponLevels.PER * 100)}% damage → +${Math.round((lv + 1) * WeaponLevels.PER * 100)}%`, WeaponLevels.dmgCost(w.id), null]);
+        } else {
+            // The upgrades, down to the stamp. Too many for the room: each value shortened, then a page of them at a time.
+            const floor = T.y + T.h - 84;
+            const short = y + rowsH(false) > floor, room = floor - y - (y + rowsH(short) > floor ? 24 : 0);
+            const pages = [[]];
+            let used = 0;
+            for (const r of rows) {
+                const h = rowH(r, short);
+                if (used + h > room && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+                pages[pages.length - 1].push(r); used += h;
             }
-            for (const [key, name, cap, , , desc] of WeaponLevels.PERKS[w.id] || []) {
-                const p = WeaponLevels.perk(w.id, key);
-                rows.push([`${name.toUpperCase()}  ${p}/${cap}`, p >= cap ? desc(p) : (p ? desc(p) + '  →  ' : '→ ') + desc(p + 1), WeaponLevels.perkCost(w.id, key), key]);
-            }
-            // its enchants (Enchants.js): what's written in, and the way to the writing desk
-            const en = Enchants.on(w.id), es = Enchants.slots(w.id);
-            rows.push([`ENCHANTS  ${en.length}/${es}`, en.length ? en.map(b => `${Enchants.def(b.id).name} ${Enchants.roman(b.lvl)}`).join(', ') : `none yet  ·  ${Enchants.books()} sealed book${Enchants.books() === 1 ? '' : 's'}`, 0, '__ench']);
-            // spread over the room down to the stamp, so a short list doesn't huddle at the top
-            stampRoom = !crowded && (roomy || (T.y + T.h - 84 - y) / rows.length >= 48);   // a tall tag fits the stamp under its upgrades too
-            const floor = ((st.equipped || crowded) && !stampRoom ? T.y + T.h - 24 : T.y + T.h - 84);
-            const rowH = Math.max(crowded ? ROW_MIN : 38, Math.min(64, (floor - y) / Math.max(1, rows.length)));
-            for (const [label, value, cost, key] of rows) {
-                const cy = y + rowH / 2;
-                keep(this.add.text(L, cy - 2, label, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setOrigin(0, 1).setDepth(D + 1));
-                keep(this.add.text(L, cy + 1, value, { fontSize: '11px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: R - L - 100 } }).setDepth(D + 1));
-                const can = cost !== null && this.glorps >= cost, ench = key === '__ench';
-                objs.push(...UIKit.button(this, { x: R - 44, y: cy, w: 88, h: 30, depth: D + 2, fontSize: '12px', fireOn: 'down',
-                    label: ench ? 'THE ISLE' : cost === null ? 'MAXED' : `✦ ${cost}`, accent: ench ? UIKit.PALETTE.accentPurple : cost === null ? UIKit.PALETTE.line : can ? UIKit.PALETTE.accentGold : UIKit.PALETTE.line,
-                    onClick: () => ench ? this.scene.start('Enchant', { weapon: w.id }) : this._buyWeaponUp(w.id, key) }).objs);   // enchanting is at the Isle
-                y += rowH;
-                if (rows.length > 1 && label !== rows[rows.length - 1][0]) { g.lineStyle(1, 0x6a4a26, 0.15); g.lineBetween(L, y, R, y); }
-            }
+            const pg = this._pager(keep, w.id + ':up', pages.length, R, floor - 10, D + 1, redraw), list = pages[pg.i];
+            // a short list spreads out a little rather than huddling at the top
+            const spare = pages.length > 1 ? 0 : Math.max(0, Math.min(24, (room - list.reduce((s, r) => s + rowH(r, short), 0)) / list.length));
+            const use = (r, n) => { if (r.key) WeaponLevels.usePerk(w.id, r.key, n); else WeaponLevels.useLevel(w.id, n); Sfx.play(this, 'click'); redraw(); };
+            list.forEach((r, k) => {
+                const top = y + spare / 2, ly = top + 14, sy = top + 32, ench = r.key === '__ench';
+                keep(this.add.text(L, ly, r.label, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setOrigin(0, 0.5).setDepth(D + 1));
+                const can = r.cost !== null && this.glorps >= r.cost;
+                UIKit.button(this, { x: R - 44, y: ly, w: 88, h: 26, depth: D + 2, fontSize: '12px', fireOn: 'down',
+                    label: ench ? 'THE ISLE' : r.lock ? 'LOCKED' : r.cost === null ? 'MAXED' : `✦ ${r.cost}`, accent: ench ? UIKit.PALETTE.accentPurple : r.cost === null ? UIKit.PALETTE.line : can ? UIKit.PALETTE.accentGold : UIKit.PALETTE.line,
+                    onClick: () => ench ? this.scene.start('Enchant', { weapon: w.id }) : this._buyWeaponUp(w.id, r.key) }).objs.forEach(keep);
+                // the level in use: − and + either side of it (red while it's turned down)
+                if (r.o) {
+                    const sg = keep(this.add.graphics().setDepth(D + 1));
+                    for (const [d, bx] of [[-1, L], [1, L + 48]]) {
+                        const n = r.u + d, ok = n >= 0 && n <= r.o;
+                        sg.fillStyle(0x6a4a26, ok ? 0.18 : 0.05); sg.fillRect(bx, sy, 22, 20);
+                        sg.lineStyle(1, 0x6a4a26, ok ? 0.9 : 0.3); sg.strokeRect(bx, sy, 22, 20);
+                        keep(this.add.text(bx + 11, sy + 10, d < 0 ? '−' : '+', { fontSize: '15px', fontFamily: 'monospace', fontStyle: 'bold', color: ok ? INK : '#b8a27e' }).setOrigin(0.5).setDepth(D + 1));
+                        if (ok) keep(this.add.zone(bx + 11, sy + 10, 26, 24).setInteractive({ useHandCursor: true }).setDepth(D + 3)).on('pointerdown', () => use(r, n));
+                    }
+                    keep(this.add.text(L + 35, sy + 10, String(r.u), { fontSize: '13px', fontFamily: 'monospace', fontStyle: 'bold', color: r.u < r.o ? '#8a2a1a' : INK }).setOrigin(0.5).setDepth(D + 1));
+                    this._tipZone(keep, L + 35, sy + 10, 24, 22, D, () => ({ title: `In use: ${r.u} of ${r.o}`, body: 'What the weapon uses of what you\'ve bought. − turns it down, even off; + turns it back up. Buying another uses all of it again.' }));
+                }
+                const vt = keep(this.add.text(L + (r.o ? 76 : 0), sy, short ? r.short : r.full, valStyle(r)).setDepth(D + 1));
+                if (vt.height < 20) vt.setY(sy + (20 - vt.height) / 2);   // (one line: level with the − n +)
+                y += rowH(r, short) + spare;
+                if (k < list.length - 1) { g.lineStyle(1, 0x6a4a26, 0.15); g.lineBetween(L, y - 3, R, y - 3); }
+            });
         }
 
-        // The stamp: EQUIPPED is inked onto the tag; otherwise a wax-red button to press.
+        // The stamp, always at the foot: EQUIPPED is inked onto the tag; otherwise a wax-red button to press.
         const sy = T.y + T.h - 46;
-        if ((st.equipped || crowded) && !stampRoom) { /* YOURS already says Equipped (or has EQUIP beside it); the space went to upgrades */ }
-        else if (st.equipped) {
+        if (st.equipped) {
             const s = keep(this.add.text(T.x + T.w / 2, sy, 'EQUIPPED', {
                 fontSize: '24px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3a7a2a',
                 stroke: '#3a7a2a', strokeThickness: 1, padding: { x: 10, y: 4 },
@@ -683,12 +666,85 @@ class ShopScene extends Phaser.Scene {
             box.setAngle(-6);
         } else {
             const label = st.sealed ? 'SEALED' : st.owned ? 'EQUIP' : st.canBuy ? `BUY  ✦ ${w.cost}` : `✦ ${w.cost}  ·  NEED ${w.cost - this.glorps}`;
-            const b = UIKit.button(this, { x: T.x + T.w / 2, y: sy, w: T.w - 40, h: 48, label,
-                                           accent: st.owned ? UIKit.PALETTE.accentGreen : st.canBuy ? UIKit.PALETTE.accentRed : UIKit.PALETTE.line,
-                                           fontSize: '18px', depth: D + 2, fireOn: 'down', onClick: onStamp });
-            objs.push(...b.objs);
+            UIKit.button(this, { x: T.x + T.w / 2, y: sy, w: T.w - 40, h: 48, label,
+                                 accent: st.owned ? UIKit.PALETTE.accentGreen : st.canBuy ? UIKit.PALETTE.accentRed : UIKit.PALETTE.line,
+                                 fontSize: '18px', depth: D + 2, fireOn: 'down', onClick: onStamp }).objs.forEach(keep);
         }
         return objs;
+    }
+
+    // A tag that can draw itself again alone (turning a page, a level turned down) without the rest of the stall dropping
+    // in anew: draw(redraw) returns its objects, which also go into `objs` (what its tab clears).
+    _ownTag(objs, draw) {
+        let mine = [];
+        const redraw = () => {
+            if (mine[0] && (!mine[0].active || !mine[0].visible)) return;   // its tab moved on before this came round
+            this._hideTip();
+            mine.forEach(o => { if (o?.active) this.tweens.killTweensOf(o); o?.destroy?.(); });
+            mine = draw(() => this.time.delayedCall(0, redraw));   // (never inside the click that asked)
+            objs.push(...mine);
+        };
+        redraw();
+    }
+
+    // A ledger line on a tag: the label left, the value right; a value too long to sit beside it goes under it. Returns the
+    // room it took (`dry`: only measures).
+    _tagRow(keep, L, R, y, k, v, col, D, dry = false) {
+        const a = this.add.text(L, y, k, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D);
+        const b = this.add.text(R, y, v, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, align: 'right' }).setOrigin(1, 0).setDepth(D);
+        let h = 22;
+        if (b.width > R - L - a.width - 12) { b.setY(y + 16).setWordWrapWidth(R - L); h = 20 + b.height; }
+        if (dry) { a.destroy(); b.destroy(); } else { keep(a); keep(b); }
+        return h;
+    }
+    // How tall a paragraph lays out (its *keywords* read plain).
+    _textH(s, style) { const t = this.add.text(0, 0, s.replace(/\*([^*]+)\*/g, '$1'), style), h = t.height; t.destroy(); return h; }
+
+    // A tag's name, as big as fits on one line (26px down to 18px; wrapped past that). Returns the room it took.
+    _tagName(keep, x, y, name, w, D) {
+        const t = keep(this.add.text(x, y, name, { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3b2716' }).setDepth(D));
+        for (let fs = 25; t.width > w && fs >= 18; fs--) t.setFontSize(fs);
+        if (t.width > w) t.setWordWrapWidth(w);
+        return Math.max(40, t.height + 8);
+    }
+
+    // Which of n pages is showing, kept under `key` while it's on show, with ◂ page i of n ▸ (right edge R, centred on y)
+    // to turn it. Returns { i, n, turn(d) }, turn null with only one page.
+    _pager(keep, key, n, R, y, D, redraw) {
+        const P = this._pg?.key === key ? this._pg : (this._pg = { key, i: 0 });
+        P.i = Math.min(P.i, n - 1);
+        if (n < 2) return { i: P.i, n, turn: null };
+        const turn = (d = 1) => { P.i = (P.i + d + n) % n; Sfx.play(this, 'e_flip'); redraw(); };
+        const st = { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }, ar = { ...st, fontSize: '15px' };
+        const nx = keep(this.add.text(R, y, '▸', ar).setOrigin(1, 0.5).setDepth(D));
+        const t = keep(this.add.text(nx.x - nx.width - 6, y, `page ${P.i + 1} of ${n}`, st).setOrigin(1, 0.5).setDepth(D));
+        const pv = keep(this.add.text(t.x - t.width - 6, y, '◂', ar).setOrigin(1, 0.5).setDepth(D));
+        for (const [o, d] of [[pv, -1], [nx, 1]]) keep(this.add.zone(o.x - o.width / 2, y, 28, 24).setInteractive({ useHandCursor: true }).setDepth(D + 3)).on('pointerdown', () => turn(d));
+        return { i: P.i, n, turn };
+    }
+
+    // Words in a room `room` tall: drawn whole if they fit, else a page at a time (split between sentences, or mid-sentence
+    // rather than leave a page half empty) with the pager at the room's foot. Returns { h, turn }: h is the whole
+    // room when paged, so what's under it doesn't move as the pages turn.
+    _pagedText(keep, x, y, room, str, style, D, key, redraw) {
+        const probe = this.add.text(0, 0, '', style), hOf = s => probe.setText(s.replace(/\*([^*]+)\*/g, '$1')).height;
+        const pages = [];
+        if (hOf(str) > room) {
+            const fit = room - 24;
+            let cur = '';
+            const add = tok => { const next = cur ? cur + ' ' + tok : tok; if (cur && hOf(next) > fit) { pages.push(cur); cur = tok; } else cur = next; };
+            for (const sen of str.replace(/([.!?])\s+(?=[A-Z(*"])/g, '$1\u0000').split('\u0000')) {
+                if (hOf(cur ? cur + ' ' + sen : sen) <= fit) { cur = cur ? cur + ' ' + sen : sen; continue; }
+                if (cur && hOf(cur) > fit * 0.6) { pages.push(cur); cur = ''; if (hOf(sen) <= fit) { cur = sen; continue; } }
+                (sen.match(/\*[^*]+\*\S*|\S+/g) || []).forEach(add);   // (a page with room to spare takes what fits of a long sentence)
+            }
+            pages.push(cur);
+        }
+        probe.destroy();
+        if (pages.length < 2) return { h: this._richText(keep, x, y, str, style, D), turn: null };
+        const P = this._pager(keep, key, pages.length, x + style.wordWrap.width, y + room - 10, D, redraw);
+        this._richText(keep, x, y, pages[P.i], style, D);
+        return { h: room, turn: P.turn };
     }
 
     // ── STATS TAB ────────────────────────────────────────────────────────────
@@ -706,10 +762,10 @@ class ShopScene extends Phaser.Scene {
         const objs = [], keep = o => { objs.push(o); return o; };
         const x0 = L.S.x0 - 10, x1 = W - 24, top = L.S.top + 6, bot = L.CT - 10;
         // the same boards as the stall, with a plank across the top for the tier line
-        keep(this.add.image(x0 - 6, top - 6, ShopScene.stallWall(this, x1 - x0 + 12, bot - top + 12)).setOrigin(0).setScale(2).setDepth(D));
+        ShopScene.wall(this, x0 - 6, top - 6, x1 - x0 + 12, bot - top + 12, D).forEach(keep);
         const back = keep(this.add.graphics().setDepth(D + 0.5));
         back.fillStyle(0x000000, 0.35); back.fillRect(x0 - 6, top - 6, x1 - x0 + 12, 4);
-        this._plank(back, x0 - 6, top - 2, x1 - x0 + 12, 24, 0x5a3a20);
+        keep(this._plank(x0 - 6, top - 2, x1 - x0 + 12, 24, 0x5a3a20, D + 0.5));
         const ACC = { damage: UIKit.PALETTE.accentRed, health: UIKit.PALETTE.accentGreen, armor: UIKit.PALETTE.accentBlue };
         const BIG = { damage: l => [l ? `+${Math.round((PlayerStats.damageMult(l) - 1) * 100)}%` : '+0%', 'damage dealt'],
                       health: l => [`${PlayerStats.maxHealth(l)}`, 'max health'],
@@ -743,48 +799,42 @@ class ShopScene extends Phaser.Scene {
             // room the talents get a row each (name and level), not just their gems.
             const head = 92, by = cy0 + ch - 28, u = by - 30 - (cy0 + head), Y = f => cy0 + head + u * f;
             const roomy = u >= 360;
+            // a parchment sheet pinned to the boards (like the weapons' tags), in the stat's colour at the head
+            keep(this.add.graphics().setDepth(D + 1)).fillStyle(0x000000, 0.45).fillRect(x + 5, cy0 + 7, cw, ch);
+            ShopScene.parchment(this, x, cy0, cw, ch, D + 1).forEach(keep);
+            keep(this.add.nineslice(x, cy0, 'shop_stall', 'cardband', Math.round(cw / 2), 4, 1, 1).setOrigin(0).setScale(2).setDepth(D + 1).setTint(MenuArt.mix(acc, 0xe2cfa4, 0.55)));
+            for (const nx of [x + 14, x + cw - 14]) keep(this.add.image(nx, cy0 + 4, 'shop_stall', 'nail').setScale(2).setDepth(D + 1));
             const g = keep(this.add.graphics().setDepth(D + 1));
-            // a parchment sheet pinned to the boards (like the weapons' tags), in the stat's colour at the edges
-            g.fillStyle(0x000000, 0.45); g.fillRect(x + 5, cy0 + 7, cw, ch);
-            g.fillStyle(0xe2cfa4, 1); g.fillRect(x, cy0, cw, ch);
-            g.fillStyle(0xd0b98a, 0.5); g.fillCircle(x + cw * 0.78, cy0 + ch * 0.66, 70); g.fillCircle(x + cw * 0.22, cy0 + ch * 0.3, 46);
-            g.fillStyle(MenuArt.mix(acc, 0xe2cfa4, 0.55), 1); g.fillRect(x, cy0, cw, 8);
-            g.lineStyle(2, 0x6a4a26, 1); g.strokeRect(x, cy0, cw, ch);
-            g.lineStyle(1, 0x6a4a26, 0.45); g.strokeRect(x + 6, cy0 + 12, cw - 12, ch - 18);
-            for (const nx of [x + 14, x + cw - 14]) { g.fillStyle(0x2a2a34, 1); g.fillCircle(nx, cy0 + 4, 4); g.fillStyle(0x8a8a9c, 1); g.fillCircle(nx - 1, cy0 + 3, 1.5); }
 
             // name and purpose
             keep(this.add.text(cx, cy0 + 22, id.toUpperCase(), { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: accHex }).setOrigin(0.5).setDepth(D + 2));
             keep(this.add.text(cx, cy0 + 44, d.name, { fontSize: '28px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3b2716' }).setOrigin(0.5).setDepth(D + 2));
-            keep(this.add.text(cx, cy0 + 66, d.blurb, { fontSize: '12px', fontFamily: 'monospace', color: '#5a3e22', align: 'center', wordWrap: { width: cw - 28 } }).setOrigin(0.5, 0).setDepth(D + 2));
+            const blurbB = keep(this.add.text(cx, cy0 + 66, d.blurb, { fontSize: '12px', fontFamily: 'monospace', color: '#5a3e22', align: 'center', wordWrap: { width: cw - 28 } }).setOrigin(0.5, 0).setDepth(D + 2)).getBounds().bottom;
+            // a short card (a small window): the emblem a size smaller with the big number beside it, not over it
+            const compact = !roomy && (blurbB + 4 > Y(0.17) - 50 || u < 280), sk = compact ? 0.8 : 1;
 
             // the emblem in its light, a ring turning round it
-            const ey = Y(roomy ? 0.13 : 0.17);
-            const med = keep(this.add.graphics().setDepth(D + 1.5));   // a carved wooden medallion for the emblem to sit on
-            med.fillStyle(0x000000, 0.3); med.fillCircle(cx + 2, ey + 3, 44);
-            med.fillStyle(0x5a3a20, 1); med.fillCircle(cx, ey, 44); med.fillStyle(0x7a5230, 1); med.fillCircle(cx, ey, 38);
-            med.lineStyle(2, 0x3a2414, 1); med.strokeCircle(cx, ey, 44); med.lineStyle(1, 0xa87a48, 0.6); med.strokeCircle(cx, ey - 1, 37);
-            const em = keep(this.add.graphics().setDepth(D + 2).setPosition(cx, ey).setScale(0.75));
-            this._statEmblem(em, id, 0, 0, acc);
-            const ring = keep(this.add.graphics().setDepth(D + 2).setPosition(cx, ey));
-            ring.lineStyle(2, MenuArt.mix(acc, 0xffffff, 0.2), 0.9);
-            for (let t = 0; t < 8; t++) { const a0 = t / 8 * Math.PI * 2; ring.beginPath(); ring.arc(0, 0, 50, a0, a0 + 0.35); ring.strokePath(); }
-            this.tweens.add({ targets: ring, angle: 360, duration: 12000, repeat: -1 });
+            const ey = compact ? blurbB + 48 : Y(roomy ? 0.13 : 0.17), ecx = compact ? x + 64 : cx;
+            keep(this.add.image(ecx, ey, 'shop_stall', 'medal').setScale(2 * sk).setDepth(D + 1.5));   // a carved wooden medallion for the emblem to sit on
+            const em = keep(this.add.image(ecx, ey, 'shop_stall', 'emb_' + id).setScale(2 * sk).setDepth(D + 2));
+            if (!this.anims.exists('shop_ring')) this.anims.create({ key: 'shop_ring', frames: this.anims.generateFrameNames('shop_stall', { prefix: 'ring', start: 0, end: 7 }), frameRate: 16 / 3, repeat: -1 });
+            keep(this.add.sprite(ecx, ey, 'shop_stall', 'ring0').setScale(2 * sk).setDepth(D + 2).setTint(MenuArt.mix(acc, 0xffffff, 0.2)).setAlpha(0.9)).play('shop_ring');   // a ring of dashes turning round it
 
             // the big number, what it means, and the next level
             const [big, what] = BIG[id](lvl);
-            const bigT = keep(this.add.text(cx, Y(roomy ? 0.32 : 0.41), big, { fontSize: '36px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: accHex }).setOrigin(0.5).setDepth(D + 2));
-            keep(this.add.text(cx, bigT.y + 25, what, { fontSize: '12px', fontFamily: 'monospace', color: '#5a3e22' }).setOrigin(0.5).setDepth(D + 2));
-            keep(this.add.text(cx, bigT.y + 43, cost !== null ? `next  ▸  ${BIG[id](lvl + 1)[0]}` : 'maxed', { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#8a6a44' }).setOrigin(0.5).setDepth(D + 2));
-            this._tipZone(keep, cx, bigT.y + 18, cw - 40, 64, D, () => ({ title: `${d.name}: ${big} ${what}`, body: DETAIL[id](lvl), accent: acc }));
+            const nx = compact ? (ecx + 46 + x + cw - 14) / 2 : cx, nw = compact ? x + cw - 14 - (ecx + 46) : cw - 40;
+            const bigT = keep(this.add.text(nx, compact ? ey - 14 : Y(roomy ? 0.32 : 0.41), big, { fontSize: '36px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: accHex }).setOrigin(0.5).setDepth(D + 2));
+            keep(this.add.text(nx, bigT.y + 25, what, { fontSize: '12px', fontFamily: 'monospace', color: '#5a3e22' }).setOrigin(0.5).setDepth(D + 2));
+            keep(this.add.text(nx, bigT.y + 43, cost !== null ? `next  ▸  ${BIG[id](lvl + 1)[0]}` : 'maxed', { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#8a6a44' }).setOrigin(0.5).setDepth(D + 2));
+            this._tipZone(keep, nx, bigT.y + 18, nw, 64, D, () => ({ title: `${d.name}: ${big} ${what}`, body: DETAIL[id](lvl), accent: acc }));
 
-            const divY = bigT.y + 62;
+            const divY = compact ? ey + 48 : bigT.y + 62;
             g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(x + 24, divY, x + cw - 24, divY);
 
             // level: 25 pips in five tiers, a diamond at each tier's end
             const L0 = x + 24, R0 = x + cw - 24, py = divY + 28, gw = (R0 - L0 - 4 * 6) / 5, pw = gw / 5;
-            keep(this.add.text(L0, py - 16, `LEVEL ${lvl} / ${d.cap}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#5a3e22' }).setDepth(D + 2));
-            keep(this.add.text(R0, py - 16, `TIER ${ROMAN[Math.min(4, Math.floor(lvl / 5))]}`, { fontSize: '11px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#8a6a44' }).setOrigin(1, 0).setDepth(D + 2));
+            keep(this.add.text(L0, py - 22, `LEVEL ${lvl} / ${d.cap}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#5a3e22' }).setDepth(D + 2));   // (over the tier diamonds)
+            keep(this.add.text(R0, py - 22, `TIER ${ROMAN[Math.min(4, Math.floor(lvl / 5))]}`, { fontSize: '11px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#8a6a44' }).setOrigin(1, 0).setDepth(D + 2));
             for (let i = 0; i < d.cap; i++) {
                 const grp = Math.floor(i / 5), px = L0 + grp * (gw + 6) + (i % 5) * pw;
                 g.fillStyle(i < lvl ? acc : 0xc9b083, 1); g.fillRect(px, py, pw - 2, 9);
@@ -887,12 +937,14 @@ class ShopScene extends Phaser.Scene {
         const t = keep(this.add.text(x, y, plain, style).setDepth(D));
         if (!words.length) return t.height;
         const probe = this.add.text(0, 0, '', { ...style, wordWrap: null }), wOf = str => probe.setText(str).width;
-        const lines = t.getWrappedText(plain), lh = (t.height + (style.lineSpacing || 0)) / lines.length;
+        const lines = t.getWrappedText(plain), lh = probe.setText('A\nA').height - probe.setText('A').height;   // (one line's advance, measured)
+        const blank = lines.map(l => [...l]);   // the paragraph as wrapped, a keyword's letters left out of it (drawn once, in its colour, not over itself)
         let li = 0, col = 0;
         for (const w of words) {
             for (; li < lines.length; li++, col = 0) { const i = lines[li].indexOf(w, col); if (i >= 0) { col = i; break; } }
             if (li >= lines.length) break;   // split across a line: left plain
             const k = ShopScene.keyword(w), kx = x + wOf(lines[li].slice(0, col)), ky = y + li * lh, ww = wOf(w);
+            if (k) for (let c = col; c < col + w.length; c++) blank[li][c] = ' ';
             col += w.length;
             if (!k) continue;
             const kc = style.kwColor || '#6a2a8a';   // (a dark panel passes a light one)
@@ -903,7 +955,9 @@ class ShopScene extends Phaser.Scene {
             this._tipZone(keep, kx + ww / 2, ky + lh / 2, ww, lh, D, () => ({ title: k[0], body: k[1], accent: 0x9a5ad0 }));
         }
         probe.destroy();
-        return t.height;
+        const h = t.height;
+        t.setWordWrapWidth(null).setText(blank.map(l => l.join('')).join('\n'));   // (the same lines, as they wrapped)
+        return h;
     }
 
     _tipZone(keep, x, y, w, h, depth, fn) {
@@ -918,13 +972,12 @@ class ShopScene extends Phaser.Scene {
         this._hideTip();
         const D = this._tipDepth || 60, tw = 270;   // (over whatever panel it's in: the lobby's guide sits at 200)
         const head = this.add.text(0, 0, title, { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold',
-            color: accent != null ? UIKit._hex(accent) : '#3b2716', wordWrap: { width: tw - 28 } }).setDepth(D + 1);
-        const text = this.add.text(0, 0, String(body).replace(/\*/g, ''), { fontSize: '11px', fontFamily: 'monospace', color: '#5a3e22',   // a body's *keywords* read plain here
+            color: accent != null ? UIKit._hex(accent) : '#f3e3b8', wordWrap: { width: tw - 28 } }).setDepth(D + 1);
+        const text = this.add.text(0, 0, String(body).replace(/\*/g, ''), { fontSize: '11px', fontFamily: 'monospace', color: '#cdbf9f',   // a body's *keywords* read plain here; light: it's on the iron frame, not paper
             wordWrap: { width: tw - 28 }, lineSpacing: 3 }).setDepth(D + 1);
         const th = head.height + text.height + 30;
-        const g = this.add.graphics().setDepth(D);
-        UIKit.ironFrame(g, 0, 0, tw, th, { accent: accent ?? UIKit.PALETTE.line, courses: false, rivets: false });
-        this._tip = { g, head, text, tw, th };
+        const n = UIKit.nine(this, 'panel', 'panel_a', tw, th, accent ?? UIKit.PALETTE.line), g = this.add.image(0, 0, n.key).setOrigin(0).setDepth(D);
+        this._tip = { g, head, text, tw, th, pl: n.pl, pt: n.pt };
         this._moveTip(px, py);
         for (const o of [g, head, text]) { o.setAlpha(0); this.tweens.add({ targets: o, alpha: 1, duration: 100 }); }
     }
@@ -935,7 +988,7 @@ class ShopScene extends Phaser.Scene {
         let x = px + 16, y = py + 18;
         if (x + T.tw > W - 8) x = px - T.tw - 12;
         if (y + T.th > H - 8) y = py - T.th - 12;
-        T.g.setPosition(x, y); T.head.setPosition(x + 14, y + 12); T.text.setPosition(x + 14, y + 18 + T.head.height);
+        T.g.setPosition(x - T.pl, y - T.pt); T.head.setPosition(x + 14, y + 12); T.text.setPosition(x + 14, y + 18 + T.head.height);
     }
     _hideTip() {
         const T = this._tip;
@@ -951,13 +1004,14 @@ class ShopScene extends Phaser.Scene {
 
     // A weapon upgrade (WeaponLevels): `key` null for Power, else that perk. Re-draws the tag.
     _buyWeaponUp(id, key) {
-        const cost = key ? WeaponLevels.perkCost(id, key) : WeaponLevels.dmgCost(id);
+        const cost = key ? WeaponLevels.perkCost(id, key) : WeaponLevels.dmgCost(id), lock = key && WeaponLevels.needs(id, key);
+        if (lock) { Sfx.play(this, 'hurt'); this.setGlurpDialogue(`"Not yet: ${lock}."`); return; }
         if (cost === null) { this.setGlurpDialogue('"That one\'s as good as it gets!"'); return; }
         if (this.glorps < cost) { Sfx.play(this, 'hurt'); this.setGlurpDialogue(`"${cost - this.glorps} more glorps, friend."`); return; }
         this.glorps -= cost;
         localStorage.setItem('glorps', this.glorps);
-        if (!key) WeaponLevels.setLevel(id, WeaponLevels.level(id) + 1);
-        else WeaponLevels.setPerk(id, key, WeaponLevels.perk(id, key) + 1);
+        if (!key) WeaponLevels.setLevel(id, WeaponLevels.ownedLevel(id) + 1);
+        else WeaponLevels.setPerk(id, key, WeaponLevels.ownedPerk(id, key) + 1);
         this._refreshCurrency();
         Sfx.play(this, 'coin');
         const d = key && WeaponLevels._def(id, key), p = key ? WeaponLevels.perk(id, key) : 0;
@@ -966,146 +1020,17 @@ class ShopScene extends Phaser.Scene {
     }
 
     // ── ENCHANTING ART (the Isle, EnchantScene, borrows these) ───────────────
-    // Ink for the books' own emblems (letters the covers don't use).
-    static BOOK_INK = { F: '#ff4a2a', O: '#ffa03a', Y: '#ffe85a', I: '#7ad8ff', V: '#c890ff', N: '#7ae07a', W: '#ffffff', K: '#140c18', B: '#c8102a', T: '#a8b0c0' };
-    // Every enchant's own emblem on its cover, animated over 8 frames, drawn around (12, 11.5).
-    static BOOK_EMB = {
-        // a blade, a glint running up its edge
-        honed: (m, f) => { m.line(8, 16, 15, 7, 'T'); m.line(9, 16, 16, 7, 'W'); m.line(7, 14, 10, 17, 'O'); m.line(7, 17, 6, 18, 'K'); m.set(16, 6, 'W'); const k = f % 8; if (k < 6) m.set(9 + k, 15 - k * 1.3, 'g'); },
-        // a four-point star that flares and shrinks
-        keen: (m, f) => { const s = [3, 4, 5, 4, 3, 2, 3, 4][f]; m.line(12, 11.5 - s, 12, 11.5 + s, 'Y'); m.line(12 - s, 11.5, 12 + s, 11.5, 'Y'); m.disc(12, 11.5, 1.6, 'W'); if (f % 4 === 0) { m.set(9, 9, 'g'); m.set(15, 14, 'g'); } },
-        // rings rippling out of a note
-        resonant: (m, f) => { m.ring(12, 11.5, 1 + (f % 4) * 1.4, 1, f % 4 === 3 ? 'e' : 'V'); m.ring(12, 11.5, 1 + ((f + 2) % 4) * 1.4, 1, 'V'); m.disc(12, 11.5, 1.2, 'W'); },
-        // a kite shield, a shine sliding across it
-        bulwark: (m, f) => { m.poly([[8, 6], [16, 6], [16, 12], [12, 17], [8, 12]], 'T'); m.poly([[9, 7], [15, 7], [15, 12], [12, 15.5], [9, 12]], 'I'); m.line(12, 7, 12, 15, 'W'); const x = 8 + (f % 8); if (x < 16) m.line(x, 7, x - 1, 10, 'g'); },
-        // a crown with a sword through it, its jewel blinking
-        bossbane: (m, f) => { m.poly([[7, 14], [7, 9], [9.5, 11], [12, 7], [14.5, 11], [17, 9], [17, 14]], 'Y'); m.rect(7, 13, 10, 2, 'O'); m.set(12, 10, f % 4 < 2 ? 'F' : 'W'); m.line(17, 5, 8, 17, 'T'); m.line(16, 6, 14, 8, 'W'); },
-        // a skull, an axe swinging down over it
-        executing: (m, f) => { m.disc(12, 12, 3.6, 'W'); m.rect(10, 14, 5, 3, 'W'); m.set(10, 12, 'K'); m.set(11, 12, 'K'); m.set(13, 12, 'K'); m.set(14, 12, 'K'); m.set(12, 15, 'K'); const a = [0, 1, 2, 3, 3, 2, 1, 0][f]; m.line(16, 4 + a, 16, 10 + a, 'O'); m.poly([[16, 4 + a], [19, 3 + a], [19, 8 + a]], 'T'); },
-        // an eye, its pupil looking around
-        deadeye: (m, f) => { m.poly([[6, 11.5], [9, 8], [15, 8], [18, 11.5], [15, 15], [9, 15]], 'W'); const px = 12 + [0, 1, 2, 1, 0, -1, -2, -1][f]; m.disc(px, 11.5, 2.4, 'F'); m.disc(px, 11.5, 1, 'K'); m.set(px - 1, 10, 'W'); if (f === 4) m.rect(6, 11, 13, 2, 'a'); },
-        // a crosshair, its ring tightening on the centre
-        true_aim: (m, f) => { const r = [5, 4.5, 4, 3.5, 3, 3.5, 4, 4.5][f]; m.ring(12, 11.5, r, 1, 'F'); m.line(12, 5, 12, 8, 'W'); m.line(12, 15, 12, 18, 'W'); m.line(6, 11.5, 9, 11.5, 'W'); m.line(15, 11.5, 18, 11.5, 'W'); m.set(12, 11.5, f % 2 ? 'Y' : 'F'); },
-        // crossed twigs with a small flame licking up
-        kindling: (m, f) => { m.line(8, 17, 16, 14, 'O'); m.line(8, 14, 16, 17, 'd'); const h = [5, 6, 7, 6, 5, 6, 8, 6][f]; m.poly([[10, 14], [14, 14], [13, 14 - h * 0.6], [12, 14 - h], [11, 14 - h * 0.5]], 'F'); m.poly([[11, 14], [13, 14], [12, 15 - h * 0.6]], 'Y'); },
-        // a snowflake, one arm lit at a time
-        frostbite: (m, f) => { const A = [[0, 1], [1, 0], [0.7, 0.7], [0.7, -0.7]]; A.forEach(([dx, dy], k) => { const c = k === f % 4 ? 'W' : 'I'; m.line(12 - dx * 5, 11.5 - dy * 5, 12 + dx * 5, 11.5 + dy * 5, c); }); m.disc(12, 11.5, 1.2, 'W'); },
-        // two posts, a spark jumping between them
-        static: (m, f) => { m.rect(7, 8, 2, 9, 'T'); m.rect(15, 8, 2, 9, 'T'); m.set(7, 7, 'Y'); m.set(16, 7, 'Y'); const R = MenuArt.rng(5 + f); let y = 9; for (let x = 9; x <= 15; x++) { y = Math.max(7, Math.min(15, y + Math.round(R() * 4 - 2))); m.set(x, y, f % 2 ? 'Y' : 'W'); } },
-        // a big flame, flickering
-        searing: (m, f) => { const w = [0, 1, 0, -1, 0, 1, -1, 0][f]; m.poly([[8, 17], [16, 17], [17, 13], [14 + w, 9], [13, 4 + (f % 3)], [11, 9], [9 + w, 7], [7, 13]], 'F'); m.poly([[10, 17], [14, 17], [15, 14], [12 + w, 9], [9, 14]], 'O'); m.poly([[11, 17], [13, 17], [13, 15], [12, 12], [11, 15]], 'Y'); },
-        // an ice crystal, a crack spreading through it
-        shatterpoint: (m, f) => { m.poly([[12, 5], [16, 11], [12, 18], [8, 11]], 'I'); m.poly([[12, 6], [14, 11], [12, 16], [10, 11]], 'W'); const n = f % 8; const C = [[12, 8], [11, 10], [13, 11], [12, 13], [10, 14], [14, 9], [11, 6]]; for (let k = 0; k < Math.min(n, C.length); k++) m.set(C[k][0], C[k][1], 'K'); },
-        // a water drop, a bolt striking through it
-        conductor: (m, f) => { m.poly([[12, 5], [16, 12], [15, 15], [12, 17], [9, 15], [8, 12]], 'I'); m.disc(10.5, 13, 1, 'W'); if (f % 4 < 2) m.poly([[13, 6], [10, 12], [12.5, 12], [11, 17], [15, 10], [12.5, 10]], 'Y'); },
-        // a burst that charges up and goes off
-        overcharge: (m, f) => { const r = [2, 3, 4, 5, 6, 3, 2, 2][f]; for (let k = 0; k < 8; k++) { const t = k * Math.PI / 4; m.line(12, 11.5, 12 + Math.cos(t) * r, 11.5 + Math.sin(t) * r, k % 2 ? 'O' : 'Y'); } m.disc(12, 11.5, f === 4 ? 2.6 : 1.4, 'W'); },
-        // a flask, bubbles rising
-        catalyst: (m, f) => { m.rect(11, 5, 3, 4, 'T'); m.poly([[10, 9], [15, 9], [17, 17], [8, 17]], 'W'); m.poly([[9.5, 12], [15.5, 12], [16.5, 16.5], [8.5, 16.5]], 'N'); for (let k = 0; k < 2; k++) { const y = 16 - ((f + k * 4) % 8) * 1.3; if (y > 6) m.set(11 + k * 2, y, 'W'); } },
-        // a fang, a drop of blood running down it
-        vampiric: (m, f) => { m.poly([[8, 5], [16, 5], [15, 10], [12, 16], [9, 10]], 'W'); m.rect(8, 5, 8, 2, 'B'); const y = 7 + (f % 8) * 1.4; if (y < 19) m.set(12, y, 'B'); },
-        // a metronome, ticking side to side
-        rhythm: (m, f) => { m.poly([[8.5, 17.5], [15.5, 17.5], [13.8, 5.5], [10.2, 5.5]], 'K'); m.poly([[9.5, 17], [14.5, 17], [13.3, 6.5], [10.7, 6.5]], 'd'); m.rect(9, 16, 6, 2, 'K'); const a = [-3, -2, 0, 2, 3, 2, 0, -2][f]; m.line(12, 15, 12 + a, 7, 'W'); m.set(12 + a * 0.7, 10, 'F'); },
-        // a bomb, its fuse burning down
-        volatile: (m, f) => { m.disc(11, 13, 4.6, 'K'); m.disc(11, 13, 4, 'T'); m.disc(9.5, 11.5, 1.2, 'W'); m.rect(13, 7, 2, 3, 'O'); const s = f % 8; m.line(15, 7, 17, 5, 'd'); m.set(17 - (s > 4 ? 1 : 0), 5 + (s > 4 ? 1 : 0), s % 2 ? 'Y' : 'F'); if (s % 2) m.set(18, 4, 'g'); },
-        // a cracked world, its cracks glowing and pieces breaking away
-        worldbreaker: (m, f) => { m.disc(12, 11.5, 5.6, 'K'); m.disc(12, 11.5, 5, 'T'); m.disc(10.5, 10, 1.6, 'W'); const c = f % 2 ? 'Y' : 'O'; m.line(8, 9, 12, 12, c); m.line(12, 12, 16, 10, c); m.line(12, 12, 11, 17, c); const d = f % 4; m.set(17 + d * 0.5, 7 - d * 0.5, 'O'); m.set(6 - d * 0.4, 15 + d * 0.3, 'F'); },
-        // a flame in a ring, cycling through the elements
-        everflame: (m, f) => { m.ring(12, 11.5, 6, 1, 'Y'); const c = ['F', 'I', 'Y', 'V'][Math.floor(f / 2)]; m.poly([[9, 15], [15, 15], [15, 11], [12, 6], [9, 11]], c); m.poly([[11, 15], [13, 15], [13, 12], [12, 10], [11, 12]], 'W'); },
-        // a titan's helm, its eyes burning on and off
-        titan_pact: (m, f) => { m.poly([[7, 16], [7, 9], [9, 6], [15, 6], [17, 9], [17, 16]], 'T'); m.rect(11, 6, 2, 11, 'W'); const c = f % 4 < 3 ? 'Y' : 'K'; m.rect(8, 10, 3, 2, c); m.rect(13, 10, 3, 2, c); m.rect(7, 15, 10, 2, 'O'); },
-        // two blades crossing, flashing in turn
-        twinstrike: (m, f) => { m.line(7, 6, 17, 17, f % 2 ? 'W' : 'N'); m.line(17, 6, 7, 17, f % 2 ? 'N' : 'W'); m.line(6, 15, 9, 18, 'O'); m.line(18, 15, 15, 18, 'O'); },
-        // a heart pierced by a dagger, beating
-        bloodpact: (m, f) => { const b = f % 4 === 0 ? 0.6 : 0; m.disc(10, 10, 2.6 + b, 'B'); m.disc(14, 10, 2.6 + b, 'B'); m.poly([[7.2, 11], [16.8, 11], [12, 17 + b]], 'B'); m.line(17, 5, 9, 15, 'T'); m.line(17, 5, 16, 6, 'W'); },
-        // a prism splitting light, the colours sliding
-        prism: (m, f) => { m.poly([[12, 6], [16, 15], [8, 15]], 'W'); m.line(4, 11, 10, 11, 'W'); const C = ['F', 'O', 'Y', 'N', 'I', 'V']; for (let k = 0; k < 4; k++) m.line(14, 11 + k * 0.7, 20, 9 + k * 2, C[(k + f) % C.length]); },
-        // a gem cracking open, a blast pouring out of it
-        devastation: (m, f) => { m.poly([[12, 5], [16, 10], [12, 17], [8, 10]], 'V'); m.poly([[12, 7], [14, 10], [12, 14], [10, 10]], 'W'); const r = [0, 2, 4, 6, 4, 2, 0, 0][f]; if (r) for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; m.set(12 + Math.cos(a) * (4 + r * 0.6), 11 + Math.sin(a) * (4 + r * 0.6), k % 2 ? 'Y' : 'W'); } },
-        // a fist slamming the ground, a shockwave rolling out
-        earthshaker: (m, f) => { const d = [0, -1, -2, -1, 1, 1, 0, 0][f]; m.rect(9, 7 + d, 6, 6, 'T'); m.rect(9, 7 + d, 6, 2, 'W'); m.rect(7, 16, 10, 2, 'O'); if (f >= 4 && f <= 6) { const w = (f - 3) * 2; m.line(12 - 4 - w, 15, 12 - 4, 15, 'V'); m.line(12 + 4, 15, 12 + 4 + w, 15, 'V'); } },
-        // a ram's head of iron, charging forward
-        juggernaut: (m, f) => { const d = [0, 0, 1, 1, 0, 0, 0, 0][f]; m.poly([[8 + d, 7], [16 + d, 7], [17 + d, 13], [12 + d, 17], [7 + d, 13]], 'T'); m.ring(7 + d, 9, 2.4, 1, 'W'); m.ring(17 + d, 9, 2.4, 1, 'W'); m.set(10 + d, 11, 'F'); m.set(14 + d, 11, 'F'); m.rect(11 + d, 14, 3, 1, 'K'); },
-        // a winged boot, the wind streaking past
-        slipstream: (m, f) => { m.rect(10, 6, 4, 8, 'I'); m.rect(10, 13, 7, 4, 'I'); m.rect(10, 16, 7, 1, 'K'); m.poly([[9, 7], [5, 5], [6, 9]], 'W'); for (let k = 0; k < 3; k++) { const x = 18 - ((f * 2 + k * 3) % 12); m.line(x, 8 + k * 3, x + 2, 8 + k * 3, 'W'); } },
-        // three orbs, a burst passing between them
-        chain_reaction: (m, f) => { const P = [[8, 15], [12, 7], [16, 15]], C = ['F', 'I', 'Y']; P.forEach(([x, y], k) => m.disc(x, y, 2, C[k])); const k = Math.floor(f / 2) % 3, [ax, ay] = P[k], [bx, by] = P[(k + 1) % 3]; m.line(ax, ay, bx, by, 'W'); if (f % 2) m.disc(bx, by, 2.8, 'W'); },
-        // a chalice, blood rising in it
-        sanguine: (m, f) => { m.poly([[7, 6], [17, 6], [15, 11], [9, 11]], 'W'); m.rect(11, 11, 2, 4, 'T'); m.rect(9, 15, 6, 2, 'T'); const h = [1, 2, 3, 3, 2, 1, 1, 1][f]; m.poly([[8, 7], [16, 7], [16 - h * 0.3, 7 + h], [8 + h * 0.3, 7 + h]], 'B'); if (f === 2) m.set(12, 5, 'B'); },
-        // a crown of lightning
-        arc_lord: (m, f) => { m.poly([[7, 15], [7, 9], [9.5, 12], [12, 6], [14.5, 12], [17, 9], [17, 15]], 'I'); m.rect(7, 14, 10, 2, 'T'); if (f % 2) { m.line(12, 6, 10, 3, 'W'); m.line(7, 9, 5, 6, 'W'); m.line(17, 9, 19, 6, 'W'); } m.set(12, 12, 'W'); },
-        // a die loaded with a gold pip that keeps landing
-        loaded: (m, f) => { const t = [0, 0, -1, -2, -1, 0, 0, 0][f]; m.rect(8, 8 + t, 9, 9, 'W'); m.rect(8, 8 + t, 9, 2, 'T'); for (const [x, y] of [[10, 11], [14, 15]]) m.set(x, y + t, 'K'); m.disc(12.5, 13 + t, 1.4, 'Y'); if (f === 5) m.set(18, 7, 'g'); },
-        // a spiked shield with a gold crit spark
-        iron_edge: (m, f) => { m.poly([[8, 6], [16, 6], [16, 12], [12, 17], [8, 12]], 'T'); m.set(7, 9, 'W'); m.set(17, 9, 'W'); m.set(12, 18, 'W'); m.set(12, 5, 'W'); m.poly([[10, 11], [12, 9], [14, 11], [12, 13]], f % 4 < 2 ? 'Y' : 'O'); },
-        // a spinning wheel charging a gem
-        kinetic_core: (m, f) => { m.ring(12, 11.5, 5.5, 1.2, 'I'); const a = f / 8 * Math.PI * 2; for (let k = 0; k < 3; k++) m.line(12, 11.5, 12 + Math.cos(a + k * 2.09) * 4.5, 11.5 + Math.sin(a + k * 2.09) * 4.5, 'W'); m.poly([[12, 9], [14, 11.5], [12, 14], [10, 11.5]], 'V'); },
-        // a dagger dripping, a gold glint on the blade
-        bloodletter: (m, f) => { m.line(9, 16, 15, 6, 'T'); m.line(10, 16, 16, 6, 'W'); m.line(8, 14, 11, 17, 'O'); const y = 9 + (f % 8); if (y < 19) m.set(16, y, 'B'); if (f % 4 === 0) m.set(13, 9, 'Y'); },
-        // a clover over a gold diamond
-        fortunes_edge: (m, f) => { for (const [x, y] of [[10, 9], [14, 9], [10, 13], [14, 13]]) m.disc(x, y, 2.1, 'N'); m.line(12, 13, 14, 18, 'N'); m.poly([[12, 9], [14, 11], [12, 13], [10, 11]], f % 4 < 2 ? 'Y' : 'W'); },
-        // a cracked shield with a sword driven up through it
-        last_stand: (m, f) => { m.poly([[7, 7], [17, 7], [17, 12], [12, 17], [7, 12]], 'T'); m.line(9, 8, 11, 13, 'K'); m.line(15, 9, 13, 14, 'K'); m.line(12, 4, 12, 15, f % 2 ? 'W' : 'F'); m.rect(10, 13, 5, 1, 'O'); },
-        // a skull leaking burn and chill to the side
-        contagion: (m, f) => { m.disc(10, 11, 3.4, 'W'); m.rect(8, 13, 5, 2, 'W'); m.set(9, 11, 'K'); m.set(11, 11, 'K'); const k = f % 4; m.disc(14 + k, 9, 1.2, 'F'); m.disc(14 + ((k + 2) % 4), 14, 1.2, 'I'); },
-        // a heart of stone that cracks and holds
-        unbreakable: (m, f) => { m.disc(10, 10, 2.8, 'T'); m.disc(14, 10, 2.8, 'T'); m.poly([[7, 11], [17, 11], [12, 17]], 'T'); if (f >= 4) { m.line(12, 8, 11, 12, 'K'); m.line(11, 12, 13, 15, 'K'); } if (f === 4) m.disc(12, 11.5, 6, 'W'); m.set(10, 9, 'W'); },
-        // two element orbs spiralling into one
-        elemental_fusion: (m, f) => { const a = f / 8 * Math.PI * 2, r = 4.5 - (f % 8) * 0.3; m.disc(12 + Math.cos(a) * r, 11.5 + Math.sin(a) * r, 2, 'F'); m.disc(12 - Math.cos(a) * r, 11.5 - Math.sin(a) * r, 2, 'I'); m.disc(12, 11.5, f === 7 ? 2.6 : 1.2, f === 7 ? 'W' : 'V'); },
-        // a set of scales tipping
-        reckoning: (m, f) => { const t = [-2, -1, 0, 1, 2, 1, 0, -1][f]; m.rect(11, 6, 2, 11, 'T'); m.rect(9, 16, 6, 2, 'T'); m.line(7, 8 + t, 17, 8 - t, 'W'); m.disc(7, 12 + t, 1.8, 'B'); m.disc(17, 12 - t, 1.8, 'N'); },
-    };
+    // A book in 3/4 view (24px), from ench_books: its cover in its rarity's material, the page edges and spine, corner caps
+    // and a clasp, its enchant's own emblem on the front (8 frames), or a cut gem (4); a glint sweeps the cover. r -1: a
+    // sealed one, chained shut; r 5: corrupted. Returns a texture key with an animation of the same key.
     static bookIcon(scene, r, build = null, id = null) {
-        // A book in 3/4 view (24px, 4 frames): its cover in its rarity's material, the page edges
-        // and spine, corner caps and a clasp, and its build's emblem on the front. A glint
-        // sweeps the cover; from Epic up the emblem glows and pulses. r -1: a sealed one, chained shut.
-        const COV = [
-            { a: '#7a5234', b: '#a07048', d: '#4a301c', m: '#7a7a88', M: '#b8b8c8', e: '#d8c8a0', E: '#fff0c8' },   // common: worn leather, iron
-            { a: '#2a5ab0', b: '#4a8ae0', d: '#1a3470', m: '#a8b8d0', M: '#eef4ff', e: '#c8e4ff', E: '#ffffff' },   // rare: blue cloth, silver
-            { a: '#6a2ab0', b: '#9a5ae0', d: '#3a1468', m: '#d8a838', M: '#ffe088', e: '#e8c8ff', E: '#ffffff' },   // epic: purple velvet, gold
-            { a: '#a8601a', b: '#e09a3a', d: '#5a300a', m: '#ffd860', M: '#fff6c0', e: '#fff0a0', E: '#ffffff' },   // legendary: amber, gold filigree
-            { a: '#a01a2a', b: '#e04a4a', d: '#500a14', m: '#ffd860', M: '#fff6c0', e: '#ffb0b0', E: '#ffffff' },   // mythic: crimson, gold, runes
-        ];
-        const EMB = {   // the build's emblem, drawn around (12, 12)
-            CRIT:    m => { m.poly([[7, 12], [12, 9], [17, 12], [12, 15]], 'e'); m.disc(12, 12, 1.6, 'd'); m.set(12, 11, 'E'); },
-            HUNTER:  m => { m.disc(12, 11, 3.2, 'e'); m.rect(10, 13, 5, 2, 'e'); m.set(11, 11, 'd'); m.set(13, 11, 'd'); m.set(12, 14, 'd'); },
-            BURN:    m => { m.poly([[12, 5], [15, 10], [15.5, 14], [13.5, 17], [10.5, 17], [8.5, 14], [9, 10], [11, 11]], 'e'); m.poly([[12, 10], [14, 14], [12.5, 16.5], [11, 16.5], [10, 14]], 'E'); },
-            FROST:   m => { for (const [dx, dy] of [[0, 1], [1, 0], [1, 1], [1, -1]]) m.line(12 - dx * 4, 12 - dy * 4, 12 + dx * 4, 12 + dy * 4, dx && dy ? 'e' : 'E'); },
-            STORM:   m => { m.poly([[13, 7], [9, 13], [12, 13], [10, 17], [15, 11], [12, 11]], 'e'); m.line(12, 8, 10, 12, 'E'); },
-            AIM:     m => { m.ring(12, 12, 4, 1, 'e'); m.line(12, 7, 12, 17, 'e'); m.line(7, 12, 17, 12, 'e'); m.set(12, 12, 'E'); },
-            ULT:     m => { m.poly([[12, 7], [16, 11], [12, 17], [8, 11]], 'e'); m.poly([[12, 8], [14, 11], [12, 14], [10, 11]], 'E'); },
-            SUSTAIN: m => { m.disc(10.5, 11, 2.2, 'e'); m.disc(13.5, 11, 2.2, 'e'); m.poly([[8.4, 11.6], [15.6, 11.6], [12, 16]], 'e'); m.set(10, 10, 'E'); },
-            CROWD:   m => { for (let k = 0; k < 8; k++) { const t = k * Math.PI / 4; m.line(12, 12, 12 + Math.cos(t) * (k % 2 ? 3 : 5), 12 + Math.sin(t) * (k % 2 ? 3 : 5), 'e'); } m.disc(12, 12, 1.4, 'E'); },
-        };
-        const key = 'ench_book3_' + r + '_' + (id || build || 'none'), own = id && ShopScene.BOOK_EMB[id], F = own ? 8 : 4;
-        const emb = (m, f) => own ? own(m, f) : (EMB[build] || EMB.CRIT)(m);   // the book's own animated emblem, else its build's
-        if (r === 5) return ShopScene.icon(scene, key, 24, { ...ShopScene.BOOK_INK, a: '#1a0a24', b: '#3a1a4a', d: '#0a0410', p: '#2a1a3a', P: '#140a1c', e: '#7aff5a', E: '#c8ffb8', m: '#ff3aa0', g: '#c8ffb8' }, (m, f) => {
-            // corrupted: a black book with its emblem burning green, the art itself tearing apart
-            m.rect(5, 3, 15, 18, 'a'); m.rect(5, 3, 3, 18, 'd'); m.rect(19, 4, 2, 16, 'p'); m.rect(7, 20, 13, 1, 'P');
-            emb(m, f);
-            const R = MenuArt.rng(91 + f * 7);
-            for (let k = 0; k < 4; k++) { const y = 3 + Math.floor(R() * 18), dx = R() < 0.5 ? -1 : 1, row = []; for (let x = 0; x < 24; x++) row.push(m.get(x, y)); for (let x = 0; x < 24; x++) if (row[x] && row[x] !== '.') m.set(x + dx * (1 + (k % 2)), y, row[x]); }
-            for (let k = 0; k < 7; k++) m.set(Math.floor(R() * 24), Math.floor(R() * 24), R() < 0.5 ? 'g' : 'm');
-        }, F);
-        const sealed = r < 0, C = COV[Math.max(0, r)];
-        return ShopScene.icon(scene, key, 24, { ...ShopScene.BOOK_INK, ...C, p: '#f0e6cc', P: '#c8b890', s: '#6a6a78', S: '#a8a8b8', g: '#fffbe0', L: '#8a8aa0' }, (m, f) => {
-            // the block of pages behind the cover, then the cover with its spine
-            m.rect(7, 5, 14, 16, 'p'); for (let y = 6; y < 21; y += 2) m.line(19, y, 20, y, 'P'); m.rect(7, 20, 14, 1, 'P');
-            m.rect(4, 3, 15, 17, 'a'); m.rect(4, 3, 3, 17, 'd'); m.line(6, 4, 6, 19, 'b'); m.rect(7, 3, 12, 1, 'b');
-            for (const yy of [6, 16]) m.line(4, yy, 6, yy, 'm');   // bands on the spine
-            if (Math.max(0, r) >= 1 || sealed) { for (const [x, y] of [[17, 3], [17, 18]]) { m.rect(x, y, 2, 2, 'm'); m.set(x + 1, y, 'M'); } }   // corner caps
-            if (r >= 3) { for (let x = 8; x < 18; x += 2) { m.set(x, 4, 'm'); m.set(x, 18, 'm'); } for (let y = 5; y < 18; y += 2) m.set(17, y, 'm'); }   // filigree
-            if (r === 4) { const t = f / F * Math.PI * 2; for (let k = 0; k < 4; k++) m.set(12 + Math.cos(t + k * 1.57) * 6, 11 + Math.sin(t + k * 1.57) * 6, 'g'); }   // mythic runes circling
-            if (!sealed) emb(m, f);
-            if (r >= 1 && !sealed) { m.rect(18, 10, 3, 3, 'm'); m.set(19, 11, r >= 2 ? 'E' : 'M'); }   // the clasp (a gem in it from Epic)
-            if (r >= 2 && !sealed && !own && f % 2 === 0) { m.set(12, 8, 'g'); m.set(12, 16, 'g'); }   // the emblem's glow, pulsing
-            // the glint sweeping the cover
-            const gx = 6 + f * 4; for (let k = 0; k < 3; k++) { const x = gx + k, y = 4 + k * 2; if (m.get(x, y) && m.get(x, y) !== '.') m.set(x, y, 'g'); }
-            if (sealed) {   // chained shut, a padlock on the front
-                m.line(3, 7, 21, 15, 'S'); m.line(3, 15, 21, 7, 'S'); for (let k = 0; k < 6; k++) { m.set(5 + k * 3, 8 + k * 1.3, 's'); m.set(5 + k * 3, 14 - k * 1.3, 's'); }
-                m.rect(10, 10, 5, 4, 'L'); m.ring(12.5, 10, 2, 1, 'S'); m.set(12, 12, 's'); m.set(11, 11, 'S');
-            }
-        }, F);
+        const T = scene.textures, A = T.exists('ench_books') ? T.get('ench_books') : null;
+        let key = 'ench_book3_' + r + '_' + (id || 'none');
+        if (A && !A.has(key)) key = 'ench_book3_' + r + '_none';
+        if (!T.exists(key) && A?.has(key)) T.addSpriteSheetFromAtlas(key, { atlas: 'ench_books', frame: key, frameWidth: 24, frameHeight: 24 });
+        const n = T.exists(key) ? T.get(key).frameTotal - 1 : 0;
+        if (n > 1 && !scene.anims.exists(key)) scene.anims.create({ key, frames: scene.anims.generateFrameNumbers(key, { start: 0, end: n - 1 }), frameRate: 6, repeat: -1 });
+        return key;
     }
 
     _buyStat(id) {
@@ -1123,29 +1048,6 @@ class ShopScene extends Phaser.Scene {
         this.setGlurpDialogue(t ? `"${d.name} ${lvl + 1}! You've earned ${t.name}!"` : `"${d.name} ${lvl + 1}! ${PlayerStats.describe(id, lvl + 1)}."`);
         if (t) Sfx.play(this, 'ult');
         this.time.delayedCall(0, () => { if (this._shopTab === 1) this._showStatsTab({ id, lvl: lvl + 1 }); });
-    }
-
-    // A stat's emblem, drawn in graphics: a sword (damage), a heart (health), a shield (armor).
-    _statEmblem(g, id, cx, cy, acc) {
-        const glow = MenuArt.mix(acc, 0x1b1612, 0.7), r = 40;
-        g.fillStyle(glow, 1); g.fillCircle(cx, cy, r);
-        g.lineStyle(2, acc, 0.6); g.strokeCircle(cx, cy, r);
-        if (id === 'damage') {
-            g.fillStyle(0xd8dce8, 1); g.fillTriangle(cx - 5, cy + 10, cx + 5, cy + 10, cx, cy - 30);
-            g.fillStyle(0xffffff, 0.7); g.fillTriangle(cx - 1, cy + 8, cx + 1, cy + 8, cx, cy - 26);
-            g.fillStyle(UIKit.PALETTE.brass, 1); g.fillRect(cx - 14, cy + 10, 28, 5);
-            g.fillStyle(0x6a4a26, 1); g.fillRect(cx - 3, cy + 15, 6, 13);
-            g.fillStyle(UIKit.PALETTE.brass, 1); g.fillCircle(cx, cy + 30, 4);
-        } else if (id === 'health') {
-            g.fillStyle(acc, 1); g.fillCircle(cx - 9, cy - 6, 12); g.fillCircle(cx + 9, cy - 6, 12);
-            g.fillTriangle(cx - 20, cy - 1, cx + 20, cy - 1, cx, cy + 24);
-            g.fillStyle(0xffffff, 0.45); g.fillCircle(cx - 12, cy - 10, 4);
-        } else {
-            const pts = [{ x: cx - 22, y: cy - 22 }, { x: cx + 22, y: cy - 22 }, { x: cx + 22, y: cy }, { x: cx, y: cy + 26 }, { x: cx - 22, y: cy }];
-            g.fillStyle(UIKit.PALETTE.ironHi, 1); g.fillPoints(pts, true);
-            g.fillStyle(acc, 1); g.fillRect(cx - 3, cy - 18, 6, 36); g.fillRect(cx - 18, cy - 8, 36, 6);
-            g.lineStyle(2, 0x1b1612, 1); g.strokePoints(pts, true);
-        }
     }
 
     // Equip, buy and upgrade all redraw in place on the next tick: never inside the click
@@ -1216,7 +1118,12 @@ class ShopScene extends Phaser.Scene {
         const T = this.glurpDialogue;
         if (!T) return;
         this._glurpTyper?.remove();
-        const full = T.getWrappedText(text).join('\n');
+        // a long one a size or two smaller, and the bubble grown to hold it
+        const lay = fs => T.setFontSize(fs).setText(T.getWrappedText(text).join('\n')).height;
+        if (lay(14) > 72 && lay(12) > 130) lay(11);
+        const full = T.text;
+        this._bubble?.(Math.max(92, T.height + 20));
+        T.setText(full.replace(/[^\n]/g, ' '));
         let n = 0;
         this._glurpTyper = this.time.addEvent({ delay: 16, loop: true, callback: () => {
             n = Math.min(full.length, n + 2);
@@ -1245,12 +1152,9 @@ class ShopScene extends Phaser.Scene {
             speedY: { min: -8, max: 8 }, speedX: { min: -6, max: 6 }, scale: { start: 1.2, end: 0 }, alpha: { start: 0.6, end: 0 },
             tint: MenuArt.mix(acc, 0xffffff, 0.6), blendMode: 'ADD', frequency: 140,
         }).setDepth(4));
-        const tt = keep(this.add.graphics().setDepth(7));
-        tt.fillStyle(0x000000, 0.5); tt.fillEllipse(TT.x + 3, TT.y + 6, 200, 36);
-        tt.fillStyle(0x6a4a20, 1); tt.fillEllipse(TT.x, TT.y + 4, 196, 34);
-        tt.fillStyle(UIKit.PALETTE.brass, 1); tt.fillEllipse(TT.x, TT.y, 190, 30);
-        tt.fillStyle(MenuArt.mix(acc, 0x1b1612, 0.5), 1); tt.fillEllipse(TT.x, TT.y - 1, 160, 22);
-        tt.lineStyle(2, acc, 0.9); tt.strokeEllipse(TT.x, TT.y - 1, 160, 22);
+        // the brass platter on its plinth, and its felt in the item's colour
+        keep(this.add.image(TT.x - 100, TT.y - 14, 'shop_stall', 'turntable').setOrigin(0).setScale(2).setDepth(7));
+        keep(this.add.image(TT.x - 80, TT.y - 13, 'shop_stall', 'tt_felt').setOrigin(0).setScale(2).setDepth(7).setTint(acc));
         const glow = keep(this.add.image(TT.x, TT.y - 90, 'mn_glow').setTint(acc).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(260, 220).setAlpha(0.55).setDepth(7));
         this.tweens.add({ targets: glow, alpha: 0.8, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         if (!key) return objs;
@@ -1278,17 +1182,19 @@ class ShopScene extends Phaser.Scene {
     _awning(acc, banners = []) {
         const { S } = this._layout, objs = [], keep = o => { objs.push(o); return o; };
         const aw = S.x1 - S.x0 + 40, ah = S.beam - S.top;
-        keep(this.add.image(S.x0 - 20, S.top, ShopScene.awningTex(this, aw, ah, acc)).setOrigin(0).setScale(2).setDepth(9));
-        const g = keep(this.add.graphics().setDepth(9.1));
-        this._plank(g, S.x0 - 26, S.top - 10, S.x1 - S.x0 + 52, 14, 0x4a3018);
+        // its stripes, 34 px each at half size, as many as fill it, accent and cream in turn; a tassel where two scallops meet
+        const n2 = Math.max(2, Math.round(aw / 68)), ax = Math.round(S.x0 - 20 + (aw - n2 * 68) / 2), cloth = ShopScene.cloth(acc);
+        for (let k = 0; k < n2; k++) keep(this.add.image(ax + k * 68, S.top, 'shop_stall', 'awn_' + (k % 2 ? 'cream' : cloth)).setOrigin(0).setScale(2).setDepth(9));
+        for (let k = 1; k < n2; k++) keep(this.add.image(ax + k * 68, S.top + ah, 'shop_stall', 'tassel').setOrigin(0.5, 0).setScale(2).setDepth(9));
+        keep(this._plank(S.x0 - 26, S.top - 10, S.x1 - S.x0 + 52, 14, 0x4a3018, 9.1));
         const span = S.x1 - S.x0 - 80, n = banners.length;
         banners.forEach((bn, i) => {
             const x = S.x0 + 40 + span * (i + 0.5) / n, top = S.beam + 22, bh = bn.on ? 74 : 58, bw = bn.label ? 62 : 54, col = bn.col ?? acc;
             const b = keep(this.add.graphics().setDepth(9));
             b.lineStyle(2, 0x2a2a34, 1); b.lineBetween(x - bw / 2 + 6, S.beam + 8, x - bw / 2 + 6, top); b.lineBetween(x + bw / 2 - 6, S.beam + 8, x + bw / 2 - 6, top);
             b.fillStyle(0x000000, 0.35); b.fillRect(x - bw / 2 + 3, top + 3, bw, bh - 6);
-            keep(this.add.image(x - bw / 2, top, ShopScene.bannerTex(this, bw, bh, col, bn.on)).setOrigin(0).setScale(2).setDepth(9));
-            this._plank(b, x - bw / 2 - 5, top - 5, bw + 10, 8, 0x4a3018);
+            keep(this._plank(x - bw / 2 - 5, top - 5, bw + 10, 8, 0x4a3018, 9));
+            keep(this.add.image(x - bw / 2, top, 'shop_stall', `ban${bw / 2}_${ShopScene.cloth(col)}_${bn.on ? 1 : 0}`).setOrigin(0).setScale(2).setDepth(9));
             if (bn.label) keep(this.add.text(x, top + 15, bn.label, { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: bn.on ? '#f6d58a' : '#d2bf98', stroke: '#1b1612', strokeThickness: 3 }).setOrigin(0.5).setDepth(9.2));
             const iy = bn.label ? top + (bh - 14) / 2 + 10 : top + (bh - 14) / 2;
             if (bn.icon) keep(this.add.sprite(x, iy, bn.icon, '0').setScale(bn.iconScale || 1.15).setDepth(9.2).setAlpha(bn.on ? 1 : 0.75)).play(bn.icon);
@@ -1301,16 +1207,18 @@ class ShopScene extends Phaser.Scene {
 
     // The parchment tag hanging from the awning on a string, as a graphics to draw on.
     _tagSheet(T, keep, D) {
-        const g = keep(this.add.graphics().setDepth(D));
-        g.lineStyle(2, 0x8a6a40, 1); g.lineBetween(T.x + T.w / 2, T.y - 14, T.x + T.w / 2, T.y + 10);
-        g.fillStyle(UIKit.PALETTE.iron, 1); g.fillCircle(T.x + T.w / 2, T.y - 14, 4);
-        g.fillStyle(0x000000, 0.45); g.fillRect(T.x + 5, T.y + 7, T.w, T.h);
-        g.fillStyle(0xe2cfa4, 1); g.fillRect(T.x, T.y, T.w, T.h);
-        g.fillStyle(0xd0b98a, 0.5); g.fillCircle(T.x + T.w * 0.8, T.y + T.h * 0.7, 60); g.fillCircle(T.x + T.w * 0.2, T.y + T.h * 0.3, 40);
-        g.lineStyle(2, 0x6a4a26, 1); g.strokeRect(T.x, T.y, T.w, T.h);
-        g.lineStyle(1, 0x6a4a26, 0.5); g.strokeRect(T.x + 6, T.y + 6, T.w - 12, T.h - 12);
-        g.fillStyle(0x6a4a26, 1); g.fillCircle(T.x + T.w / 2, T.y + 14, 6); g.fillStyle(0x1b1612, 1); g.fillCircle(T.x + T.w / 2, T.y + 14, 3);
-        return g;
+        const cx = T.x + T.w / 2;
+        keep(this.add.image(cx, T.y - 18, 'shop_stall', 'tagpin').setOrigin(0.5, 0).setScale(2).setDepth(D));
+        keep(this.add.graphics().setDepth(D)).fillStyle(0x000000, 0.45).fillRect(T.x + 5, T.y + 7, T.w, T.h);
+        ShopScene.parchment(this, T.x, T.y, T.w, T.h, D).forEach(keep);
+        keep(this.add.image(cx, T.y + 15, 'shop_stall', 'grommet').setScale(2).setDepth(D));
+        return keep(this.add.graphics().setDepth(D));
+    }
+    // Parchment w x h at (x, y): the typed sheet (a 9-slice) and its two old stains. Returns its objects.
+    static parchment(scene, x, y, w, h, depth) {
+        return [scene.add.nineslice(x, y, 'shop_stall', 'tag', Math.round(w / 2), Math.round(h / 2), 5, 5, 5, 5).setOrigin(0).setScale(2).setDepth(depth),
+                scene.add.image(x + w * 0.8, y + h * 0.7, 'shop_stall', 'stain_l').setScale(2).setDepth(depth),
+                scene.add.image(x + w * 0.2, y + h * 0.3, 'shop_stall', 'stain_s').setScale(2).setDepth(depth)];
     }
 
     // A small pixel icon, painted once into a texture: `draw(m, f)` fills an N×N grid of
@@ -1364,77 +1272,253 @@ class ShopScene extends Phaser.Scene {
         return key;
     }
 
-    // A gadget's icon: 24px, four frames, each one doing what the gadget does. ('g' is a glow
-    // pixel: it gets no outline, so sparks and rings float free of the shape.)
+    // A gadget's icon: 24px, four frames, each one doing what the gadget does, typed pixel by pixel: the gadget's rows,
+    // then each frame's patches laid over them at (x, y) ('.' keeps what's under). 'g' is a glow pixel: it gets no
+    // outline, so sparks and rings float free of the shape.
     static gadgetIcon(scene, id) {
         const ART = {
-            // a brass canister, its bolt crackling behind a glass window, sparks round the cap
-            smite: [{ B: '#d8a848', b: '#8a6420', I: '#5e574e', i: '#9aa1bc', G: '#2a3a5a', W: '#fffbd0', Y: '#ffe14a', g: '#fff6b0' }, (m, f) => {
-                m.rect(7, 9, 10, 12, 'B'); m.rect(14, 9, 3, 12, 'b'); m.rect(7, 12, 10, 1, 'b'); m.rect(7, 18, 10, 1, 'b');
-                m.rect(9, 5, 6, 4, 'I'); m.rect(10, 5, 2, 1, 'i'); m.rect(11, 3, 2, 2, 'I');
-                m.disc(12, 15.5, 3.4, 'G');
-                const bolts = [[[13, 13], [11, 15], [13, 16], [11, 18]], [[11, 13], [13, 15], [11, 16], [13, 18]]][f % 2];
-                for (let k = 0; k + 1 < bolts.length; k++) m.line(bolts[k][0], bolts[k][1], bolts[k + 1][0], bolts[k + 1][1], 'W');
-                const sp = [[[6, 4], [18, 6], [4, 9]], [[17, 3], [5, 6], [19, 9]], [[7, 2], [19, 4], [5, 8]], [[16, 2], [4, 4], [18, 8]]][f];
-                for (const [x, y] of sp) { m.set(x, y, 'g'); m.set(x + 1, y, 'Y'); }
-            }],
-            // a copper coil wound round a stem, a glowing orb on top, a pulse rolling outward
-            emp: [{ C: '#c87a3a', c: '#7a4a20', I: '#5e574e', B: '#66ddff', b: '#2a7a9a', W: '#e8fbff', g: '#9fe8ff' }, (m, f) => {
-                m.ring(12, 12, 6 + f * 1.6, 1, 'g');
-                m.rect(9, 19, 6, 3, 'I'); m.rect(11, 9, 2, 10, 'I');
-                for (let y = 11; y < 19; y += 2) { m.rect(8, y, 8, 1, 'C'); m.set(15, y, 'c'); m.rect(9, y + 1, 6, 1, 'c'); }
-                m.disc(12, 7, 3.5, 'b'); m.disc(12, 7, 2.6, 'B'); m.set(11, 6, 'W');
-            }],
-            // a hand-held portal: a brass rim, the inside a spiral turning
-            displacer: [{ Y: '#d8a848', y: '#8a6420', P: '#aa66ff', p: '#3a1d5c', L: '#e0c8ff', g: '#c99bff' }, (m, f) => {
-                m.disc(12, 11, 8.5, 'Y'); m.disc(12, 11, 7, 'p');
-                for (let k = 0; k < 18; k++) {
-                    const t = k / 18, a = t * Math.PI * 3 + f * Math.PI / 2, r = 1 + t * 5.5;
-                    m.set(12 + Math.cos(a) * r, 11 + Math.sin(a) * r, k % 3 ? 'P' : 'L');
-                }
-                m.rect(10, 19, 4, 4, 'y'); m.rect(11, 19, 2, 4, 'Y');
-                m.set(12 + Math.cos(f * 1.6) * 10, 11 + Math.sin(f * 1.6) * 10, 'g');
-            }],
-            // an iron stake, rune bands lighting in turn, sparks running into cracked ground
-            grounding: [{ S: '#9aa1bc', s: '#5e574e', G: '#66ffcc', d: '#2a5a4a', E: '#6a4a26', e: '#3b2716', g: '#9fffe0' }, (m, f) => {
-                m.rect(4, 19, 16, 3, 'E'); m.rect(4, 21, 16, 1, 'e');
-                m.line(8, 20, 6, 22, 'e'); m.line(16, 20, 18, 22, 'e');
-                m.rect(11, 2, 3, 17, 'S'); m.rect(13, 2, 1, 17, 's'); m.poly([[11, 18], [14, 18], [12.5, 21]], 'S');
-                m.rect(9, 2, 7, 2, 's');
-                for (let k = 0; k < 4; k++) m.rect(10, 6 + k * 3, 5, 1, k === f ? 'G' : 'd');
-                m.set(7 + f, 21, 'g'); m.set(17 - f, 21, 'g');
-            }],
-            // a carved totem with a face, a leaf crown, a heart gem that beats, motes rising
-            mend: [{ T: '#9a6a3a', t: '#5a3a20', L: '#7fd06a', l: '#3a7a2a', H: '#ff6a7a', h: '#a02a3a', g: '#c8ffb0' }, (m, f) => {
-                m.rect(8, 7, 8, 15, 'T'); m.rect(14, 7, 2, 15, 't');
-                m.rect(9, 9, 2, 2, 't'); m.rect(13, 9, 2, 2, 't'); m.rect(10, 12, 4, 1, 't');
-                m.poly([[7, 7], [12, 1], [17, 7]], 'L'); m.line(12, 2, 12, 6, 'l');
-                const r = f % 2 ? 2.6 : 2.1;
-                m.disc(10.8, 16, r * 0.8, 'H'); m.disc(13.2, 16, r * 0.8, 'H'); m.poly([[8.5, 16.4], [15.5, 16.4], [12, 20]], 'H'); m.set(14, 17, 'h');
-                m.set(5, 14 - f * 3, 'g'); m.set(19, 18 - f * 3, 'g'); m.set(18, 8 - f, 'g');
-            }],
-            // a pink puppet of you on a stick, a target painted on it, wobbling to draw the eye
-            decoy: [{ P: '#ff9ad0', p: '#c05a90', W: '#ffffff', R: '#ff4a6a', T: '#8a5a30', t: '#5a3a20', g: '#ffd0e8' }, (m, f) => {
-                const wob = [0, 1, 0, -1][f];
-                m.rect(11, 15, 2, 8, 'T'); m.rect(12, 15, 1, 8, 't'); m.rect(8, 21, 8, 2, 't');
-                m.disc(12 + wob, 10, 6.5, 'P'); m.rect(5 + wob, 10, 14, 5, 'P'); m.rect(5 + wob, 14, 14, 1, 'p');
-                m.ring(12 + wob, 10, 4.5, 1, 'R'); m.disc(12 + wob, 10, 1.6, 'R');
-                m.set(9 + wob, 7, 'W'); m.set(15 + wob, 7, 'W');
-                m.set(3, 6 - f % 2, 'g'); m.set(20, 5 + f % 2, 'g');
-            }],
-            // an iron-banded stone block, battlements on top, a rune on its face pulsing
-            bulwark: [{ S: '#8a7a5e', s: '#5a4a36', L: '#b0a080', I: '#5e574e', R: '#ffd060', r: '#8a6420' }, (m, f) => {
-                m.rect(3, 7, 18, 15, 'S'); m.rect(3, 7, 18, 1, 'L');
-                for (const x of [3, 8, 13, 18]) m.rect(x, 4, 3, 3, 'S');
-                for (const y of [11, 16]) m.rect(3, y, 18, 1, 's');
-                for (const [x, y] of [[8, 8], [15, 8], [5, 12], [11, 12], [18, 12], [8, 17], [15, 17]]) m.rect(x, y, 1, 3, 's');
-                m.rect(3, 9, 18, 1, 'I'); m.rect(3, 19, 18, 1, 'I');
-                const c = f === 1 || f === 2 ? 'R' : 'r';
-                m.line(10, 12, 14, 12, c); m.line(12, 11, 12, 16, c); m.line(10, 16, 14, 16, c);
-            }],
+            // a brass storm canister: a lightning rod on its iron cap, a bolt crackling behind the glass, sparks off the rod
+            smite: [{ A: '#fff0a8', B: '#e8b432', b: '#b07a1e', d: '#5e3e14', I: '#c8d2e0', i: '#6e7a94', j: '#323850', G: '#121c36', H: '#2c4a78', Y: '#ffd23a', W: '#fffbd0', g: '#fff6b0' }, [
+                '........................',
+                '...........IA...........',
+                '..........iIIj..........',
+                '...........ij...........',
+                '..........jIij..........',
+                '........jiIIIiij........',
+                '.......jIIIIiiiij.......',
+                '.......BAAABBBBbb.......',
+                '......BAABBBBBBbbd......',
+                '......dbbbbbbbbddd......',
+                '......BAjjjjjjjjbd......',
+                '......BAjGHGGGGjbd......',
+                '......BAjHGGGGGjbd......',
+                '......BAjGGGGGGjbd......',
+                '......BAjGGGGGGjbd......',
+                '......BAjGGGGGGjbd......',
+                '......BAjjjjjjjjbd......',
+                '......dbbbbbbbbddd......',
+                '......BAABBBBBBbbd......',
+                '......BAABBBBBBbbd......',
+                '......dbbbbbbbbddd......',
+                '.......jiiiiiiiijj......',
+                '........jjjjjjjjj.......',
+                '........................',
+            ], [
+                [[9, 11, ['...WY.', '..WY..', '.WWWY.', '...WY.', '..W...']], [9, 0, ['g....g']]],
+                [[9, 11, ['..YW..', '...WY.', '..WWW.', '.YW...', '..W...']], [8, 2, ['g......g']]],
+                [[9, 11, ['..YWY.', '.YWY..', 'YWWWWY', '..YWY.', '.YW...']], [7, 0, ['g......g']], [4, 12, ['g']], [19, 14, ['g']]],
+                [[9, 11, ['...Y..', '..Y...', '.YYY..', '...Y..']], [14, 1, ['g']]],
+            ]],
+            // a copper coil wound on an iron core, a cyan orb on top, the pulse rolling out from it
+            emp: [{ O: '#f0fdff', C: '#66ddff', c: '#2a90c0', n: '#16486e', K: '#f4a86a', Q: '#c8703a', q: '#7a3a1e', I: '#c8d2e0', i: '#6e7a94', j: '#323850', g: '#9fe8ff' }, [
+                '........................',
+                '..........ccCc..........',
+                '.........cOOCCc.........',
+                '........cCOCCCcn........',
+                '........cCCCCccn........',
+                '........cCCCccnn........',
+                '.........nccccn.........',
+                '..........nnnn..........',
+                '..........jIij..........',
+                '.......KKQQQQQQqq.......',
+                '........Iiiiiijj........',
+                '.......KKQQQQQQqq.......',
+                '........Iiiiiijj........',
+                '.......KKQQQQQQqq.......',
+                '........Iiiiiijj........',
+                '.......KKQQQQQQqq.......',
+                '.........jIIiij.........',
+                '.......jIIIIiiijj.......',
+                '......jIIIiiiiiijj......',
+                '.....jiiiiiiiiiiijj.....',
+                '.....jjjjjjjjjjjjjj.....',
+                '........................',
+                '........................',
+                '........................',
+            ], [
+                [[5, 1, ['.g', 'g.', 'g.', 'g.', 'g.', '.g']], [17, 1, ['g.', '.g', '.g', '.g', '.g', 'g.']]],
+                [[3, 0, ['.g', 'g.', 'g.', 'g.', 'g.', 'g.', 'g.', '.g']], [19, 0, ['g.', '.g', '.g', '.g', '.g', '.g', '.g', 'g.']]],
+                [[1, 0, ['.g', 'g.', '..', 'g.', 'g.', '..', 'g.', '.g']], [21, 0, ['g.', '.g', '..', '.g', '.g', '..', '.g', 'g.']], [10, 2, ['O']]],
+                [[0, 2, ['g', '.', '.', 'g']], [23, 3, ['g', '.', '.', 'g']], [6, 21, ['g..........g']]],
+            ]],
+            // a hand-held pocket: a brass ring on a wooden grip, the void inside it turning
+            displacer: [{ A: '#fff0a8', B: '#e8b432', b: '#b07a1e', d: '#5e3e14', v: '#12062a', p: '#3c1a78', P: '#9a5cf0', L: '#e8d4ff', H: '#c08a52', h: '#7a4e26', e: '#43280f', g: '#c99bff' }, [
+                '.........BBBBBb.........',
+                '.......BBAAAABBbb.......',
+                '......BAApppppppbd......',
+                '.....BAppvvvvvvppbd.....',
+                '.....BApvvvvvvvvpbd.....',
+                '....BApvvvvvvvvvvpbd....',
+                '....BApvvvvvvvvvvpbd....',
+                '....BApvvvvvvvvvvpbd....',
+                '....BApvvvvvvvvvvpbd....',
+                '....bApvvvvvvvvvvpbd....',
+                '....bBpvvvvvvvvvvpdd....',
+                '.....bBpvvvvvvvvpdd.....',
+                '.....bbppvvvvvvppdd.....',
+                '......bbbpppppppdd......',
+                '.......ddbbbbbbdd.......',
+                '.........dddddd.........',
+                '..........BAbd..........',
+                '..........bBbd..........',
+                '..........Hhhe..........',
+                '..........Hhhe..........',
+                '..........dbbd..........',
+                '..........Hhhe..........',
+                '.........BAbbd..........',
+                '..........dddd..........',
+            ], [
+                [[7, 3, ['..........', '.....PPP..', '...PP...P.', '..P.......', '..P.LLL...', '...LLL.P..', '.......P..', '.P...PP...', '..PPP.....']]],
+                [[7, 3, ['..........', '...P......', '..P...PP..', '.P..LL..P.', '.P.L..L.P.', '.P.L..L.P.', '..PLL..P..', '...PP..P..', '......P...']]],
+                [[7, 3, ['..........', '..P.......', '..P....P..', '..P..LL.P.', '...PLL.P..', '...P.LLP..', '..P..P..P.', '.P....P...', '...PPP....']]],
+                [[7, 3, ['..........', '....PP....', '..PP..L.P.', '.P...L..P.', '.P.LL.L.P.', '.P.L.LL..P', '.P..L...P.', '..P....PP.', '...P......']]],
+            ]],
+            // an iron stake driven into split ground, copper bands lighting in turn, a teal crystal at its head
+            grounding: [{ T: '#d8fff4', t: '#5af0c0', u: '#1a8a70', I: '#d0d8e8', i: '#8890a8', j: '#4a5068', J: '#262a3c', K: '#f4b07a', Q: '#c8703a', q: '#7a3a1e', E: '#8a6a48', e: '#5a3e26', f: '#2e1e12', g: '#9fffe0' }, [
+                '...........T............',
+                '..........TTt...........',
+                '.........TTtuu..........',
+                '.........Ttttu..........',
+                '..........tuu...........',
+                '..........jIJ...........',
+                '.........jIIiJ..........',
+                '..........Iij...........',
+                '.........KKQQq..........',
+                '.........qQQqq..........',
+                '..........Iij...........',
+                '..........Iij...........',
+                '.........KKQQq..........',
+                '.........qQQqq..........',
+                '..........Iij...........',
+                '..........Iij...........',
+                '.........KKQQq..........',
+                '.........qQQqq..........',
+                '..........Iij...........',
+                '....EEEEEEiijEEEEEEE....',
+                '..EEEeeEfEEijEEfEeeEEE..',
+                '..eeeffeeefffffeeffeee..',
+                '...ffff..ff...ff.ffff...',
+                '........................',
+            ], [
+                [[9, 8, ['.tTTt', '.utt']], [6, 21, ['g']], [16, 21, ['g']]],
+                [[9, 12, ['.tTTt', '.utt']], [5, 22, ['g']], [17, 22, ['g']], [11, 0, ['T']]],
+                [[9, 16, ['.tTTt', '.utt']], [3, 20, ['g']], [19, 20, ['g']]],
+                [[8, 0, ['g...g', '.....', 'g....g']], [2, 21, ['g']], [20, 21, ['g']]],
+            ]],
+            // a carved totem: a leaf crown, a face, a heart set in it that beats, motes rising
+            mend: [{ L: '#d8ffb0', l: '#7ad05a', m: '#3a8a3a', T: '#e0aa6a', t: '#a8703a', s: '#6e4420', r: '#3a2210', H: '#ffc0c8', h: '#ff5a6a', n: '#a01a3a', e: '#1c1220', g: '#c8ffb0' }, [
+                '...........L............',
+                '.......l..lLl..l........',
+                '......lLl.LLl.Ll........',
+                '.......LllLLllLm........',
+                '......mLLlLLlllmm.......',
+                '........mlllllm.........',
+                '.......rTTTttssr........',
+                '.......TTttttssr........',
+                '.......Trrrttrrr........',
+                '.......TeeTtteer........',
+                '.......Tttttttsr........',
+                '.......Tttrrrssr........',
+                '.......TTtttttsr........',
+                '.......rrrrrrrrr........',
+                '.......TrHHhhnsr........',
+                '.......rHHhhhhnr........',
+                '.......rHhhhhhnr........',
+                '.......Trhhhhnrr........',
+                '.......Ttrhhnrsr........',
+                '.......TTtrnrssr........',
+                '.......TTttttssr........',
+                '......TTTttttsssr.......',
+                '......rrrrrrrrrrr.......',
+                '........................',
+            ], [
+                [[3, 14, ['g']], [19, 18, ['g']], [18, 7, ['g']]],
+                [[3, 11, ['g']], [19, 15, ['g']], [18, 5, ['g']], [8, 14, ['HHHhh', 'HHhhhh', 'Hhhhhhn', '.hhhhn']]],
+                [[4, 8, ['g']], [19, 12, ['g']], [18, 3, ['g']]],
+                [[4, 5, ['g']], [20, 9, ['g']], [3, 17, ['g']]],
+            ]],
+            // a block of the dungeon's own stone: battlements, an iron band, a rune on its face pulsing
+            bulwark: [{ S: '#ece0c4', s: '#c4b494', o: '#968670', p: '#867862', O: '#64564a', K: '#3a3028', I: '#a8b4c8', i: '#56627a', R: '#ffd060', r: '#a86a20', M: '#86c060', g: '#ffe8a0' }, [
+                '........................',
+                '........................',
+                '...SSSs..SSSs..SSSs.....',
+                '...SssO..SssO..SssO.....',
+                '...sooO..sooO..sooO.....',
+                '...SSSSSSSSSSSSSSSSSs...',
+                '...SsssssKsssssssKssO...',
+                '...soooopKsoooooopKoO...',
+                '...KKKKKKKKKKKKKKKKKK...',
+                '...IIIIIiiiiiiiiiiiii...',
+                '...sssKsssrrrrssKsssO...',
+                '...soOKsoorrrrrsKsoOO...',
+                '...KKKKKKKrRRrKKKKKKK...',
+                '...ssssssrRrrRrssssKO...',
+                '...sMooopKrRRrKsoooOO...',
+                '...soooopKrrrrrsooOOO...',
+                '...KKKKKKKKKKKKKKKKKK...',
+                '...IIIIIiiiiiiiiiiiii...',
+                '...sssKssssssssKssssO...',
+                '...sooKsoooooooKsooMO...',
+                '...OOOKOOOOOOOOKOOOOO...',
+                '...KKKKKKKKKKKKKKKKKK...',
+                '........................',
+                '........................',
+            ], [
+                [],
+                [[11, 12, ['RR'],], [10, 13, ['R..R']], [11, 14, ['RR']]],
+                [[11, 12, ['RR']], [10, 13, ['R..R']], [11, 14, ['RR']], [8, 10, ['g......g']], [9, 15, ['g....g']]],
+                [[11, 12, ['RR']], [10, 13, ['R..R']], [11, 14, ['RR']]],
+            ]],
+            // a pink copy of you on a stake, a target on its belly, wobbling to catch the eye; a heart floating up
+            decoy: [{ P: '#ffd0e8', p: '#ff8ac4', q: '#d84a92', Q: '#8a1e5a', W: '#ffffff', e: '#2a0e22', R: '#ff3a5a', H: '#c08a52', h: '#7a4e26', g: '#ffd0e8' }, [
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '........................',
+                '...........Hh...........',
+                '...........Hh...........',
+                '...........Hh...........',
+                '...........Hh...........',
+                '.........hHHhh..........',
+                '........hhhhhhh.........',
+                '........................',
+                '........................',
+            ], [0, 1, 0, -1].map((w, f) => [[4 + w, 5, [
+                '.......PPPP.......',
+                '.....PPPppppq.....',
+                '....PPpppppppq....',
+                '...PPpWWppWWppq...',
+                '...PppWeppWeppq...',
+                '..PPppWeppWepppq..',
+                '..Pppppppppppppq..',
+                '..pppppRRRpppqqq..',
+                '..ppppRWWWRppqqq..',
+                '..qpppRWRWRpqqqq..',
+                '...qqpRWWWRqqqq...',
+                '....qqqRRRqqqQ....',
+            ]], [[19, 3], [3, 2], [20, 1], [2, 4]][f].concat([['g']])]),
+            ],
         };
         const a = ART[id];
-        return a ? ShopScene.icon(scene, 'shop_g2_' + id, 24, a[0], a[1], 4) : null;
+        if (!a) return scene.textures.exists('shop_g2_' + id) ? ShopScene.icon(scene, 'shop_g2_' + id, 24, {}, null, 4) : null;   // only a file (assets/art), no painter: its texture and its idle
+        const [pal, rows, frames] = a;
+        return ShopScene.icon(scene, 'shop_g2_' + id, 24, pal, (m, f) => {
+            const put = (r, ox = 0, oy = 0) => r.forEach((s, y) => [...s].forEach((c, x) => c !== '.' && m.set(ox + x, oy + y, c)));
+            put(rows);
+            for (const [x, y, r] of frames[f]) put(r, x, y);
+        }, 4);
     }
 
     // An ult stage's relic: a different object per element, growing grander each stage.
@@ -1552,9 +1636,7 @@ class ShopScene extends Phaser.Scene {
             else if (sl >= 0) keep(this.add.text(x, L.SHELF_Y + 20, sl ? 'F' : 'Q', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#1b1612',
                 backgroundColor: '#f0b84a', padding: { x: 5, y: 1 } }).setOrigin(0.5, 0).setDepth(3));
             if (on) {
-                const mk = keep(this.add.graphics().setDepth(3));
-                mk.fillStyle(d.color, 1); mk.fillTriangle(x - 7, L.SHELF_Y - 66, x + 7, L.SHELF_Y - 66, x, L.SHELF_Y - 56);
-                this.tweens.add({ targets: mk, y: 4, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                keep(this._pointer(x, L.SHELF_Y - 66, d.color));
             }
             keep(this.add.zone(x, L.SHELF_Y - 24, 60, 60).setInteractive({ useHandCursor: true }).setDepth(12)).on('pointerdown', () => { if (k !== this._gadgetSel) this._gadgetNav(k - this._gadgetSel); });
         });
@@ -1568,14 +1650,13 @@ class ShopScene extends Phaser.Scene {
         keep(this.add.text(Lx, y, `GADGET  ·  ⟳ ${Math.round(def.cooldown / 1000)}s cooldown`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(MenuArt.mix(def.color, 0x3b2716, 0.45)) }).setDepth(D + 1));
         keep(this.add.text(R, y, `${this._gadgetSel + 1} / ${order.length}`, { fontSize: '11px', fontFamily: 'monospace', color: '#7a5a34' }).setOrigin(1, 0).setDepth(D + 1));
         y += 18;
-        keep(this.add.text(Lx, y, def.name, { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: INK, wordWrap: { width: T.w - 40 } }).setDepth(D + 1));
-        y += 40; g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(Lx, y, R, y); y += 10;
-        y += this._richText(keep, Lx, y, ShopScene.GADGET_INFO[id] || def.blurb, { fontSize: '13px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: 4 }, D + 1) + 18; g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(Lx, y, R, y); y += 10;
-        const row = (k2, v, col = INK) => {
-            keep(this.add.text(Lx, y, k2, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D + 1));
-            keep(this.add.text(R, y, v, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col }).setOrigin(1, 0).setDepth(D + 1));
-            y += 22;
-        };
+        y += this._tagName(keep, Lx, y, def.name, T.w - 40, D + 1);
+        g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(Lx, y, R, y); y += 10;
+        const words = this._pagedText(keep, Lx, y, T.y + T.h - 84 - 3 * 22 - 28 - y, ShopScene.GADGET_INFO[id] || def.blurb, { fontSize: '13px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: 4 },
+            D + 1, 'gadget:' + id, () => this.time.delayedCall(0, () => this._showGadgetTab()));
+        this._tagTurn = words.turn;
+        y += words.h + 18; g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(Lx, y, R, y); y += 10;
+        const row = (k2, v, col = INK) => { y += this._tagRow(keep, Lx, R, y, k2, v, col, D + 1); };
         row('PRICE', def.startsUnlocked ? 'Free' : `✦ ${def.glorps}`);
         row('YOURS', !owned ? 'Not yet' : slot >= 0 ? `In ${slot ? 'F' : 'Q'}` : 'Owned', owned ? '#3a7a2a' : '#8a2a1a');
         row('FILLING', `slot ${this._gadgetSlot ? 'F' : 'Q'}`);
@@ -1656,36 +1737,34 @@ class ShopScene extends Phaser.Scene {
         const shelf = Relics.shelf(r.sh), VIEW = this._relicViewInfo(view), acc = VIEW.col;
         this._awning(UIKit.PALETTE.brass, [0, 1, 2, 3, 4].map(i => ({ label: ['I', 'II', 'III', 'IV', 'V'][i], on: !!worn[i] && worn[i] === r.id,
             icon: worn[i] ? Relics.icon(this, worn[i]) : null, glyph: i < slots ? 'empty' : (i ? 'F' + Relics.SLOT_AT[i] : 'TOWER') }))).forEach(o => objs.push(o));
-        // the bookcase: the stall's plank is the top layer (Legend), two more under it
-        // the three layers spread down the stall, so the plaque sits just above the counter whatever the height
-        const plaqueY = L.CT - 38, gapY = Math.max(90, (plaqueY - 52 - L.SHELF_Y) / 2);
+        // the bookcase: the stall's plank is the top layer (Legend), two more under it, spread down to just above the counter
+        const gapY = (L.CT - 38 - L.SHELF_Y) / 2;
         const LAYER = [L.SHELF_Y, L.SHELF_Y + gapY, L.SHELF_Y + gapY * 2], g = keep(this.add.graphics().setDepth(2.6));
         // the case takes the left of the stall; the display stand (a turntable, as for weapons and ults) the right
-        const BX1 = S.x1 - 250, standX = Math.round((BX1 + 30 + S.x1 - 4) / 2);   // the stand, centred in the nook between the upright and the stall's post
+        const { BX1, x0: IX0, x1: IX1 } = this._relicCase(), standX = Math.round((BX1 + 30 + S.x1 - 4) / 2);   // the stand, centred in the nook between the upright and the stall's post
         // an upright between the case and the stand: a cabinet with a display nook beside it
-        this._plank(g, BX1 + 6, S.beam + 40, 16, L.CT - S.beam - 40, 0x4a3018, true);
+        keep(this._plank(BX1 + 6, S.beam + 40, 16, L.CT - S.beam - 40, 0x4a3018, 2.6, true));
         g.fillStyle(0x000000, 0.3); g.fillRect(BX1 + 22, S.beam + 40, 8, L.CT - S.beam - 40);
         for (const y of LAYER) {
-            this._plank(g, S.x0 + 24, y, BX1 - S.x0 - 18, 14, 0x6a4626);
-            for (const bx of [S.x0 + 60, BX1 - 36]) this._bracket(g, bx, y + 14);
+            keep(this._plank(S.x0 + 24, y, BX1 - S.x0 - 18, 14, 0x6a4626, 2.6));
+            for (const bx of [S.x0 + 60, BX1 - 36]) keep(this._bracket(bx, y + 14, 2.6));
         }
         // the chosen shelf's colour, washed over the back of the case
         const wash = keep(this.add.graphics().setDepth(2.4).setBlendMode(Phaser.BlendModes.ADD));
         wash.fillStyle(acc, 0.06); wash.fillRect(S.x0 + 10, S.beam + 70, BX1 - S.x0, LAYER[2] - S.beam - 40);
         [3, 2, 1].forEach((t, row) => {
             const y = LAYER[row], T = Relics.TIERS[t], items = this._relicRow(view, t);
-            keep(this.add.text(S.x0 + 34, y - 14, `${['', 'I', 'II', 'III'][t]}  ${T.name}`, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(T.col),
-                backgroundColor: '#1b1612', padding: { x: 4, y: 2 } }).setOrigin(0, 1).setDepth(3));
-            const wide = view === 'yours' || view === 'today', x0 = S.x0 + (wide ? 135 : 165), x1 = BX1 - (wide ? 30 : 40);
+            // the tier's label on the plank's face, so the relics have the whole shelf
+            keep(this.add.text(S.x0 + 34, y + 7, `${['', 'I', 'II', 'III'][t]}  ${T.name}`, { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(T.col),
+                backgroundColor: '#1b1612', padding: { x: 4, y: 1 } }).setOrigin(0, 0.5).setDepth(3));
+            const step = items.length > 1 ? Math.min(80, (IX1 - IX0) / (items.length - 1)) : 0;   // (a few sit together mid-shelf)
             items.forEach((it, k) => {
-                const x = items.length === 1 ? (x0 + x1) / 2 : x0 + (x1 - x0) * k / (items.length - 1);
+                const x = (IX0 + IX1) / 2 + (k - (items.length - 1) / 2) * step;
                 const got = Relics.has(it.id), sel = it.id === r.id, ik = Relics.icon(this, it.id), forSale = stock.includes(it.id);
                 if (sel) {
                     const glow = keep(this.add.graphics().setDepth(2.7).setBlendMode(Phaser.BlendModes.ADD));
                     for (const [rr, a] of [[40, 0.06], [28, 0.08], [18, 0.1]]) { glow.fillStyle(it.col, a); glow.fillCircle(x, y - 22, rr); }
-                    const mk = keep(this.add.graphics().setDepth(3));
-                    mk.fillStyle(acc, 1); mk.fillTriangle(x - 7, y - 66, x + 7, y - 66, x, y - 56);
-                    this.tweens.add({ targets: mk, y: 4, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                    keep(this._pointer(x, y - 66, acc));
                 }
                 const ic = keep(this.add.sprite(x, y + 2, ik, '0').setOrigin(0.5, 1).setScale((sel ? 2.8 : 2.2) * this._layout.UI).setDepth(3));
                 if (!got && !forSale) ic.setTint(0x7a6e66).setAlpha(0.75); else ic.play(ik);   // not yours, not for sale: a faded shape, still readable   // today's stock shows in colour, the rest as silhouettes
@@ -1698,66 +1777,82 @@ class ShopScene extends Phaser.Scene {
                 keep(this.add.zone(x, y - 22, 64, 60).setInteractive({ useHandCursor: true }).setDepth(12)).on('pointerdown', () => { if (!sel) this._relicGo(list.findIndex(x => x.id === it.id)); });
             });
         });
-        // the shelf's plaque, and the way to the others
-        const pcx = (S.x0 + BX1) / 2, py = Math.max(LAYER[2] + 50, plaqueY), pages = this._relicPages(view);
-        const pl = keep(this.add.graphics().setDepth(3));
-        pl.fillStyle(0x1b1612, 0.95); pl.fillRoundedRect(pcx - 150, py - 18, 300, 38, 6); pl.lineStyle(2, acc, 0.9); pl.strokeRoundedRect(pcx - 150, py - 18, 300, 38, 6);
-        keep(this.add.text(pcx, py - 9, VIEW.name, { fontSize: '17px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(acc) }).setOrigin(0.5).setDepth(4));
-        keep(this.add.text(pcx, py + 10, VIEW.sub + (pages > 1 ? `  ·  page ${(this._relicPage || 0) + 1} of ${pages}` : ''), { fontSize: '10px', fontFamily: 'monospace', color: UIKit.CSS.textMid }).setOrigin(0.5).setDepth(4));
-        for (const [dx, d, s] of [[-172, -1, '‹'], [172, 1, '›']]) keep(this.add.text(pcx + dx, py, s, { fontSize: '30px', fontFamily: UIKit.FONT.title, color: UIKit.CSS.textHi }).setOrigin(0.5).setDepth(4))
+        // the shelf's plaque, nailed to the counter's front under the case, and the way to the others
+        const pcx = (S.x0 + BX1) / 2, pw = Math.min(320, BX1 - S.x0 - 10), ptop = L.CT + 24, pages = this._relicPages(view);
+        const sub = keep(this.add.text(pcx, ptop + 27, VIEW.sub + (pages > 1 ? `  ·  page ${(this._relicPage || 0) + 1} of ${pages}` : ''), { fontSize: '10px', fontFamily: 'monospace', color: UIKit.CSS.textMid,
+            align: 'center', wordWrap: { width: pw - 16 } }).setOrigin(0.5, 0).setDepth(7));
+        const ph = 34 + sub.height;
+        ShopScene.plaque(this, pcx - pw / 2, ptop, pw, ph, acc, 6.5, 0.95).forEach(keep);
+        keep(this.add.text(pcx, ptop + 15, VIEW.name, { fontSize: '17px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(acc) }).setOrigin(0.5).setDepth(7));
+        for (const [d, s] of [[-1, '‹'], [1, '›']]) keep(this.add.text(pcx + d * (pw / 2 + 20), ptop + ph / 2, s, { fontSize: '30px', fontFamily: UIKit.FONT.title, color: UIKit.CSS.textHi }).setOrigin(0.5).setDepth(7))
             .setInteractive({ useHandCursor: true }).on('pointerdown', () => pages > 1 ? this._relicTurnPage(d) : this._relicNav(0, 0, d));
         this._relicIndex(keep, view, stock);
         // the display stand: the chosen relic turning in the spotlight
         this._turntable(acc, Relics.icon(this, r.id), { anim: true, dim: !owned, fromDir, scale: 5, x: standX }).forEach(o => objs.push(o));
-        // the tag
-        const T = L.TAG, tg = this._tagSheet(T, keep, D), INK = '#3b2716', Lx = T.x + 20, R = T.x + T.w - 20, tier = Relics.TIERS[r.t];
-        let y = T.y + 30;
-        keep(this.add.text(Lx, y, `${shelf.name}  ·  ${tier.name}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(MenuArt.mix(acc, 0x3b2716, 0.45)) }).setDepth(D + 1));
-        keep(this.add.text(R, y, `${Relics.owned().length} / ${list.length}`, { fontSize: '11px', fontFamily: 'monospace', color: '#7a5a34' }).setOrigin(1, 0).setDepth(D + 1));
-        y += 18;
-        keep(this.add.text(Lx, y, r.name, { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: INK, wordWrap: { width: T.w - 40 } }).setDepth(D + 1));
-        y += 40; tg.lineStyle(1, 0x6a4a26, 0.6); tg.lineBetween(Lx, y, R, y); y += 10;
-        y += this._richText(keep, Lx, y, Relics.text(r), { fontSize: '14px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: 5 }, D + 1) + 18;
-        tg.lineStyle(1, 0x6a4a26, 0.4); tg.lineBetween(Lx, y, R, y); y += 10;
-        const row = (k2, v, col = INK) => {
-            keep(this.add.text(Lx, y, k2, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D + 1));
-            keep(this.add.text(R, y, v, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col }).setOrigin(1, 0).setDepth(D + 1));
-            y += 22;
-        };
-        row('YOURS', owned ? (on ? `Worn (${['I', 'II', 'III', 'IV', 'V'][worn.indexOf(r.id)]})` : 'Owned') : 'Not yet', owned ? '#3a7a2a' : '#8a2a1a');
-        if (!owned) row(inStock ? 'IN STOCK TODAY' : 'WHERE', inStock ? `✦ ${r.price}` : r.t === 3 && TowerFloors.best() < Relics.LEGEND_AT ? `Tower floor ${Relics.LEGEND_AT}+` : 'Tower bosses');
-        row('SLOTS', `${worn.length} / ${slots} worn`);
-        if (slots < 5) keep(this.add.text(Lx, y + 2, `next slot: ${Relics.slotNeeds(slots)}`, { fontSize: '10px', fontFamily: 'monospace', color: '#7a5a34' }).setDepth(D + 1));
-        const by = T.y + T.h - 46, bw = T.w - 40;
+        // the tag: the buttons at its foot, the ledger over them, the words in what's left (a size smaller, then in pages)
+        const T = L.TAG, INK = '#3b2716', Lx = T.x + 20, R = T.x + T.w - 20, W0 = T.w - 40, tier = Relics.TIERS[r.t], sealedUp = !ShopScene.upgradesOpen();
+        const by = T.y + T.h - 46, bw = T.w - 40, A = this._siphonA && Relics.def(this._siphonA);
+        const canSiphon = !A && owned && !r.corrupt && Relics.owned().filter(id => !Relics.def(id)?.corrupt).length >= 2;
         let label, accent = acc;
         if (owned) label = on ? 'TAKE OFF' : !slots ? 'ENTER THE TOWER' : worn.length >= slots ? 'SLOTS FULL' : 'WEAR IT';
         else if (inStock) label = this.glorps >= r.price ? `BUY  ✦ ${r.price}` : `✦ ${r.price}  ·  NEED ${r.price - this.glorps}`;
         else label = 'FOUND IN THE TOWER';
         if ((owned && !on && worn.length >= slots) || (!owned && (!inStock || this.glorps < r.price))) accent = UIKit.PALETTE.line;
-        if (this._siphonA) {   // siphoning: the main button fuses, the small one backs out
-            const A = Relics.def(this._siphonA), ok = this._siphonA !== r.id && owned && !r.corrupt;
+        if (A) {   // siphoning: the main button fuses, the small one backs out
+            const ok = this._siphonA !== r.id && owned && !r.corrupt;
             label = ok ? `SIPHON INTO ONE` : 'PICK A SECOND RELIC'; accent = ok ? 0x7aff5a : UIKit.PALETTE.line;
-            keep(this.add.text(T.x + T.w / 2, by - 58, `siphoning the ${A.name}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#2a6a1a' }).setOrigin(0.5).setDepth(D + 1));
-            objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: by - 34, w: bw, h: 26, depth: D + 2, fontSize: '12px', fireOn: 'down', label: 'CANCEL', accent: UIKit.PALETTE.line, onClick: () => { this._siphonA = null; this._showRelicTab(); } }).objs);
-        } else if (owned && !r.corrupt && Relics.owned().filter(id => !Relics.def(id)?.corrupt).length >= 2)
-            objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: by - 34, w: bw, h: 26, depth: D + 2, fontSize: '12px', fireOn: 'down', label: 'SIPHON (fuse two into a corrupted one)', accent: 0x3a8a2a,
-                onClick: () => { this._siphonA = r.id; Sfx.play(this, 'click'); this.setGlurpDialogue(`"Siphon the ${r.name}? Both go for good, and what comes out keeps half of each, plus a curse. Pick the other one."`); this._showRelicTab(); } }).objs);
-        if (!ShopScene.upgradesOpen()) { label = 'SEALED'; accent = UIKit.PALETTE.line; }
-        objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: by, w: bw, h: 46, depth: D + 2, fontSize: '17px', fireOn: 'down', label, accent, onClick: () => this._relicActivate() }).objs);
-        if (!ShopScene.upgradesOpen()) {   // sealed: the case chained shut, the tag says why
-            objs.push(UIKit.chains(this, standX, L.TT.y - 90, 210, 170, { depth: 8, link: 11, lock: 26 }));   // on the relic's own stand
-            keep(this.add.text(T.x + T.w / 2, by - 60, `SEALED  ·  ${ShopScene.UPGRADES_SEALED.short}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#8a2a1a' }).setOrigin(0.5).setDepth(D + 3));
         }
+        if (sealedUp) { label = 'SEALED'; accent = UIKit.PALETTE.line; }
+        const ledger = [['YOURS', owned ? (on ? `Worn (${['I', 'II', 'III', 'IV', 'V'][worn.indexOf(r.id)]})` : 'Owned') : 'Not yet', owned ? '#3a7a2a' : '#8a2a1a']];
+        if (!owned) ledger.push([inStock ? 'IN STOCK TODAY' : 'WHERE', inStock ? `✦ ${r.price}` : r.t === 3 && TowerFloors.best() < Relics.LEGEND_AT ? `Tower floor ${Relics.LEGEND_AT}+` : 'Tower bosses', INK]);
+        ledger.push(['SLOTS', `${worn.length} / ${slots} worn`, INK]);
+        const nextSlot = slots < 5 ? `next slot: ${Relics.slotNeeds(slots)}` : null;
+        this._ownTag(objs, redraw => {
+            const mine = [], keep = o => { mine.push(o); return o; };
+            const tg = this._tagSheet(T, keep, D);
+            UIKit.button(this, { x: T.x + T.w / 2, y: by, w: bw, h: 46, depth: D + 2, fontSize: '17px', fireOn: 'down', label, accent, onClick: () => this._relicActivate() }).objs.forEach(keep);
+            // the foot, built up from the big button: the small one, then a line about what's going on
+            let foot = by - 23;
+            if (A) UIKit.button(this, { x: T.x + T.w / 2, y: foot - 17, w: bw, h: 26, depth: D + 2, fontSize: '12px', fireOn: 'down', label: 'CANCEL', accent: UIKit.PALETTE.line, onClick: () => { this._siphonA = null; this._showRelicTab(); } }).objs.forEach(keep);
+            else if (canSiphon) UIKit.button(this, { x: T.x + T.w / 2, y: foot - 17, w: bw, h: 26, depth: D + 2, fontSize: '12px', fireOn: 'down', label: 'SIPHON TWO INTO ONE', accent: 0x3a8a2a,
+                onClick: () => { this._siphonA = r.id; Sfx.play(this, 'click'); this.setGlurpDialogue(`"Siphon the ${r.name}? Both go for good, and what comes out keeps half of each, plus a curse. Pick the other one."`); this._showRelicTab(); } }).objs.forEach(keep);
+            if (A || canSiphon) foot -= 30;
+            const cap = A ? [`siphoning the ${A.name}`, '#2a6a1a'] : sealedUp ? [`SEALED  ·  ${ShopScene.UPGRADES_SEALED.short}`, '#8a2a1a'] : canSiphon ? ['two of yours fuse into one, corrupted', '#2a6a1a'] : null;
+            if (cap) foot -= 4 + keep(this.add.text(T.x + T.w / 2, foot - 4, cap[0], { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: cap[1], align: 'center', wordWrap: { width: W0 } }).setOrigin(0.5, 1).setDepth(D + 1)).height;
+            let y = T.y + 30;
+            keep(this.add.text(Lx, y, `${shelf.name}  ·  ${tier.name}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(MenuArt.mix(acc, 0x3b2716, 0.45)) }).setDepth(D + 1));
+            keep(this.add.text(R, y, `${Relics.owned().length} / ${list.length}`, { fontSize: '11px', fontFamily: 'monospace', color: '#7a5a34' }).setOrigin(1, 0).setDepth(D + 1));
+            y += 18;
+            y += this._tagName(keep, Lx, y, r.name, W0, D + 1);
+            tg.lineStyle(1, 0x6a4a26, 0.6); tg.lineBetween(Lx, y, R, y); y += 10;
+            const ledgerH = ledger.reduce((h, [k, v, c]) => h + this._tagRow(null, Lx, R, 0, k, v, c, 0, true), 0) + (nextSlot ? 16 : 0);
+            const room = foot - 8 - ledgerH - 28 - y, text = Relics.text(r);
+            const style = fs => ({ fontSize: fs + 'px', fontFamily: 'monospace', color: '#4a3420', wordWrap: { width: W0 }, lineSpacing: fs > 12 ? 5 : 3 });
+            let fs = 14;
+            while (fs > 11 && this._textH(text, style(fs)) > room) fs--;
+            const words = this._pagedText(keep, Lx, y, room, text, style(fs), D + 1, 'relic:' + r.id, redraw);
+            this._tagTurn = words.turn;
+            y += words.h + 18;
+            tg.lineStyle(1, 0x6a4a26, 0.4); tg.lineBetween(Lx, y, R, y); y += 10;
+            for (const [k, v, c] of ledger) y += this._tagRow(keep, Lx, R, y, k, v, c, D + 1);
+            if (nextSlot) keep(this.add.text(Lx, y + 2, nextSlot, { fontSize: '10px', fontFamily: 'monospace', color: '#7a5a34' }).setDepth(D + 1));
+            return mine;
+        });
+        if (sealedUp) objs.push(UIKit.chains(this, standX, L.TT.y - 90, 210, 170, { depth: 8, link: 11, lock: 26 }));   // sealed: the case chained shut, on the relic's own stand
         this._relicTabObjs = objs;
     }
     // A view of the case: 'today' (today's stock), 'yours' (every relic you own, in pages of RELIC_PER a layer), or a shelf's id.
     // Its relics on one tier's layer:
     _relicRow(view, t) {
         if (view === 'today') return Relics.stock().map(id => Relics.def(id)).filter(x => x && x.t === t);
-        if (view === 'yours') { const all = Relics.owned().map(id => Relics.def(id)).filter(x => x && x.t === t), p = this._relicPage || 0; return all.slice(p * ShopScene.RELIC_PER, (p + 1) * ShopScene.RELIC_PER); }
+        if (view === 'yours') { const all = Relics.owned().map(id => Relics.def(id)).filter(x => x && x.t === t), p = this._relicPage || 0, n = this._relicPer(); return all.slice(p * n, (p + 1) * n); }
         return Relics.onShelf(view, t);
     }
-    _relicPages(view) { return view === 'yours' ? Math.max(1, ...[1, 2, 3].map(t => Math.ceil(Relics.owned().map(id => Relics.def(id)).filter(x => x && x.t === t).length / ShopScene.RELIC_PER))) : 1; }
+    _relicPages(view) { return view === 'yours' ? Math.max(1, ...[1, 2, 3].map(t => Math.ceil(Relics.owned().map(id => Relics.def(id)).filter(x => x && x.t === t).length / this._relicPer()))) : 1; }
+    // The case's shape: the case left of BX1, its relics standing from x0 to x1; the stand's nook to the right (narrower in a
+    // small window). And how many relics a layer has room for side by side (no more than RELIC_PER; yours turn pages past that).
+    _relicCase() { const S = this._layout.S, BX1 = S.x1 - Math.min(250, Math.max(214, Math.round((S.x1 - S.x0) * 0.4))); return { BX1, x0: S.x0 + 50, x1: BX1 - 30 }; }
+    _relicPer() { const c = this._relicCase(); return Math.min(ShopScene.RELIC_PER, 1 + Math.floor((c.x1 - c.x0) / 40)); }
     _relicFirst(view) { for (const t of [3, 2, 1]) { const it = this._relicRow(view, t); if (it.length) return it[0]; } return null; }
     // the views in the index's order: today's, yours (once you own one), then every shelf with something on it
     _relicViews() { return ['today', ...(Relics.owned().length ? ['yours'] : []), ...Relics.SHELVES.filter(sh => [1, 2, 3].some(t => Relics.onShelf(sh.id, t).length)).map(sh => sh.id)]; }
@@ -1786,7 +1881,7 @@ class ShopScene extends Phaser.Scene {
         if (x1 - x0 < 150 || rowH < 13) return;
         const g = keep(this.add.graphics().setDepth(3));
         const h = 26 + rowH * views.length + 8;
-        g.fillStyle(0x120d0a, 0.88); g.fillRoundedRect(x0, top, x1 - x0, h, 6); g.lineStyle(1.5, 0x6a4a26, 0.9); g.strokeRoundedRect(x0, top, x1 - x0, h, 6);
+        ShopScene.plaque(this, x0, top, x1 - x0, h, 0x6a4a26, 3, 0.88).forEach(keep);
         keep(this.add.text(x0 + 10, top + 7, 'THE RELIC CASE', { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit.CSS.textLo }).setDepth(4));
         keep(this.add.text(x1 - 10, top + 7, `${Relics.owned().length} / ${Relics.all().length}`, { fontSize: '10px', fontFamily: 'monospace', color: UIKit.CSS.textLo }).setOrigin(1, 0).setDepth(4));
         const fs = rowH >= 18 ? '12px' : '11px';
@@ -1912,8 +2007,8 @@ class ShopScene extends Phaser.Scene {
             .forEach(o => objs.push(o));
 
         // the shelf: stages I, II, III
-        const SY = L.SHELF_Y, sh = keep(this.add.graphics().setDepth(2.5));
-        this._plank(sh, S.x0 + 26, SY, S.x1 - S.x0 - 52, 10, 0x6a4626);
+        const SY = L.SHELF_Y;
+        keep(this._plank(S.x0 + 26, SY, S.x1 - S.x0 - 52, 10, 0x6a4626, 2.5));
         const span = S.x1 - S.x0 - 220;
         U.stages.forEach((st, k) => {
             const n = k + 1, x = S.x0 + 110 + span * (k / 2), on = k === sel.k;
@@ -1928,9 +2023,7 @@ class ShopScene extends Phaser.Scene {
                 color: isCur || owned ? '#1b1612' : '#3b2716', backgroundColor: isCur ? '#7fd06a' : owned ? '#d2bf98' : '#e8d6ae', padding: { x: 4, y: 1 } })
                 .setOrigin(0.5, 0).setDepth(3).setAngle(owned ? 0 : -4).setAlpha(soon ? 0.6 : on ? 1 : 0.8));
             if (on) {
-                const mk = keep(this.add.graphics().setDepth(3));
-                mk.fillStyle(a, 1); mk.fillTriangle(x - 7, SY - 70, x + 7, SY - 70, x, SY - 60);
-                this.tweens.add({ targets: mk, y: 4, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                keep(this._pointer(x, SY - 70, a));
             }
             keep(this.add.zone(x, SY - 26, 64, 64).setInteractive({ useHandCursor: true }).setDepth(12)).on('pointerdown', () => {
                 if (on) return;
@@ -1950,29 +2043,41 @@ class ShopScene extends Phaser.Scene {
             sp.explode(40);
         }
 
-        // the tag: the chosen stage
+        // the tag: the chosen stage. The ledger and the button at its foot, the words in what's left: a long one hangs the tag
+        // longer, steps down a size or two, then turns in pages.
         const st = U.stages[sel.k], n = sel.k + 1;
         const owned = cur >= n, next = n === cur + 1, soon = !!st.soon;
         const can = next && !soon && !sealed && this.glorps >= st.glorpCost && this.fragments >= st.fragCost;
-        const T = L.TAG, g = this._tagSheet(T, keep, D), INK = '#3b2716', Lx = T.x + 20, R = T.x + T.w - 20;
-        let y = T.y + 30;
-        keep(this.add.text(Lx, y, `${U.label}  ·  STAGE ${['I', 'II', 'III'][sel.k]}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(MenuArt.mix(acc[U.key], 0x3b2716, 0.45)) }).setDepth(D + 1));
-        y += 18;
-        keep(this.add.text(Lx, y, U.name, { fontSize: '26px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: INK }).setDepth(D + 1));
-        y += 40; g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(Lx, y, R, y); y += 10;
-        y += this._richText(keep, Lx, y, st.desc, { fontSize: '13px', fontFamily: 'monospace', color: soon ? '#7a5a34' : '#4a3420', wordWrap: { width: T.w - 40 }, lineSpacing: 4 }, D + 1) + 18; g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(Lx, y, R, y); y += 10;
-        const row = (k2, v, col = INK) => {
-            keep(this.add.text(Lx, y, k2, { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#6a4a26' }).setDepth(D + 1));
-            keep(this.add.text(R, y, v, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col }).setOrigin(1, 0).setDepth(D + 1));
-            y += 22;
-        };
-        if (n > 1) row('COSTS', `◈ ${st.fragCost}  ·  ✦ ${st.glorpCost}`);
-        row('YOURS', cur === n ? 'Active' : owned ? 'Owned' : soon ? 'Not built yet' : 'Not yet', owned ? '#3a7a2a' : '#8a2a1a');
-        if (!owned && !soon) row('YOUR PURSE', `◈ ${this.fragments}  ·  ✦ ${this.glorps}`, can ? '#3a7a2a' : '#8a2a1a');
-        if (sealed) row('SEALED', sealWhy.short, '#8a2a1a');
+        const INK = '#3b2716', W0 = L.TAG.w - 40;
+        const ledger = [];
+        if (n > 1) ledger.push(['COSTS', `◈ ${st.fragCost}  ·  ✦ ${st.glorpCost}`, INK]);
+        ledger.push(['YOURS', cur === n ? 'Active' : owned ? 'Owned' : soon ? 'Not built yet' : 'Not yet', owned ? '#3a7a2a' : '#8a2a1a']);
+        if (!owned && !soon) ledger.push(['YOUR PURSE', `◈ ${this.fragments}  ·  ✦ ${this.glorps}`, can ? '#3a7a2a' : '#8a2a1a']);
+        if (sealed) ledger.push(['SEALED', sealWhy.short, '#8a2a1a']);
+        const style = fs => ({ fontSize: fs + 'px', fontFamily: 'monospace', color: soon ? '#7a5a34' : '#4a3420', wordWrap: { width: W0 }, lineSpacing: fs > 12 ? 4 : 3 });
+        const ledgerH = ledger.reduce((h, [k, v, c]) => h + this._tagRow(null, 0, W0, 0, k, v, c, 0, true), 0);
+        let T = L.TAG;
+        if (98 + this._textH(st.desc, style(13)) + 28 + ledgerH + 84 > T.h) T = { ...T, h: Math.min(this.scale.height - 36 - T.y, T.h + 80) };
         const label = sealed ? 'SEALED' : owned ? (cur === n ? 'ACTIVE' : 'OWNED') : soon ? 'COMING SOON' : !next ? `STAGE ${cur + 1} FIRST` : can ? 'UPGRADE  ▸' : 'NOT ENOUGH';
-        objs.push(...UIKit.button(this, { x: T.x + T.w / 2, y: T.y + T.h - 46, w: T.w - 40, h: 46, depth: D + 2, fontSize: '18px', fireOn: 'down', label,
-            accent: can ? acc[U.key] : UIKit.PALETTE.line, onClick: () => this._ultActivate() }).objs);
+        this._ownTag(objs, redraw => {
+            const mine = [], keep = o => { mine.push(o); return o; };
+            const g = this._tagSheet(T, keep, D), Lx = T.x + 20, R = T.x + T.w - 20;
+            let y = T.y + 30;
+            keep(this.add.text(Lx, y, `${U.label}  ·  STAGE ${['I', 'II', 'III'][sel.k]}`, { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: UIKit._hex(MenuArt.mix(acc[U.key], 0x3b2716, 0.45)) }).setDepth(D + 1));
+            y += 18;
+            y += this._tagName(keep, Lx, y, U.name, W0, D + 1);
+            g.lineStyle(1, 0x6a4a26, 0.6); g.lineBetween(Lx, y, R, y); y += 10;
+            const room = T.y + T.h - 84 - ledgerH - 28 - y;
+            let fs = 13;
+            while (fs > 11 && this._textH(st.desc, style(fs)) > room) fs--;
+            const words = this._pagedText(keep, Lx, y, room, st.desc, style(fs), D + 1, `ult:${U.key}:${n}`, redraw);
+            this._tagTurn = words.turn;
+            y += words.h + 18; g.lineStyle(1, 0x6a4a26, 0.4); g.lineBetween(Lx, y, R, y); y += 10;
+            for (const [k, v, c] of ledger) y += this._tagRow(keep, Lx, R, y, k, v, c, D + 1);
+            UIKit.button(this, { x: T.x + T.w / 2, y: T.y + T.h - 46, w: T.w - 40, h: 46, depth: D + 2, fontSize: '18px', fireOn: 'down', label,
+                accent: can ? acc[U.key] : UIKit.PALETTE.line, onClick: () => this._ultActivate() }).objs.forEach(keep);
+            return mine;
+        });
         this._ultTabObjs = objs;
     }
     _ultNav(dk, dr) {
@@ -2010,12 +2115,18 @@ ShopScene.CATALOGUE = [
       desc: 'Heats up as you land hits: more fireballs, faster, and they splash. Press R: *Magma Surge*.' },
     { id: 'ignition', name: 'Ignition', element: 'fire', cost: 700,
       desc: 'Flamethrower. Click to light it or put it out; the cursor aims it. It runs on fuel (9s lit, refills while it\'s out; run it dry and it sputters out for a moment). A long, wide fan of fire that *kindles* the first two enemies it finds and stays on them: weak chip (plus 0.1% of their max HP a tick) while it fills, then they melt. Everything in the flame can catch a *Burn* stack. Press G (Detonate) to set every kindled mark off. Press R: *Blue Flame*.' },
+    { id: 'ember_scythe', name: 'Ember Scythe', element: 'fire', cost: 1000,
+      desc: 'Click: whirl the long scythe round you once (twice, then three times, with Reaper\'s Whirl), cutting everything within 4 tiles (a *Burn* stack each turn). Each swing sets an *ember* alight nearby, and each enemy it cuts drops an *ember soul*. Press R with 5 souls: *Heat Wave*. After either, if you\'re moving, you slide 3 tiles toward the crosshair for free and get a small shield.' },
     { id: 'ice_fists', name: 'Ice Fists', element: 'ice', cost: 0, defaultWeapon: true,
       desc: '1-tile ice punch. Every hit applies *Chill*; a full bar freezes the enemy into a cube and applies *Brittle*. Default weapon.' },
-    { id: 'icicle_cannon', name: 'Icicle Cannon', element: 'ice', cost: 400,
+    { id: 'icicle_cannon', name: 'Icicle Cannon', element: 'ice', cost: 150,
       desc: 'An ice shotgun: a cone of icicles that splash and apply *Chill*. Up close every icicle lands; far off, fewer. 28 hits charge a *Frost Shield* (R).' },
-    { id: 'fractal_shard', name: 'Fractal Shard', element: 'ice', cost: 700,
-      desc: 'Alternates. First: three parallel spikes, the longest and fastest shot there is. They pierce, freeze what they hit into a cube (applying *Brittle*) and mark it. Second: a fan of shards that split; one that hits a marked enemy charges R. Press R at five: a gamble for 6s, *Deadly Accuracy* or *Shard Storm*.' },
+    { id: 'fractal_shard', name: 'Fractal Shard', element: 'ice', cost: 400,
+      desc: 'Click: a heavy crystal flies where you aim. Every spike that hits an enemy splits in two, smaller branches forking on at an angle, and those split again on their hits, three times over: one shot grows a tree of ice through a pack, and no enemy is hit twice by the same tree. Alone, a target takes the crystal\'s heavy hit. Every spike chills; one that hits an ice cube splits even at its smallest. A shot whose tree forks twice (or hits an ice cube) charges R. Press R at five: *Fractal Bloom*.' },
+    { id: 'rimeguard', name: 'Rimeguard', element: 'ice', cost: 700,
+      desc: 'A tower shield of glacier ice and a short maul. Click: a heavy slam down a wide cone, 3 tiles (more *Chill*), and what it hits is *taunted*; the more armor you have, the harder it hits. Hold right-click (or tap G to toggle it) to raise the shield toward your aim: it blocks 70% of a hit from in front, but the maul is a short, slow jab behind it. On any element, every hit an enemy lands on you is a charge of *rime*; at 8 it goes off on its own: *Shatterback*, bigger the more max HP you have. Holding it, R lets it go early.' },
+    { id: 'boreal_trident', name: 'Boreal Trident', element: 'ice', cost: 1000,
+      desc: 'A trident of glacier ice. Every hit of its combo has an aftershock a moment later. Click: a *thrust*, a quick poke down a line 8 tiles long and 3 wide that leaves *rime marks*, driving a jet of seawater down it that freezes and explodes into a spine of ice, the tip last; a *swipe*, a wide fan 3.5 tiles out that marks everything in it and knocks shots out of the air, throwing a sheet of seawater that flash-freezes and explodes outward, leaving rime; then a *leap*: up into the air, steered with the movement keys over enemies, hazards and walls (a click brings you down early; the longer you stay up, the harder you come down), slamming a 7x7 footprint round you (*frostbite*), and a moment later the rime erupts out of the floor and shatters every mark for much more. Hold, then let go: *hurl* it straight (5 tiles, up to 8 the longer it\'s drawn), once every 7s: it impales what it hits and its rip current drags in what\'s near its line, pinning them to a wall (a long daze, sealed in rime) or dropping them at its range. A throw that caught something brings *frost rush*: the combo nearly twice as fast for 4s. Every enemy the combo hits is frost; R with 48: *frostkin*, and a frost shell round you worth 20% of your max HP that takes hits before your health till it breaks (a call tops it back up). A full combo whose thrust, swipe and slam each hit something raises a *frost shield* for 3s, as the Icicle Cannon\'s does; not again while it\'s up, nor for 3s after (the combo pips dim till it\'s back). Held, its *boreal aura* slows enemy shots near you to about a third of their speed.' },
     { id: 'lightning_fists', name: 'Storm Fists', element: 'lightning', cost: 0, defaultWeapon: true,
       desc: '1-tile punch that chains lightning to nearby enemies. Default weapon.' },
     { id: 'orb_emitter', name: 'Orb Emitter', element: 'lightning', cost: 150,
@@ -2024,6 +2135,8 @@ ShopScene.CATALOGUE = [
       desc: 'Slow orb. Forks chain enemy to enemy, and further through water. Embeds on contact, applying *Amped* to its host, then bursts into seekers.' },
     { id: 'conductor', name: 'Circuit Breaker', element: 'lightning', cost: 700,
       desc: 'Throws wires that clamp onto enemies (up to 3) and daze them. R turns on the *current*: down the wire nearest your aim, again each time it\'s ready, until you press R again or no wire is left. At a wire, tap G to change it between *live wire*, *insulator* and *capacitor*, or hold G to cut it: a live wire cracks its enemy, an insulator dazes what\'s near, a capacitor dumps its charge (G elsewhere picks your next clamp). Lines shock what they touch, and wired enemies close together chain into a *circuit*: double for two, more for each one you add. Wires stay on when you switch element.' },
+    { id: 'thunder_glaive', name: 'Thunder Glaive', element: 'lightning', cost: 1000,
+      desc: 'Click: *pivot strike*, a dash through the enemy nearest the cursor and on past it (the closer you start, the further you go), untouchable, striking and Amping all on the line; each enemy struck is a *volt*. Each dash leaves a live *rope*. Click a new pivot within a second of landing and the streak goes on; when it ends the ropes go off in a *boom* that gives volts back, sets off an *overload* and leaves a *cage*. R plants a *tesla coil* (1 volt, up to 3). Ropes, cage and coils are one network: twice a second its current runs into every Amped enemy touching it and jumps on from Amped enemy to Amped enemy, harder the more of them there are. Volts are its fuel: keep dashing or it goes quiet. Insulated enemies (armoured, or made of lightning) can\'t be Amped and don\'t conduct.' },
     { id: 'cosmic_fists', name: 'Void Fists', element: 'cosmic', cost: 0, defaultWeapon: true,
       desc: 'Punch and dash to build *Momentum* (max 3).' },
     { id: 'barrier_staff', name: 'Barrier Staff', element: 'cosmic', cost: 150,
@@ -2034,6 +2147,8 @@ ShopScene.CATALOGUE = [
       desc: 'Fires a seed of a black hole from the staff that speeds up toward your cursor, applying *Hex* (1s) to what it passes, and opens a well there. The well pulls enemies in and grows; the longer they stay, the more *Hex* stacks build (one every 2s, fading 1s after they leave). When it collapses it applies *Dazed* to everything inside. While it\'s out and 5s after: Event Horizon, -30% damage taken.' },
     { id: 'void_blade', name: 'Void Blade', element: 'cosmic', cost: 300,
       desc: 'Hold to charge, release to slash: up to 18 tiles long, 3 wide, applying *Stunned* for up to 3.5s. Leaves *cosmic fluid* that applies *Hex* for longer than anything else (up to 14s). The longer the charge, the more of all of it.' },
+    { id: 'pendulum', name: 'Pendulum', element: 'cosmic', cost: 400,
+      desc: 'A support tool with no attack: a brass pendulum, an astral glass for its bob. Click: fling it onto the cursor (6 tiles at most); it grows into a great pendulum and lands as a *Time Lock*: a 7x7 with its corners cut where, for 4s, time stops for everything but you. Enemies in it can\'t act or be moved and take nothing; every hit on them is stored, and it all lands at once when time starts again. Press R: *Rewind*, back to where you were 3s ago, with the HP you\'ve lost since. One cooldown for both: 12s after the Time Lock, 30s after Rewind.' },
 ];
 
 // Lightning and cosmic are sealed in the shop (weapons and ult stages) until the story gives them (devMode opens all).
@@ -2049,10 +2164,10 @@ ShopScene.SEALED = {
 
 // Tiers, from Weapons not listed there show none.
 ShopScene.TIER = {
-    flame_fists: 1, flame_sword: 2, magma_staff: 3, ignition: 4,
-    ice_fists: 1, icicle_cannon: 3, fractal_shard: 4,
-    lightning_fists: 1, orb_emitter: 2, ball_lightning: 3, conductor: 4,
-    cosmic_fists: 1, singularity_staff: 3,
+    flame_fists: 1, flame_sword: 2, magma_staff: 3, ignition: 4, ember_scythe: 5,
+    ice_fists: 1, icicle_cannon: 2, fractal_shard: 3, rimeguard: 4, boreal_trident: 5,
+    lightning_fists: 1, orb_emitter: 2, ball_lightning: 3, conductor: 4, thunder_glaive: 5,
+    cosmic_fists: 1, singularity_staff: 3, pendulum: 4,
 };
 
 // What each weapon is good at, out of 10: [one target, crowd, utility]. The element's job
@@ -2063,17 +2178,19 @@ ShopScene.TIER = {
 // Cosmic weapons are buffs and aren't rated. Judgement, not measurement: keep it in step with
 // ShopScene.DPS below when a weapon changes.
 ShopScene.RATINGS = {
-    flame_fists: [6, 2, 1], flame_sword: [6, 3, 1], magma_staff: [8, 4, 2], ignition: [10, 2, 1],
-    ice_fists: [4, 2, 7], icicle_cannon: [5, 5, 7], fractal_shard: [6, 6, 9],
-    lightning_fists: [2, 6, 3], orb_emitter: [1, 7, 7], ball_lightning: [2, 9, 5], conductor: [2, 10, 6],
+    flame_fists: [6, 2, 1], flame_sword: [6, 3, 1], magma_staff: [8, 4, 2], ignition: [10, 2, 1], ember_scythe: [9, 8, 5],
+    ice_fists: [4, 2, 7], icicle_cannon: [5, 5, 7], fractal_shard: [6, 6, 9], rimeguard: [5, 7, 9], boreal_trident: [6, 7, 10],
+    lightning_fists: [2, 6, 3], orb_emitter: [1, 7, 7], ball_lightning: [2, 9, 5], conductor: [2, 10, 6], thunder_glaive: [4, 8, 8],
 };
 
 // Measured damage per second [one target, group of 5], against dummies. Re-measure and update
 // these after any weapon change. Cosmic weapons are movement-based and unmeasured.
-ShopScene.DPS = {   // re-measured 2026-10-20 (Ignition as the flamethrower: lit, fuel managed, detonated at the stored ring)
-    flame_fists: [48.4, 47.9], flame_sword: [50.6, 101.9], magma_staff: [71.4, 179.4], ignition: [125.3, 326.5],
-    ice_fists: [31.9, 37.5], icicle_cannon: [35.9, 107.1], fractal_shard: [32.1, 131.3],
-    lightning_fists: [27.3, 78.4], orb_emitter: [26.1, 152.1], ball_lightning: [22.5, 183.1], conductor: [30, 125],   // conductor: 3 live wires on a pack of 6 plus a current every 0.42s
+ShopScene.DPS = {   // re-measured 2026-10-29 by the game clock, the median of 3 runs (the scythe of 7) (Ignition as the flamethrower: lit, fuel managed, detonated at the stored ring)
+    flame_fists: [48.5, 47.1], flame_sword: [50.4, 157], magma_staff: [70.6, 166.5], ignition: [62.9, 124.6], ember_scythe: [32, 125.4],   // (the scythe: swings only, one turn, no Heat Wave; Reaper's Whirl 29.3 / 168.4, both levels 45.7 / 182.9. With the Heat Wave, walking for its souls, 46.5 / 362, 12 at once 962; fully upgraded 67.3 / 487 / 1125)
+    ice_fists: [31.7, 36.1], icicle_cannon: [35.6, 105.4], fractal_shard: [54.3, 163.5], rimeguard: [35.3, 204.7],   // (the Rimeguard: slams only, no Shatterback. The Fractal Shard 2026-10-29 branching, by the game clock: 12 at once 277-290)
+    lightning_fists: [27.4, 77.1], orb_emitter: [25.9, 136.1], ball_lightning: [22.3, 194], conductor: [26.9, 177.6],   // conductor: clamps thrown as it sweeps the pack, R's current kept on (12 at once 247)
+    thunder_glaive: [36.7, 361.5],   // (the glaive, 2026-10-29 network, chain capped: clicks at the pack, links, booms, the ropes' and cage's current; no coils; standing dummies never cross a fence; 12 at once 567. R as well (coils while fewer than 3 stand): 42.9 / 408 / 1239, fully upgraded 42.6 / 444 / 1437. By the game clock)
+    boreal_trident: [39.3, 206.8],   // (the trident, 2026-10-29 at x0.6: clicks only, its combo with its aftershocks at its base pace, aimed where they are; no throws, no Frost Rush, no Frostkin; 12 at once 419, a lone boss 26.3. Throw into them, then the rushed combo into the heap, again: about 22% more on one)
 };
 // What the *keywords* in the shop's descriptions mean (ShopScene._richText's popouts).
 ShopScene.KEYWORDS = {
@@ -2088,8 +2205,8 @@ ShopScene.KEYWORDS = {
     resist: ['Resistance', 'A ring under an enemy in an element\'s colour: that element\'s hits land at 40%. A ring split in two or three resists two or three elements. Nothing resists cosmic.'],
     cube: ['Ice cube', 'A full chill bar freezes an enemy into a cube: it moves at about half speed, and it shatters by itself after a few seconds. While it holds it is *Brittle*.'],
     poison: ['Poison', 'Damage over time on you, and any healing you get is cut by 60% while it lasts. Only one dose at a time: a new one restarts the clock, it never stacks.'],
-    bleed: ['Bleed', 'On you: every tile you move while it lasts hurts (a dash, every tile it covers). Stand still or pick your steps. From a Hunter\'s slashes, a Torpedo Diver and a bursting water bubble.'],
-    dripping: ['Dripping', 'On you, for 8s: every tile you walk becomes water, and it stays until fire dries it. Dangerous with water enemies about.'],
+    bleed: ['Bleed', 'On you: every tile you move while it lasts hurts (a dash, every tile it covers). Stand still or pick your steps. From a Hunter\'s slashes and a bursting water bubble.'],
+    dripping: ['Dripping', 'On you, for 8s (4s from a Torpedo Diver\'s shot): every tile you step off becomes water (never the one you stand on), and it stays until fire dries it. Dangerous with water enemies about.'],
     root: ['Rooted', 'On you: stuck where you stand for a moment. You can still attack.'],
     water: ['Water', 'Supercharges the water enemies standing in it: Wave Riders charge sooner, Ripplerunners race, a Tidal Guard\'s hit pins you, a Tidecaller makes everything in it attack far faster (a little faster on dry floor). Fire dries it to *fog*.'],
     fog: ['Fog', 'Water your fire dried. It takes no new water until it clears.'],
@@ -2110,16 +2227,36 @@ ShopScene.KEYWORDS = {
     constellation: ['Constellation', 'Hold V past halfway: you drop into a rift, then place an anchor and click where to strike: 4 stars (a pair and its mirror) crash together there, hitting everything in the way. Two *voidlets* come through with you and fight at your side.'],
     'constellation+': ['Constellation+', 'Hold V to the end: untouchable until the slam, healing all the while, and the slam applies *Dazed*. Each throw is 8 stars crashing in through walls, applying *Hex* to what they hit, and 5 *voidlets* come through: 3 warriors and 2 voidbeams.'],
     brittle: ['Brittle', 'While an enemy is an ice cube, 20% of its max HP is cut off (6% on a boss). When the cube ends that health slowly grows back; damage from fire, lightning and cosmic while it holds locks part of it in for good.'],
-    'super burn': ['Super Burn', 'Burn\'s bigger form, from the fire ult: 3 stacks at most, ticking five times a second for a little flat damage plus a share of max HP (3 stacks: 30 a second plus 2.5% of max HP; bosses take a quarter of the share). It lasts far longer than Burn (8s, then a stack every 2.5s), and any Burn landing on it keeps it going, though only the fire ult adds stacks. It melts things rather than thudding them.'],
+    'super burn': ['Super Burn', 'Burn\'s bigger form: 3 stacks at most, ticking five times a second for a little flat damage plus a share of max HP (3 stacks: 30 a second plus 2.5% of max HP; bosses take a quarter of the share). It lasts far longer than Burn (8s, then a stack every 2.5s). It takes over from Burn: landing, it puts out any Burn stacks, and while it lasts the enemy can\'t Burn (Burn landing on it only keeps it going). From the fire ult and the Ember Scythe. It melts things rather than thudding them.'],
     burn: ['Burn', 'Fire damage over time, up to 5 stacks: a little flat damage plus a share of the enemy\'s max HP every half second (5 stacks: 20 a second plus 1% of max HP; bosses take a quarter of the share). Stacks from different hits add up, and fire weapons feed it.'],
     lava: ['Lava', 'A molten patch on the floor. It deals no damage itself: it applies a *Burn* stack to anything standing in it every 0.8s.'],
     kindle: ['Kindle', 'Ignition\'s mark, on the first two enemies its flame finds. The two stay marked till you detonate them (or they cool out): a third in the flame isn\'t marked. It fills while the flame is on them (about 4.5s) and holds while you keep it there; left alone it cools and fizzles. Full, it is overkindled: the flame does real damage to it (plus 0.2% of its max HP a tick), it catches *Burn* half the time, and a second ring fills, up to 40% of a bar. 3s after the flame leaves it goes off by itself. Press G (Detonate) to set every mark off at any time: the fuller, the far bigger the blast (a full bar also takes 6% of its max HP). It stays marked and starts again from whatever the second ring stored.'],
     'blue flame': ['Blue Flame (R)', 'Ignition\'s ability: when it\'s ready (16s after the last), press R and for 5s the flame burns blue-hot. It ticks half again as fast (kindle fills in 3s), ignores resistance, and now and then lays a *Blue Burn* stack.'],
-    'blue burn': ['Blue Burn', 'A burn stack from Blue Flame. It does not tick: when the burn\'s hold runs out it spreads, turning the ordinary stacks blue one by one, then each blue stack bursts for 25 + 2% of max HP through resistance (bosses take a quarter of the share). Shorter than Burn, far more damage in all.'],
+    'blue burn': ['Blue Burn', 'A burn stack from Blue Flame. It does not tick: when the burn\'s hold runs out it spreads, turning the ordinary stacks blue one by one, then each blue stack bursts for 14 + 1.2% of max HP through resistance (bosses take a quarter of the share). Shorter than Burn, far more damage in all.'],
     ignition: ['Ignition (R)', 'Ignition\'s ability, now *Blue Flame*: press R for 5s of blue-hot flame that ticks faster and ignores resistance.'],
+    ember: ['Ember', 'A tile the Ember Scythe sets alight, burning for 7s. Every second, each enemy on it or beside it has a 30% chance of a *Super Burn* stack (Kindling raises it).'],
+    'ember soul': ['Ember Soul', 'Shaken out of every enemy an Ember Scythe swing cuts. Walk near one and it flies to you (you carry up to 30); 5 make a *Heat Wave*.'],
+    'heat wave': ['Heat Wave (R)', 'Five ember souls: the scythe points at the nearest enemy (the cursor only with no one about) and a narrow crescent of heat, 3 tiles across, pulses 9 tiles out, two crescents of fire behind it. Each crescent gives everything it reaches a *Super Burn* stack; the ground they cross flares white-hot for 2s, and three *embers* are left burning along it for 12s, keeping it going. Casting it heals you 4% of your max HP.'],
     'magma surge': ['Magma Surge (R)', 'Dump the staff\'s stored heat: everything round you is thrown back and gets *Burn*, and a wave of *lava* rolls outward. More heat, a bigger surge. Spending it drops the staff back to its first tier.'],
-    'deadly accuracy': ['Deadly Accuracy (R)', 'One side of the Fractal Shard\'s gamble: for 6s five shards circle you. Click and they line up half a tile apart, converge on that point and fly on past it, half again as hard, and every hit a crit.'],
-    'shard storm': ['Shard Storm (R)', 'The other side of the Fractal Shard\'s gamble, the ult charger: it heals 10% of your max HP when it lands, and for 6s ice ult charge is doubled and every shot is a wide fan of seven chip shards, about three a second.'],
+    rime: ['Rime', 'The Rimeguard\'s charge, while it\'s your ice weapon, whatever element you\'re on: every hit an enemy lands on you is one (a big one, 15% of your max HP or more, two; one more on the raised shield; a quarter of a second apart at most), frost growing on you as it fills. Burns and bleeds don\'t count. At 8 it goes off: *Shatterback*. Go 5s without a hit and a charge melts every 1.5s.'],
+    taunted: ['Taunted', 'Struck by the Rimeguard\'s free swing (not the jab behind its shield): for 3s it comes for you, forgetting decoys and allies, 40% faster, and attacks 40% faster. Bosses shrug it off.'],
+    shatterback: ['Shatterback', 'The Rimeguard\'s burst: on its own when *rime* reaches 8, on any element, or early with R while you hold it (3 or more). Ice spikes burst out of the floor round you (2.5 tiles, 3.5 at full): everything in it takes 15 plus 40% of your max HP (by how full it was) and half a bar of *Chill*, so something already chilled freezes into a cube, ready for whatever you\'re holding.'],
+    'fractal bloom': ['Fractal Bloom (R)', 'The Fractal Shard\'s R, once five of its shots have broken all the way down (or hit an ice cube): a seed crystal flies to where you aim and blooms, a snowflake of crystal bursting out of the floor (six arms, each forking twice), cracking and chilling what it grows under, its outermost tips freezing it into a cube. A moment later the whole flake shatters for a second hit.'],
+    'pivot strike': ['Pivot Strike', 'The Thunder Glaive\'s click: the enemy nearest the cursor within 5 tiles is your pivot (an arc reaches for it from the blade). You dash through it and on past it: 4 tiles past it from close up, down to 1.5 from far off, stopping short of walls and bosses. Untouchable as you go. Everything on the line takes a hit and is *Amped*, unless it\'s insulated. Click another pivot within a second of landing to go on: each link hits 20% harder, never off the same enemy twice running, up to 10 links. With no one else in reach, a boss: you dash at it, stop short and strike it.'],
+    volt: ['Volts', 'The Thunder Glaive\'s fuel (24 in the tank): one for every enemy a *pivot strike* hits, and two back a link when a streak\'s *boom* goes off. A *tesla coil* costs 1. The network burns them: a volt a second while its current is reaching anyone, and a volt a second for each coil with an enemy within 3 tiles; with three coils at work a full tank lasts about 7s without a dash. At 0 the coils go dark and the network stops (with the fences that run to a coil) until you dash for more. The bar over you shows the tank, the part about to drain off it, and blinks amber when it runs low.'],
+    rope: ['Rope', 'The crackling line of current each *pivot strike* leaves along the way you dashed. It\'s part of the Thunder Glaive\'s network as soon as it\'s laid, and stays live 6s after its streak\'s *boom* (16 at most): twice a second, while you have *volts*, every Amped enemy within a tile of one takes the current, and it jumps on from there to Amped enemies up to 2.5 tiles apart (12 at most). Each takes 9, 10% more for every other enemy in the chain, at most half again. Insulated enemies don\'t conduct. A boss in reach takes 40% of a hop and passes nothing on.'],
+    boom: ['Boom', 'The end of a Thunder Glaive streak (its second runs out, no one is left to pivot off, or 10 links): a fuse races down the *ropes* in the order you laid them and they all go off at once, 4 to everything within a tile of one and 5 more for every link (9 for one link, 54 for ten; half again if it\'s Amped), and a half-second daze; insulated enemies take nothing, and a rope over water runs through the pool. It powers the network: two *volts* back a link, and from two links an *overload*. Then it leaves a *cage*. With coils up, a streak of two links or more brings a bolt from the sky down on each *tesla coil*, a light hit round it.'],
+    overload: ['Overload', 'What a Thunder Glaive *boom* of two links or more sets off: 0.6s a link past the first (5.4s at 10 links). The network\'s current runs twice as often and twice as hard, for no more *volts* a second.'],
+    cage: ['Cage', 'What a Thunder Glaive streak\'s *boom* leaves, for 6s: a post where each enemy you pivoted off stood, live fences post to post (closed round from three posts), and a fence from each post to the nearest *tesla coil* within 8 tiles (while you have *volts*). It\'s part of the network: every Amped enemy inside it takes the current. An enemy that crosses a fence, or steps onto or off one, is shocked: a small hit, *Amped* and dazed for a moment (once a second a fence). Insulated enemies shrug it off. A new streak\'s cage takes the old one\'s place.'],
+    'tesla coil': ['Tesla Coil (R)', 'One volt: the Thunder Glaive plants a tesla coil at your feet for 15s, up to 3 at once (another takes the oldest\'s place). While you have *volts*, every second each coil zaps the five enemies nearest it within 3 tiles (a small hit, *Amped*; a boss in reach 40% of one), and it passes the network\'s current to every Amped enemy within 3 tiles; a coil with an enemy that near burns a volt a second. Coils within 8 tiles of each other are joined by live fences, shocking as a *cage*\'s do, and the cage\'s posts fence into the nearest one. Out of volts they go dark (no zaps, no current, no fences) until you dash for more. When a streak of two links or more goes off, a bolt from the sky slams onto each coil, a light hit 2.5 tiles round it (wider the longer the streak).'],
+    thrust: ['Thrust', 'The Boreal Trident\'s first click: a quick poke down a line 8 tiles long and 3 wide, straight down your aim (short of a wall): a light hit, a little chill and two *rime marks* on everything on it. A moment later, as frost cracks run down the line, a spine of ice erupts out of the floor along it, a piece at a time over half a second with spurs off its sides and a great spike at the tip: the heavy hit, landing on each enemy as the spine reaches it. While the *hurl* is ready a press waits: let go and it pokes, hold on and the trident is drawn back for the throw; while the hurl comes back round a press pokes at once.'],
+    hurl: ['Hurl', 'Hold the click with the Boreal Trident, then let go: it\'s thrown straight down your aim, skimming low, 5 tiles, up to 8 drawn a second (its line shows while you hold it), once every 7s (Swift Recall: 0.6s less a level; the thin bar under the frost bar fills, a ping when it\'s ready). What it hits is impaled on its tines, and the rip current behind it drags in everything within two and a half tiles of its line, never through a wall (a light hit); rime crystallises over the floor it passes and melts in a moment (only its look). At the first wall (or boss) it pins them all: a harder hit and a long daze, each sealed in rime; at its range it drops them where the sea crashes in, a light hit and a short daze, and the wake behind it flash-freezes back down its path. Then it flies back to your hand; till it\'s back you can\'t stab. A throw that caught something brings *frost rush*. With *riptide*, click again while it flies to ride its wake.'],
+    riptide: ['Riptide', 'The Boreal Trident\'s last upgrade, sold once Long Hurl is maxed: click again while the *hurl* flies and you ride its wake, surfing along behind it on the rip current, and you\'re set down on free floor a tile short of where it stops (it waits there, stuck, till you arrive); its *frost rush* starts as you land (a boss stopping it sets you down beside it). You can be hit all the way, there are no dashes, ults, gadgets or swaps till you\'re down, and the throw\'s 7s only starts when you land. You stop at the edge of the room you set off in, and never ride through a sealed door.'],
+    frostbite: ['Frostbite', 'The Boreal Trident\'s status: 3s a hit (6s at most), shown as a violet snowflake by the frost bar. While it lasts the enemy\'s *chill* grows on its own, nearly half a stack a second, until it freezes into a cube. Only two things give it: the leap\'s slam and the Squall *frostkin*\'s gust (the rime the trident leaves on the floor is only its look).'],
+    frostkin: ['Frostkin (R)', 'The Boreal Trident\'s R, for 48 frost (96 banked at most), and with it a frost shell round you worth 20% of your max HP, taking hits before your health with no time limit till it breaks (a call while it\'s up tops it back up, never above): every enemy a hit of the combo strikes is frost (the thrust and the swipe 1, the slam 2; 5 enemies a hit at most); throws and cubes give none. Three ice wisps, one of each kind (melee, hail, Squall), fighting beside you till they\'re killed (9 at most: past that the oldest shatter away). Their HP is a share of your max HP (a quarter for the melee one, less for the others), they get half your defence and half your damage bonus; each shows its HP. The melee one pulls the enemies within 3 tiles of it onto itself and nips them from a tile of its own, chilling what\'s within 2 tiles. The hail one keeps 3 to 5 tiles off with a clear line and every 1.6s calls a hail of ice spears onto the 3x3 tiles round its target, a light hit and a little chill on each, the middle one last and hardest. The Squall keeps 3 to 6 tiles off and every 4.5s breathes in and blows a gust 4 tiles wide and nearly 10 long through everything: a small hit and *frostbite* on all of it, no push. Frostkin Pack adds a hail one, then a Squall.'],
+    'boreal aura': ['Boreal Aura', 'While you hold the Boreal Trident, a haze of frost hangs round you (the ice ult\'s, fainter), 3.5 tiles out: enemy shots in it fly at about a third of their speed, frosting over as they go. Bullets, globs, slugs, shells and boss shots alike.'],
+    'rime mark': ['Rime Marks', 'The Boreal Trident\'s marks, crystals over an enemy (3 at most, for 4s after the last): the thrust leaves 2 on what it hits, the swipe 1 on everything in its arc. The leap\'s slam shatters them when its rime erupts: 40% more of the eruption\'s damage a mark, a second more *frostbite* a mark, and a frost toward *frostkin* a mark. The more shattered at once, the bigger the burst.'],
+    'frost rush': ['Frost Rush', 'The moment a Boreal Trident *hurl* lands having caught something: for 4s (and 3s after it\'s back in your hand, if that\'s later) its combo runs nearly twice as fast: the thrust, the swipe and the leap, and the window to keep it going with them. A chime, the words and a flash start it; you glow frost-bright the whole time and a white sliver over the combo pips drains; it fizzles off when it ends. Clump them with the throw, then dump the combo into the heap.'],
     'frost shield': ['Frost Shield (R)', '5s of 35% less damage taken, and it applies *Chill* to whoever hits you.'],
     amp: ['Amped', 'Lightning\'s mark on an enemy: a hit from fire, ice or cosmic on it is a reaction, the Orb Emitter\'s orb bounces only between Amped enemies, and some books and relics hit Amped enemies harder.'],
     momentum: ['Momentum', 'Stacks from punching and dashing: +7% damage and +8% speed each. Fades if you stop.'],
@@ -2127,8 +2264,11 @@ ShopScene.KEYWORDS = {
     mark: ['Mark', 'An astral mark, a gold ring left by the Astrolabe\'s stars. Hitting the enemy pops it for ult charge.'],
     supernova: ['Supernova', 'A blast at the end of Ascend: more damage for every Hex stack on each enemy in reach.'],
     'cosmic fluid': ['Cosmic fluid', 'Cosmic\'s ground: left by the Void Blade, the cosmic dash and Ascend. Enemies standing in it gain *Hex* every 2s. How long it lasts depends on where it came from (a fully charged Void Blade\'s lasts longest).'],
-    'rift drop': ['Rift drop', 'You pick a spot within 14 tiles and slam down onto it. Enemies under you take a hit and are slowed.'],
-    'twin collapse': ['Twin Collapse', 'Click to place the anchor (right-click moves it). Every click after throws: the anchored star and its twin rush together and implode where you clicked, pulling enemies in and applying *Hex* to what they pass. The farther from the anchor, the harder and wider.'],
+    'rift drop': ['Rift drop', 'You pick a spot within 14 tiles and slam down onto it: a *big crunch*. Enemies under you take a hit and are slowed.'],
+    'time lock': ['Time Lock', 'The Pendulum\'s field, 4s: a 7x7 with its corners cut, spread from where it lands over open floor (never round a wall). Time stops in it for everything but you: enemies can\'t move, act, cast or be moved, and their ailments don\'t run down (what they tick is stored with the rest). They take nothing: every hit you land on them is stored (its tally over them) and all of it lands at once when time starts again, kills and all. Shots, yours and theirs, stop at its edge and fly on after. A boss isn\'t frozen solid: its time runs 80% slower, but its damage is stored the same.'],
+    rewind: ['Rewind (R)', 'The Pendulum\'s R, on the cooldown it shares with its Time Lock (30s after a Rewind, 12s after a Time Lock): you\'re pulled back along your own path to where you were 3s ago. The HP you\'ve lost since comes back (a heal since stays) and every ailment you picked up since goes. Ults, gadgets and stamina you spent stay spent. It never takes you back through a door, a lift or a fall: only as far as you\'ve been in this room.'],
+    'big crunch': ['Big Crunch', 'The transformations\' slam: every enemy with *Hex* on it within 6 tiles (8 in the full form) is pulled in, and each of its Hex stacks is cashed in as damage (12 plus 6% of its max HP a stack; bosses less), the stacks gone.'],
+    'twin collapse': ['Twin Collapse', 'Click to place the anchor (right-click moves it). Every click after throws: the anchored star and its twin rush together and implode where you clicked, pulling enemies in and applying *Hex* to what they pass. The farther from the anchor, the harder and wider. In the full form each landing cashes in the *Hex* on what it lands on, as the *big crunch* does (nothing to cash, it Hexes it for the next).'],
 };
 // The KEYWORDS entry for a word as written ('Hexes', 'dazing', 'voidlets'), or null.
 ShopScene.keyword = w => {
@@ -2170,5 +2310,6 @@ ShopScene.GADGET_INFO = {
     grounding: 'Strips the resistances off everything within 3 tiles for 6s, so the wrong element works again. Answers elites.',
     mend: 'A totem planted where it lands for 6s: stand within 2.5 tiles and heal 2% of your max HP each second, 10% in all.',
     bulwark: 'Three tiles of wall across the line you threw it on, for 4s. Enemies have to go round; it stops shots. Never lands on anyone.',
-    decoy: 'A pink copy of you: enemies within 5 tiles (not bosses) go for it instead of you for 3s. 40 HP, so heavy hitters break it early. It pops for a little damage when it goes.',
+    decoy: 'A pink copy of you: enemies within 5 tiles (not bosses) go for it instead of you for 6s. 40 HP, so heavy hitters break it early. It pops for a little damage when it goes.',
+    bell: 'Rung where you stand: every ailment on you is gone at once (Burn, poison, bleed, dripping, Hex, Winded, nearsighted, a root, Glu, a slow, a daze). For 1s after, anything new is shaken off as it lands and no hold can take you. It deals nothing.',
 };

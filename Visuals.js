@@ -37,26 +37,18 @@ class VisualFX {
             // STRENGTH 0 turns the pass off entirely.
             BLOOM: { STRENGTH: 1.0, THRESHOLD: 0.64, KNEE: 0.3 },
             EL: { fire: 0xff7a30, ice: 0x72dcff, lightning: 0xffe14a, cosmic: 0xb47cff },
-            FLOOR: {
-                mortar: '#18191f',
-                stones: ['#3b3e4e', '#3f4253', '#383b4a', '#424557', '#3a3d4c', '#3d404f'],
-                hi: '#4a4e62', lo: '#2e3040', speckLight: '#45495b', speckDark: '#33364a',
-                crack: '#1d1e26', moss: ['#29403a', '#2f4a42', '#253832'], rune: '#3a7d86',
-            },
-            // Walls in 3/4 view. A wall with floor below shows its brick FACE (BRICK_H rows,
-            // a lit lip on top, a dark baseboard); every other wall is the CAP, the top of the
+            // Walls in 3/4 view (the floors, wall tops and brick faces are each level's sheet: TILESETS). A wall with floor
+            // below shows its brick FACE (a lit lip on top, a dark baseboard); every other wall is the CAP, the top of the
             // rock, with a lit RIM px wide wherever it meets floor. CAP_STRIP: the cap a face
             // carries itself when nothing above it is wall. SHADOW: px of shade the face casts
             // on the floor below it (SIDE_SHADOW from side walls). Everything that isn't room
             // is solid rock. LIFT: the rims and lips are drawn a second time above the shade at
             // this alpha (LIFT_DEPTH), so a room keeps its outline in the dark.
             WALL: {
-                RIM: 3, BRICK_H: 6, BRICK_W: 12, CAP_STRIP: 6, SHADOW: 8, SIDE_SHADOW: 4,
+                RIM: 3, CAP_STRIP: 6, SHADOW: 8, SIDE_SHADOW: 4,
                 LIFT: 0.42, LIFT_DEPTH: 0.35,
-                bricks: ['#4b4f64', '#474b5f', '#50546a', '#44485b', '#4d5166'],
-                mortar: '#22232d', brickHi: '#61667e', brickLo: '#35384a', lip: '#9aa1bc', base: '#191a22',
-                cap: '#2c2e3b', capSpeck: '#353847', capDark: '#252733', rim: '#5b6077', rimHi: '#9aa1bc', edge: '#08090c',
-                rock: '#111218', rockSpeck: ['#15161d', '#0d0e13', '#181921'],
+                lip: '#9aa1bc', rim: '#5b6077', rimHi: '#9aa1bc', edge: '#08090c',
+                rock: '#111218',
             },
             // Torches on the walls: one in about every TORCH_EVERY wall faces, never two closer
             // than TORCH_GAP tiles. Their light flickers between TORCH_LIGHT and +12%.
@@ -67,19 +59,46 @@ class VisualFX {
         });
     }
 
+    // Levels with their own hand-made tiles, one sheet each laid out alike (row 0 six floors, row 1 the wall top, three bits of
+    // clutter and the lamp, rows 2-3 two wall faces two tiles tall): its floors, walls, lamps and clutter in place of the stone.
+    // FLOOR: which of its six floors stands in for each stone variant (_vfxPaintFloor's 0-11: mostly the first, now and then the
+    // others; the sixth where the rune was, as rarely); PICK: its clutter, by how often
+    static TILESETS = {
+        2: { key: 'gt', tex: 'gt_tiles', DECALS: { gt_nuts: 1, gt_cable: 2, gt_drip: 3 }, PICK: ['gt_nuts', 'gt_nuts', 'gt_cable', 'gt_drip'] },   // the Gauntlet: steel, iron, copper, storm lamps
+        5: { key: 'cs', tex: 'cs_tiles', DECALS: { cs_shell: 1, cs_algae: 2, cs_pebbles: 3 }, PICK: ['cs_algae', 'cs_pebbles', 'cs_algae', 'cs_shell'], FLOOR: [0, 0, 0, 0, 3, 0, 1, 0, 4, 2, 1, 5] },   // the Cistern, a drowned hall: wet flagstones, moss, water in its cracks and drains, brass lanterns burning cold
+        4: { key: 'fr', tex: 'fr_tiles', DECALS: { fr_shard: 1, fr_flecks: 2, fr_pebbles: 3 }, PICK: ['fr_flecks', 'fr_flecks', 'fr_shard', 'fr_pebbles'], FLOOR: [0, 0, 0, 0, 0, 0, 3, 0, 4, 2, 1, 5] },   // the Fracture, a geode: banded agate, amber in its cracks, amethyst lining its walls
+        3: { key: 'vr', tex: 'vr_tiles', DECALS: { vr_shard: 1, vr_dust: 2, vr_rubble: 3 }, PICK: ['vr_dust', 'vr_dust', 'vr_shard', 'vr_rubble'], FLOOR: [0, 0, 0, 0, 3, 3, 3, 0, 4, 2, 1, 5] },   // the Void Rift, a cave: raw rock, the void through its cracks, crystal lighting it (a crack, a cluster, a pool each about one tile in sixteen)
+        // every other level (the Tutorial, Level 1, the Tower, the Training Ground, tower defense): the plain stone, its twelve
+        // floors in a row, its sconce a torch (TORCH: the full flame), and the cobweb and the open rock every level shares
+        stone: { key: 'st', tex: 'st_tiles', FLOOR: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], TORCH: true,
+                 DECALS: { dc_pebbles: 1, dc_bones: 2, dc_skull: 3, dc_web: 5 }, PICK: ['dc_pebbles', 'dc_pebbles', 'dc_pebbles', 'dc_bones', 'dc_bones', 'dc_pebbles', 'dc_bones', 'dc_skull'] },
+    };
+    _vfxTileArt() {
+        const i = this.currentLevelIndex ?? 0;
+        if (this._vfxArtFor === i) return this._vfxArtObj;
+        this._vfxArtFor = i;
+        const T = VisualFX.TILESETS[i] || VisualFX.TILESETS.stone;
+        return (this._vfxArtObj = this.textures?.exists(T.tex)
+            ? { FLOOR: [0, 0, 1, 0, 3, 3, 1, 0, 4, 2, 1, 5], ...T, img: this.textures.get(T.tex).getSourceImage(), CAP: [0, 1], LAMP: [4, 1], FACE_Y: 48 }
+            : null);
+    }
     // Each level's look: a tint over its stone and the colour its torches and dust burn.
     _vfxTheme() {
         const i = this.currentLevelIndex ?? 0;
         if (this._vfxThemeFor === i && this._vfxThemeObj) return this._vfxThemeObj;
         const T = {
             stone:  { floor: 0xffffff, wall: 0xffffff, torch: 0xff9a3c, dust: 0xffffff },
-            ember:  { floor: 0xffe0d4, wall: 0xffd8cc, torch: 0xff6428, dust: 0xffa060 },   // the Gauntlet
+            ember:  { floor: 0xffe0d4, wall: 0xffd8cc, torch: 0xff6428, dust: 0xffa060 },
+            storm:  { floor: 0xffffff, wall: 0xffffff, torch: 0x7ad8ff, dust: 0xbfe8ff },   // the Gauntlet: its own tiles (gt_tiles), lamps the colour of the storm
             void:   { floor: 0xe2d6ff, wall: 0xd8ccff, torch: 0xb47cff, dust: 0xc8a8ff },   // the Void Rift
+            rift:   { floor: 0xffffff, wall: 0xffffff, torch: 0xb47cff, dust: 0xd8c0ff },
+            geode:  { floor: 0xffffff, wall: 0xffffff, torch: 0xffb44a, dust: 0xffe0a0 },
+            drowned:{ floor: 0xffffff, wall: 0xffffff, torch: 0x5ce0ff, dust: 0x9ff0ff },   // the Cistern with its own tiles (cs_tiles): its lanterns' cold light   // the Fracture with its own tiles (fr_tiles): amber crystal light   // the Void Rift with its own tiles (vr_tiles): rune stones' violet
             amber:  { floor: 0xf4e8d4, wall: 0xeee0cc, torch: 0xffb44a, dust: 0xffe0a0 },   // the Fracture
             tide:   { floor: 0xd4eee8, wall: 0xcce6e4, torch: 0x5ce0ff, dust: 0x9ff0ff },   // the Cistern
             frost:  { floor: 0xdce6ff, wall: 0xd4deff, torch: 0x9fd8ff, dust: 0xdff2ff },
         };
-        const pick = i === 2 ? 'ember' : i === 3 ? 'void' : i === 4 ? 'amber' : i === 5 ? 'tide'
+        const pick = i === 2 ? (this._vfxTileArt?.() ? 'storm' : 'ember') : i === 3 ? (this._vfxTileArt?.() ? 'rift' : 'void') : i === 4 ? (this._vfxTileArt?.() ? 'geode' : 'amber') : i === 5 ? (this._vfxTileArt?.() ? 'drowned' : 'tide')
                    : i >= 6 ? ['stone', 'frost', 'void', 'ember'][(i - 6) % 4] : 'stone';
         this._vfxThemeFor = i;
         return (this._vfxThemeObj = T[pick]);
@@ -207,29 +226,6 @@ class VisualFX {
     //   style 'field'  faint all over, brighter toward the rim, gone at the edge
     //   style 'ring'   a thin soft band at the rim, for ripples that expand
     // Returns an Image scaled to `radius` px, so callers move it with .x/.y and destroy it.
-    // A tile frozen over, drawn into g about its centre (g sits on the tile's centre): a slab of
-    // pale ice with a lit top-left bevel and a deep bottom-right one, a few cracks from one
-    // point, and a glint. `seed` keeps each tile's cracks its own.
-    static iceTile(g, T, seed = 0) {
-        let s = (seed * 2654435761) >>> 0;
-        const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-        const h = T / 2 - 0.5;
-        g.clear();
-        g.fillStyle(0x7cc4ec, 0.55); g.fillRect(-h, -h, h * 2, h * 2);
-        g.fillStyle(0xc4ecff, 0.45); g.fillRect(-h + 2, -h + 2, h * 2 - 4, h * 2 - 4);
-        g.fillStyle(0xeefaff, 0.35); g.fillTriangle(-h + 2, -h + 2, h - 2, -h + 2, -h + 2, h - 2);
-        g.fillStyle(0xffffff, 0.8); g.fillRect(-h, -h, h * 2, 1.5); g.fillRect(-h, -h, 1.5, h * 2);
-        g.fillStyle(0x3a86c0, 0.7); g.fillRect(-h, h - 1.5, h * 2, 1.5); g.fillRect(h - 1.5, -h, 1.5, h * 2);
-        const cx = (r() - 0.5) * h, cy = (r() - 0.5) * h;
-        g.lineStyle(1, 0xffffff, 0.75);
-        for (let k = 0, n = 3 + Math.floor(r() * 2); k < n; k++) {
-            const a = k / n * Math.PI * 2 + r(), len = h * (0.5 + r() * 0.5);
-            const mx = cx + Math.cos(a + 0.3) * len * 0.5, my = cy + Math.sin(a + 0.3) * len * 0.5;
-            g.beginPath(); g.moveTo(cx, cy); g.lineTo(mx, my);
-            g.lineTo(Math.max(-h, Math.min(h, cx + Math.cos(a) * len)), Math.max(-h, Math.min(h, cy + Math.sin(a) * len))); g.strokePath();
-        }
-        g.lineStyle(1.5, 0xffffff, 0.9); g.lineBetween(h * 0.25, -h * 0.65, h * 0.6, -h * 0.3);   // the glint
-    }
 
     // A hit landing, in its element's own shape rather than a disc of light: ice cracks into a star
     // of shards, fire licks out in flames, lightning spits forks, cosmic flares a four-point star,
@@ -254,14 +250,8 @@ class VisualFX {
             g.setBlendMode(ADD);
             for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (k - 2) * 0.55 + (Math.random() - 0.5) * 0.3; ray(a, L * (k === 2 ? 1.2 : 0.8), 2.8, 0xff7a1a, 0.9); ray(a, L * 0.55, 1.4, 0xffe08a, 1); }
             ray(rot, L * 0.5, 3, 0xff5a1a, 0.7); ray(rot + Math.PI, L * 0.5, 3, 0xff5a1a, 0.7);
-        } else if (el === 'lightning') {
-            g.setBlendMode(ADD);
-            for (let k = 0; k < 4; k++) {
-                let a = rot + k * Math.PI / 2, px = 0, py = 0;
-                g.lineStyle(1.6, k % 2 ? 0xffe14a : 0xfff6c0, 1); g.beginPath(); g.moveTo(0, 0);
-                for (let j = 0; j < 3; j++) { a += (Math.random() - 0.5) * 1.1; px += Math.cos(a) * L / 3; py += Math.sin(a) * L / 3; g.lineTo(px, py); }
-                g.strokePath();
-            }
+        } else if (el === 'lightning') {   // four little bolts spat out of it (the hand-drawn pieces, WeaponSystem.bolt)
+            for (let k = 0; k < 4; k++) { const a = rot + k * Math.PI / 2 + (WeaponSystem.vr() - 0.5) * 0.6; WeaponSystem.bolt(scene, x, y, x + Math.cos(a) * L * 1.2, y + Math.sin(a) * L * 1.2, k % 2 ? 'y' : 'w', { life: ms, thin: true, br: 0, glow: false, d: 4.4 }); }
         } else if (el === 'cosmic') {
             g.setBlendMode(ADD);
             for (let k = 0; k < 4; k++) { ray(rot + k * Math.PI / 2, L, 2.4, 0xb47cff, 0.9); ray(rot + k * Math.PI / 2, L * 0.6, 1, 0xffffff, 1); }
@@ -287,13 +277,9 @@ class VisualFX {
         const nx = horiz ? -Math.sign(vx || 1) : 0, ny = horiz ? 0 : -Math.sign(vy || 1), na = Math.atan2(ny, nx);
         const PAL = { fire: [0xffe08a, 0xff8a2a, 0xff4a1a], ice: [0xffffff, 0xbfe8ff, 0x6ac8ff], lightning: [0xffffff, 0xfff6a0, 0xffd84a], cosmic: [0xffffff, 0xd8a8ff, 0xb47cff] }[el] || [0xf0f0f0, 0xc8c0b8, 0x9a9090];
         const glow = el === 'fire' || el === 'lightning' || el === 'cosmic';
-        // the mark on the face, flat along it
-        const m = scene.add.graphics().setDepth(0.95).setPosition(x - nx * 2, y - ny * 2).setRotation(na + Math.PI / 2);
-        if (el === 'fire') { m.fillStyle(0x1a0e08, 0.55); m.fillEllipse(0, 0, 14, 5); m.fillStyle(0xff6a1a, 0.6); m.fillEllipse(0, 0, 6, 2); }
-        else if (el === 'ice') { m.lineStyle(1, 0xd8f4ff, 0.9); for (let k = -2; k <= 2; k++) m.lineBetween(k * 2.5, 0, k * 3.5, -3 - Math.abs(k)); m.fillStyle(0xbfe8ff, 0.45); m.fillEllipse(0, 0, 13, 3); }
-        else if (el === 'lightning') { m.fillStyle(0x14100a, 0.5); m.fillEllipse(0, 0, 10, 4); m.lineStyle(1, 0xfff6a0, 0.9); m.lineBetween(-5, 0, -1, -2); m.lineBetween(-1, -2, 2, 1); m.lineBetween(2, 1, 6, -1); }
-        else if (el === 'cosmic') { m.fillStyle(0x6a3ab0, 0.55); m.fillEllipse(0, 0, 12, 4); m.fillStyle(0xffffff, 0.8); m.fillRect(-1, -1, 2, 2); }
-        else { m.fillStyle(0x000000, 0.35); m.fillEllipse(0, 0, 10, 4); }
+        // the mark on the face, flat along it (fx_ground's wm_*: scorch, frost, a spark's zigzag, a violet stain, a scuff), turned a quarter to lie along a side wall
+        const m = scene.add.image(x - nx * 2, y - ny * 2, 'fx_ground', 'wm_' + (['fire', 'ice', 'lightning', 'cosmic'].includes(el) ? el : 'plain'))
+            .setOrigin(0.5, 0.6).setDepth(0.95).setRotation(na + Math.PI / 2);
         scene.tweens.add({ targets: m, alpha: 0, delay: 500, duration: 700, onComplete: () => m.destroy() });
         // the spray, thrown back off the face
         for (let k = 0; k < 8; k++) {
@@ -390,17 +376,8 @@ class VisualFX {
     }
     // Drawn on the floor under the darkness (depth 0.3) by default, so it only shows where the
     // room is lit and never glows out through the walls.
-    // A puff of smoke, 64 x 64, white so it takes a tint: a soft round falloff broken up by cloudy noise
-    static smokeKey(scene) {
-        return MenuArt.tex(scene, 'fx_smoke', 64, 64, P => {
-            const n = MenuArt.noise(41), n2 = MenuArt.noise(77);
-            for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-                const d = Math.hypot(x + 0.5 - 32, y + 0.5 - 32) / 32, cl = 0.55 + 0.45 * (0.65 * n(x * 0.09, y * 0.09) + 0.35 * n2(x * 0.22, y * 0.22));
-                const a = Math.max(0, 1 - d * d * (1.25 - 0.5 * cl)) * cl;
-                if (a > 0.01) P.put(x, y, 0xffffff, Math.min(1, a * 1.15));
-            }
-        });
-    }
+    // A puff of smoke, 64 x 64, white so it takes a tint (assets/art/fx_smoke, hand-drawn: a lumpy body, a soft stepped fringe)
+    static smokeKey(scene) { return 'fx_smoke'; }
     static aura(scene, x, y, radius, color, { style = 'field', depth = 0.25, alpha = 1, breathe = true } = {}) {
         const img = scene.add.image(x, y, VisualFX.auraTex(scene, style))
             .setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth).setAlpha(alpha);
@@ -647,7 +624,7 @@ void main() {
                     if (d < BW) { x = bx0 + d; y = by0; } else if ((d -= BW) < BH) { x = bx1; y = by0 + d; } else if ((d -= BH) < BW) { x = bx1 - d; y = by1; } else { d -= BW; x = bx0; y = by1 - d; }
                     const ox = (x0 + x1) / 2 - x, oy = (y0 + y1) / 2 - y, ol = Math.hypot(ox, oy) || 1, j = (Math.random() - 0.5) * T * 1.1;
                     const sc = (size * (0.75 + Math.random() * 0.5)) * T / 64;
-                    puffs.push({ x: x + ox / ol * j, y: y + oy / ol * j, sx: sc * (0.9 + Math.random() * 0.25), sy: sc, rot: Math.random() * 6.28, ox: -ox / ol, oy: -oy / ol });
+                    puffs.push({ x: x + ox / ol * j, y: y + oy / ol * j, sx: sc * (0.9 + Math.random() * 0.25), sy: sc, rot: Math.floor(Math.random() * 4) * Math.PI / 2, ox: -ox / ol, oy: -oy / ol });   // (turned only by quarters: it's drawn in pixels)
                 }
                 }
                 // a puff that would billow into another room shrinks to stop at its edge, or goes if it sits in it: fog is its own room's
@@ -678,8 +655,8 @@ void main() {
                 const wisps = [], wt = [];
                 for (let k = 0; k < Math.max(2, Math.round(r.w * r.h / 30)); k++) {   // pale wisps drifting over it
                     const w = this.add.image(x0 + T + Math.random() * (W - 2 * T), y0 + T + Math.random() * (H - 2 * T), key).setTint(0x30323a).setAlpha(0.1 + Math.random() * 0.08)
-                        .setScale((3 + Math.random() * 3) * T / 64, (1.6 + Math.random() * 1.4) * T / 64).setRotation((Math.random() - 0.5) * 0.4);
-                    wt.push(this.tweens.add({ targets: w, x: w.x + (Math.random() < 0.5 ? -1 : 1) * T * (1 + Math.random() * 1.5), rotation: w.rotation + (Math.random() - 0.5) * 0.5, duration: 5000 + Math.random() * 4000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }));
+                        .setScale((3 + Math.random() * 3) * T / 64, (1.6 + Math.random() * 1.4) * T / 64);
+                    wt.push(this.tweens.add({ targets: w, x: w.x + (Math.random() < 0.5 ? -1 : 1) * T * (1 + Math.random() * 1.5), duration: 5000 + Math.random() * 4000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }));
                     wisps.push(w);
                 }
                 c.add(wisps);
@@ -703,7 +680,7 @@ void main() {
                 for (const p of f.puffs) {
                     const o = this.add.image(p.x, p.y, key).setTint(DARK).setScale(p.sx, p.sy).setRotation(p.rot);
                     f.c.add(o);
-                    this.tweens.add({ targets: o, x: p.x + p.ox * T * (1 + Math.random() * 1.5), y: p.y + p.oy * T * (1 + Math.random() * 1.5), scaleX: p.sx * 1.6, scaleY: p.sy * 1.6, alpha: 0, rotation: p.rot + (Math.random() - 0.5),
+                    this.tweens.add({ targets: o, x: p.x + p.ox * T * (1 + Math.random() * 1.5), y: p.y + p.oy * T * (1 + Math.random() * 1.5), scaleX: p.sx * 1.6, scaleY: p.sy * 1.6, alpha: 0,
                         duration: 900 + Math.random() * 500, delay: Math.random() * 200, ease: 'Quad.easeOut' });
                 }
                 if (!f.c.visible) f.c.setVisible(true);
@@ -770,7 +747,7 @@ void main() {
             const s = f.sprite;
             if (s?.active) (f._isSupernova ? tr.cosmic : tr.fire).emitParticleAt(s.x, s.y, 1);
         }
-        for (const s of this.iceShards || []) if (s.sprite?.active) tr.ice.emitParticleAt(s.sprite.x, s.sprite.y, 1);
+        for (const s of this.iceShards || []) if (s.sprite?.active && !s.isCannonShard) tr.ice.emitParticleAt(s.sprite.x, s.sprite.y, 1);   // (an icicle lays its own tail of frost: a dot a frame over it was a string of beads)
         for (const o of this.lightningOrbs || []) {
             const q = o.sprite || o.gfx || o.container || o;
             if (q && q.active !== false && q.x !== undefined) tr.lightning.emitParticleAt(q.x, q.y, 1);
@@ -825,8 +802,8 @@ void main() {
         return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     }
 
-    // The soft round textures: light (erases the shade), glow (tinted, additive), dot (dust),
-    // and the void behind the map.
+    // The soft round textures: light (erases the shade), glow (tinted, additive), dot (dust). (The void behind the menus is
+    // assets/art/vfx_void, hand-placed stars.)
     _vfxSoftTextures() {
         const tm = this.textures;
         const radial = (key, size, stops, rgb = '255,255,255') => {
@@ -870,23 +847,6 @@ void main() {
             ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
             t.refresh(); t.setFilter(Phaser.Textures.FilterMode.LINEAR);
         }
-        if (!tm.exists('vfx_rune')) {      // a rune circle: two rings, ticks between, four marks
-            const S = 64, t = tm.createCanvas('vfx_rune', S, S), ctx = t.getContext(), h = S / 2;
-            ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.5;
-            ctx.beginPath(); ctx.arc(h, h, 29, 0, Math.PI * 2); ctx.stroke();
-            ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-            ctx.beginPath(); ctx.arc(h, h, 22, 0, Math.PI * 2); ctx.stroke();
-            for (let i = 0; i < 24; i++) {
-                const a = i / 24 * Math.PI * 2, r0 = i % 2 ? 24 : 23, r1 = i % 2 ? 26 : 28;
-                ctx.beginPath(); ctx.moveTo(h + Math.cos(a) * r0, h + Math.sin(a) * r0); ctx.lineTo(h + Math.cos(a) * r1, h + Math.sin(a) * r1); ctx.stroke();
-            }
-            ctx.fillStyle = 'rgba(255,255,255,0.95)';
-            for (let i = 0; i < 4; i++) {
-                const a = i / 4 * Math.PI * 2 + Math.PI / 4, x = h + Math.cos(a) * 29, y = h + Math.sin(a) * 29;
-                ctx.beginPath(); ctx.moveTo(x, y - 3); ctx.lineTo(x + 2.5, y); ctx.lineTo(x, y + 3); ctx.lineTo(x - 2.5, y); ctx.closePath(); ctx.fill();
-            }
-            t.refresh(); t.setFilter(Phaser.Textures.FilterMode.LINEAR);
-        }
         if (!tm.exists('vfx_splat')) {     // a stain: a blob and a few droplets
             const S = 40, t = tm.createCanvas('vfx_splat', S, S), ctx = t.getContext(), R = VisualFX.prototype._vfxRng(29);
             ctx.fillStyle = '#ffffff';
@@ -894,20 +854,6 @@ void main() {
             blob(20, 20, 8);
             for (let i = 0; i < 6; i++) { const a = R() * Math.PI * 2, d = 5 + R() * 6; blob(20 + Math.cos(a) * d, 20 + Math.sin(a) * d, 3 + R() * 3); }
             for (let i = 0; i < 7; i++) { const a = R() * Math.PI * 2, d = 12 + R() * 6; blob(20 + Math.cos(a) * d, 20 + Math.sin(a) * d, 1 + R() * 1.5); }
-            t.refresh();
-        }
-        if (!tm.exists('vfx_void')) {
-            const S = 192, t = tm.createCanvas('vfx_void', S, S), ctx = t.getContext(), R = VisualFX.prototype._vfxRng(7);
-            ctx.fillStyle = '#05060c'; ctx.fillRect(0, 0, S, S);
-            for (let i = 0; i < 260; i++) {
-                ctx.fillStyle = R() < 0.5 ? '#0a0c16' : '#0c0f1c';
-                ctx.fillRect(Math.floor(R() * S), Math.floor(R() * S), 2, 2);
-            }
-            for (let i = 0; i < 46; i++) {
-                const b = R();
-                ctx.fillStyle = b < 0.7 ? '#1d2236' : b < 0.93 ? '#33395a' : '#6a73a8';
-                ctx.fillRect(Math.floor(R() * S), Math.floor(R() * S), 1, 1);
-            }
             t.refresh();
         }
     }
@@ -925,11 +871,14 @@ void main() {
         const torchSpots = [], decalList = [];
         // Every tile is a Bob in a Blitter: thousands of plain quads from one texture cost far
         // less to draw than an Image each, and none of them ever moves.
-        this._vfxAtlas();   // the Blitter takes its texture now: it has to exist first
+        const atl = this._vfxAtlas();   // the Blitter takes its texture now: it has to exist first
+        // a new level starts the atlas over once it's half full (every level seen in one session filled it, and a full atlas
+        // handed out its whole sheet as a tile: the mosaic after the Gauntlet). Nothing from the last level is still drawn.
+        if (atl._vfxNext > 1300) { for (const k of Object.keys(atl.frames)) if (k !== '__BASE') atl.remove(k); atl._vfxNext = 0; }
         const bob = VisualFX.blitChunks(this, b => b);
         const lift = [];
         // mostly pebbles and bones; a skull is rarer (it catches the eye)
-        const DECAL_PICK = ['dc_pebbles', 'dc_pebbles', 'dc_pebbles', 'dc_bones', 'dc_bones', 'dc_pebbles', 'dc_bones', 'dc_skull'];
+        const DECAL_PICK = this._vfxTileArt?.()?.PICK || [];   // (each level's own clutter: TILESETS)
         // The Cistern's space between rooms is open deep water (MenuArt.cistern: the drowned hall
         // and what swims in it), not rock: leave it unpainted there so the backdrop shows. The same
         // on a floor open to the sky (the Gauntlet's roof: MenuArt.stormSky).
@@ -957,7 +906,6 @@ void main() {
         this._vfxPlaceTorches(torchSpots, TH);
         // Frames painted now for things that appear later, so the atlas uploads once.
         for (let v = 0; v < 4; v++) {
-            this._vfxFrame(`lava${v}`, (ctx, X, Y, S) => this._vfxPaintLava(ctx, X, Y, S, v));
             this._vfxFrame(`water${v}`, (ctx, X, Y, S) => this._vfxPaintWater(ctx, X, Y, S, v, false));
             this._vfxFrame(`waterhl${v}`, (ctx, X, Y, S) => this._vfxPaintWater(ctx, X, Y, S, v, true));
             this._vfxFrame(`ice${v}`, (ctx, X, Y, S) => this._vfxPaintIce(ctx, X, Y, S, v));
@@ -999,21 +947,21 @@ void main() {
             (test(x, y - 1) ? 1 : 0) | (test(x + 1, y) ? 2 : 0) | (test(x, y + 1) ? 4 : 0) | (test(x - 1, y) ? 8 : 0) |
             (test(x + 1, y - 1) ? 16 : 0) | (test(x + 1, y + 1) ? 32 : 0) | (test(x - 1, y + 1) ? 64 : 0) | (test(x - 1, y - 1) ? 128 : 0);
         let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h = (h ^ (h >>> 16)) >>> 0;
-        const k = kind(x, y);
+        const k = kind(x, y), A = this._vfxTileArt?.(), pre = A ? A.key + '_' : '';   // (the atlas lasts the session: a level with its own tiles names its own frames)
         if (k === 'floor') {
             // Mostly whole slabs (calm under the fighting), some split ones, the odd crack or moss;
             // a rune in about one tile in ninety.
             const PICK = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 10];
             const v = ((h >>> 9) % 89 === 0) ? 11 : PICK[(h >>> 3) % PICK.length];
             const m = mask((a, b) => !fl(a, b));
-            return { kind: k, floor: true, h, m, frame: this._vfxFrame(`f${v}_${m}`, (ctx, X, Y, S) => this._vfxPaintFloor(ctx, X, Y, S, v, m)), lift: null };
+            return { kind: k, floor: true, h, m, frame: this._vfxFrame(`${pre}f${v}_${m}`, (ctx, X, Y, S) => this._vfxPaintFloor(ctx, X, Y, S, v, m)), lift: null };
         }
         if (k === 'rock') {
             const v = h % 4;
-            return { kind: k, h, m: 0, frame: this._vfxFrame(`rk${v}`, (ctx, X, Y, S) => VisualFX.paintRock(ctx, X, Y, S, v, P)), lift: null };
+            return { kind: k, h, m: 0, frame: this._vfxFrame(`rk${v}`, (ctx, X, Y, S) => VisualFX.paintRock(ctx, X, Y, S, v, this.textures)), lift: null };
         }
         const m = mask(fl), vm = mask((a, b) => kind(a, b) === 'rock');
-        const wall = (name, opts) => this._vfxFrame(name, (ctx, X, Y, S) => VisualFX.paintWall(ctx, X, Y, S, m, vm, P, opts));
+        const wall = (name, opts) => this._vfxFrame(opts.linesOnly ? name : pre + name, (ctx, X, Y, S) => VisualFX.paintWall(ctx, X, Y, S, m, vm, P, { ...opts, art: A }));
         if (k === 'face' || k === 'upper') {
             const upper = k === 'upper', v = h % 4, tag = upper ? 'wu' : 'wf';
             return { kind: k, face: true, h, m, vm, frame: wall(`${tag}${v}_${m}_${vm}`, { face: true, upper, v }),
@@ -1024,57 +972,12 @@ void main() {
                  lift: m ? wall(`wc_${m}_${vm}`, { face: false, linesOnly: true }) : null };
     }
 
-    // Floor variants: 0-3 a whole slab, 4-5 a slab over two, 6 four squares, 7 staggered,
-    // 8 a cracked slab, 9 three planks, 10 a mossy slab, 11 a slab with a rune.
+    // Floor variants (each level's sheet, row 0; the stone's in this order): 0-3 a whole slab, 4-5 a slab over two, 6 four
+    // squares, 7 staggered, 8 a cracked slab, 9 three planks, 10 a mossy slab, 11 a slab with a rune.
     _vfxPaintFloor(ctx, X, Y, T, v, m) {
-        const P = this._vfxCfg().FLOOR, R = this._vfxRng(v * 7919 + 101);
-        const SLAB = [[0, 0, 24, 24]];
-        const LAYOUT = {
-            4: [[0, 0, 24, 12], [0, 12, 12, 12], [12, 12, 12, 12]],
-            5: [[0, 0, 12, 12], [12, 0, 12, 12], [0, 12, 24, 12]],
-            6: [[0, 0, 12, 12], [12, 0, 12, 12], [0, 12, 12, 12], [12, 12, 12, 12]],
-            7: [[0, 0, 16, 12], [16, 0, 8, 12], [0, 12, 8, 12], [8, 12, 16, 12]],
-            9: [[0, 0, 8, 24], [8, 0, 8, 24], [16, 0, 8, 24]],
-        };
-        const L = LAYOUT[v] || SLAB;
-        const s = T / 24;
-        ctx.fillStyle = P.mortar; ctx.fillRect(X, Y, T, T);
-        for (const [sx0, sy0, sw0, sh0] of L) {
-            const sx = sx0 * s, sy = sy0 * s, sw = sw0 * s, sh = sh0 * s;
-            ctx.fillStyle = P.stones[Math.floor(R() * P.stones.length)];
-            ctx.fillRect(X + sx, Y + sy, sw - 1, sh - 1);
-            ctx.fillStyle = P.hi; ctx.fillRect(X + sx, Y + sy, sw - 1, 1);
-            ctx.fillStyle = P.lo; ctx.fillRect(X + sx, Y + sy + sh - 2, sw - 1, 1);
-            const n = Math.floor((sw * sh) / 70);
-            for (let k = 0; k < n; k++) {
-                const px = sx + 2 + Math.floor(R() * Math.max(1, sw - 5)), py = sy + 2 + Math.floor(R() * Math.max(1, sh - 5));
-                ctx.fillStyle = R() < 0.5 ? P.speckLight : P.speckDark;
-                ctx.fillRect(X + px, Y + py, 1, 1);
-            }
-        }
-        if (v === 8) {   // a crack wandering down the slab
-            let cx = 6 + Math.floor(R() * 10), cy = 3;
-            ctx.fillStyle = P.crack;
-            for (let k = 0; k < 14; k++) { ctx.fillRect(X + cx, Y + cy, 1, 1); cy += 1; const r = R(); cx += r < 0.3 ? -1 : r > 0.7 ? 1 : 0; }
-        }
-        if (v === 10) {  // moss creeping in from the edges
-            for (let k = 0; k < 12; k++) {
-                ctx.fillStyle = P.moss[Math.floor(R() * P.moss.length)];
-                const edge = R() < 0.5;
-                ctx.fillRect(X + (edge ? Math.floor(R() * (T - 3)) : Math.floor(R() * 4)), Y + (edge ? Math.floor(R() * 4) : Math.floor(R() * (T - 3))), 2, 1);
-            }
-        }
-        if (v === 11) {  // a rune cut into the slab: a carved ring and a stave, the grooves lit from below
-            const c = Math.floor(T / 2), dot = (x, y, col) => { ctx.fillStyle = col; ctx.fillRect(X + c + x, Y + c + y, 1, 1); };
-            for (let k = 0; k < 32; k++) {
-                const a = k / 32 * Math.PI * 2;
-                dot(Math.round(Math.cos(a) * 6), Math.round(Math.sin(a) * 6), P.crack);
-                if (Math.sin(a) > 0.3) dot(Math.round(Math.cos(a) * 5), Math.round(Math.sin(a) * 5), P.rune);
-            }
-            for (let y = -2; y <= 2; y++) dot(0, y, P.crack);
-            dot(-1, -1, P.crack); dot(-2, -2, P.crack); dot(1, -1, P.crack); dot(2, -2, P.crack);
-            dot(1, 0, P.rune); dot(1, 1, P.rune); dot(1, 2, P.rune);
-        }
+        const A = this._vfxTileArt?.();
+        ctx.clearRect(X, Y, T, T);
+        if (A) ctx.drawImage(A.img, A.FLOOR[v] * 24, 0, 24, 24, X, Y, T, T);
         this._vfxPaintAO(ctx, X, Y, T, m);
     }
 
@@ -1100,16 +1003,14 @@ void main() {
     //   cap    dark rock with a lit rim along every side that meets floor, a joint where floor
     //          touches only a corner, and a dark edge where it meets open rock.
     // linesOnly: just the rims and the lip, on a clear tile (the copy lifted above the shade).
-    static paintWall(ctx, X, Y, T, m, vm, P, { face = false, upper = false, v = 0, linesOnly = false } = {}) {
+    static paintWall(ctx, X, Y, T, m, vm, P, { face = false, upper = false, v = 0, linesOnly = false, art = null } = {}) {
         const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(X + x, Y + y, w, h); };
         const shade = (x, y, w, h, a) => { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(X + x, Y + y, w, h); };
-        const R = VisualFX.prototype._vfxRng(v * 977 + m * 31 + (face ? (upper ? 11 : 7) : 3));
         const N = m & 1, E = m & 2, Wf = m & 8, Rm = P.RIM;
         ctx.clearRect(X, Y, T, T);
         const capH = face ? ((upper || N) ? P.CAP_STRIP : 0) : T;
+        if (!linesOnly && capH && art) ctx.drawImage(art.img, art.CAP[0] * 24, art.CAP[1] * 24, 24, capH, X, Y, T, capH);   // (the sheet's wall top)
         if (!linesOnly && capH) {
-            px(0, 0, T, capH, P.cap);
-            for (let k = 0; k < (capH * T) / 40; k++) px(Math.floor(R() * T), Math.floor(R() * capH), 1, 1, R() < 0.6 ? P.capSpeck : P.capDark);
             // where the cap meets open rock: a dark edge, so the wall's thickness reads
             if (vm & 1) px(0, 0, T, 1, P.edge);
             if (!face && (vm & 4)) px(0, T - 1, T, 1, P.edge);
@@ -1117,28 +1018,8 @@ void main() {
             if (vm & 2) px(T - 1, 0, 1, capH, P.edge);
         }
         if (face) {
-            const BH = P.BRICK_H, BW = P.BRICK_W, off = upper ? T : 0;
-            // d: px up from the floor across the whole face. Tile row y is d = T - 1 - y + off.
-            const rowY = d => T - 1 + off - d;
-            if (!linesOnly) {
-                px(0, capH, T, T - capH, P.mortar);
-                for (let r = 0; ; r++) {
-                    const dLo = 2 + r * BH, dHi = dLo + BH - 2;              // the brick; the px above it is mortar
-                    const y0 = Math.max(capH, rowY(dHi)), y1 = Math.min(T - 1, rowY(dLo));
-                    if (rowY(dLo) < capH) break;
-                    if (y1 < y0) continue;
-                    const hh = y1 - y0 + 1, dim = Math.min(0.32, 0.045 * r).toFixed(3);   // higher rows sit further from the light
-                    for (let x = (r % 2) ? -BW / 2 : 0; x < T; x += BW) {
-                        const x0 = Math.max(0, x), x1 = Math.min(T, x + BW - 1);
-                        if (x1 - x0 < 2) continue;
-                        px(x0, y0, x1 - x0, hh, P.bricks[Math.floor(R() * P.bricks.length)]);
-                        if (rowY(dHi) >= capH) px(x0, y0, x1 - x0, 1, P.brickHi);
-                        if (rowY(dLo) <= T - 1) px(x0, y1, x1 - x0, 1, P.brickLo);
-                        if (R() < 0.3 && hh > 2) px(x0 + 2 + Math.floor(R() * Math.max(1, x1 - x0 - 4)), y0 + 1 + Math.floor(R() * (hh - 2)), 1, 1, P.brickLo);
-                        shade(x0, y0, x1 - x0, hh, dim);
-                    }
-                }
-                if (!upper) px(0, T - 2, T, 2, P.base);                       // the baseboard, where it meets the floor
+            if (!linesOnly && art) {   // the sheet's face, two tiles tall: the upper tile its top half, this its foot
+                ctx.drawImage(art.img, (v === 3 ? 24 : 0), art.FACE_Y + (upper ? 0 : 24) + capH, 24, 24 - capH, X, Y + capH, T, T - capH);   // (its second face, cracked or vented, one wall in four)
                 // an open side (a pillar's corner, the end of a wall): its edge turns away into shade
                 if (Wf) shade(0, capH, 2, T - capH, 0.35);
                 if (E) shade(T - 2, capH, 2, T - capH, 0.35);
@@ -1162,23 +1043,18 @@ void main() {
         if (E) px(T - 1, 0, 1, T, P.rimHi);
     }
 
-    // Open rock between the rooms: near-black, a few specks so it isn't a flat fill. Specks only,
-    // no strokes, so the tiles never show a seam.
-    static paintRock(ctx, X, Y, T, v, P) {
-        const R = VisualFX.prototype._vfxRng(v * 4441 + 17);
-        ctx.fillStyle = P.rock; ctx.fillRect(X, Y, T, T);
-        for (let k = 0; k < 14; k++) {
-            ctx.fillStyle = P.rockSpeck[Math.floor(R() * P.rockSpeck.length)];
-            ctx.fillRect(X + Math.floor(R() * (T - 1)), Y + Math.floor(R() * (T - 1)), R() < 0.3 ? 2 : 1, 1);
-        }
+    // Open rock between the rooms, every level's: near black with a few grains (the stone sheet, row 1, columns 6-9).
+    static paintRock(ctx, X, Y, T, v, tm) {
+        ctx.clearRect(X, Y, T, T);
+        if (tm.exists('st_tiles')) ctx.drawImage(tm.get('st_tiles').getSourceImage(), (6 + v) * 24, 24, 24, 24, X, Y, T, T);
     }
 
     // The rims and lips again, above the shade at LIFT alpha, so a wall stays a crisp line out
     // in the dark. One Blitter: one draw.
     _vfxWallLift(list, tint) {
         const P = this._vfxCfg().WALL, T = this.TILE_SIZE;
-        if (!list?.length || !(P.LIFT > 0)) return;
-        const bob = VisualFX.blitChunks(this, b => b.setDepth(P.LIFT_DEPTH).setAlpha(P.LIFT));
+        const bob = this._vfxLiftBob = P.LIFT > 0 ? VisualFX.blitChunks(this, b => b.setDepth(P.LIFT_DEPTH).setAlpha(P.LIFT)) : null;   // (kept: a wall that rises later gets its lines in its own chunk, BossFX._bfxCrumble)
+        if (!list?.length || !bob) return;
         for (const [x, y, f] of list) {
             const b = bob(x, y, f);
             if (tint !== 0xffffff) b.setTint(tint);
@@ -1204,74 +1080,23 @@ void main() {
         for (const [x, y, kind, v] of list) {
             const f = this._vfxFrame(kind, (ctx, X, Y, S) => this._vfxPaintDecal(ctx, X, Y, S, kind));
             const img = this.add.image(x * T + T / 2, y * T + T / 2, 'vfx_atlas', f).setDepth(0.1);
-            if (kind === 'dc_web') img.setFlipX(v < 0);
-            else if (kind === 'dc_skull') img.setFlipX(!!(v & 1));
-            else img.setAngle(90 * v);
+            img.setFlipX(kind === 'dc_web' ? v < 0 : !!(v & 1));   // (flipped, never turned: the light stays on their top)
             if (TH.floor !== 0xffffff) img.setTint(TH.floor);
         }
     }
     _vfxPaintDecal(ctx, X, Y, T, kind) {
         ctx.clearRect(X, Y, T, T);
-        const px = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(X + x, Y + y, 1, 1); };
-        const R = this._vfxRng(kind.length * 131 + kind.charCodeAt(3));
-        if (kind === 'dc_web') {
-            // threads fanning out of the top-left corner, three sagging rings across them
-            const angles = [0.02, 0.4, 0.78, 1.17, 1.55], ends = [];
-            for (const a of angles) {
-                const L = 14 + Math.floor(R() * 5);
-                for (let d = 0; d <= L; d++) px(Math.round(Math.cos(a) * d), Math.round(Math.sin(a) * d), 'rgba(205,212,230,0.30)');
-                ends.push(a);
-            }
-            for (const r of [5, 9, 13]) {
-                for (let i = 0; i < ends.length - 1; i++) {
-                    const a0 = ends[i], a1 = ends[i + 1];
-                    for (let k = 0; k <= 6; k++) {
-                        const t = k / 6, a = a0 + (a1 - a0) * t, sag = Math.sin(t * Math.PI) * 1.2;
-                        px(Math.round(Math.cos(a) * (r - sag)), Math.round(Math.sin(a) * (r - sag)), 'rgba(205,212,230,0.26)');
-                    }
-                }
-            }
-            return;
-        }
-        if (kind === 'dc_bones') {
-            const bone = (x0, y0, dx, dy, n) => {
-                for (let i = 0; i <= n; i++) { px(x0 + dx * i, y0 + dy * i + 1, 'rgba(10,10,14,0.45)'); }
-                for (let i = 0; i <= n; i++) px(x0 + dx * i, y0 + dy * i, '#8f8a7b');
-                for (const [ex, ey] of [[x0, y0], [x0 + dx * n, y0 + dy * n]]) {
-                    px(ex - 1, ey, '#a39e8f'); px(ex + 1, ey, '#a39e8f'); px(ex, ey - 1, '#a39e8f'); px(ex, ey + 1, '#79746a');
-                }
-            };
-            bone(5, 8, 1, 1, 8);           // a long bone and a short one lying apart, not a cross
-            bone(14, 15, 1, -1, 5);
-            px(17, 17, '#6c675c'); px(9, 5, '#6c675c');
-            return;
-        }
-        if (kind === 'dc_skull') {
-            const S = '#a8a292', D = '#787366', H = '#c2bcac', K = '#121218';
-            ctx.fillStyle = 'rgba(8,8,12,0.45)'; ctx.fillRect(X + 8, Y + 16, 9, 2);
-            ctx.fillStyle = S; ctx.fillRect(X + 8, Y + 8, 8, 6); ctx.fillRect(X + 9, Y + 7, 6, 1); ctx.fillRect(X + 9, Y + 14, 6, 2);
-            ctx.fillStyle = H; ctx.fillRect(X + 9, Y + 8, 3, 1);
-            ctx.fillStyle = D; ctx.fillRect(X + 8, Y + 13, 8, 1);
-            ctx.fillStyle = K; ctx.fillRect(X + 9, Y + 10, 2, 2); ctx.fillRect(X + 13, Y + 10, 2, 2); ctx.fillRect(X + 12, Y + 12, 1, 1);
-            for (let i = 0; i < 3; i++) ctx.fillRect(X + 10 + i * 2, Y + 15, 1, 1);
-            px(17, 15, '#79746a'); px(18, 15, '#8f8a7b'); px(19, 16, '#8f8a7b');
-            return;
-        }
-        // pebbles
-        const cols = ['#5c6072', '#4c5062', '#6a6e82', '#555869'];
-        for (let i = 0; i < 6; i++) {
-            const x = 3 + Math.floor(R() * 17), y = 3 + Math.floor(R() * 17), w = 1 + Math.floor(R() * 2.4), h = 1 + Math.floor(R() * 1.6);
-            ctx.fillStyle = 'rgba(8,8,12,0.5)'; ctx.fillRect(X + x, Y + y + h, w, 1);
-            ctx.fillStyle = cols[i % cols.length]; ctx.fillRect(X + x, Y + y, w, h);
-            ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(X + x, Y + y, 1, 1);
-        }
+        const A = this._vfxTileArt?.(), S = VisualFX.TILESETS.stone;
+        if (A && A.DECALS[kind] != null) ctx.drawImage(A.img, A.DECALS[kind] * 24, 24, 24, 24, X, Y, T, T);   // (a level's own clutter)
+        else if (S.DECALS[kind] != null && this.textures.exists(S.tex)) ctx.drawImage(this.textures.get(S.tex).getSourceImage(), S.DECALS[kind] * 24, 24, 24, 24, X, Y, T, T);   // (the cobweb, every level's)
     }
 
     // Torches: an iron sconce on the wall face, a flame above the shade, and a warm light that
     // breathes (see _vfxLights; the flames flicker in _vfxUpdateTorches).
     _vfxPlaceTorches(spots, TH) {
         const C = this._vfxCfg(), T = this.TILE_SIZE, kept = [];
-        const sconce = this._vfxFrame('torch', (ctx, X, Y, S) => this._vfxPaintSconce(ctx, X, Y, S));
+        const A = this._vfxTileArt?.(), lamp = A && !A.TORCH, sz = lamp ? 0.45 : 1;   // a level's own lamp (the Gauntlet's caged bulb, the Rift's rune stone): a small glow in it; the stone's sconce, a torch
+        const sconce = this._vfxFrame((A?.key || 'st') + '_lamp', (ctx, X, Y, S) => this._vfxPaintSconce(ctx, X, Y, S));
         for (const [x, y, h] of spots) {
             if (kept.some(k => Math.abs(k.tx - x) < C.TORCH_GAP && Math.abs(k.ty - y) < C.TORCH_GAP)) continue;
             const px = x * T + T / 2, py = y * T + T / 2;
@@ -1279,26 +1104,21 @@ void main() {
             if (TH.wall !== 0xffffff) s.setTint(TH.wall);
             // the flame stands in the sconce's bowl, high on the brick face
             const fy = py - T / 2 + VisualFX.SCONCE_BOWL;
-            const flame = this.add.image(px, fy, 'vfx_flame').setOrigin(0.5, 0.9).setBlendMode(Phaser.BlendModes.ADD)
+            const flame = this.add.image(px, fy, 'vfx_flame').setOrigin(0.5, lamp ? 0.6 : 0.9).setBlendMode(Phaser.BlendModes.ADD)
                 .setTint(TH.torch).setDepth(0.9);
             const core = this.add.image(px, fy, 'vfx_flame').setOrigin(0.5, 0.9).setBlendMode(Phaser.BlendModes.ADD)
                 .setTint(0xfff2c8).setScale(0.55).setDepth(0.9);
-            kept.push({ tx: x, ty: y, x: px, y: py, flame, core, ph: (h % 628) / 100 });
+            if (lamp) core.setOrigin(0.5, 0.6);
+            kept.push({ tx: x, ty: y, x: px, y: py, flame, core, ph: (h % 628) / 100, sz });
         }
         this._vfxTorches = kept;
     }
-    // An iron bowl on a bracket bolted to the brick face (the flame stands in it), with the soot
-    // it has left on the bricks above.
+    // The level's lamp, from its sheet (row 1, column 4): the stone's is an iron bowl on a bracket bolted to the bricks, soot
+    // above it, its rim at SCONCE_BOWL (the flame stands in it).
     _vfxPaintSconce(ctx, X, Y, T) {
+        const A = this._vfxTileArt?.();
         ctx.clearRect(X, Y, T, T);
-        const c = Math.floor(T / 2), b = VisualFX.SCONCE_BOWL;   // b: the bowl's rim
-        const px = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(X + x, Y + y, w, h); };
-        for (let i = 0; i < b; i++) { ctx.fillStyle = `rgba(0,0,0,${(0.28 * i / b).toFixed(3)})`; ctx.fillRect(X + c - 3, Y + i, 6, 1); }
-        px(c - 3, b + 6, 6, 4, '#2a2b33'); px(c - 2, b + 7, 1, 1, '#5a5d6c'); px(c + 1, b + 7, 1, 1, '#5a5d6c');   // the plate and its bolts
-        px(c - 1, b + 3, 2, 4, '#24252d');                       // the bracket
-        px(c - 4, b, 8, 3, '#1b1c22');                           // the bowl
-        px(c - 4, b, 8, 1, '#4a4d5c'); px(c - 4, b + 1, 1, 2, '#3a3c48'); px(c + 3, b + 1, 1, 2, '#3a3c48');
-        px(c - 3, b, 6, 1, '#ffb45a');                           // embers in it
+        if (A) ctx.drawImage(A.img, A.LAMP[0] * 24, A.LAMP[1] * 24, 24, 24, X, Y, T, T);
     }
     _vfxUpdateTorches(time) {
         const list = this._vfxTorches;
@@ -1307,8 +1127,9 @@ void main() {
         for (const t of list) {
             if (t.x < v.x - 40 || t.x > v.right + 40 || t.y < v.y - 40 || t.y > v.bottom + 60) continue;
             const k = 1 + 0.12 * Math.sin(time * 0.019 + t.ph) + 0.07 * Math.sin(time * 0.047 + t.ph * 2.3);
-            t.flame.setScale(0.62 * (1.5 - k * 0.5), 0.62 * k).setAlpha(0.85 + 0.15 * Math.sin(time * 0.031 + t.ph));
-            t.core.setScale(0.32, 0.36 * k);
+            const z = t.sz ?? 1;
+            t.flame.setScale(0.62 * z * (1.5 - k * 0.5), 0.62 * z * k).setAlpha(0.85 + 0.15 * Math.sin(time * 0.031 + t.ph));
+            t.core.setScale(0.32 * z, 0.36 * z * k);
         }
     }
 
@@ -1327,110 +1148,32 @@ void main() {
         list.push(img);
         return img;
     }
-    _vfxPaintWard(ctx, X, Y, T, vertical) {
+    _vfxPaintWard(ctx, X, Y, T, vertical) { VisualFX.ground(ctx, X, Y, T, this.textures, vertical ? 'ward_v' : 'ward_h'); }
+    // One frame of fx_ground (the floor's water, ice, sludge, fog, wards: hand-drawn) into an atlas frame.
+    static ground(ctx, X, Y, T, tm, name) {
         ctx.clearRect(X, Y, T, T);
-        const c = T / 2;
-        const line = (o, w, a, col) => {           // a stripe `w` wide at offset `o` from the core
-            ctx.fillStyle = `rgba(${col},${a})`;
-            if (vertical) ctx.fillRect(X + Math.round(c + o), Y, w, T); else ctx.fillRect(X, Y + Math.round(c + o), T, w);
-        };
-        for (let o = -12; o < 12; o++) {           // the haze, strongest at the core
-            const d = Math.abs(o + 0.5) / 12;
-            line(o, 1, (0.1 + 0.55 * Math.pow(1 - d, 2.5)).toFixed(3), '255,60,36');
-        }
-        line(-1, 2, 0.95, '255,110,70');
-        line(0, 1, 0.9, '255,214,190');
-        // two sigils hanging in the curtain
-        const R = this._vfxRng(vertical ? 41 : 43);
-        for (const at of [6, 17]) {
-            const off = R() < 0.5 ? -4 : 4;
-            const pts = [[0, -2], [-1, -1], [1, -1], [-2, 0], [2, 0], [-1, 1], [1, 1], [0, 2]];
-            ctx.fillStyle = 'rgba(255,170,140,0.85)';
-            for (const [a, b] of pts) {
-                const x = vertical ? c + off + a : at + a, y = vertical ? at + b : c + off + b;
-                ctx.fillRect(X + Math.round(x), Y + Math.round(y), 1, 1);
-            }
-        }
+        const fr = tm.exists('fx_ground') && tm.get('fx_ground').get(name);
+        if (fr && fr.name === name) ctx.drawImage(fr.source.image, fr.cutX, fr.cutY, fr.cutWidth, fr.cutHeight, X, Y, T, T);
     }
 
-    // A tile of the poison a thumping slime leaves (EnemyManager's ring): a murky pool with a
-    // few toxic glints, in place of a green square with a bright outline.
+    // A tile of the poison a thumping slime leaves (EnemyManager's ring): a murky pool, a dark rim, a bubble, a toxic glint.
     _vfxSludgeTile(cx, cy) {
-        return this.add.image(cx, cy, 'vfx_atlas', `sludge${Math.floor(Math.random() * 4)}`).setDepth(0.65)
-            .setAngle(90 * Math.floor(Math.random() * 4));
+        return this.add.image(cx, cy, 'vfx_atlas', `sludge${Math.floor(Math.random() * 4)}`).setDepth(0.65);
     }
-    _vfxPaintSludge(ctx, X, Y, T, v) {
-        const R = this._vfxRng(v * 3571 + 17);
-        ctx.clearRect(X, Y, T, T);
-        for (let y = 0; y < T; y++) {
-            for (let x = 0; x < T; x++) {
-                const dx = (x + 0.5) / T - 0.5, dy = (y + 0.5) / T - 0.5;
-                const d = Math.max(Math.abs(dx), Math.abs(dy)) * 0.75 + Math.hypot(dx, dy) * 0.35;
-                const edge = 0.52 + (R() - 0.5) * 0.08;
-                if (d > edge) continue;
-                const n = R(), deep = 1 - d / edge;
-                ctx.fillStyle = deep < 0.15 ? 'rgba(10,26,16,0.85)'
-                    : n < 0.06 ? 'rgba(120,255,150,0.75)'
-                    : n < 0.3 ? 'rgba(38,92,52,0.9)' : 'rgba(20,52,30,0.9)';
-                ctx.fillRect(X + x, Y + y, 1, 1);
-            }
-        }
-    }
+    _vfxPaintSludge(ctx, X, Y, T, v) { VisualFX.ground(ctx, X, Y, T, this.textures, 'sludge' + v); }
 
-    // Fog (dried water): a tile of drifting smoke in the same hand as the lava and the sludge, banded wisps in three greys,
-    // thinning to nothing at its rim so a field of it reads as one bank, not a grid
+    // Fog (dried water): wisps in three greys thinning to nothing at the rim, so a field of it reads as one bank, not a grid
     _vfxFogTile(cx, cy) {
-        return this.add.image(cx, cy, 'vfx_atlas', `fog${Math.floor(Math.random() * 4)}`).setDepth(0.6).setAlpha(0)
-            .setAngle(90 * Math.floor(Math.random() * 4));
+        return this.add.image(cx, cy, 'vfx_atlas', `fog${Math.floor(Math.random() * 4)}`).setDepth(0.6).setAlpha(0);
     }
-    _vfxPaintFog(ctx, X, Y, T, v) {
-        const R = this._vfxRng(v * 7919 + 41), a1 = R() * 6.28, a2 = R() * 6.28, f1 = 0.22 + R() * 0.12, f2 = 0.31 + R() * 0.1;
-        ctx.clearRect(X, Y, T, T);
-        for (let y = 0; y < T; y++) {
-            for (let x = 0; x < T; x++) {
-                const dx = (x + 0.5) / T - 0.5, dy = (y + 0.5) / T - 0.5, rim = Math.max(0, 1 - Math.max(Math.abs(dx), Math.abs(dy)) * 1.25);
-                const w = Math.sin(x * f1 + Math.sin(y * 0.18 + a1) * 2.2) * 0.5 + Math.sin(y * f2 + x * 0.09 + a2) * 0.5;   // swirling bands
-                const d = (w * 0.5 + 0.5) * (0.7 + 0.3 * rim) + (R() - 0.5) * 0.08;
-                if (d < 0.3) continue;
-                ctx.fillStyle = d > 0.78 ? `rgba(230,238,242,${(0.62 * (0.4 + 0.6 * rim)).toFixed(2)})`
-                    : d > 0.6 ? `rgba(176,190,200,${(0.5 * (0.4 + 0.6 * rim)).toFixed(2)})`
-                    : `rgba(120,132,142,${(0.34 * (0.4 + 0.6 * rim)).toFixed(2)})`;
-                ctx.fillRect(X + x, Y + y, 1, 1);
-            }
-        }
-    }
+    _vfxPaintFog(ctx, X, Y, T, v) { VisualFX.ground(ctx, X, Y, T, this.textures, 'fog' + v); }
 
     // The ice ult's flash-freeze, one tile of it: frosted glass with a few bright facets.
     // Starts invisible; the caller fades it in and out and destroys it.
     _vfxIceTile(cx, cy) {
-        return this.add.image(cx, cy, 'vfx_atlas', `ice${Math.floor(Math.random() * 4)}`).setDepth(1.8).setAlpha(0)
-            .setAngle(90 * Math.floor(Math.random() * 4));
+        return this.add.image(cx, cy, 'vfx_atlas', `ice${Math.floor(Math.random() * 4)}`).setDepth(1.8).setAlpha(0);
     }
-    _vfxPaintIce(ctx, X, Y, T, v) {
-        const R = this._vfxRng(v * 613 + 29);
-        ctx.clearRect(X, Y, T, T);
-        ctx.fillStyle = 'rgba(150,215,255,0.30)'; ctx.fillRect(X, Y, T, T);
-        // facets: a few pale wedges
-        for (let k = 0; k < 3; k++) {
-            const x0 = Math.floor(R() * T), y0 = Math.floor(R() * T), w = 5 + Math.floor(R() * 8);
-            for (let i = 0; i < w; i++) {
-                ctx.fillStyle = `rgba(220,245,255,${(0.10 + 0.12 * (1 - i / w)).toFixed(3)})`;
-                ctx.fillRect(X + Math.min(T - 1, x0 + i), Y + Math.max(0, y0 - i), Math.max(1, w - i), 1);
-            }
-        }
-        // a crack wandering across half the tiles (every tile cracked read as shattered glass)
-        for (let k = 0; k < (v < 2 ? 1 : 0); k++) {
-            let x = Math.floor(R() * T), y = 0;
-            const dx = R() < 0.5 ? 1 : -1;
-            ctx.fillStyle = 'rgba(240,252,255,0.5)';
-            for (let i = 0; i < T + 4 && x >= 0 && x < T && y < T; i++) {
-                ctx.fillRect(X + x, Y + y, 1, 1);
-                y += 1; if (R() < 0.45) x += dx;
-            }
-        }
-        // a glint at the upper left
-        ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.fillRect(X + 3, Y + 3, 3, 1); ctx.fillRect(X + 3, Y + 4, 1, 2);
-    }
+    _vfxPaintIce(ctx, X, Y, T, v) { VisualFX.ground(ctx, X, Y, T, this.textures, 'ice' + v); }
 
     // ── AIR ──────────────────────────────────────────────────────────────────
     _vfxBuildAir() {
@@ -1454,11 +1197,12 @@ void main() {
         this._vignette = this.add.image(W / 2, H / 2, 'vfx_edge').setDisplaySize(W, H).setTint(0x000000)
             .setAlpha(C.VIGNETTE).setScrollFactor(0).setDepth(1);
         // A faint rune circle turning under you in your element's colour; it flares when you switch.
-        // (The image turns inside a container squashed flat, so it lies on the floor like the shadows.)
-        if (this.player && this.textures.exists('vfx_rune')) {
-            const img = this.add.image(0, 0, 'vfx_rune').setBlendMode(Phaser.BlendModes.ADD)
-                .setTint(C.EL[this.currentElement] ?? 0xbfd2ff).setScale(0.6);
-            this._vfxRune = this.add.container(this.player.x, this.player.y, [img]).setDepth(0.94).setAlpha(0.3).setScale(1, 0.55);
+        // (fx_rune: drawn lying flat on the floor, six frames turning it a tick at a time.)
+        if (this.player && this.textures.exists('fx_rune')) {
+            const img = this.add.image(0, 0, 'fx_rune', 'rune0').setBlendMode(Phaser.BlendModes.ADD)
+                .setTint(C.EL[this.currentElement] ?? 0xbfd2ff);
+            this._vfxRune = this.add.container(this.player.x, this.player.y, [img]).setDepth(0.94).setAlpha(0.3);
+            this._vfxRuneTurn = 0;
             this._vfxRuneImg = img;
             this._vfxRuneEl = this.currentElement;
         }
@@ -1470,16 +1214,18 @@ void main() {
         if (!r?.active || !img?.active || !p?.active) return;
         const C = this._vfxCfg();
         r.setPosition(p.x, p.y - (this.SLIME_Y_OFFSET || 0) + 7).setVisible(p.visible !== false);
-        img.rotation += (delta || 16) * 0.0007;
+        this._vfxRuneTurn = ((this._vfxRuneTurn || 0) + (delta || 16) * 0.0007) % (Math.PI / 2);   // a tick (15 degrees) a frame
+        const fr = 'rune' + Math.floor(this._vfxRuneTurn / (Math.PI / 12)) % 6;
+        if (img.frame.name !== fr) img.setFrame(fr);
         if (this._vfxRuneEl !== this.currentElement) {
             this._vfxRuneEl = this.currentElement;
             Sfx.play(this, 'switch');
             const col = C.EL[this.currentElement] ?? 0xbfd2ff;
             img.setTint(col);
             this.tweens.killTweensOf([r, img]);
-            r.setAlpha(0.95); img.setScale(0.9);
+            r.setAlpha(0.95); img.setScale(1.5);
             this.tweens.add({ targets: r, alpha: 0.3, duration: 420, ease: 'Cubic.easeOut' });
-            this.tweens.add({ targets: img, scale: 0.6, duration: 420, ease: 'Cubic.easeOut' });
+            this.tweens.add({ targets: img, scale: 1, duration: 420, ease: 'Cubic.easeOut' });
             this._vfxFlash(p.x, p.y, 120, col, 300, 0.7);
         }
     }
@@ -1517,9 +1263,9 @@ void main() {
         if (p) {
             add(p.x, p.y, C.PLAYER_LIGHT, C.EL[this.currentElement] ?? 0xbfd2ff, 1, 0.14);
             if (this._vfxPlayerGlow) add(p.x, p.y, 64, this._vfxPlayerGlow, 0.8, 0.6);   // a tint the game gave you
-            if (this.ignitionActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.25, C.EL.fire, 1, 0.3);
+            if (this.ignitionActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.25, C.EL.fire, 1, 0.16);
             if (this.lightningUltActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.2, C.EL.lightning, 1, 0.28);
-            if (this.tsunamiActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.3, C.EL.ice, 1, 0.22);
+            if (this.tsunamiActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.3, C.EL.ice, 1, 0.12);
         }
         for (const f of this.fireballs || []) {
             const s = f.sprite;
@@ -1543,6 +1289,7 @@ void main() {
         // torches breathe; sealed doorways and the boss door glow
         const TH = this._vfxTheme();
         for (const t of this._vfxTorches || []) {
+            if (t.off) { if (t.red) add(t.x, t.y + 18, C.TORCH_LIGHT * (0.55 + 0.1 * Math.sin(time * 0.006 + t.ph)), 0xff2a1a, 0.45, 0.2); continue; }   // out (the power cut: LevelManager._lamps); a red emergency lamp glows dimly
             const k = 1 + 0.08 * Math.sin(time * 0.019 + t.ph) + 0.05 * Math.sin(time * 0.047 + t.ph * 2.3);
             add(t.x, t.y + 18, C.TORCH_LIGHT * k, TH.torch, 0.8, 0.18);   // centred in front of the wall, not on it
         }
@@ -1551,7 +1298,7 @@ void main() {
             for (let i = wards.length - 1; i >= 0; i--) {
                 const w = wards[i];
                 if (!w.active) { wards.splice(i, 1); continue; }
-                if (w._vfxLit && w.visible) add(w.x, w.y, 42, 0xff3a22, 0.55, 0.3 * Math.min(1, w.alpha + 0.1));
+                if (w._vfxLit && w.visible) add(w.x, w.y, 42, w._vfxLight ?? 0xff3a22, 0.55, 0.3 * Math.min(1, w.alpha + 0.1));   // (a breaker's door: its own colour)
             }
         }
         const bd = this._bossDoor;
@@ -1617,7 +1364,7 @@ void main() {
             .sort((a, b) => ((a.x - px) ** 2 + (a.y - py) ** 2) - ((b.x - px) ** 2 + (b.y - py) ** 2))
             .slice(0, C.MAX_LIGHTS);
         sh.clear();
-        sh.fill(C.DARK_COLOR, C.DARK);
+        sh.fill(C.DARK_COLOR, Math.min(0.9, C.DARK + (this._lightsOut ? 0.1 : 0)));   // (the power cut: darker still)
         // The Cistern's water under the map (Menus.js) shows through: part of the dark is
         // erased over the void, through a mask a pixel a tile, softened at the walls.
         const veil = this._vfxVoidVeil;
@@ -1705,7 +1452,15 @@ void main() {
         Sfx.play(this, 'kill');
         const s = enemy?.sprite;
         if (!this._vfxBursts || !s?.active) return;
-        const col = this._vfxUnitColor(s);
+        const own = s.texture?.has?.('die_0');   // a sheet with its own death: the eyes cross, it bursts, what it was made of is left
+        const col = own ? this.textures.getPixel(12, 28, s.texture.key, '0')?.color ?? this._vfxUnitColor(s) : this._vfxUnitColor(s);
+        if (own) {
+            const d = this.add.sprite(s.x, s.y, s.texture.key, 'die_0').setOrigin(s.originX, s.originY).setScale(s.scaleX, s.scaleY).setFlipX(s.flipX).setDepth(s.depth ?? 1);
+            this._vfxSort?.(d);
+            let n = 0; while (s.texture.has('die_' + (n + 1))) n++;
+            this.tweens.addCounter({ from: 0, to: n + 0.99, duration: 110 * (n + 1), onUpdate: t => { if (d.active) d.setFrame('die_' + Math.floor(t.getValue())); },
+                onComplete: () => this.tweens.add({ targets: d, alpha: 0, delay: 500, duration: 700, onComplete: () => d.destroy() }) });
+        }
         const goo = this._vfxBursts.goo;
         goo.setParticleTint?.(col);
         goo.explode(12, s.x, s.y);
@@ -1861,11 +1616,10 @@ void main() {
     }
 
     // ── LAVA ─────────────────────────────────────────────────────────────────
-    // A lava tile (spawnIgnitionTrail): a ragged molten slab plus two flickering glows, in
-    // place of three flat rectangles. Returns [base, glow, core] like the rectangles were.
+    // A lava tile (spawnIgnitionTrail): a ragged molten slab (hand-drawn, fx_fire_w lava_0-2: plates of cooling crust
+    // drifting on it, seams glowing between) plus two flickering glows. Returns [base, glow, core].
     _vfxLavaTile(x, y) {
-        const v = Math.floor(Math.random() * 4);
-        const base = this.add.image(x, y, 'vfx_atlas', `lava${v}`).setDepth(0.5).setAlpha(0.95)
+        const base = this.add.image(x, y, 'fx_fire_w', 'lava_' + Math.floor(Math.random() * 3)).setDepth(0.5).setAlpha(0.95)
             .setAngle(90 * Math.floor(Math.random() * 4));
         // (the glows are faint on purpose: a field of lava stacks them, and the bloom adds its own)
         const glow = this.add.image(x, y, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xff5a1a)
@@ -1875,24 +1629,6 @@ void main() {
         this.tweens.add({ targets: glow, alpha: 0.34, scale: 0.5, duration: 220 + Math.random() * 120, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         this.tweens.add({ targets: core, alpha: 0.42, duration: 140 + Math.random() * 80, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 60 });
         return [base, glow, core];
-    }
-    _vfxPaintLava(ctx, X, Y, T, v) {
-        const R = this._vfxRng(v * 4099 + 11);
-        ctx.clearRect(X, Y, T, T);
-        for (let y = 0; y < T; y++) {
-            for (let x = 0; x < T; x++) {
-                const dx = (x + 0.5) / T - 0.5, dy = (y + 0.5) / T - 0.5;
-                const d = Math.max(Math.abs(dx), Math.abs(dy)) * 0.8 + Math.hypot(dx, dy) * 0.28;
-                const edge = 0.5 + (R() - 0.5) * 0.07;
-                if (d > edge) continue;
-                const heat = 1 - d / edge, n = R();
-                ctx.fillStyle = heat < 0.16 ? (n < 0.5 ? '#4a0c05' : '#5e1206')
-                    : n < 0.09 ? '#2a0604'
-                    : heat > 0.55 && n < 0.18 ? '#ffc04a'
-                    : n < 0.55 ? '#e8501a' : '#b8300c';
-                ctx.fillRect(X + x, Y + y, 1, 1);
-            }
-        }
     }
 
     // ── WATER ────────────────────────────────────────────────────────────────
@@ -1905,60 +1641,51 @@ void main() {
         const v = Math.floor(Math.random() * 4);
         return this.add.image(x, y, 'vfx_atlas', glint ? `waterhl${v}` : `water${v}`).setDepth(glint ? 0.5 : 0.28);
     }
-    _vfxPaintWater(ctx, X, Y, T, v, glint) {
-        const R = this._vfxRng(v * 2311 + (glint ? 977 : 5));
-        if (glint) {                // a glint or two; one tile in four has none, so it doesn't read as a grid
-            ctx.clearRect(X, Y, T, T);
-            for (let k = 0; k < [2, 1, 1, 0][v]; k++) {
-                ctx.fillStyle = k ? '#8fcff5' : '#d6f1ff';
-                ctx.fillRect(X + 2 + Math.floor(R() * (T - 9)), Y + 2 + Math.floor(R() * (T - 4)), 3 + Math.floor(R() * 3), 1);
-            }
-            return;
-        }
-        ctx.fillStyle = '#0f4a7c'; ctx.fillRect(X, Y, T, T);
-        for (let k = 0; k < 5; k++) {
-            ctx.fillStyle = '#0c3e6c';
-            ctx.fillRect(X + Math.floor(R() * (T - 6)), Y + Math.floor(R() * T), 5 + Math.floor(R() * 7), 1);
-        }
-        for (let k = 0; k < 2; k++) {
-            ctx.fillStyle = '#1d649e';
-            ctx.fillRect(X + Math.floor(R() * (T - 6)), Y + Math.floor(R() * T), 3 + Math.floor(R() * 4), 1);
-        }
-    }
+    _vfxPaintWater(ctx, X, Y, T, v, glint) { VisualFX.ground(ctx, X, Y, T, this.textures, (glint ? 'waterhl' : 'water') + v); }
 
-    // Flood water (the Cistern's): still one graphics for the whole map, now deep blue with a
-    // lit lip where it meets dry floor, glints on the shimmer layer, and under the shade, so
-    // it sits in the dark until something lights it.
+    // Flood water (the Cistern's, the Tower's pools, a flood): one bake for the whole map (LevelManager._bakeWater). Here only
+    // its flat stand-in, for a map too big to bake; the bake paints the hand-drawn water itself (_vfxWaterUnder).
     _vfxDrawWater(g, sh, tiles, steam) {
-        const T = this.TILE_SIZE, has = new Set();
-        for (const t of tiles) has.add(t.tx + ',' + t.ty);
-        const wet = (x, y) => has.has(x + ',' + y);
+        const T = this.TILE_SIZE;
         g.setDepth(0.25);
         g.clear(); if (sh?.active) sh.clear();
-        // a pool, not a grid: outer corners rounded, deeper in the middle than at its shallow edges, the top
-        // edge a shadowed lip (the water sits below the floor), a line of foam along the bottom
-        const R = Math.round(T * 0.45);
-        for (const t of tiles) {
-            const x = t.tx * T, y = t.ty * T, n = !wet(t.tx, t.ty - 1), s2 = !wet(t.tx, t.ty + 1), w = !wet(t.tx - 1, t.ty), e = !wet(t.tx + 1, t.ty);
-            const edge = n || s2 || w || e, r = { tl: n && w ? R : 0, tr: n && e ? R : 0, bl: s2 && w ? R : 0, br: s2 && e ? R : 0 };
-            g.fillStyle(edge ? 0x14507f : 0x0f4573, 0.88);
-            if (r.tl || r.tr || r.bl || r.br) g.fillRoundedRect(x, y, T, T, r); else g.fillRect(x, y, T, T);
-            if (n) { g.fillStyle(0x04101c, 0.55); g.fillRect(x + (w ? R * 0.6 : 0), y, T - (w ? R * 0.6 : 0) - (e ? R * 0.6 : 0), 3); g.fillStyle(0x5cc2ff, 0.45); g.fillRect(x + (w ? R : 0), y + 3, T - (w ? R : 0) - (e ? R : 0), 1); }
-            if (s2) { g.fillStyle(0xa8e4ff, 0.45); for (let k = (x / 2) % 2; k < T - 2; k += 3) g.fillRect(x + k + (w ? R * 0.5 : 0) * 0, y + T - 2, 2, 1); }
-            if (w) { g.fillStyle(0x5cc2ff, 0.3); g.fillRect(x + 1, y + (n ? R : 0), 1, T - (n ? R : 0) - (s2 ? R : 0)); }
-            if (e) { g.fillStyle(0x04101c, 0.3); g.fillRect(x + T - 2, y + (n ? R : 0), 2, T - (n ? R : 0) - (s2 ? R : 0)); }
-        }
-        if (sh?.active) {
-            for (const t of tiles) {
-                const h = ((t.tx * 73856093) ^ (t.ty * 19349663)) >>> 0;
-                sh.fillStyle(0xa8e4ff, 0.6);
-                sh.fillRect(t.tx * T + 2 + h % (T - 8), t.ty * T + 3 + (h >>> 5) % (T - 6), 4, 1);
-                if (h & 1) sh.fillRect(t.tx * T + 3 + (h >>> 9) % (T - 9), t.ty * T + 3 + (h >>> 13) % (T - 6), 3, 1);
+        g.fillStyle(0x0f4573, 0.88);
+        for (const t of tiles) g.fillRect(t.tx * T, t.ty * T, T, T);
+    }
+    // The baked water, hand-drawn (fx_ground), into the bake's canvas (ox, oy: its corner in the world): each tile's water (a
+    // pool, not a grid: the far lip in shadow, foam along the near side, its outer corners cut round), and on the shimmer layer
+    // its glints. It replaces the Graphics' stand-in, so that's cleared before the bake draws it.
+    _vfxWaterUnder(ctx, layer, gfx, ox, oy) {
+        const tm = this.textures, T = this.TILE_SIZE;
+        if (!tm.exists('fx_ground') || !this.waterTiles) return;
+        gfx.clear();
+        const G = tm.get('fx_ground'), src = G.getSourceImage(), has = new Set();
+        for (const t of this.waterTiles.values()) has.add(t.tx + ',' + t.ty);
+        const wet = (x, y) => has.has(x + ',' + y);
+        const blit = (name, x, y, fx = 1, fy = 1) => {   // (a flip only: the corner's cut, mirrored for each corner)
+            const fr = G.get(name);
+            ctx.setTransform(fx, 0, 0, fy, x + (fx < 0 ? T : 0), y + (fy < 0 ? T : 0));
+            ctx.drawImage(src, fr.cutX, fr.cutY, fr.cutWidth, fr.cutHeight, 0, 0, T, T);
+        };
+        for (const t of this.waterTiles.values()) {
+            const x = t.tx * T - ox, y = t.ty * T - oy, h = ((t.tx * 73856093) ^ (t.ty * 19349663)) >>> 0;
+            if (layer !== 'base') { blit('waterhl' + (h & 3), x, y); continue; }
+            const n = !wet(t.tx, t.ty - 1), s = !wet(t.tx, t.ty + 1), w = !wet(t.tx - 1, t.ty), e = !wet(t.tx + 1, t.ty);
+            ctx.globalAlpha = 0.9; blit('water' + ((h >>> 3) & 3), x, y); ctx.globalAlpha = 1;
+            if (n) blit('wedge_n', x, y);
+            if (s) blit('wedge_s', x, y);
+            if (w) blit('wedge_w', x, y);
+            if (e) blit('wedge_e', x, y);
+            if ((n || s) && (w || e)) {
+                ctx.globalCompositeOperation = 'destination-out';
+                if (n && w) blit('wcorner', x, y);
+                if (n && e) blit('wcorner', x, y, -1, 1);
+                if (s && w) blit('wcorner', x, y, 1, -1);
+                if (s && e) blit('wcorner', x, y, -1, -1);
+                ctx.globalCompositeOperation = 'source-over';
             }
         }
-        // fog (dried water, steamTiles): damp dark stone with a film of condensation, baked with the water (_bakeWater) since it sits still;
-        // _vfxTileFx adds the wisps boiling off it
-        // (fog has its own tiles now: LevelManager._fogOn)
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
 
     // ── LIVING TILES ─────────────────────────────────────────────────────────
@@ -2018,8 +1745,10 @@ void main() {
             for (const t of lava) {
                 if (!inView(t.x, t.y)) continue;
                 if (Math.random() < dt / 480 * thin) this._vfxEmberFx.emitParticleAt(t.x + (Math.random() - 0.5) * (T - 6), t.y + (Math.random() - 0.5) * (T - 8), 1);
-                if (Math.random() < dt / 2400 * thin && rip.length < 120) {
-                    rip.push({ x: t.x + (Math.random() - 0.5) * (T - 12), y: t.y + (Math.random() - 0.5) * (T - 12), born: time, life: 700, lava: true });
+                if (Math.random() < dt / 2400 * thin) {   // a bubble rising through it and popping (hand-drawn)
+                    if (!this.anims.exists('fw_bub')) WeaponSystem.fireArt(this);
+                    const b = this.add.sprite(t.x + (Math.random() - 0.5) * (T - 12), t.y + (Math.random() - 0.5) * (T - 12), 'fx_fire_w', 'bub_0').setDepth(0.55).play('fw_bub');
+                    b.once('animationcomplete', () => b.destroy());
                 }
             }
         }
@@ -2034,14 +1763,9 @@ void main() {
         for (let i = rip.length - 1; i >= 0; i--) {
             const r = rip[i], k = (time - r.born) / r.life;
             if (k >= 1 || k < 0) { rip.splice(i, 1); continue; }
-            if (r.lava) {   // swells, then pops into a ring
-                if (k < 0.6) { g2.fillStyle(0xffc04a, 0.95); g2.fillCircle(r.x, r.y, 0.8 + 2 * k / 0.6); g2.fillStyle(0xfff0b0, 0.9); g2.fillRect(r.x - 0.5, r.y - 1.5, 1, 1); }
-                else { g2.lineStyle(1, 0xffd27a, (1 - k) / 0.4); g2.strokeCircle(r.x, r.y, 2.4 + 4 * (k - 0.6) / 0.4); }
-            } else {
-                const w = 4 + 18 * k;
-                g.lineStyle(1, 0xa8e4ff, 0.55 * (1 - k)); g.strokeEllipse(r.x, r.y, w, w * 0.45);
-                if (k < 0.5) { g.lineStyle(1, 0xdff6ff, 0.4 * (1 - 2 * k)); g.strokeEllipse(r.x, r.y, w * 0.5, w * 0.22); }
-            }
+            const w = 4 + 18 * k;
+            g.lineStyle(1, 0xa8e4ff, 0.55 * (1 - k)); g.strokeEllipse(r.x, r.y, w, w * 0.45);
+            if (k < 0.5) { g.lineStyle(1, 0xdff6ff, 0.4 * (1 - 2 * k)); g.strokeEllipse(r.x, r.y, w * 0.5, w * 0.22); }
         }
     }
 
@@ -2191,7 +1915,7 @@ void main() {
         // heart: beats when you're low
         const low = hp / max < 0.3;
         const beat = low ? 1 + 0.18 * Math.max(0, Math.sin(now / 120)) : 1;
-        this._vfxHeart(g, 26, 27, 7 * beat, low ? 0xff2d4a : 0xff5a6e);
+        this._vfxHeart(26, 27, beat, low);
         // health bar: trail, fill, sheen, a tick every 10
         const bx = 42, by = 21, bw = 188, bh = 12, iw = bw - 2;
         g.fillStyle(0x1b0a12, 1); g.fillRoundedRect(bx, by, bw, bh, 4);
@@ -2201,6 +1925,16 @@ void main() {
             g.fillStyle(over ? 0x1fd9ae : 0xe2344c, 1); g.fillRoundedRect(bx + 1, by + 1, Math.max(4, iw * f), bh - 2, 3);
             g.fillStyle(over ? 0x8affe4 : 0xff8494, 0.85); g.fillRect(bx + 3, by + 2, Math.max(0, iw * f - 5), 2);
         }
+        // a shield (the Ember Scythe's slide), gold after your health, or over its end when you're near full
+        const sh = this._scyShield && now < this._scyShield.until ? Math.max(0, this._scyShield.hp) : 0, sf = Math.min(1, sh / max);
+        if (sf > 0) {
+            const s0 = Math.min(f, 1 - sf), blink = this._scyShield.until - now < 700 && Math.floor(now / 90) % 2;
+            g.fillStyle(0xffb040, blink ? 0.5 : 1); g.fillRect(bx + 1 + iw * s0, by + 1, Math.max(2, iw * sf), bh - 2);
+            g.fillStyle(0xfff0b0, blink ? 0.4 : 0.9); g.fillRect(bx + 1 + iw * s0, by + 2, Math.max(1, iw * sf - 1), 2);
+        }
+        // the Boreal Trident's Frostkin shell, pale ice after that
+        const fs = Math.max(0, this._tri?.shell?.hp || 0), ff = Math.min(1, fs / max);
+        if (ff > 0) { const f0 = Math.min(Math.min(1, f + sf), 1 - ff); g.fillStyle(0x9fe4ff, 1); g.fillRect(bx + 1 + iw * f0, by + 1, Math.max(2, iw * ff), bh - 2); g.fillStyle(0xe8fbff, 0.9); g.fillRect(bx + 1 + iw * f0, by + 2, Math.max(1, iw * ff - 1), 2); }
         g.fillStyle(0x000000, 0.35);
         const step = 10 * Math.ceil(max / 400);   // a tick every 10 HP, at most 40 of them (a big health pool gets a tick every 20, 30...)
         for (let k = step; k < max; k += step) g.fillRect(Math.round(bx + 1 + iw * (k / max)), by + 3, 1, bh - 6);
@@ -2208,20 +1942,23 @@ void main() {
         // stamina, under it (GameScene._stamSpend), with a dash's chevrons beside it: a notch at each dash's worth; red a
         // moment when a dash is refused
         const sm = this._stamMax?.() || 0;
+        this._hudChev?.setVisible(sm > 0 && this._stam != null);
         if (sm > 0 && this._stam != null) {
             const sy = 38, sh = 8, sf = Math.max(0, Math.min(1, this._stam / sm)), no = now - (this._stamDeniedAt || 0) < 350, cost = this._stamCost();
-            g.lineStyle(3, no ? 0xff4a5a : sf >= cost / sm ? 0x62ccff : 0x2a5a8a, 1);
-            for (const x of [20, 27]) { g.beginPath(); g.moveTo(x, sy - 1); g.lineTo(x + 5, sy + sh / 2); g.lineTo(x, sy + sh + 1); g.strokePath(); }
+            this._vfxHudBit('_hudChev', 26, sy + sh / 2, no ? 'chev_no' : sf >= cost / sm ? 'chev_ok' : 'chev_short');
             g.fillStyle(no ? 0x2a0a12 : 0x0a1424, 1); g.fillRoundedRect(bx, sy, bw, sh, 2);
-            if (sf > 0) { g.fillStyle(sf >= 1 ? 0x62ccff : 0x2c8ae0, 1); g.fillRoundedRect(bx + 1, sy + 1, Math.max(2, iw * sf), sh - 2, 1); }
+            const wind = (this._windedUntil || 0) > now;   // WINDED (GameScene.applyWinded): not refilling, so grey and cracked (fx_winded)
+            if (sf > 0) { g.fillStyle(wind ? 0x5c6472 : sf >= 1 ? 0x62ccff : 0x2c8ae0, 1); g.fillRoundedRect(bx + 1, sy + 1, Math.max(2, iw * sf), sh - 2, 1); }
+            if (!this._hudCracks?.[0]?.active && this.textures.exists('fx_winded')) this._hudCracks = [0.18, 0.47, 0.76].map((k, i) => { const o = this.add.image(0, 0, 'fx_winded', 'crack_' + (i % 2)).setScrollFactor(0).setDepth(29.5); this._vfxSort?.(o); o._k = k; return o; });
+            for (const o of this._hudCracks || []) o.setVisible(wind).setPosition(Math.round(bx + 1 + iw * o._k), sy + sh / 2);
             g.fillStyle(0x000000, 0.55);
             for (let k = cost; k < sm - 0.5; k += cost) g.fillRect(Math.round(bx + 1 + iw * (k / sm)), sy, 1, sh);
             g.lineStyle(1, no ? 0xff4a5a : 0x000000, 0.9); g.strokeRoundedRect(bx, sy, bw, sh, 2);
         }
-        this._hudHp.setText(`${Math.ceil(hp)}/${max}`).setColor(low ? '#ff8a98' : '#ffffff');
+        this._hudHp.setText(`${Math.ceil(hp)}/${max}` + (sh > 0 ? `  +${Math.ceil(sh)}` : '')).setColor(sh > 0 ? '#ffd27a' : low ? '#ff8a98' : '#ffffff');
         // element
         const el = this.currentElement, col = C.EL[el] ?? 0xffffff;
-        this._vfxElIcon(g, 26, 62, el, col);
+        this._vfxElIcon(26, 62, el);
         this._hudEl.setText((el || '').toUpperCase()).setColor('#' + col.toString(16).padStart(6, '0'));
         // glorp card: the coin, then the number
         const gt = this.glorpText;
@@ -2247,30 +1984,21 @@ void main() {
         }
     }
 
-    _vfxHeart(g, x, y, r, color) {
-        g.fillStyle(color, 1);
-        g.fillCircle(x - r * 0.5, y - r * 0.25, r * 0.55);
-        g.fillCircle(x + r * 0.5, y - r * 0.25, r * 0.55);
-        g.fillTriangle(x - r * 1.02, y - r * 0.05, x + r * 1.02, y - r * 0.05, x, y + r * 0.95);
-        g.fillStyle(0xffffff, 0.55); g.fillCircle(x - r * 0.55, y - r * 0.4, r * 0.18);
-    }
-
-    // The four element icons (the same shapes as the ult gems), small.
-    _vfxElIcon(g, x, y, el, color, s = 0.85) {
-        const P = pts => pts.map(([px, py]) => ({ x: x + px * s, y: y + py * s }));
-        g.fillStyle(color, 1); g.lineStyle(1.8 * s, color, 1);
-        if (el === 'fire') {
-            g.fillPoints(P([[0, -8], [3, -3], [5.5, 1], [5, 4.5], [2.5, 7], [0, 7.5], [-2.5, 7], [-5, 4.5], [-5.5, 1], [-3.5, -1], [-2.2, -4.5]]), true);
-            g.fillStyle(0xffd27a, 1); g.fillPoints(P([[0, -0.5], [2, 2.5], [2.2, 5], [0, 6.2], [-2.2, 5], [-2, 2.5]]), true);
-        } else if (el === 'ice') {
-            for (let k = 0; k < 3; k++) {
-                const a = Math.PI / 2 + k * Math.PI / 3, c = Math.cos(a) * s, sn = Math.sin(a) * s;
-                g.lineBetween(x - c * 7.5, y - sn * 7.5, x + c * 7.5, y + sn * 7.5);
-            }
-        } else if (el === 'lightning') {
-            g.fillPoints(P([[2, -8], [-4, 1.5], [-0.5, 1.5], [-2.5, 8], [4.5, -1.5], [1, -1.5], [3.5, -8]]), true);
-        } else {
-            g.fillPoints(P([[0, -8], [1.8, -1.8], [8, 0], [1.8, 1.8], [0, 8], [-1.8, 1.8], [-8, 0], [-1.8, -1.8]]), true);
+    // The card's little art (ui_hudbits, hand-drawn): the heart (beating when you're low), the dash chevrons, your element.
+    // Made the first time they're asked for, then only moved, scaled and re-framed.
+    _vfxHudBit(key, x, y, frame, scale = 1) {
+        let img = this[key];
+        if (!img?.active) {
+            if (!this.textures.exists('ui_hudbits')) return null;
+            img = this[key] = this.add.image(x, y, 'ui_hudbits', frame).setScrollFactor(0).setDepth(30);
+            this._vfxSort?.(img);
         }
+        if (img.frame.name !== frame) img.setFrame(frame);
+        return img.setPosition(x, y).setScale(scale).setVisible(true);
+    }
+    _vfxHeart(x, y, beat, low) { this._vfxHudBit('_hudHeart', x, y, low ? 'heart_low' : 'heart', beat); }
+    _vfxElIcon(x, y, el) {
+        if (!['fire', 'ice', 'lightning', 'cosmic'].includes(el)) { this._hudElIcon?.setVisible(false); return; }
+        this._vfxHudBit('_hudElIcon', x, y, 'el_' + el);
     }
 }

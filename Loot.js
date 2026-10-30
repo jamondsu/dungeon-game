@@ -2,8 +2,8 @@
 // Loot.js — chests, and what comes out of them.
 //
 // Static only (no mixin, nothing to proxy): any scene calls these with itself.
-//   LootFX.chest(scene, x, y, kind)    a chest painted in the house style (Menus.js' pixel
-//                                      buffer): oak and iron, the void's black glass, the gold
+//   LootFX.chest(scene, x, y, kind)    a chest drawn by hand (assets/art/lt_*): oak and iron,
+//                                      the void's black glass, the gold
 //                                      reward chest, and the mimic (an oak chest, a shade too
 //                                      red in its light). Lid and body are separate images so
 //                                      the lid can open. A soft light under it, a glint that
@@ -34,72 +34,12 @@ class LootFX {
         });
     }
 
-    // The four textures of a kind (22x22 each, all on one baseline so they stack): the body, the
-    // lid, the body open (dark inside, coins glinting) and the lid open (its underside, tipped back).
+    // The four textures of a kind (assets/art/lt_<kind>_body/_lid/_bodyopen/_lidopen, 22x22 each, all on one baseline
+    // so they stack): the body, the lid, the body open (dark inside, coins glinting) and the lid open (its underside,
+    // tipped back). What spills out: lt_coin (4 frames, spinning) and lt_gem.
     static textures(scene, kind) {
-        const K = LootFX.KINDS()[kind] || LootFX.KINDS().wood, base = 'lt_' + kind;
-        if (scene.textures.exists(base + '_body')) return base;
-        if (typeof MenuArt === 'undefined') return null;
-        const S = 22, OUT = 0x0c0810;
-        const bands = (P, y0, y1) => {
-            for (const x of [3, 17]) {
-                P.rect(x, y0, 2, y1 - y0, K.band[1]);
-                P.rect(x, y0, 1, y1 - y0, K.band[2]);
-                for (let y = y0 + 1; y < y1; y += 3) P.put(x + 1, y, K.band[0]);   // rivets
-            }
-        };
-        const body = (P, open) => {
-            for (let y = 11; y < 20; y++) {
-                const row = (y - 11) % 3;
-                P.rect(1, y, 20, 1, row === 0 ? K.wood[2] : row === 2 ? K.wood[0] : K.wood[1]);
-            }
-            for (let x = 2; x < 20; x += 5) P.put(x, 13, K.wood[3]);              // grain
-            bands(P, 11, 20);
-            P.rect(1, 19, 20, 1, K.band[0]); P.rect(1, 20, 20, 1, OUT);            // the iron foot
-            if (open) {                                                           // the inside, lit
-                P.rect(2, 10, 18, 2, K.wood[0]);
-                for (const [x, c] of [[4, 2], [6, 1], [9, 2], [12, 1], [14, 2], [16, 1]]) P.put(x, 10, K.lock[c]);
-                P.put(10, 11, K.lock[2]); P.put(7, 11, K.lock[1]); P.put(13, 11, K.lock[1]);
-                P.rect(1, 9, 20, 1, K.band[1]);
-            }
-            // the lock plate, hanging over the seam
-            P.rect(9, 10, 4, 5, K.lock[1]); P.rect(9, 10, 4, 1, K.lock[2]); P.rect(9, 14, 4, 1, K.lock[0]);
-            if (!open) { P.put(10, 12, K.key); P.put(11, 12, K.key); P.put(10, 13, K.key); }
-            P.outline(OUT);
-        };
-        const lid = P => {
-            P.rect(4, 3, 14, 1, K.wood[3]);
-            P.rect(2, 4, 18, 1, K.wood[3]);
-            for (let y = 5; y < 11; y++) P.rect(1, y, 20, 1, y < 7 ? K.wood[2] : y < 9 ? K.wood[1] : K.wood[0]);
-            P.rect(5, 4, 3, 1, 0xffffff, 0.35);                                   // a shine on the curve
-            bands(P, 3, 11);
-            P.rect(1, 10, 20, 1, K.band[1]); P.rect(1, 10, 20, 1, K.band[2], 0.35);
-            P.outline(OUT);
-        };
-        const lidOpen = P => {                                                  // tipped back: its underside
-            P.rect(2, 1, 18, 1, K.band[1]);
-            for (let y = 2; y < 8; y++) P.rect(2, y, 18, 1, y < 4 ? K.wood[1] : K.wood[0]);
-            bands(P, 1, 8);
-            P.rect(2, 8, 18, 1, K.band[0]);
-            P.outline(OUT);
-        };
-        for (const [part, paint] of [['body', P => body(P, false)], ['lid', lid], ['bodyopen', P => body(P, true)], ['lidopen', lidOpen]]) {
-            const P = new MenuArt.Px(S, S);
-            paint(P);
-            P.toTexture(scene, base + '_' + part, false);
-        }
-        // what spills out: a coin and a glorp
-        if (!scene.textures.exists('lt_coin')) {
-            const P = new MenuArt.Px(5, 5);
-            P.disc(2.5, 2.5, 2.5, 0xe8b432); P.put(1, 1, 0xfff0a0); P.put(2, 1, 0xfff0a0); P.put(3, 3, 0x8a5a10); P.put(2, 3, 0xb8862a);
-            P.toTexture(scene, 'lt_coin', false);
-        }
-        if (!scene.textures.exists('lt_gem')) {
-            const P = new MenuArt.Px(5, 6);
-            P.poly([[2.5, 0], [5, 2], [2.5, 6], [0, 2]], 0x2fe08a); P.put(1, 2, 0xb6ffc8); P.put(2, 1, 0xffffff); P.put(3, 4, 0x169a5e);
-            P.toTexture(scene, 'lt_gem', false);
-        }
-        return base;
+        const base = 'lt_' + (LootFX.KINDS()[kind] ? kind : 'wood');
+        return scene.textures.exists(base + '_body') ? base : null;
     }
 
     // A chest standing at (x, y) (a tile's centre). `hover`: it floats (the reward chest).
@@ -181,12 +121,12 @@ class LootFX {
             const gem = i % 3 === 0;
             const key = gem ? 'lt_gem' : 'lt_coin';
             if (!scene.textures.exists(key)) break;
-            const o = put(scene.add.image(x, y - 6, key));
+            const o = put(gem ? scene.add.image(x, y - 6, key) : scene.add.image(x, y - 6, key, '0'));
             const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, d = 14 + Math.random() * 22;
             const tx = x + Math.cos(a) * d * 1.3, ty = y + 4 + Math.random() * 10, h = 18 + Math.random() * 16;
             const st = { t: 0 };
             scene.tweens.add({ targets: st, t: 1, duration: 420 + Math.random() * 160, delay: i * 18, ease: 'Linear',
-                onUpdate: () => { o.x = x + (tx - x) * st.t; o.y = (y - 6) + (ty - (y - 6)) * st.t - h * 4 * st.t * (1 - st.t); o.rotation = st.t * 6 * (gem ? 0.3 : 1); },
+                onUpdate: () => { o.x = x + (tx - x) * st.t; o.y = (y - 6) + (ty - (y - 6)) * st.t - h * 4 * st.t * (1 - st.t); if (!gem) o.setFrame(String(Math.floor(st.t * 10) % 4)); },
                 onComplete: () => {
                     scene.tweens.add({ targets: o, y: ty - 4, duration: 110, yoyo: true, ease: 'Quad.easeOut', onComplete: () => {
                         scene.tweens.add({ targets: o, alpha: 0, scale: 0.4, delay: 300 + Math.random() * 400, duration: 300, onComplete: () => o.destroy() });

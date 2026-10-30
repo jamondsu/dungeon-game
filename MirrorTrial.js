@@ -221,7 +221,7 @@ class MirrorTrial extends Phaser.Scene {
         // what's said, and the keys
         const T = (y, s, size, col) => this.add.text(W / 2, y, s, { fontSize: size, fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: col, stroke: '#05030a', strokeThickness: 5, align: 'center' }).setOrigin(0.5).setDepth(6);
         this.title = T(H * 0.38, 'THE HALL OF REFLECTIONS', '30px', '#d8c8ff');
-        this.sub = T(H * 0.38 + 44, 'Seven fragments of the way out are in mirrors; five make it whole. Walk into a pane to chalk it.\nBut half the panes are glass, and glass shatters. They\'re asleep. Don\'t wake them: they\'ll want to play.\nThey can\'t hurt you. But they can scare you out of your mind.', '16px', '#a898c8');
+        this.sub = T(H * 0.38 + 30, 'Seven fragments of the way out are in mirrors; five make it whole. Walk into a pane to chalk it.\nBut half the panes are glass, and glass shatters. They\'re asleep. Don\'t wake them: they\'ll want to play.\nThey can\'t hurt you. But they can scare you out of your mind.', '16px', '#a898c8').setOrigin(0.5, 0);   // (its top under the title: centred, its three lines reached up into it)
         this.time.delayedCall(1300, () => { Sfx.play(this, 'shatter'); this.cameras.main.shake(200, 0.006); });
         this.time.delayedCall(2300, () => Sfx.play(this, 'e_absorb'));
         this.tweens.add({ targets: [this.title, this.sub], alpha: 0, delay: C.GRACE_MS - 500, duration: 600 });
@@ -262,6 +262,7 @@ class MirrorTrial extends Phaser.Scene {
         this.input.keyboard.on('keydown', this._key, this);
         this.input.keyboard.on('keyup', this._keyUp, this);
         this.input.on('pointerdown', this._boop, this);
+        if (TouchControls.on(this)) TouchControls.hall(this);   // a phone: the stick and the Hall's keys on the screen (TouchControls.js)
         this.events.once('shutdown', () => { this.input.keyboard.off('keydown', this._key, this); this.input.keyboard.off('keyup', this._keyUp, this); this.input.off('pointerdown', this._boop, this); });
         if (typeof Music !== 'undefined') Music.duck(true, 'mirror');
         this.cameras.main.fadeIn(700, 8, 4, 16);
@@ -1221,7 +1222,7 @@ class MirrorTrial extends Phaser.Scene {
         // your time on the leaderboard (signed in, with a name): where it puts you
         const board = line(H * 0.52 + 214, 'POSTING YOUR TIME...', '14px', '#8a7aa8');
         Cloud.post('hall_time', +t.toFixed(1)).then(r => board.active && board.setText(r.rank ? `ON THE LEADERBOARD: #${r.rank}  (YOUR BEST ${clock(r.best)})`
-            : { out: 'SIGN IN (ACCOUNT, ON THE MAP) TO PUT YOUR TIMES ON THE LEADERBOARD', name: 'SET A NAME (ACCOUNT, ON THE MAP) TO PUT YOUR TIMES ON THE LEADERBOARD' }[r.why] || 'COULDN\'T REACH THE LEADERBOARD'));
+            : { out: 'SIGN IN (ACCOUNT, ON THE MAP) TO PUT YOUR TIMES ON THE LEADERBOARD', name: 'SET A NAME (ACCOUNT, ON THE MAP) TO PUT YOUR TIMES ON THE LEADERBOARD', dev: 'DEV MODE: TIMES AREN\'T POSTED' }[r.why] || 'COULDN\'T REACH THE LEADERBOARD'));
     }
     // One reached you: a prank, a different one each time (never the same twice running): BOO, its face slammed into yours; the
     // lights out and its eyes opening in the dark, right in front of you; a splat, leapt onto your face; or grabbed and spun round,

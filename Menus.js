@@ -78,62 +78,48 @@ class MenuArt {
         return key;
     }
 
-    // An old map's parchment, painted at half size (drawn 2x): torn, ragged edges with bites
-    // ripped out and a corner gone, a scorched rim, grain and fibres, water stains and rings,
-    // fold creases, and a couple of burnt holes. `holes` / `corner` say where the paper isn't,
+    // An old map's parchment, laid at half size (drawn 2x) from its typed pieces (map_kit): the paper's tiles flipped every
+    // way, water stains and rings, fold creases, then its torn edges with bites ripped out, a corner gone and a couple of
+    // burnt holes, each with its own char and singe, and the paper that isn't there cut away. The bites, holes and stains
+    // fall where they always have (the same seed, drawn in the same order). `holes` / `corner` say where the paper isn't,
     // in full-size pixels from its top left (for the nails and anything else that wants to know).
     static parchment(scene, key, fw, fh, seed = 1337) {
-        const W = Math.ceil(fw / 2), H = Math.ceil(fh / 2), R = MenuArt.rng(seed), n = MenuArt.noise(seed), n2 = MenuArt.noise(seed + 7);
+        const W = Math.ceil(fw / 2), H = Math.ceil(fh / 2), R = MenuArt.rng(seed), R2 = MenuArt.rng(seed + 1);
         const bites = [];
         for (let k = 0; k < 7; k++) bites.push({ side: Math.floor(R() * 4), at: R(), depth: 5 + R() * 11, wd: 6 + R() * 16 });
         const holes = [0, 1].map(() => ({ x: W * (0.15 + R() * 0.7), y: H * (0.2 + R() * 0.6), r: 2.5 + R() * 2.5 }));
         const stains = Array.from({ length: 14 }, () => ({ x: R() * W, y: R() * H, r: 6 + R() * 30, ring: R() < 0.4, a: 0.08 + R() * 0.14 }));
         const CORNER = 46;
-        const rag = (side, along, len) => {
-            let v = 1.5 + MenuArt.fbm(n, along * 0.07, side * 13.1, 3) * 6 + n2(along * 0.7, side * 5) * 1.6;
-            for (const b of bites) if (b.side === side) {
-                const t = Math.abs(along - b.at * len) / b.wd;
-                if (t < 1) v += b.depth * Math.pow(1 - t, 1.4) * (0.75 + 0.5 * n2(along * 0.9, b.at * 50));
+        if (!scene.textures.exists(key)) {
+            const dt = scene.textures.addDynamicTexture(key, W, H), K = 'map_kit', cuts = [];
+            const size = n => scene.textures.getFrame(K, n);
+            const put = (n, x, y, o = {}) => dt.stamp(K, n, Math.round(x), Math.round(y), { originX: 0, originY: 0, ...o });
+            const torn = (n, x, y) => { put(n, x, y); cuts.push([n + '_m', x, y]); };   // its char now, its cut once everything's down
+            for (let y = 0; y < H; y += 32) for (let x = 0; x < W; x += 32) {   // the paper, each tile flipped its own way
+                const fx = R2() < 0.5, fy = R2() < 0.5;
+                put('p' + Math.floor(R2() * 4), x + (fx ? 32 : 0), y + (fy ? 32 : 0), { scaleX: fx ? -1 : 1, scaleY: fy ? -1 : 1 });
             }
-            return v;
-        };
-        const key2 = MenuArt.tex(scene, key, W, H, P => {
-            const RL = [], RR = [], RT = [], RB = [];
-            for (let y = 0; y < H; y++) { RL[y] = rag(0, y, H); RR[y] = rag(1, y, H); }
-            for (let x = 0; x < W; x++) { RT[x] = rag(2, x, W); RB[x] = rag(3, x, W); }
-            const foldX = W / 2, foldY = [H / 3, H * 2 / 3];
-            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-                const cornerD = (W - 1 - x) + (H - 1 - y) - (CORNER + n(x * 0.3, y * 0.3) * 6);   // the bottom right corner, torn away
-                let de = Math.min(x - RL[y], W - 1 - RR[y] - x, y - RT[x], H - 1 - RB[x] - y, cornerD);
-                let hole = Infinity;
-                for (const h of holes) hole = Math.min(hole, Math.hypot(x - h.x, y - h.y) - h.r - n(x * 0.5, y * 0.5) * 1.5);
-                de = Math.min(de, hole);
-                if (de < 0) continue;
-                // the paper: grain, fibres
-                let c = MenuArt.mix(0xc4a87c, 0xe8d6ae, MenuArt.fbm(n, x * 0.035, y * 0.035, 4));
-                const fib = n2(x * 0.7, y * 0.7);   // fibres as specks every way (stretched one way, they read as rain)
-                if (fib > 0.86) c = MenuArt.mix(c, 0xf2e4c4, 0.25); else if (fib < 0.1) c = MenuArt.mix(c, 0xa88c60, 0.18);
-                for (const st of stains) {
-                    const d = Math.hypot(x - st.x, y - st.y) / st.r;
-                    if (st.ring ? Math.abs(d - 1) < 0.07 : d < 1) c = MenuArt.mix(c, 0x8a6a3a, st.ring ? st.a * 2.2 : st.a * (1 - d * d));
-                }
-                // creases: a dark valley with a lit ridge beside it, wandering a little
-                const fx = foldX + (n(y * 0.05, 3) - 0.5) * 3;
-                if (Math.abs(x - fx) < 0.6) c = MenuArt.mix(c, 0x7a5a32, 0.5); else if (Math.abs(x - fx - 1) < 0.6) c = MenuArt.mix(c, 0xf6ead0, 0.4);
-                for (const fy0 of foldY) {
-                    const fy = fy0 + (n(x * 0.05, fy0) - 0.5) * 3;
-                    if (Math.abs(y - fy) < 0.6) c = MenuArt.mix(c, 0x7a5a32, 0.45); else if (Math.abs(y - fy - 1) < 0.6) c = MenuArt.mix(c, 0xf6ead0, 0.35);
-                }
-                // scorched toward the edge (dithered bands, the way pixel art steps a gradient)
-                const th = MenuArt.bayer(x, y);
-                if (de < 1.2) c = 0x24140a;
-                else if (de < 2.6) c = MenuArt.mix(0x4a2a10, c, th * 0.3);
-                else if (de < 6) c = MenuArt.mix(c, 0x6a4018, (1 - (de - 2.6) / 3.4) * 0.85 > th ? 0.75 : 0.25);
-                else if (de < 14) c = MenuArt.mix(c, 0x9a7444, (1 - (de - 6) / 8) * 0.5);
-                P.put(x, y, c);
+            for (const st of stains) {
+                const n = st.ring ? 'st_ring' : st.r > 18 ? 'st_blot' : st.r > 10 ? 'st_blot2' : 'st_drip', f = size(n), fl = R2() < 0.5;
+                put(n, st.x - f.width / 2 + (fl ? f.width : 0), st.y - f.height / 2, { scaleX: fl ? -1 : 1, alpha: Math.min(1, 0.45 + st.a * 3) });
             }
-        });
-        return { key: key2, scale: 2, holes: holes.map(h => ({ x: h.x * 2, y: h.y * 2 })), corner: CORNER * 2 };
+            for (let y = 0; y < H; y += 32) put('cr_v', W / 2 - 1, y);
+            for (const fy of [H / 3, H * 2 / 3]) for (let x = 0; x < W; x += 32) put('cr_h', x, fy - 1);
+            for (const h of holes) { const n = h.r > 3.75 ? 'h0' : 'h1', f = size(n); torn(n, h.x - f.width / 2, h.y - f.height / 2); }
+            for (let x = 0, k = 0; x < W; x += 32, k++) { torn('et' + (k % 4), x, 0); torn('eb' + ((k + 2) % 4), x, H - 16); }
+            for (let y = 0, k = 0; y < H; y += 32, k++) { torn('el' + ((k + 1) % 4), 0, y); torn('er' + ((k + 3) % 4), W - 16, y); }
+            for (const b of bites) {
+                const v = b.depth > 9 ? 0 : 1, f = size('bt' + v), along = b.at * (b.side < 2 ? H : W);
+                if (b.side === 0) torn('bl' + v, 0, along - f.width / 2);
+                else if (b.side === 1) torn('br' + v, W - f.height, along - f.width / 2);
+                else if (b.side === 2) torn('bt' + v, along - f.width / 2, 0);
+                else torn('bb' + v, along - f.width / 2, H - f.height);
+            }
+            torn('ctl', 0, 0); torn('ctr', W - 16, 0); torn('cbl', 0, H - 16);
+            torn('cbr', W - 52, H - 52);   // the corner torn away
+            for (const [n, x, y] of cuts) put(n, x, y, { erase: true });
+        }
+        return { key, scale: 2, holes: holes.map(h => ({ x: h.x * 2, y: h.y * 2 })), corner: CORNER * 2 };
     }
 
     // The small shared textures: a pixel, a soft glow, a soft shaft of light, a pixel ring.
@@ -192,21 +178,14 @@ class MenuArt {
             V: [0x140a24, 0x2e1650, 0x55289a, 0x9a5cf0],   // void iron
             P: [0x5a2aa0, 0x9a5cf0, 0xc99cff, 0xf4e6ff],   // violet light
             B: [0x000000, 0x06030c, 0x140a22, 0x3a2060],   // a black hole
+            Q: [0x0e5a4c, 0x1fa888, 0x5cf0c0, 0xd8fff0],   // aurora
         });
     }
 
     // The shapes. `m` draws materials into the map; fx are [kind, layer, ...args].
     static ICONS() {
         if (MenuArt._icons) return MenuArt._icons;
-        const fist = (m, mat, cuff) => {             // a clenched fist from the front
-            for (const [x, w] of [[5, 3], [9, 3], [13, 3], [17, 2]]) { m.rect(x, 10, w, 6, mat); m.set(x + w - 1, 10, '.'); }
-            m.rect(5, 15, 14, 3, mat);
-            m.rect(4, 14, 11, 3, mat);                    // the thumb across them
-            m.line(4, 14, 14, 14, '1'); m.set(15, 14, '1');
-            for (const x of [8, 12, 16]) m.line(x, 11, x, 13, '1');
-            m.line(5, 15, 12, 15, mat.toLowerCase());
-            m.rect(6, 18, 12, 4, cuff); m.line(6, 19, 16, 19, cuff.toLowerCase());
-        };
+        const typed = rows => m => rows.forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c)));   // an icon typed pixel by pixel
         const side = (m, mat, cuff) => {              // a fist from the side, punching right
             m.rect(9, 8, 10, 9, mat); m.set(18, 8, '.'); m.set(18, 16, '.'); m.set(9, 16, '.');
             m.rect(10, 6, 6, 3, mat); m.set(10, 6, '.');  // the thumb on top
@@ -216,91 +195,556 @@ class MenuArt {
             m.rect(3, 10, 6, 6, cuff); m.line(3, 11, 7, 11, cuff.toLowerCase());
         };
         return (MenuArt._icons = {
-            flame_fists: { el: 'fire', draw: m => fist(m, 'F', 'S'),
-                fx: [['flame', 'back', 4, 20, 13, 10], ['ember', 'front', 3, 0, 21, 8, 4]] },
-            flame_sword: { el: 'fire', draw: m => {
-                    m.line(9, 14, 19, 4, 'F', 3); m.set(20, 3, 'F'); m.set(21, 2, 'F'); m.set(20, 2, 'F'); m.set(21, 3, '.');
-                    m.line(10, 12, 19, 3, 'f');
-                    m.line(5, 12, 11, 18, 'G', 2); m.line(4, 11, 4, 11, 'G'); m.set(12, 19, 'G');
-                    m.line(8, 16, 4, 20, 'L', 2);
-                    m.disc(3, 21, 1.6, 'G');
-                }, fx: [['flameLine', 'back', 9, 13, 21, 1, 5], ['ember', 'front', 10, 0, 23, 10, 3]] },
-            magma_staff: { el: 'fire', draw: m => {
-                    m.rect(11, 10, 2, 13, 'W'); m.rect(10, 9, 4, 2, 'G'); m.rect(11, 22, 2, 1, 'G'); m.rect(10, 15, 4, 1, 'G');
-                    m.disc(11.5, 5.5, 3.8, 'M'); m.set(10, 3, 'm'); m.set(9, 4, 'm'); m.set(10, 4, 'm');
-                    m.line(9, 10, 7, 7, 'G'); m.line(7, 7, 7, 4, 'G'); m.line(14, 10, 16, 7, 'G'); m.line(16, 7, 16, 4, 'G');
-                }, fx: [['flame', 'back', 7, 16, 6, 6], ['drip', 'front', 12, 9, 7, 0xff7a1a], ['ember', 'front', 5, 0, 18, 6, 3]] },
-            ignition: { el: 'fire', draw: m => {   // a flamethrower: the fuel canister slung under a vented barrel, a brass nozzle
-                    m.rect(2, 9, 3, 3, 'S'); m.rect(4, 8, 10, 4, 'S'); m.line(4, 8, 13, 8, 's');   // stock and body
-                    m.rect(14, 9, 5, 2, 'S'); for (const x of [15, 17]) m.set(x, 10, '1');   // the barrel's vents
-                    m.poly([[18.5, 8.5], [23, 6.5], [23, 13.5], [18.5, 11.5]], 'G'); m.line(22, 9, 22, 10, '1');   // the nozzle bell
-                    m.line(7, 12, 6, 18, 'W', 2); m.line(9, 12, 10, 14, 'S'); m.set(9, 13, '1');   // grip and trigger guard
-                    m.rect(11, 13, 9, 4, 'F'); m.set(11, 13, '.'); m.set(11, 16, '.'); m.set(19, 13, '.'); m.set(19, 16, '.');   // the canister
-                    m.line(12, 13, 12, 16, 'G'); m.line(18, 13, 18, 16, 'G'); m.line(13, 14, 17, 14, 'f');
-                    m.set(13, 12, 'S'); m.set(17, 12, 'S');   // its clamps
-                    m.line(11, 15, 9, 16, 'L'); m.line(9, 16, 8, 13, 'L');   // the fuel line
-                }, fx: [['muzzle', 'front', 23, 10], ['ember', 'front', 16, 2, 23, 6, 3]] },
-            ice_fists: { el: 'ice', draw: m => {
-                    fist(m, 'I', 'S');
-                    m.poly([[5, 11], [5.5, 4], [8, 11]], 'C'); m.poly([[9, 11], [11, 1], [12.5, 11]], 'C');
-                    m.poly([[13, 11], [16, 5], [16, 11]], 'C'); m.poly([[17, 11], [19.5, 7], [19, 12]], 'C');
-                    m.line(10, 4, 10, 9, 'c'); m.line(6, 6, 6, 9, 'c');
-                }, fx: [['glint', 'front', 11, 1, 11, 9], ['star', 'front', 4, 3, 0], ['star', 'front', 18, 5, 2]] },
-            icicle_cannon: { el: 'ice', draw: m => {
-                    m.line(6, 15, 14, 7, 'S', 4); m.line(5, 13, 12, 6, 's');
-                    m.line(8, 17, 16, 9, 'I', 1); m.line(10, 11, 13, 14, 'I', 2);
-                    m.disc(15.5, 6.5, 2.4, 'S');
-                    m.disc(7, 19, 3, 'W'); m.set(7, 19, 'G');
-                    m.poly([[17, 6], [23, 0], [19, 7]], 'C'); m.poly([[17, 9], [23, 7], [18, 11]], 'C'); m.poly([[15, 4], [17, 0], [17, 5]], 'C');
-                }, fx: [['glint', 'front', 18, 6, 23, 0], ['star', 'front', 22, 9, 1]] },
-            fractal_shard: { el: 'ice', draw: m => {
-                    m.poly([[11, 0], [16.5, 7], [14, 20], [9, 22.5], [5.5, 9]], 'C');
-                    m.line(11, 1, 11, 21, '1'); m.line(6, 9, 10, 9, 'c'); m.line(7, 8, 10, 3, 'c');
-                    m.poly([[19, 11], [22.5, 14], [19.5, 18], [17, 14.5]], 'C');
-                    m.poly([[18, 2], [21, 4], [19.5, 8], [17, 5.5]], 'C');
-                    m.poly([[3.5, 16], [6, 19], [4, 23], [1.5, 19.5]], 'C');
-                }, fx: [['glint', 'front', 8, 4, 13, 18], ['star', 'front', 20, 1, 0], ['star', 'front', 2, 13, 2]] },
-            lightning_fists: { el: 'lightning', draw: m => side(m, 'Y', 'S'),
-                fx: [['bolt', 'front', 19, 9, 23, 3], ['bolt', 'front', 19, 13, 23, 18], ['spark', 'front', 1, 2, 23, 22, 4, 0xffe14a]] },
-            orb_emitter: { el: 'lightning', draw: m => {
-                    m.line(3, 21, 8, 16, 'W', 2); m.rect(8, 14, 3, 3, 'G');
-                    m.line(10, 14, 11, 5, 'Y', 2); m.line(10, 15, 19, 14, 'Y', 2);
-                    m.set(12, 4, 'Y'); m.set(20, 13, 'Y');
-                    m.disc(16, 9, 3.3, 'O');
-                }, fx: [['bolt', 'front', 12, 5, 15, 7], ['bolt', 'front', 19, 13, 17, 11], ['spark', 'front', 12, 3, 23, 15, 3, 0xfff6b0]] },
-            ball_lightning: { el: 'lightning', draw: m => {
-                    m.disc(12, 12, 7.2, 'O'); m.disc(12, 12, 4.6, 'o');
-                    m.line(9, 9, 12, 12, 'Y'); m.line(12, 12, 10, 15, 'Y'); m.line(12, 12, 16, 11, 'Y');
-                }, fx: [['bolt', 'front', 18, 8, 23, 3], ['bolt', 'front', 6, 16, 1, 21], ['bolt', 'front', 6, 7, 1, 3], ['bolt', 'front', 18, 16, 23, 21]] },
-            conductor: { el: 'lightning', draw: m => {   // a staff with a spool of wire for a head, the wire trailing to a clamp
-                    m.line(4, 22, 10, 14, 'W', 2); m.rect(9, 12, 3, 3, 'G');
-                    m.disc(13, 8, 5.4, 'G'); m.disc(13, 8, 4, 'Y'); m.disc(13, 8, 1.6, 'G');
-                    m.line(17, 11, 20, 17, 'Y'); m.rect(19, 17, 3, 3, 'S'); m.set(20, 20, 'S'); m.set(22, 20, 'S');
-                }, frames: 10, fps: 12,   // a pulse of current winds round the spool, runs down the wire, and the clamp sparks
-                fx: [['current', 'front', [[13, 4], [16, 5], [17, 8], [16, 11], [13, 12], [10, 11], [9, 8], [10, 5], [13, 5], [15, 7], [15, 9], [17, 11], [18, 13], [19, 15], [20, 17]], 6]] },
-            cosmic_fists: { el: 'cosmic', draw: m => { side(m, 'V', 'P'); m.set(12, 11, 'P'); m.set(10, 13, 'p'); m.set(13, 14, 'P'); },
-                fx: [['streak', 'back', 0, 6, 2, 16], ['star', 'front', 20, 4, 1], ['star', 'front', 21, 18, 3]] },
-            barrier_staff: { el: 'cosmic', draw: m => {
-                    m.rect(11, 11, 2, 12, 'W'); m.rect(10, 10, 4, 2, 'G'); m.rect(11, 22, 2, 1, 'G');
-                    m.poly([[7, 2], [17, 2], [17, 6.5], [12, 11], [7, 6.5]], 'P');
-                    m.poly([[9.5, 3.5], [14.5, 3.5], [14.5, 6], [12, 8.5], [9.5, 6]], 'V');
-                    m.set(12, 5, 'p'); m.set(11, 5, 'P');
-                }, fx: [['orbit', 'both', 12, 6, 10, 4, 3, 0xc99cff]] },
-            astrolabe: { el: 'cosmic', draw: m => {
-                    m.disc(12, 13, 9.2, 'G'); m.disc(12, 13, 7.2, 'V'); m.disc(12, 13, 2, 'G');
-                    m.ellipseRing(12, 13, 5, 2.4, 'g');
-                    m.rect(11, 2, 3, 2, 'G'); m.set(12, 2, '.'); m.set(12, 1, 'G');
-                }, fx: [['hand', 'front', 12, 13, 6], ['star', 'front', 21, 3, 0], ['star', 'front', 3, 21, 2]] },
-            singularity_staff: { el: 'cosmic', draw: m => {
-                    m.rect(11, 12, 2, 11, 'V'); m.rect(10, 11, 4, 2, 'P'); m.rect(11, 22, 2, 1, 'P');
-                    m.disc(11.5, 6, 4.6, 'B');
-                }, fx: [['disk', 'both', 11.5, 6, 9, 2.6], ['orbit', 'front', 11.5, 6, 9, 2.6, 2, 0xffffff]] },
-            void_blade: { el: 'cosmic', draw: m => {
-                    m.poly([[6, 16], [9, 10], [14, 5], [21, 1], [17, 6], [13, 11], [9, 17]], 'V');
-                    m.line(8, 13, 14, 6, 'P'); m.line(14, 6, 20, 2, 'p');
-                    m.line(4, 14, 9, 19, 'G', 2);
-                    m.line(6, 18, 3, 21, 'L', 2); m.set(2, 22, 'G');
-                }, fx: [['glint', 'front', 9, 12, 20, 2], ['spark', 'front', 8, 0, 23, 16, 3, 0xc99cff]] },
+            flame_fists: { el: 'fire', draw: typed([   // a clenched fist from the front in red-hot iron, the thumb across it, a riveted steel cuff
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '..........FF............',
+                    '.....FF..FFFF..FFF......',
+                    '....fFFF1fFFF1fFFF.FF...',
+                    '....FFFF1FFFF1FFFF1fFF..',
+                    '....FFFF1FFFF1FFFF1FFF..',
+                    '....FFFF1FFFF1FFFF1FFF..',
+                    '...11111111111FFFF1FFF..',
+                    '..1FFFFFFFFfff1FFF1FFF..',
+                    '..1FFFFFFFFFFFF1FFFFFF..',
+                    '...11FFFFFFFFFFFFFFFF...',
+                    '.....FFFFFFFFFFFFFFF....',
+                    '......SSSSSSSSSSSS......',
+                    '......ssssssssssss......',
+                    '......SGSSSSSSSSGS......',
+                    '......SSSSSSSSSSSS......',
+                    '.......SSSSSSSSSS.......',
+                    '........................',
+                ]),
+                fx: [['flame', 'back', 4, 21, 9, 8], ['ember', 'front', 3, 0, 21, 8, 4]] },
+            flame_sword: { el: 'fire', draw: typed([   // a red-hot blade, its molten edge on top, a brass guard, a leather grip, a brass pommel
+                    '........................',
+                    '.....................ff.',
+                    '...................fFF..',
+                    '..................fFF...',
+                    '.................fFF....',
+                    '................fFF.....',
+                    '...............fFF......',
+                    '..............fFF.......',
+                    '.............fFF........',
+                    '............fFF.........',
+                    '...........fFF..........',
+                    '.....GG...fFF...........',
+                    '......GG.fFF............',
+                    '.......GGFF.............',
+                    '........GGG.............',
+                    '.......LLGG.............',
+                    '......LL..GG............',
+                    '.....LL....G............',
+                    '....LL..................',
+                    '...LL...................',
+                    '..gG....................',
+                    '..GG....................',
+                    '........................',
+                    '........................',
+                ]),
+                fx: [['flameLine', 'back', 9, 12, 21, 1, 5], ['ember', 'front', 10, 0, 23, 10, 3]] },
+            magma_staff: { el: 'fire', draw: typed([   // a ball of magma, cracked, held in brass claws on a wooden staff banded in brass
+                    '........................',
+                    '..........MMM...........',
+                    '.........MmmMM..........',
+                    '........MmmMMMM.........',
+                    '.......GMmMMM1MG........',
+                    '.......GMMM1MMMG........',
+                    '.......GMMMMMMMG........',
+                    '........GMMMMMG.........',
+                    '.........GGGGG..........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........Ww...........',
+                    '...........WW...........',
+                    '..........GGGG..........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '..........GGGG..........',
+                    '...........GG...........',
+                    '........................',
+                ]),
+                fx: [['flame', 'back', 7, 16, 3, 5], ['drip', 'front', 13, 8, 7, 0xff7a1a], ['ember', 'front', 5, 0, 18, 6, 3]] },
+            ignition: { el: 'fire', draw: typed([   // a flamethrower: a wooden stock, a steel body, a vented barrel, a brass nozzle bell, the fuel canister slung under it
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '....................GGG.',
+                    'WWW.ssssssssss.....GGGG.',
+                    'WWWWSSSSSSSSSSSS1S1SGGGG',
+                    'WWWWSSSSSSSSSSSSSSSSGGGG',
+                    'WWW.SSSSSSSSSS......GGGG',
+                    '......LL.S.GFFFFFFG.GGG.',
+                    '......LL..SGffffffG.....',
+                    '......LL.LLGFFFFFFG.....',
+                    '......LL.L.GFFFFFFG.....',
+                    '......LLLL..............',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                ]),
+                fx: [['muzzle', 'front', 23, 10], ['ember', 'front', 16, 2, 23, 6, 3]] },
+            ember_scythe: { el: 'fire', draw: m => [   // a reaper's scythe: a crescent of blackened blade (void iron), sawtoothed, magma veins in it,
+                    // a molten edge; a round brass socket round a burning gem, a horn off its back with a molten core, a beak; the snath charred
+                    // and cracked, two brass rings, a wrapped grip, a brass pommel with an ember in it and a spike
+                    '.......................V',
+                    '......................VM',
+                    '.....................VM.',
+                    '..........V..V......VM..',
+                    '.......V..VVVVV.gGGVV...',
+                    '.....V.VVVVFVVVgGGGG....',
+                    '.....VVVFVVVVVVGfFFGVVV.',
+                    '....VVVMMMMVVVVGFFFGV...',
+                    '...VVMMmmmmMMMVGGGGG....',
+                    '..VVMmm....mmmM.GGG.....',
+                    '..VMm.........m.WW......',
+                    '.VMm...........WM.......',
+                    '.Mm...........WW........',
+                    'Mm...........GG.........',
+                    'm...........WW..........',
+                    '...........WM...........',
+                    '..........WW............',
+                    '.........GG.............',
+                    '........LL..............',
+                    '.......L1...............',
+                    '......LL................',
+                    '.....L1.................',
+                    '...GmG..................',
+                    '.SS.....................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['ember', 'front', 0, 0, 22, 14, 5]] },
+            ice_fists: { el: 'ice', draw: typed([   // a clenched fist in blue steel, ice crystals jutting from its knuckles, a steel cuff
+                    '........................',
+                    '..........c.............',
+                    '.........cC.............',
+                    '.....c...cC.....c.......',
+                    '.....C..cCC....cC.......',
+                    '....cC..CCC....CC...c...',
+                    '....CC..CCC...cCC..cC...',
+                    '..........II............',
+                    '.....II..IIII..III......',
+                    '....iIII1iIII1iIII.II...',
+                    '....IIII1IIII1IIII1iII..',
+                    '....IIII1IIII1IIII1III..',
+                    '....IIII1IIII1IIII1III..',
+                    '...11111111111IIII1III..',
+                    '..1IIIIIIIIiii1III1III..',
+                    '..1IIIIIIIIIIII1IIIIII..',
+                    '...11IIIIIIIIIIIIIIII...',
+                    '.....IIIIIIIIIIIIIII....',
+                    '......SSSSSSSSSSSS......',
+                    '......ssssssssssss......',
+                    '......SGSSSSSSSSGS......',
+                    '......SSSSSSSSSSSS......',
+                    '.......SSSSSSSSSS.......',
+                    '........................',
+                ]),
+                fx: [['glint', 'front', 10, 1, 10, 6], ['star', 'front', 5, 3, 0], ['star', 'front', 20, 4, 2]] },
+            icicle_cannon: { el: 'ice', draw: typed([   // a steel barrel on a wooden stock, a brass muzzle, icicles bursting from it
+                    '........................',
+                    '...................c....',
+                    '..............c...cC....',
+                    '..............Cc.cC..c..',
+                    '...............CccC.cC..',
+                    '..............CCCCCCC...',
+                    '.............GGGGGG.....',
+                    '............GGGGGG......',
+                    '...........SSSSS........',
+                    '..........SSSSS.........',
+                    '.........SIIIS..........',
+                    '........SIIIS...........',
+                    '.......SSSSS............',
+                    '......SSSSS.............',
+                    '.....GSSSS..............',
+                    '....GGSS................',
+                    '....WWW.................',
+                    '...WWWW.................',
+                    '..WWWW..................',
+                    '..WWW...................',
+                    '..WW....................',
+                    '........................',
+                    '........................',
+                    '........................',
+                ]),
+                fx: [['glint', 'front', 15, 5, 20, 1], ['star', 'front', 22, 3, 1]] },
+            fractal_shard: { el: 'ice', draw: typed([   // a cluster of crystal: a tall faceted shard, two small ones beside it
+                    '...........c............',
+                    '..........cCC...........',
+                    '..........cCCC..........',
+                    '.........cCC1CC.........',
+                    '.........CCC1CC.....c...',
+                    '........cCCC1CCC...cC...',
+                    '........CCCC1CCC..cCC...',
+                    '........CCC1CCCC..CCC...',
+                    '.......cCCC1CCCC...CC...',
+                    '.......CCCC1CCCCC.......',
+                    '.......CCC1CCCCCC.......',
+                    '.......CCC1CCCCC........',
+                    '..c....CCC1CCCCC........',
+                    '.cCC...CCC1CCCC.........',
+                    '.CCC....CC1CCCC.........',
+                    '..CC....CC1CCC..........',
+                    '........CC1CCC..........',
+                    '.........C1CC...........',
+                    '.........C1C............',
+                    '..........1.............',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                ]),
+                fx: [['glint', 'front', 8, 5, 13, 16], ['star', 'front', 20, 2, 0], ['star', 'front', 2, 11, 2]] },
+            rimeguard: { el: 'ice', draw: typed([   // a tower shield of glacier ice in a riveted steel frame, its deep core blue and full of frozen
+                    // bubbles, cracked; behind it a short maul, its steel head banded in brass and crusted with ice, an icicle off it
+                    '................SSSSSCc.',
+                    '...............sSSSSSCCc',
+                    '....SSSSSSSSSS.SSSGSSCCC',
+                    '...SGccCCCCCCGSSSSGSSCC.',
+                    '..SccCCCCC1CCCCSSSGSSCCc',
+                    '..ScCCCCCC1CCCCS.SSSSSC.',
+                    '..ScCCCCC1CCCICS..WW..c.',
+                    '..SCCCC11CCCIICS.WW.....',
+                    '..SCCC1CC1CCCIIS.W......',
+                    '..GCC1CCCC1CIiIG........',
+                    '..SCCCCCCCC1IIIS........',
+                    '..SCCCCcCCCCI1IS........',
+                    '..SCCCcCCCCIII1S........',
+                    '..SCCcCCCCIIIIIS........',
+                    '..SCCCCCCIIIIiIS........',
+                    '..SCCCCCCCII1IIS........',
+                    '..GCCCCCCIIiI1IG........',
+                    '..SCCCCCIIIIIIIS........',
+                    '...SCCCIIIII1IS.........',
+                    '...WSCCIIiIIIS..........',
+                    '..WW.SCIIIIIS...........',
+                    '.WW...SSIIS.............',
+                    'SS......SS..............',
+                    'S.......................',
+                ]),
+                fx: [['glint', 'front', 4, 4, 9, 13], ['star', 'front', 22, 7, 0], ['star', 'front', 1, 9, 2]] },
+            boreal_trident: { el: 'ice', draw: typed([   // a trident: a leaf-bladed spear of glacier ice between two barbed prongs, on a steel crescent
+                    // hung with icicles, an aurora gem in its collar; a rime-ash shaft, a blue wrap, an icicle for a butt
+                    '...............c.......c',
+                    '..............CC.....CC.',
+                    '.............CCC....CCC.',
+                    '............CC.c...CCC..',
+                    '...........CC....CCCC...',
+                    '..........CC....CCCC....',
+                    '.........CC....CCCC.....',
+                    '........CC.....CCC.....c',
+                    '.......SS.....CCC...cCCC',
+                    '.......SS....SSS.....CC.',
+                    '.......SS...SSS.....CC..',
+                    '.......CSS.SqS.....CC...',
+                    '.......c.SSQQS....CC....',
+                    '..........SSS....CC.....',
+                    '.........SS1S...CC......',
+                    '........SS..SSSSC.......',
+                    '.......II....SSS........',
+                    '......I1.....C.C........',
+                    '.....II......c..........',
+                    '....1I..................',
+                    '...SS...................',
+                    '..SS....................',
+                    '.Ss.....................',
+                    'C.......................',
+                ]),
+                fx: [['glint', 'front', 15, 7, 21, 1], ['spark', 'front', 6, 0, 23, 13, 2, 0x7affc8], ['star', 'front', 18, 10, 1], ['star', 'front', 4, 13, 3]] },
+            lightning_fists: { el: 'lightning', draw: m => [   // a storm gauntlet punching right: gold plates, a bolt engraved on its back, the fingers' plates
+                    // seamed, a steel cuff with its rivets
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '..........YYYYY.........',
+                    '.........YyyyyYY........',
+                    '.........YYYYYYY1.......',
+                    '........YYYYYYYY1YYYY...',
+                    '...SSSSSYYYYyYYY1yyYYY..',
+                    '...SsssSYYYyYYYY11111Y..',
+                    '...S1SSSYYyyyYYY1yyYYY..',
+                    '...SSSSSYYYYyYYY11111Y..',
+                    '...S1SSSYYYyYYYY1yyYYY..',
+                    '...SSSSSYYyYYYYY11111Y..',
+                    '...SSSSSYYYYYYYY1yyYY...',
+                    '........YYYYYYYYYYYYY...',
+                    '.........YYYYYYYYYYY....',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['bolt', 'front', 22, 8, 23, 2], ['bolt', 'front', 22, 14, 23, 20], ['spark', 'front', 1, 2, 23, 22, 4, 0xffe14a]] },
+            orb_emitter: { el: 'lightning', draw: m => [   // a wand with a tesla globe for a head: blue glass, a brass cage, the gold core caught in it
+                    '........................',
+                    '..............GGG.......',
+                    '.............IIGII......',
+                    '...........IIiIGIIII....',
+                    '..........IIiIIGIIIII...',
+                    '..........IiIIOGOIIII...',
+                    '..........IIIOoGoOIII...',
+                    '..........GGGGGGGGGGG...',
+                    '..........IIIOoGoOIII...',
+                    '..........IIIIOGOIIII...',
+                    '..........IIIIIGIIIII...',
+                    '...........IIIIGIIII....',
+                    '.............IIGII......',
+                    '..............GGG.......',
+                    '.............GGG........',
+                    '............WW..........',
+                    '...........WW...........',
+                    '..........GG............',
+                    '.........WW.............',
+                    '........WW..............',
+                    '.......WW...............',
+                    '......WW................',
+                    '.....GG.................',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['bolt', 'front', 21, 4, 23, 0], ['bolt', 'front', 21, 10, 23, 14], ['spark', 'front', 8, 0, 23, 14, 3, 0xfff6b0]] },
+            ball_lightning: { el: 'lightning', draw: m => [   // a ball of plasma, never quite round, dark veins through it round a white-gold core
+                    '........................',
+                    '........................',
+                    '........................',
+                    '............C...........',
+                    '.........CCCCCC.........',
+                    '.......CCccCCCCCC.......',
+                    '......CCcCCC1CCCCC......',
+                    '.....CCcCCC1COOCCCC.....',
+                    '....CCCCCC1COooOCCcC....',
+                    '....CCCCCCCOoooOCccC....',
+                    '..CCCCCCCOooooOOC1CCC...',
+                    '...CC1CCCOoooooOC1CCC...',
+                    '...CCC1CCOoooooOCC1CC...',
+                    '...CcCC1COOoooOOCCCCC...',
+                    '....CccCCCOOOOOCCCCC....',
+                    '....CCcCCCC1CCCCCC1C....',
+                    '.....CCCCC1CCCCCCCC.....',
+                    '......CCCCCCC1CCCCC.....',
+                    '.......CCCCCCCCCC.......',
+                    '.........CCCCCC.........',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['bolt', 'front', 18, 8, 23, 3], ['bolt', 'front', 6, 16, 1, 21], ['bolt', 'front', 6, 7, 1, 3], ['bolt', 'front', 18, 16, 23, 21]] },
+            conductor: { el: 'lightning', draw: m => [   // a staff with a spool of wound wire for a head (seen side on: brass flanges, the
+                    // turns of wire between them), the wire running off it to a steel clamp
+                    '........................',
+                    '........................',
+                    '........GGG....GGG......',
+                    '.......GGGGYYYYGGGG.....',
+                    '.......GgGG1111GgGG.....',
+                    '.......GgGGyyyyGgGG.....',
+                    '.......GgGG1111GgGG.....',
+                    '.......GgGGYYYYGgGG.....',
+                    '.......GgGG1111GgGG.....',
+                    '.......GGGGYYYYGGGGY....',
+                    '........GGG.GG.GGG..Y...',
+                    '............GG.......Y..',
+                    '...........WW........Y..',
+                    '..........WW.........Y..',
+                    '.........GG.........SSS.',
+                    '........WW..........SsS.',
+                    '.......WW...........S1S.',
+                    '......WW............S.S.',
+                    '.....WW.................',
+                    '....WW..................',
+                    '...WW...................',
+                    '..GG....................',
+                    '........................',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                frames: 10, fps: 12,   // a pulse of current winds through the turns, runs down the wire, and the clamp sparks
+                fx: [['current', 'front', [[11, 3], [14, 3], [14, 5], [11, 5], [11, 7], [14, 7], [14, 9], [17, 9], [19, 9], [20, 10], [21, 11], [21, 12], [21, 13], [21, 14]], 6]] },
+            thunder_glaive: { el: 'lightning', draw: typed([   // a long glaive: a void-iron shaft, a brass-capped butt spike and rings, a leather wrap,
+                    // a brass socket round an ice-bright gem, a tall upswept blade of blue steel with a back spike, its edge alight, gold current zigzagging up it
+                    '.....................c..',
+                    '....................Cc..',
+                    '...................CoI..',
+                    '..................cIoII.',
+                    '..................CIOIII',
+                    '.................CIOOIII',
+                    '.................CIOIII.',
+                    '................cIOOIII.',
+                    '................CIOIIIS.',
+                    '................COIII..S',
+                    '..............GGCOII....',
+                    '.............GcCGIII....',
+                    '............VGCCGII.....',
+                    '............VGGG........',
+                    '..........GV............',
+                    '.........lG.............',
+                    '........Ll..............',
+                    '.......lL...............',
+                    '......Ll................',
+                    '.....GL.................',
+                    '....VG..................',
+                    '...GV...................',
+                    '..GG....................',
+                    '.SG.....................',
+                ]),
+                frames: 10, fps: 12,   // current runs up the zigzag and cracks off the tip
+                fx: [['current', 'front', [[17, 10], [17, 9], [18, 8], [18, 7], [19, 7], [19, 6], [19, 5], [20, 5], [20, 4], [20, 3], [20, 2], [21, 1], [21, 0]], 6],
+                    ['spark', 'front', 11, 0, 23, 12, 2, 0xffe14a], ['star', 'front', 22, 2, 1], ['star', 'front', 12, 5, 3]] },
+            cosmic_fists: { el: 'cosmic', draw: m => [   // a void-iron gauntlet punching right, its fingers violet light, a brass-rimmed bracer with a gem in it
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '..........VVVVVV........',
+                    '.........VvvvvVVVV......',
+                    '........VVVVVVV1PPPPp...',
+                    '.GVVVVVGVVVVVVV1PPPPp...',
+                    '.GVVVVVGVVVVVVV111111...',
+                    '.GVVVVVGVVpVVVV1PPPPp...',
+                    '.GVVpVVGVVVVVVV1PPPPp...',
+                    '.GVVVVVGVVVVVVV111111...',
+                    '.GVVVVVGVVVVpVV1PPPPp...',
+                    '.GVVVVVGVVVVVVV1PPPPp...',
+                    '.GVVVVVGVVVVVVV111111...',
+                    '........VVVVVVV1PPPp....',
+                    '.........VVVVVVVV.......',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['streak', 'back', 0, 8, 4, 20], ['spark', 'front', 19, 5, 23, 19, 3, 0xc99cff], ['star', 'front', 21, 3, 1], ['star', 'front', 22, 21, 3]] },
+            barrier_staff: { el: 'cosmic', draw: m => [   // a ward crystal floating in a brass cradle on a wooden staff, a leather grip
+                    '...........PP...........',
+                    '..........PPPP..........',
+                    '.........PPpPPP.........',
+                    '...G.....PpPPPP.....G...',
+                    '...G.....PpPPPP.....G...',
+                    '...GG....PPPPPP....GG...',
+                    '....G.....PPPP.....G....',
+                    '....GG....PPPP....GG....',
+                    '.....GG....PP....GG.....',
+                    '......GGG......GGG......',
+                    '........GGGGGGGG........',
+                    '..........GGGG..........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '..........GGGG..........',
+                    '...........LL...........',
+                    '...........LL...........',
+                    '...........LL...........',
+                    '..........GGGG..........',
+                    '...........WW...........',
+                    '...........WW...........',
+                    '...........GG...........',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['orbit', 'both', 11.5, 5, 10, 3, 3, 0xc99cff], ['star', 'front', 21, 15, 2]] },
+            astrolabe: { el: 'cosmic', draw: m => [   // a brass astrolabe on its ring: the night sky inside, its stars, the inner circle, the pin its pointer turns on
+                    '..........GGGG..........',
+                    '.........G....G.........',
+                    '.........G....G.........',
+                    '..........GGGG..........',
+                    '.........GGGGGGG........',
+                    '.......GGGVVVVVGGG......',
+                    '......GGVVVVVVVVVGG.....',
+                    '.....GGVVVpVVVVVVVGG....',
+                    '....GGVVVVVVVVVVpVVGG...',
+                    '....GVVVVGGGGGGGVVVVG...',
+                    '...GGVVGGVVVVVVVGGVVGG..',
+                    '...GVVGVVVVVVVVVVVGVVG..',
+                    '...GVVGVVVVVGVVVVVGVVG..',
+                    '...GVpGVVVVGgGVVVVGVpG..',
+                    '...GVVGVVVVVGVVVVVGVVG..',
+                    '...GVVGVVVVVVVVVVVGVVG..',
+                    '...GGVVGGVVVVVVVGGVVGG..',
+                    '....GVVVVGGGGGGGVVVVG...',
+                    '....GGVVVVVVVVVVVVVGG...',
+                    '.....GGVVVVVVVpVVVGG....',
+                    '......GGVVVVVVVVVGG.....',
+                    '.......GGGVVVVVGGG......',
+                    '.........GGGGGGG........',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['hand', 'front', 12, 13, 6], ['star', 'front', 21, 3, 0], ['star', 'front', 2, 21, 2]] },
+            singularity_staff: { el: 'cosmic', draw: m => [   // a black hole held in brass prongs on a void-iron staff, its disk of violet light crossing in front of it
+                    '........................',
+                    '........................',
+                    '..........BBBBB.........',
+                    '.........BBBBBBB........',
+                    '.....PPPBBBBBBBBBPPP....',
+                    '...PP...BBBBBBBBB...PP..',
+                    '..P.....BBBBBBBBB.....P.',
+                    '...P....BBBBBBBBB....P..',
+                    '....PPPPBBBBBBBBBPPPP...',
+                    '........PPPPPPPPP.......',
+                    '.........GBBBBBG........',
+                    '..........GGGG..........',
+                    '..........GGGG..........',
+                    '...........VV...........',
+                    '...........VV...........',
+                    '...........VV...........',
+                    '..........GGGG..........',
+                    '...........VV...........',
+                    '...........VV...........',
+                    '...........VV...........',
+                    '...........VV...........',
+                    '...........VV...........',
+                    '...........GG...........',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['orbit', 'both', 12, 6.5, 10, 2.6, 2, 0xffffff], ['star', 'front', 21, 1, 0], ['star', 'front', 2, 13, 2]] },
+            void_blade: { el: 'cosmic', draw: m => [   // a blade of night sky (stars in it) with a white edge, a brass guard, a leather grip
+                    '......................p.',
+                    '.....................p..',
+                    '....................p...',
+                    '...................pV...',
+                    '..................pV....',
+                    '.................pVV....',
+                    '................pVV.....',
+                    '...............pVV......',
+                    '..............pVV.......',
+                    '.............pVV........',
+                    '............pVp.........',
+                    '...........pVV..........',
+                    '..........pVV...........',
+                    '.........pVp............',
+                    '...GG...pVV.............',
+                    '....GG.pVV..............',
+                    '.....gGVV...............',
+                    '......GG................',
+                    '.....LLGG...............',
+                    '....LL..G...............',
+                    '...LL....G..............',
+                    '..GG....................',
+                    '..G.....................',
+                    '........................',
+                ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                fx: [['glint', 'front', 8, 14, 21, 1], ['spark', 'front', 10, 0, 23, 14, 3, 0xc99cff]] },
         });
     }
 
@@ -502,7 +946,7 @@ class MenuArt {
     // A weapon's icon as a strip of frames (26x26: the 24px art and its outline; 4 unless its entry asks for more) and
     // the idle animation that cycles them.
     static iconSheet(scene, id) {
-        const def = MenuArt.ICONS()[id];
+        const def = MenuArt.ICONS()[id] || (scene.textures.exists('mn_icon_' + id) ? {} : null);   // (one that's only a file in assets/art: 4 frames at 6 a second)
         if (!def) return null;
         const key = 'mn_icon_' + id, NF = def.frames || 4;
         if (!scene.textures.exists(key)) {
@@ -597,131 +1041,11 @@ class MenuArt {
         return key;
     }
 
-    // The painting behind each card's title: 132x32 pixels (the props on a 100-wide stage in the
-    // middle), shown at a whole-pixel scale.
+    // The painting behind each card's title: 132x32 pixels (the props on a 100-wide stage in the middle), typed by hand
+    // (assets/art mn_lv<idx>), shown at a whole-pixel scale. The two levels no card shows any more borrow the Void Gate's.
     static levelArt(scene, idx) {
         const key = 'mn_lv' + idx;
-        if (scene.textures.exists(key)) return key;
-        const W = 132, H = 32, X0 = 16, P = new MenuArt.Px(W, H), R = MenuArt.rng(idx * 977 + 13), N = MenuArt.noise(idx * 31 + 7);
-        // Q draws the props, laid out on a 100-wide stage centred in the painting
-        const Q = {
-            rect: (x, y, w, h, c, a) => P.rect(x + X0, y, w, h, c, a), line: (a0, b0, a1, b1, c, a) => P.line(a0 + X0, b0, a1 + X0, b1, c, a),
-            ellipse: (x, y, rx, ry, c, a) => P.ellipse(x + X0, y, rx, ry, c, a), poly: (pts, c, a) => P.poly(pts.map(([x, y]) => [x + X0, y]), c, a),
-            put: (x, y, c, a) => P.put(x + X0, y, c, a), add: (x, y, c, a) => P.add(x + X0, y, c, a),
-        };
-        const kind = (typeof Transitions !== 'undefined' && Transitions.infoFor) ? Transitions.infoFor(idx).kind : 'duality';
-        const floor = (y0, c0, c1, seam) => {
-            P.vgrad(0, y0, W, H - y0, [[0, c0], [1, c1]]);
-            for (let x = (y0 * 3) % 9; x < W; x += 9) P.line(x, y0 + 1, x - 2, H, seam, 0.55);
-            P.line(0, y0, W, y0, MenuArt.mix(c0, 0xffffff, 0.18));
-        };
-        const bricks = (y0, y1, c, seam) => {
-            P.rect(0, y0, W, y1 - y0, c);
-            for (let y = y0 + 3; y < y1; y += 4) P.line(0, y, W, y, seam, 0.8);
-            for (let y = y0; y < y1; y += 4) for (let x = ((y / 4) % 2) * 4; x < W; x += 8) P.line(x, y, x, Math.min(y1 - 1, y + 3), seam, 0.8);
-        };
-        const ridge = (yBase, amp, c, sc) => {
-            for (let x = 0; x < W; x++) {
-                const h = Math.round(amp * MenuArt.fbm(N, x * sc, 3.7));
-                for (let y = yBase - h; y < yBase; y++) P.put(x, y, c);
-            }
-        };
-        const stars = (n, y1, c = 0xffffff) => { for (let i = 0; i < n; i++) P.put(Math.floor(R() * W), Math.floor(R() * y1), c, 0.4 + R() * 0.6); };
-        switch (kind) {
-            case 'duality': {   // a torchlit training hall, a banner split fire and ice, two dummies
-                bricks(0, 26, 0x3a2a1e, 0x22180f);
-                for (const x of [18, 82]) { Q.rect(x - 1, 9, 3, 2, 0x6e6e78); Q.rect(x, 7, 1, 2, 0x55555e); }
-                Q.rect(44, 2, 12, 15, 0xc0392b); Q.rect(50, 2, 6, 15, 0x2f78c8); Q.line(44, 17, 50, 20, 0xc0392b); Q.line(55, 17, 50, 20, 0x2f78c8);
-                Q.rect(46, 7, 3, 4, 0xffb050); Q.rect(51, 7, 3, 4, 0xd8f2ff); Q.rect(43, 1, 14, 1, 0x8a6a3a);
-                for (const x of [30, 70]) { Q.rect(x, 15, 1, 11, 0x6b4a2a); Q.ellipse(x + 0.5, 15, 3.5, 4, 0xc8a050); Q.line(x - 3, 17, x + 4, 17, 0x8a6a3a); Q.put(x - 1, 13, 0x6b4a2a); Q.put(x + 2, 13, 0x6b4a2a); }
-                floor(26, 0x4a3b2c, 0x241a12, 0x1a120c);
-                break;
-            }
-            case 'storm': {     // a stormy sky over the Gauntlet's walls, wet stone
-                P.vgrad(0, 0, W, 26, [[0, 0x060914], [0.6, 0x141d33], [1, 0x232f4a]]);
-                for (let i = 0; i < 6; i++) { const cx = R() * W, cy = 2 + R() * 7; P.ellipse(cx, cy, 10 + R() * 8, 2.5 + R() * 2, 0x1d2638, 0.9); }
-                ridge(26, 9, 0x0a0e1a, 0.11);
-                for (const x of [10, 34, 92, 116]) { P.rect(x, 12, 4, 14, 0x0f1424); P.rect(x - 1, 11, 6, 2, 0x161c30); }
-                floor(26, 0x262c3c, 0x10131c, 0x0a0c12);
-                for (let i = 0; i < 9; i++) { const x = Math.floor(R() * (W - 8)), y = 28 + Math.floor(R() * 5); P.line(x, y, x + 3 + Math.floor(R() * 5), y, 0x5a6a8a, 0.6); }
-                break;
-            }
-            case 'rift': {      // deep space, a torn rift, rocks adrift
-                P.vgrad(0, 0, W, 27, [[0, 0x05020c], [0.7, 0x140a2a], [1, 0x221040]]);
-                stars(55, 26);
-                let x = 56;
-                for (let y = 0; y < 24; y++) { x += Math.round((R() - 0.55) * 2); Q.put(x, y, 0xf4e6ff); Q.add(x - 1, y, 0x9a5cf0, 0.7); Q.add(x + 1, y, 0x9a5cf0, 0.7); Q.add(x - 2, y, 0x5a2aa0, 0.5); Q.add(x + 2, y, 0x5a2aa0, 0.5); }
-                for (const [cx, cy, r] of [[18, 10, 4], [84, 7, 3], [72, 16, 2.5], [30, 19, 2], [-8, 14, 3], [108, 12, 3.5]]) { Q.ellipse(cx, cy, r + 1, r, 0x1a1030); Q.line(cx - r, cy - r + 1, cx + r - 1, cy - r + 1, 0x3a2a60); }
-                floor(27, 0x22183a, 0x0c0816, 0x08060e);
-                break;
-            }
-            case 'fracture': {  // a cavern split by a glowing fault, the core above it
-                P.vgrad(0, 0, W, 26, [[0, 0x030a0c], [1, 0x0c2228]]);
-                for (let i = 0; i < 12; i++) { const x = Math.floor(R() * W), l = 2 + Math.floor(R() * 6); for (let k = 0; k < l; k++) P.put(x, k, 0x081a1e); P.put(x + 1, 0, 0x081a1e); }
-                ridge(26, 6, 0x061416, 0.15);
-                floor(26, 0x1e3236, 0x0a1416, 0x061012);
-                let y = 26;
-                for (let x = 0; x < W; x++) { if (R() < 0.35) y += R() < 0.5 ? -1 : 1; y = Math.max(27, Math.min(33, y)); P.put(x, y, 0xdfffff); P.add(x, y - 1, 0x45e0e0, 0.6); P.add(x, y + 1, 0x45e0e0, 0.6); }
-                Q.poly([[50, 6], [55, 10], [55, 16], [50, 20], [45, 16], [45, 10]], 0x1aa6a6); Q.poly([[50, 7], [54, 10], [50, 13], [46, 10]], 0x8ff8f0); Q.put(48, 9, 0xffffff);
-                break;
-            }
-            case 'blueprint': { // a fortress drawn in lines on blueprint paper
-                P.rect(0, 0, W, H, 0x04170f);
-                for (let x = 0; x < W; x += 5) P.line(x, 0, x, H, 0x0b2e1e);
-                for (let y = 0; y < H; y += 5) P.line(0, y, W, y, 0x0b2e1e);
-                const L = (a, b, c2, d) => Q.line(a, b, c2, d, 0x3ddc84);
-                L(30, 26, 70, 26); L(30, 26, 30, 14); L(70, 26, 70, 14); L(30, 14, 70, 14); L(44, 14, 44, 8); L(56, 14, 56, 8); L(44, 8, 56, 8);
-                for (const x of [30, 34, 38, 42, 58, 62, 66, 70]) Q.rect(x - 1, 12, 2, 2, 0x3ddc84);
-                for (const x of [14, 86]) { L(x - 3, 26, x - 3, 16); L(x + 3, 26, x + 3, 16); L(x - 3, 16, x + 3, 16); L(x - 4, 14, x + 4, 14); L(x, 14, x, 11); }
-                Q.rect(48, 19, 4, 7, 0x0e4a2e); L(48, 19, 52, 19);
-                P.line(0, 26, W, 26, 0x2aa868);
-                break;
-            }
-            case 'flood': {     // a drowned hall: arches, a pipe, the water line
-                P.vgrad(0, 0, W, 14, [[0, 0x050f16], [1, 0x0d2632]]);
-                for (let x = 2; x < W; x += 30) { P.ellipse(x + 15, 13, 13, 9, 0x030a10); P.rect(x - 1, 4, 3, 22, 0x0c1e28); }
-                P.rect(0, 5, W, 2, 0x2a4450); P.line(0, 5, W, 5, 0x4a6a78); for (const x of [24, 62]) { Q.rect(x, 3, 3, 6, 0x3a5a68); Q.put(x + 1, 2, 0x6a8a98); }
-                P.vgrad(0, 14, W, H - 14, [[0, 0x0f4a66], [0.35, 0x0a3048], [1, 0x041420]]);
-                for (let x = 0; x < W; x++) { if ((x + idx) % 7 < 4) P.put(x, 14, 0x8fe8ff, 0.8); }
-                for (let i = 0; i < 18; i++) P.put(Math.floor(R() * W), 16 + Math.floor(R() * 16), 0x5cc2ff, 0.5);
-                break;
-            }
-            case 'gate': {      // a portal ring standing in a dark hall
-                P.vgrad(0, 0, W, 26, [[0, 0x07040c], [1, 0x160c22]]);
-                stars(14, 20, 0xc99cff);
-                Q.ellipse(50, 14, 12, 12, 0x2a2238); Q.ellipse(50, 14, 9, 9, 0x0a0614);
-                for (let k = 0; k < 40; k++) { const t = k / 40 * Math.PI * 2, r = 2 + k / 40 * 7; Q.put(50 + Math.cos(t * 2.5) * r, 14 + Math.sin(t * 2.5) * r, k % 3 ? 0x9a5cf0 : 0xf4e6ff); }
-                for (let k = 0; k < 16; k++) { const t = k / 16 * Math.PI * 2; Q.put(50 + Math.cos(t) * 11, 14 + Math.sin(t) * 11, 0x4a3a60); }
-                floor(26, 0x241a30, 0x0c0814, 0x08050e);
-                for (const x of [26, 74]) { Q.rect(x, 28, 1, 3, 0x9a5cf0, 0.7); Q.rect(x - 1, 29, 3, 1, 0x9a5cf0, 0.7); }
-                break;
-            }
-            case 'circuit': {   // traces and nodes on a dark board
-                P.rect(0, 0, W, H, 0x120a05);
-                const T = (pts) => { for (let i = 0; i + 1 < pts.length; i++) Q.line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], 0x6a3a14); };
-                const paths = MenuArt.CIRCUIT();
-                for (const p of paths) T(p);
-                for (const p of paths) for (const [x, y] of [p[0], p[p.length - 1]]) { Q.rect(x - 1, y - 1, 3, 3, 0x2a1a0c); Q.put(x, y, 0xff9f45); }
-                break;
-            }
-            case 'alert': {     // the last stand: a red sky, the horde on the ridge
-                P.vgrad(0, 0, W, 26, [[0, 0x0c0202], [0.6, 0x2a0606], [1, 0x4a0c08]]);
-                ridge(26, 5, 0x160404, 0.2);
-                for (let i = 0; i < 34; i++) { const x = 3 + i * 3.8 + R() * 2, r = 1.6 + R() * 1.6; P.ellipse(x, 22.5, r + 0.6, r, 0x1e0606); P.put(x - 0.5, 21.5, 0xff5f52, 0.8); }
-                floor(26, 0x2a1210, 0x0c0404, 0x080202);
-                break;
-            }
-            default: {          // THE END: the Sovereign's throne room
-                P.vgrad(0, 0, W, 26, [[0, 0x080410], [1, 0x1c0e2c]]);
-                for (const x of [8, 30, 102, 124]) { P.rect(x - 2, 0, 5, 26, 0x2a1840); P.line(x - 2, 0, x - 2, 25, 0x4a3060); P.rect(x - 3, 0, 7, 2, 0xb8842a); P.rect(x - 3, 24, 7, 2, 0xb8842a); }
-                Q.rect(40, 4, 20, 18, 0x3a1a5a); Q.rect(42, 2, 16, 2, 0x3a1a5a); Q.line(40, 4, 59, 4, 0xffd060); Q.put(50, 1, 0xffd060); Q.rect(49, 6, 2, 3, 0xff5fd2);
-                for (let s = 0; s < 3; s++) Q.rect(34 - s * 4, 22 + s * 1.5, 32 + s * 8, 2, s % 2 ? 0x2a1840 : 0x3a2458);
-                floor(26, 0x24142e, 0x0a0610, 0x070410);
-                break;
-            }
-        }
-        P.toTexture(scene, key, false);
-        return key;
+        return scene.textures.exists(key) ? key : 'mn_lv6';
     }
 
     // The traces the circuit level's card draws, and its current runs along.
@@ -748,8 +1072,23 @@ class MenuArt {
         // colour it wears in the level, at the size it is there relative to the scene.
         // (These were flat drawn slimes blown up to fill the card: they looked like nothing in the game.)
         const COLS = { 'mn_sl_glerp': ['slime_orange'], 'mn_sl_volt': ['volt', 1.5], 'mn_sl_void': ['slime_purple'], 'mn_sl_drown': ['slime_blue', 1, 0x3fb6e8], 'mn_sl_sov': ['void', 1.3] };
+        // The two bosses wear their own sheets, as in their levels (their idle there: crackling and breathing), at the width
+        // their old 17-pixel bodies had in the painting: [sheet, idle frames, fps, body width]
+        const BOSS = { 'mn_sl_volt': ['boss_volt', ['idle_0', 'idle_1', 'idle_2', 'idle_0', 'idle_1', 'idle_2s', 'idle_0s', 'idle_1s', 'idle_2s'], 9, 38],
+                       'mn_sl_sov': ['boss_void', ['idle_0', 'idle_1', 'idle_2s', 'idle_3s'], 4, 42] };
         const slime = (k, col, px, py, opts, sc = 1) => {
-            const [sx, sy] = P(px, py), def = COLS[k] || ['slime_red', 1, col];
+            const [sx, sy] = P(px, py), def = COLS[k] || ['slime_red', 1, col], B = BOSS[k];
+            if (B && scene.textures.exists(B[0])) {
+                const raw = S * 0.75 * def[1] * Math.min(1.3, sc) * 17 / B[3], sk = Math.abs(raw - Math.round(raw)) < raw * 0.15 ? Math.round(raw) : Math.round(raw * 2) / 2;   // whole pixels where it's close
+                const an = 'mn_' + B[0];
+                if (!scene.anims.exists(an)) scene.anims.create({ key: an, frames: B[1].map(frame => ({ key: B[0], frame })), frameRate: B[2], repeat: -1 });
+                const cont = add(scene.add.container(sx, sy)), spr = scene.add.sprite(0, 0, B[0], B[1][0]).setOrigin(0.5, 1).setScale(sk);
+                if (live) spr.play(an);
+                cont.add(spr);
+                if (B[0] === 'boss_void') cont.add(scene.add.image(0, -34 * sk, 'boss_void', 'crown').setScale(sk));   // its crown floats over it
+                cont._ownArt = true;   // (its frames breathe: no squash tween)
+                return cont.setSize(56 * sk, 36 * sk);
+            }
             let key = def[0];
             if (key === 'volt' || key === 'void') key = typeof BossFX !== 'undefined' ? BossFX.body(scene, key) : null;
             if (!key || !scene.textures.exists(key)) {   // a scene without the sheets loaded: the old drawn slime
@@ -778,7 +1117,7 @@ class MenuArt {
         const timers = [];
         const every = (ms, fn) => timers.push(scene.time.addEvent({ delay: ms, loop: true, callback: () => { if (art.active && art.parentContainer) fn(art.parentContainer); } }));
         const bob = (o, dy, ms) => live && scene.tweens.add({ targets: o, y: o.y - dy * S, duration: ms, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        const squash = (o, ms) => live && scene.tweens.add({ targets: o, scaleY: o.scaleY * 0.86, scaleX: o.scaleX * 1.08, duration: ms, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        const squash = (o, ms) => live && !o._ownArt && scene.tweens.add({ targets: o, scaleY: o.scaleY * 0.86, scaleX: o.scaleX * 1.08, duration: ms, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         const mote = (c, tex, px, py, col, dx, dy, ms, sc = 1, blend = Phaser.BlendModes.ADD) => {
             const [mx, my] = P(px, py);
             const m = scene.add.image(mx, my, tex).setTint(col).setBlendMode(blend).setScale(S * sc * 0.5);
@@ -922,116 +1261,8 @@ class MenuArt {
         const X0 = W / 2 - W / (2 * Z), X1 = W / 2 + W / (2 * Z), Y0 = H / 2 - H / (2 * Z), Y1 = H / 2 + H / (2 * Z);
         const VW = X1 - X0, VH = Y1 - Y0;
         const INK = 0x01070c, RIM = 0x15394a;      // the silhouettes, and the light along their backs
-        // The water: a smooth vertical gradient, drawn with the canvas's own gradient at full
-        // height and filtered linearly. (A 4x128 pixel texture stretched over the screen showed
-        // its steps as hard horizontal streaks.)
-        if (!scene.textures.exists('mn_sea_deep')) {
-            const gt = scene.textures.createCanvas('mn_sea_deep', 4, 512), gc = gt.getContext();
-            const gr = gc.createLinearGradient(0, 0, 0, 512);
-            for (const [at, col] of [[0, '#14485c'], [0.3, '#0b2c3c'], [0.62, '#061826'], [1, '#020a12']]) gr.addColorStop(at, col);
-            gc.fillStyle = gr; gc.fillRect(0, 0, 4, 512);
-            gt.refresh(); gt.setFilter(Phaser.Textures.FilterMode.LINEAR);
-        }
-        // A sperm whale's shape, facing right, 192 x 56: the box of its head, a hump, the flukes.
-        MenuArt.tex(scene, 'mn_sea_whale', 192, 56, P => {
-            const cy = 30;
-            const back = x => (x < 18 ? 0 : x < 46 ? 2.5 + (x - 18) * 0.12 : x < 128 ? 5.9 + 10.5 * Math.sin((x - 46) / 82 * Math.PI / 2)
-                : x < 184 ? 16.4 + (x - 128) * 0.02 : 17.5 - (x - 184) * 0.9) + 2.6 * Math.exp(-(((x - 66) / 7) ** 2));
-            const belly = x => x < 18 ? 0 : x < 46 ? 2.5 + (x - 18) * 0.1 : x < 120 ? 5.3 + 8.5 * Math.sin((x - 46) / 74 * Math.PI / 2)
-                : x < 176 ? 13.8 - (x - 120) * 0.04 : 11.6 - (x - 176) * 0.5;
-            for (let x = 18; x < 192; x++) {
-                const t = back(x), b = belly(x);
-                if (t <= 0.5 || b <= 0.5) continue;
-                const y0 = Math.round(cy - t), y1 = Math.round(cy + b);
-                P.rect(x, y0, 1, y1 - y0, INK);
-                P.put(x, y0, RIM, 0.9);
-                if (x % 3 === 0) P.put(x, y0 + 1, RIM, 0.35);
-            }
-            P.poly([[0, cy - 14], [7, cy - 12], [21, cy - 2], [21, cy + 2], [7, cy + 12], [0, cy + 14], [8, cy]], INK);
-            P.line(0, cy - 14, 7, cy - 12, RIM, 0.8);
-            P.poly([[117, cy + 9], [134, cy + 11], [125, cy + 21], [119, cy + 19]], INK);   // a pectoral fin
-            P.line(146, cy + 10, 187, cy + 8, 0x000306);                                     // the long jaw
-            P.put(160, cy + 1, 0x24606f);                                                     // an eye, just
-            const R = MenuArt.rng(5);
-            for (let i = 0; i < 30; i++) {                                                    // old scars
-                const x = 60 + Math.floor(R() * 120), y = cy - 9 + Math.floor(R() * 17);
-                if (P.alpha(x, y) > 0.9 && P.alpha(x, y - 2) > 0.9) P.put(x, y, 0x0b2532, 0.9);
-            }
-        });
-        // A giant squid hanging head down, 48 x 128: fins, mantle, a pale eye, arms, two long
-        // tentacles with clubs.
-        MenuArt.tex(scene, 'mn_sea_squid', 48, 128, P => {
-            const cx = 24;
-            P.poly([[cx, 0], [cx + 14, 11], [cx, 20], [cx - 14, 11]], INK);
-            for (let y = 4; y < 47; y++) {
-                const t = (y - 4) / 43, hw = 3 + 7 * Math.sin(Math.min(1, t * 1.4) * Math.PI / 2) - (t > 0.86 ? (t - 0.86) * 22 : 0);
-                P.rect(Math.round(cx - hw), y, Math.round(hw * 2), 1, INK);
-                P.put(Math.round(cx - hw), y, RIM, 0.5);
-            }
-            P.ellipse(cx, 51, 7, 6, INK);
-            P.put(cx - 5, 50, 0x3f8a9e); P.put(cx - 5, 51, 0x24606f);
-            for (let k = 0; k < 8; k++) {
-                const off = (k - 3.5) * 1.6, len = 26 + (k % 3) * 5, ph = k * 0.9;
-                for (let s = 0; s <= len; s++) {
-                    const x = cx + off * (1 + s / 14) + Math.sin(s / 6 + ph) * (s / 10);
-                    P.rect(Math.round(x), 55 + s, s < len * 0.6 ? 2 : 1, 1, INK);
-                }
-            }
-            for (const side of [-1, 1]) {
-                let x = cx;
-                for (let s = 0; s <= 64; s++) { x = cx + side * (2 + s * 0.08) + Math.sin(s / 9 + side) * 3; P.put(Math.round(x), 55 + s, INK); }
-                P.ellipse(x, 121, 2.2, 4.5, INK);
-            }
-        });
-        // An anglerfish facing left, 52 x 40: a lumpy body, the jaw hanging open on needle teeth,
-        // the rod arching out in front (its lure is a light of its own, below).
-        MenuArt.tex(scene, 'mn_sea_angler', 52, 40, P => {
-            P.ellipse(30, 22, 15, 13, INK);
-            P.poly([[42, 18], [52, 9], [50, 22], [52, 35], [42, 27]], INK);
-            P.poly([[16, 21], [9, 30], [25, 35], [31, 29]], INK);
-            P.poly([[15, 21], [28, 24], [12, 28]], 0x000000);
-            for (const [x, y] of [[15, 22], [18, 23], [21, 23], [24, 24], [13, 27], [16, 26], [19, 26], [22, 25]]) P.put(x, y, 0x6d8f9c);
-            for (let s = 0; s <= 22; s++) {
-                const t = s / 22, x = 25 - t * 19, y = 11 - Math.sin(t * Math.PI) * 7 + t * 2;
-                P.put(Math.round(x), Math.round(y), INK);
-            }
-            P.put(22, 16, 0x3f7f90);
-            P.poly([[30, 34], [36, 39], [38, 33]], INK);
-            P.poly([[27, 10], [33, 3], [39, 10]], INK);
-            for (let x = 18; x < 44; x++) for (let y = 8; y < 14; y++) if (P.alpha(x, y) > 0.9 && P.alpha(x, y - 1) < 0.5) P.put(x, y, RIM, 0.7);
-        });
-        // A jelly, white (tinted and added when drawn), 22 x 44: a dome brighter at the rim,
-        // frilled arms, long thin threads.
-        MenuArt.tex(scene, 'mn_sea_jelly', 22, 44, P => {
-            for (let y = 0; y < 13; y++) for (let x = 0; x < 22; x++) {
-                const u = (x + 0.5 - 11) / 10.5, v = (y + 0.5 - 13) / 12.5, d = u * u + v * v;
-                if (d <= 1) P.put(x, y, 0xffffff, 0.18 + 0.6 * d * d);
-            }
-            for (let x = 1; x < 21; x++) P.put(x, 13 + (x % 3 === 0 ? 1 : 0), 0xffffff, 0.85);
-            for (let k = 0; k < 6; k++) {
-                const x0 = 3 + k * 3.2, end = 44 - (k % 2) * 9;
-                for (let y = 14; y < end; y++) P.put(Math.round(x0 + Math.sin(y / 4 + k) * 1.5), y, 0xffffff, 0.55 * (1 - (y - 14) / (end - 14)));
-            }
-            for (let y = 14; y < 24; y++) P.rect(9 + Math.round(Math.sin(y / 2) * 1), y, 4, 1, 0xffffff, 0.35);
-        });
-        MenuArt.tex(scene, 'mn_sea_fish', 9, 5, P => {
-            P.ellipse(5.5, 2.5, 3.5, 1.8, INK);
-            P.poly([[0, 0], [3, 2.5], [0, 5]], INK);
-            P.put(7, 2, 0x3f8a9e);
-        });
-
-        // A manta ray from above, 96 x 44: broad wings, the head fins, a whip of a tail.
-        MenuArt.tex(scene, 'mn_sea_manta', 96, 44, P => {
-            for (let x = 0; x < 96; x++) {
-                const u = (x - 48) / 48, span = 1 - Math.abs(u);                     // 0 at the wingtips
-                const front = 18 - 12 * span * span - 3 * span, back = 18 + 9 * Math.pow(span, 1.6);
-                if (span < 0.04) continue;
-                P.rect(x, Math.round(front), 1, Math.max(1, Math.round(back - front)), INK);
-                P.put(x, Math.round(front), RIM, 0.9);
-            }
-            P.rect(44, 4, 2, 5, INK); P.rect(50, 4, 2, 5, INK);                          // the head fins
-            P.line(48, 27, 48, 43, INK);                                                  // the tail
-        });
+        // The water (mn_sea_deep, a smooth gradient filtered linearly) and the things down there (mn_sea_whale, _squid, _angler,
+        // _jelly, _fish, _manta: silhouettes typed by hand) are files in assets/art.
 
         const pin = o => { o.setScrollFactor(0); objs.push(o); return o; };
         const ADD = Phaser.BlendModes.ADD;
@@ -1166,8 +1397,9 @@ class MenuArt {
         const X0 = W / 2 - W / (2 * Z), Y0 = H / 2 - H / (2 * Z), VW = W / Z, VH = H / Z;
         const pin = o => { objs.push(o); return o.setScrollFactor(0); };
         pin(scene.add.rectangle(X0, Y0, VW, VH, 0x070910).setOrigin(0).setDepth(-19));
-        const far = pin(scene.add.tileSprite(X0, Y0, VW, VH, 'sky_storm').setOrigin(0).setDepth(-18.9).setTileScale(2.2 / Z).setAlpha(0.5).setTint(0x6a7690));
-        const near = pin(scene.add.tileSprite(X0, Y0, VW, VH, 'sky_storm').setOrigin(0).setDepth(-18.8).setTileScale(3.6 / Z).setAlpha(0.75).setTint(0x9aa6c0));
+        // its cloud (sky_storm_px: puffs typed by hand, a 128 tile shown at the old 256 tile's size)
+        const far = pin(scene.add.tileSprite(X0, Y0, VW, VH, 'sky_storm_px').setOrigin(0).setDepth(-18.9).setTileScale(4.4 / Z).setAlpha(0.5).setTint(0x6a7690));
+        const near = pin(scene.add.tileSprite(X0, Y0, VW, VH, 'sky_storm_px').setOrigin(0).setDepth(-18.8).setTileScale(7.2 / Z).setAlpha(0.75).setTint(0x9aa6c0));
         far._tint = 0x6a7690; near._tint = 0x9aa6c0;
         let t = 0;
         const tick = (now, dt) => {

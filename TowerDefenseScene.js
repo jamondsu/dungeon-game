@@ -54,12 +54,13 @@ class TowerDefenseScene extends Phaser.Scene {
     _vfxPlaceTorches(...a){return VisualFX.prototype._vfxPlaceTorches.call(this,...a);}
     _vfxPaintSconce(...a){return VisualFX.prototype._vfxPaintSconce.call(this,...a);}
     _vfxUpdateTorches(...a){return VisualFX.prototype._vfxUpdateTorches.call(this,...a);}
-    _vfxPaintLava(...a){return VisualFX.prototype._vfxPaintLava.call(this,...a);}
     _vfxPaintWater(...a){return VisualFX.prototype._vfxPaintWater.call(this,...a);}
     _vfxPaintIce(...a){return VisualFX.prototype._vfxPaintIce.call(this,...a);}
     _vfxPaintWard(...a){return VisualFX.prototype._vfxPaintWard.call(this,...a);}
     _vfxPaintSludge(...a){return VisualFX.prototype._vfxPaintSludge.call(this,...a);}
     _vfxPaintFog(...a){return VisualFX.prototype._vfxPaintFog.call(this,...a);}
+    _vfxTileArt(...a){return VisualFX.prototype._vfxTileArt.call(this,...a);}
+    _vfxLavaTile(...a){return VisualFX.prototype._vfxLavaTile.call(this,...a);}   // the stone set (st_tiles): without it the floor paints blank
     getWallFrame(...a){return WorldGen.prototype.getWallFrame.call(this,...a);}
     hasFloorNeighbor(...a){return WorldGen.prototype.hasFloorNeighbor.call(this,...a);}
     isFloor(...a){return WorldGen.prototype.isFloor.call(this,...a);}
@@ -114,14 +115,12 @@ class TowerDefenseScene extends Phaser.Scene {
     _kindleBlast(...a){ return WeaponSystem.prototype._kindleBlast.call(this,...a); }
     _kindleIgniteFx(...a){ return WeaponSystem.prototype._kindleIgniteFx.call(this,...a); }
     _kindleClickDetonate(...a){ return WeaponSystem.prototype._kindleClickDetonate.call(this,...a); }
-    _fireKindleRound(...a)      { return WeaponSystem.prototype._fireKindleRound.call(this,...a); }
     _evaporate(...a) { return WeaponSystem.prototype._evaporate.call(this, ...a); }
     _kindleBrandables(...a) { return WeaponSystem.prototype._kindleBrandables.call(this, ...a); }
     _kindlePos(...a) { return WeaponSystem.prototype._kindlePos.call(this, ...a); }
     _kindleAlive(...a) { return WeaponSystem.prototype._kindleAlive.call(this, ...a); }
     _kindleDamage(...a) { return WeaponSystem.prototype._kindleDamage.call(this, ...a); }
     _updateKindleBullets(...a) { return WeaponSystem.prototype._updateKindleBullets.call(this, ...a); }
-    _kindleMuzzle(...a) { return WeaponSystem.prototype._kindleMuzzle.call(this, ...a); }
     _kindleSpark(...a) { return WeaponSystem.prototype._kindleSpark.call(this, ...a); }
     _kindleHeatColor(...a) { return WeaponSystem.prototype._kindleHeatColor.call(this, ...a); }
     _clearKindleBullets(...a) { return WeaponSystem.prototype._clearKindleBullets.call(this, ...a); }
@@ -461,6 +460,7 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     // _drawWrenchGfx defined above with gold support
     _showStunIndicator(...a){return WeaponSystem.prototype._showStunIndicator.call(this,...a);}
+    _syncEnemyMarks(...a){return EnemyManager.prototype._syncEnemyMarks.call(this,...a);}
     _clearStunIndicator(...a){return WeaponSystem.prototype._clearStunIndicator.call(this,...a);}
     showDamageNumber(x,y,n,c){ const t=(typeof n==="number")?String(Math.round(n)):n; this._showFloatingText(x,y,t,c||"#ffffff"); }
     gainUltCharge(){}
@@ -786,7 +786,7 @@ class TowerDefenseScene extends Phaser.Scene {
         e.sprite.setScale(this.SLIME_SCALE*1.1);
         e._baseScale=this.SLIME_SCALE*1.1;
         // Floating heal cross above the slime.
-        const mark=this.add.graphics().setDepth(3);
+        const mark=this.add.image(0,0,'td_wisps','heal_cross').setDepth(3);
         e._healSlimeMark=mark;
         e._healSlimePhase=Math.random()*Math.PI*2;
         // Restore the HP bar to sit above the slime (parent moved it up for the pillar).
@@ -909,7 +909,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     enemy.health -= rawDmg*bm;
                     // SHATTERSTORM capstone — brittle survives more than one instance.
                     enemy._brittleLeft=(enemy._brittleLeft||1)-1;
-                    if(enemy._brittleLeft<=0){ enemy._brittle=false; enemy._brittleGfx?.clear(); }
+                    if(enemy._brittleLeft<=0){ enemy._brittle=false; enemy._brittleGfx?.setVisible(false); }
                     this._showStatusHit(enemy,'BRITTLE!','#bbeeff');
                     if(enemy.sprite?.active) this._showFloatingText(enemy.sprite.x,enemy.sprite.y-20,'SHATTERED','#cceeff');
                 }
@@ -985,72 +985,23 @@ class TowerDefenseScene extends Phaser.Scene {
     // the board is readable at a glance ("gold clock = attack slowed" means the same
     // everywhere). Add a new status by listing its flag + draw fn in _statusDefs.
     _statusDefs(){
-        // key: [predicate(unit), drawGlyph(g, cx, cy, r, time), tint]
+        // key: { on: predicate(unit), icon: td_wisps frame (or fn of time), fl: optional flicker alpha fn of time }
         return this.__statusDefs || (this.__statusDefs = {
-            invuln:   { on:u=>u._cloaked||u._invulnerable, color:0xbbccff,
-                        draw:(g,x,y,r)=>{ g.lineStyle(2,0xbbccff,0.95); g.strokeCircle(x,y,r*0.7);
-                                          g.lineStyle(1.5,0xffffff,0.9); g.beginPath(); g.arc(x,y,r*0.4,0,Math.PI*2); g.strokePath(); } },
-            shield:   { on:u=>(u._shield>0)||(u._ceoShield>0), color:0x88ccff,
-                        draw:(g,x,y,r)=>{ g.fillStyle(0x88ccff,0.9); g.beginPath();
-                                          g.moveTo(x,y-r); g.lineTo(x+r*0.8,y-r*0.4); g.lineTo(x+r*0.8,y+r*0.3);
-                                          g.lineTo(x,y+r); g.lineTo(x-r*0.8,y+r*0.3); g.lineTo(x-r*0.8,y-r*0.4);
-                                          g.closePath(); g.fillPath(); } },
-            armor:    { on:u=>u._ceoKnight&&u._knightArmour>0, color:0xaaaaaa,
-                        draw:(g,x,y,r)=>{ g.fillStyle(0x999999,0.95); g.fillRoundedRect(x-r*0.7,y-r*0.7,r*1.4,r*1.4,2);
-                                          g.lineStyle(1,0x444444,1); g.strokeRoundedRect(x-r*0.7,y-r*0.7,r*1.4,r*1.4,2);
-                                          g.lineBetween(x,y-r*0.7,x,y+r*0.7); } },
-            vuln:     { on:u=>u._vulnerable&&this.time.now<(u._vulnerableUntil||0), color:0xffdd44,
-                        draw:(g,x,y,r)=>{ g.lineStyle(2,0xffdd44,0.95); // cracked target
-                                          g.strokeCircle(x,y,r*0.7); g.lineBetween(x-r*0.5,y-r*0.3,x+r*0.4,y+r*0.5); } },
-            encase:   { on:u=>u._encased, color:0x99ddff,
-                        draw:(g,x,y,r)=>{ g.lineStyle(1.5,0x99ddff,0.9); // ice cube
-                                          g.strokeRect(x-r*0.6,y-r*0.6,r*1.2,r*1.2); g.lineBetween(x-r*0.6,y,x+r*0.6,y); g.lineBetween(x,y-r*0.6,x,y+r*0.6); } },
-            stun:     { on:u=>u.isStunned&&this.time.now<(u.stunnedUntil||0), color:0xffee66,
-                        draw:(g,x,y,r,t)=>{ g.fillStyle(0xffee66,0.95); // spinning stars
-                                          for(let i=0;i<3;i++){ const a=t*0.006+i*(Math.PI*2/3); g.fillCircle(x+Math.cos(a)*r*0.6,y+Math.sin(a)*r*0.4,1.6); } } },
-            atkslow:  { on:u=>u._tetherSlow, color:0x66ffaa,
-                        draw:(g,x,y,r,t)=>{ g.lineStyle(1.6,0x66ffaa,0.95); g.strokeCircle(x,y,r*0.7); // clock
-                                          const ha=t*0.002; g.lineBetween(x,y,x+Math.cos(ha)*r*0.5,y+Math.sin(ha)*r*0.5); } },
-            noheal:   { on:u=>u._healBlocked, color:0xff6688,
-                        draw:(g,x,y,r)=>{ g.fillStyle(0xff6688,0.9); // heart + slash
-                                          g.fillCircle(x-r*0.25,y-r*0.1,r*0.3); g.fillCircle(x+r*0.25,y-r*0.1,r*0.3);
-                                          g.fillTriangle(x-r*0.55,y+r*0.05,x+r*0.55,y+r*0.05,x,y+r*0.6);
-                                          g.lineStyle(2,0xffffff,1); g.lineBetween(x-r*0.7,y-r*0.7,x+r*0.7,y+r*0.7); } },
-            brittle:  { on:u=>u._brittle, color:0xbbeeff,
-                        draw:(g,x,y,r,t)=>{ const fl=0.6+0.4*Math.sin(t*0.015); // cracked shard
-                                          g.lineStyle(1.5,0xbbeeff,fl);
-                                          g.beginPath(); g.moveTo(x,y-r*0.7); g.lineTo(x-r*0.3,y); g.lineTo(x,y+r*0.2); g.lineTo(x+r*0.3,y+r*0.7); g.strokePath();
-                                          g.beginPath(); g.moveTo(x-r*0.5,y-r*0.2); g.lineTo(x+r*0.5,y+r*0.1); g.strokePath(); } },
-            enlightened:{ on:u=>u._enlightenedUntil>this.time.now, color:0xffee88,
-                        draw:(g,x,y,r,t)=>{ // holy sparkle — 4-point star + glow
-                                          const fl=0.6+0.4*Math.sin(t*0.01);
-                                          g.fillStyle(0xffee88,0.25*fl); g.fillCircle(x,y,r*0.8);
-                                          g.fillStyle(0xfff6cc,0.95);
-                                          g.fillTriangle(x,y-r*0.8,x-r*0.22,y,x+r*0.22,y);
-                                          g.fillTriangle(x,y+r*0.8,x-r*0.22,y,x+r*0.22,y);
-                                          g.fillTriangle(x-r*0.8,y,x,y-r*0.22,x,y+r*0.22);
-                                          g.fillTriangle(x+r*0.8,y,x,y-r*0.22,x,y+r*0.22); } },
-            taunt:    { on:u=>u._taunterProtected&&this.time.now<(u._taunterProtTouch||0)+200, color:0xffbb33,
-                        draw:(g,x,y,r)=>{ g.lineStyle(2,0xffbb33,0.9); g.strokeCircle(x,y,r*0.7); // aura link
-                                          g.strokeCircle(x,y,r*0.35); } },
-            nearsight:{ on:u=>u._nearsightUntil>this.time.now, color:0xcc88ff,
-                        draw:(g,x,y,r)=>{ // eye with a slash — vision impaired
-                                          g.lineStyle(2,0xcc88ff,0.95); g.strokeCircle(x,y,r*0.7);
-                                          g.fillStyle(0xcc88ff,0.9); g.fillCircle(x,y,r*0.28);
-                                          g.lineStyle(2,0xffffff,0.9); g.lineBetween(x-r*0.7,y+r*0.5,x+r*0.7,y-r*0.5); } },
-            purplefire:{ on:u=>u._purpleFire&&this.time.now<(u._purpleFireUntil||0), color:0xcc44ff,
-                        draw:(g,x,y,r,t)=>{ const fl=0.6+0.4*Math.sin(t*0.02); // purple flame
-                                          g.fillStyle(0xaa44ff,0.5+0.3*fl); g.fillTriangle(x-r*0.6,y+r*0.5,x+r*0.6,y+r*0.5,x,y-r*0.7);
-                                          g.fillStyle(0xee99ff,0.9); g.fillTriangle(x-r*0.3,y+r*0.4,x+r*0.3,y+r*0.4,x,y-r*0.2); } },
-            emsdis:   { on:u=>u._emsDisabledUntil>this.time.now, color:0x66ccff,
-                        draw:(g,x,y,r,t)=>{ // disabled: crackling bolt with a slash (no power)
-                                          const fl=0.6+0.4*Math.sin(t*0.02);
-                                          g.lineStyle(2,0x66ccff,fl); g.beginPath();
-                                          g.moveTo(x-r*0.3,y-r*0.6); g.lineTo(x+r*0.1,y-r*0.1); g.lineTo(x-r*0.15,y); g.lineTo(x+r*0.3,y+r*0.6); g.strokePath();
-                                          g.lineStyle(2,0xff5566,0.9); g.lineBetween(x-r*0.7,y+r*0.7,x+r*0.7,y-r*0.7); } },
-            emsshield:{ on:u=>u._tdEMS&&u._emsShield, color:0x66ccff,
-                        draw:(g,x,y,r)=>{ g.lineStyle(2,0x66ccff,0.95); g.strokeCircle(x,y,r*0.72);
-                                          g.fillStyle(0x66ccff,0.25); g.fillCircle(x,y,r*0.72); } },
+            invuln:     { on:u=>u._cloaked||u._invulnerable, icon:'st_invuln' },                        // rings
+            shield:     { on:u=>(u._shield>0)||(u._ceoShield>0), icon:'st_shield' },                     // shield
+            armor:      { on:u=>u._ceoKnight&&u._knightArmour>0, icon:'st_armor' },                      // plate
+            vuln:       { on:u=>u._vulnerable&&this.time.now<(u._vulnerableUntil||0), icon:'st_vuln' },  // cracked target
+            encase:     { on:u=>u._encased, icon:'st_encase' },                                          // ice cube
+            stun:       { on:u=>u.isStunned&&this.time.now<(u.stunnedUntil||0), icon:t=>'st_stun_'+(Math.floor(t/116)%3) },   // stars going round
+            atkslow:    { on:u=>u._tetherSlow, icon:t=>'st_atkslow_'+(Math.floor(t/785)%4) },          // clock, hand turning
+            noheal:     { on:u=>u._healBlocked, icon:'st_noheal' },                                      // heart + slash
+            brittle:    { on:u=>u._brittle, icon:'st_brittle', fl:t=>0.6+0.4*Math.sin(t*0.015) },       // cracked shard
+            enlightened:{ on:u=>u._enlightenedUntil>this.time.now, icon:'st_enlightened', fl:t=>0.75+0.25*Math.sin(t*0.01) },   // holy sparkle
+            taunt:      { on:u=>u._taunterProtected&&this.time.now<(u._taunterProtTouch||0)+200, icon:'st_taunt' },   // aura link
+            nearsight:  { on:u=>u._nearsightUntil>this.time.now, icon:'st_nearsight' },                  // eye, slashed
+            purplefire: { on:u=>u._purpleFire&&this.time.now<(u._purpleFireUntil||0), icon:'st_purplefire', fl:t=>0.7+0.3*Math.sin(t*0.02) },
+            emsdis:     { on:u=>u._emsDisabledUntil>this.time.now, icon:'st_emsdis', fl:t=>0.6+0.4*Math.sin(t*0.02) },   // bolt, slashed
+            emsshield:  { on:u=>u._tdEMS&&u._emsShield, icon:'st_emsshield' },
         });
     }
 
@@ -1064,18 +1015,19 @@ class TowerDefenseScene extends Phaser.Scene {
         const active = [];
         for(const key in defs){ try{ if(defs[key].on(unit)) active.push(defs[key]); }catch(_){} }
         if(!active.length){ unit._statusGfx?.setVisible(false); return; }
-        if(!unit._statusGfx){ unit._statusGfx = this.add.graphics().setDepth(6.5); }
-        const g = unit._statusGfx; g.setVisible(true); g.clear();
+        if(!unit._statusGfx){ unit._statusGfx = this.add.container(0,0).setDepth(6.5); }
+        const g = unit._statusGfx; g.setVisible(true);
+        while(g.list.length<active.length) g.add(this.add.image(0,0,'td_wisps','st_invuln'));
+        g.list.forEach((im,i)=>im.setVisible(i<active.length));
         const t = this.time.now;
         const R = 7, GAP = 4, step = R*2+GAP;
         const yTop = uy - (unit._healSlimeMark ? 24 : (spr ? 20 : 22));
         const totalW = active.length*step - GAP;
         let x = ux - totalW/2 + R;
-        for(const d of active){
-            g.fillStyle(0x000000,0.35); g.fillCircle(x,yTop,R+1.5);
-            d.draw(g, x, yTop, R, t);
+        active.forEach((d,i)=>{
+            g.list[i].setPosition(Math.round(x),Math.round(yTop)).setFrame(typeof d.icon==='function'?d.icon(t):d.icon).setAlpha(d.fl?d.fl(t):1);
             x += step;
-        }
+        });
     }
 
     // Overheal shown as a distinct GOLD bar above the HP bar. Called EVERY FRAME from the
@@ -1312,24 +1264,8 @@ class TowerDefenseScene extends Phaser.Scene {
     _spawnTDOrb(x,y,value=1){
         const isLarge=value>=5;
         const isMega =value>=20;
-        const g=this.add.graphics().setDepth(3.5);
-        if(isMega){
-            g.fillStyle(0xffaa00,1); g.fillCircle(0,0,9);
-            g.fillStyle(0xffdd44,0.85); g.fillCircle(0,0,6.5);
-            g.fillStyle(0xffffff,0.6); g.fillCircle(-2,-2,2.5);
-            g.lineStyle(2,0xffcc00,0.9); g.strokeCircle(0,0,9);
-        } else if(isLarge){
-            g.fillStyle(0x44ffaa,1); g.fillCircle(0,0,7);
-            g.fillStyle(0x88ffcc,0.8); g.fillCircle(0,0,5);
-            g.fillStyle(0xffffff,0.65); g.fillCircle(-1.5,-1.5,2);
-            g.lineStyle(1.5,0x00ffcc,0.9); g.strokeCircle(0,0,7);
-        } else {
-            g.fillStyle(0x00cc88,1); g.fillCircle(0,0,5);
-            g.fillStyle(0x00ffaa,0.8); g.fillCircle(0,0,3.5);
-            g.fillStyle(0xffffff,0.7); g.fillCircle(-1.5,-1.5,1.5);
-            g.lineStyle(1.5,0x00ffcc,0.9); g.strokeCircle(0,0,5);
-        }
-        g.x=x; g.y=y;
+        // scrap (td_wisps orb_s / orb_l / orb_m: 1, 5+, 20+)
+        const g=this.add.image(x,y,'td_wisps',isMega?'orb_m':isLarge?'orb_l':'orb_s').setDepth(3.5);
         const landX=x+(Math.random()-0.5)*20;
         const landY=y+6+Math.random()*8;
         const orb={g,landX,landY,attracting:false,tweensKilled:false,_value:value};
@@ -1380,11 +1316,11 @@ class TowerDefenseScene extends Phaser.Scene {
         e._ceoShieldBg?.destroy(); e._ceoShieldFill?.destroy();
         e._knightArmourBg?.destroy(); e._knightArmourFill?.destroy();
         e._taunterAura?.destroy();
-        e._pbGfx?.destroy();
+        e._pbParts?.forEach(o=>o.destroy());
         e._gbGfx?.destroy();
         e._infernalBeam?.destroy();
         e._electricalAura?.destroy();
-        e._pulseGfx?.destroy();
+        e._pulseGfx?.destroy(); e._bangImg?.destroy();
         e._shieldGfx?.destroy();
         e._healSlimeMark?.destroy();
         e._healerAura?.destroy();
@@ -1401,12 +1337,13 @@ class TowerDefenseScene extends Phaser.Scene {
         e._brittleGfx?.destroy();
         e._iceFrozenGfx?.destroy();
         e._iceMeltEvent?.remove();
-        e._demonPortalGfx?.destroy();
+        e._demonPortalImg?.destroy(); e._demonEmbers?.destroy();
         e._demonFlameGfx?.destroy();
-        e._demonArrowGfx?.destroy();
-        e._hornGfx?.destroy();
+        e._demonArrowImg?.destroy();
+        e._hornImg?.destroy();
         e._angelGfx?.destroy();
-        e._angelHealGfx?.destroy();
+        e._angelParts?.forEach(o=>o.destroy());
+        e._angelPlus?.forEach(o=>o.destroy());
         // ── PAIRED DEATH TRIGGERS ────────────────────────────────────────────────────
         if(e._tdAngel) this._onAngelDeath(e);
         if(e._tdDemon) this._onDemonDeath(e);
@@ -1591,7 +1528,6 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     updateTeslaBolts(...a)        { return ElementSystem.prototype.updateTeslaBolts.call(this,...a); }
     _engineerTowerDefs(...a)      { return ElementSystem.prototype._engineerTowerDefs.call(this,...a); }
-    _drawEngineerTowerBody(...a)  { return ElementSystem.prototype._drawEngineerTowerBody.call(this,...a); }
     _fireTeslaCoil(...a)          { return ElementSystem.prototype._fireTeslaCoil.call(this,...a); }
     _spawnTeslaBolt(...a)         { return ElementSystem.prototype._spawnTeslaBolt.call(this,...a); }
     _fireMachineGunBullet(tower,def,enemy){
@@ -1702,7 +1638,7 @@ class TowerDefenseScene extends Phaser.Scene {
         this.statDamageMult=PlayerStats.damageMult(); PlayerStats.startRun(this);   // the damage stat (Stats.js) counts here too; the base takes the hits, so health and armor don't
         this.wrenchDmg=6; // kept in sync for display: wrenchDmg = damageScaling * 2 this.health=100; this.maxHealth=100;
         this.isTutorial=false; this.isLevel2=false; this.isLevel3=false; this.isLevel4=false; this.isLevel6=false;
-        this._voidSniperBolts=[]; this.floorTraps=[]; this.groundDrops=[]; this.enemyProjectiles=[];
+        this.floorTraps=[]; this.groundDrops=[]; this.enemyProjectiles=[];
         this.fireballs=[]; this.iceShards=[]; this.tsunamiFrozenEnemies=[];
         this._magmaStaffFireballCount=0;
         this._magmaHeat=0; this._magmaLastHit=0; this._magmaHeatPrev=0; this._lastKindleTime=0;
@@ -1744,7 +1680,7 @@ class TowerDefenseScene extends Phaser.Scene {
                         '_iceWetDur','_iceWetHealCut','_iceFrostbiteDps','_iceCascadeChance','_iceCascadeR',
                         '_iceFlashDmg','_iceFlashFreezeChance','_iceSubzeroBonus','_iceSubzero',
                         '_iceWake','_iceSlipstream','_iceSlipMax','_iceFrostwalker','_iceFlashFreeze',
-                        '_iceDeepFreeze','_iceLockTarget','_brittleMult','_brittleCharges']) this[f]=undefined;
+                        '_iceDeepFreeze','_iceLockTarget','_tdBrittleAmp','_brittleCharges']) this[f]=undefined;
         // Glorps: the wisp-progression currency, kept separate from scraps (towers/base/
         // wrench) so wisp skill trees don't compete with your defensive economy. Earned
         // from kills and wave clears.
@@ -2154,82 +2090,14 @@ class TowerDefenseScene extends Phaser.Scene {
         this.basePx=cx; this.basePy=cy;
         this._auraGfx=this.add.graphics().setDepth(0.4);
 
-        const g=this.add.graphics().setDepth(0.6);
-        const S=TS; // 1 tile = 24px
-
-        // ── Step 3 (outermost) — broad base platform ──────────────────────────
-        const s3W=S*5, s3H=S*4;
-        g.fillStyle(0x2a2a35,0.9);
-        g.fillRect(cx-s3W/2,cy-s3H/2,s3W,s3H);
-        g.lineStyle(1,0x3a3a4a,0.8);
-        g.strokeRect(cx-s3W/2,cy-s3H/2,s3W,s3H);
-
-        // ── Step 2 — mid platform ─────────────────────────────────────────────
-        const s2W=S*4, s2H=S*3;
-        g.fillStyle(0x323240,0.95);
-        g.fillRect(cx-s2W/2,cy-s2H/2,s2W,s2H);
-        g.lineStyle(1,0x4a4a5a,0.7);
-        g.strokeRect(cx-s2W/2,cy-s2H/2,s2W,s2H);
-
-        // ── Step 1 — altar top ────────────────────────────────────────────────
-        const s1W=S*3, s1H=S*2;
-        g.fillStyle(0x3a3a50,1);
-        g.fillRect(cx-s1W/2,cy-s1H/2,s1W,s1H);
-        g.lineStyle(1.5,0x5a5a7a,0.9);
-        g.strokeRect(cx-s1W/2,cy-s1H/2,s1W,s1H);
-
-        // ── Stone edge highlights (carved look) ───────────────────────────────
-        g.lineStyle(1,0x6a6a8a,0.4);
-        g.lineBetween(cx-s1W/2+2,cy-s1H/2+2, cx+s1W/2-2,cy-s1H/2+2); // top edge
-        g.lineBetween(cx-s1W/2+2,cy-s1H/2+2, cx-s1W/2+2,cy+s1H/2-2); // left edge
-
-        // ── 4 corner pillars ─────────────────────────────────────────────────
-        const pillarPositions=[
-            {x:cx-s2W/2+4, y:cy-s2H/2+4},  // TL
-            {x:cx+s2W/2-12,y:cy-s2H/2+4},  // TR
-            {x:cx-s2W/2+4, y:cy+s2H/2-12}, // BL
-            {x:cx+s2W/2-12,y:cy+s2H/2-12}, // BR
-        ];
-        for(const p of pillarPositions){
-            g.fillStyle(0x28283a,1); g.fillRect(p.x,p.y,8,8);         // pillar base
-            g.fillStyle(0x44445a,1); g.fillRect(p.x+1,p.y+1,6,6);     // pillar body
-            g.fillStyle(0x6666aa,0.6); g.fillRect(p.x+2,p.y+2,4,4);   // pillar cap glow
-            g.lineStyle(1,0x8888cc,0.4); g.strokeRect(p.x,p.y,8,8);
-        }
-
-        // ── Rune carvings on altar top ────────────────────────────────────────
-        g.lineStyle(1,0x4455aa,0.5);
-        // Left rune
-        g.beginPath(); g.moveTo(cx-S+2,cy-6); g.lineTo(cx-S+2,cy+6); g.strokePath();
-        g.beginPath(); g.moveTo(cx-S-4,cy); g.lineTo(cx-S+8,cy); g.strokePath();
-        // Right rune
-        g.beginPath(); g.moveTo(cx+S-2,cy-6); g.lineTo(cx+S-2,cy+6); g.strokePath();
-        g.beginPath(); g.moveTo(cx+S-8,cy); g.lineTo(cx+S+4,cy); g.strokePath();
-
-        // ── Crystal housing ───────────────────────────────────────────────────
-        g.fillStyle(0x1a1a2e,1); g.fillRect(cx-7,cy-10,14,16);         // housing base
-        g.lineStyle(1.5,0x334466,0.8); g.strokeRect(cx-7,cy-10,14,16);
-        // Crystal facets
-        const cx2=cx, cy2=cy-2;
-        g.fillStyle(0x3366cc,0.8);
-        g.fillTriangle(cx2,cy2-8, cx2-5,cy2+2, cx2+5,cy2+2);           // upper facet
-        g.fillStyle(0x5588ee,0.6);
-        g.fillTriangle(cx2,cy2-8, cx2-5,cy2+2, cx2,cy2-2);             // left highlight
-        g.fillStyle(0x2244aa,0.9);
-        g.fillTriangle(cx2-5,cy2+2, cx2+5,cy2+2, cx2,cy2+6);           // lower facet
-        g.lineStyle(1,0x88aaff,0.7);
-        g.beginPath(); g.moveTo(cx2,cy2-8); g.lineTo(cx2-5,cy2+2); g.lineTo(cx2,cy2+6); g.lineTo(cx2+5,cy2+2); g.closePath(); g.strokePath();
-
-        // ── Pulsing crystal glow ──────────────────────────────────────────────
-        const orb=this.add.graphics().setDepth(2);
-        this.time.addEvent({delay:32,loop:true,callback:()=>{
-            if(!orb.active)return; orb.clear();
-            const t=this.time.now*0.002, r=6+Math.sin(t)*2;
-            orb.fillStyle(0x3366cc,0.07+0.04*Math.sin(t)); orb.fillCircle(cx,cy-2,r*3);
-            orb.fillStyle(0x5599ff,0.18+0.08*Math.sin(t*1.3)); orb.fillCircle(cx,cy-2,r*1.6);
-            orb.fillStyle(0xaaccff,0.45); orb.fillCircle(cx,cy-2,r*0.8);
-            orb.fillStyle(0xffffff,0.9); orb.fillCircle(cx,cy-2,r*0.25);
-        }});
+        // the stepped altar, its pillars, runes and the crystal in its housing (td_room 'core', 5x4 tiles)
+        this.add.image(cx,cy,'td_room','core').setDepth(0.6);
+        const s3H=TS*4;
+        // the crystal's glow: soft light breathing round it
+        const glowOut=this.add.image(cx,cy-2,'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0x3366cc).setDepth(2).setScale(0.3).setAlpha(0.3);
+        const glowIn=this.add.image(cx,cy-2,'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0x88aaff).setDepth(2).setScale(0.14).setAlpha(0.55);
+        this.tweens.add({targets:glowOut,scale:0.4,alpha:0.42,duration:1570,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});
+        this.tweens.add({targets:glowIn,scale:0.18,alpha:0.75,duration:1210,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});
 
         // ── HP bar ────────────────────────────────────────────────────────────
         this._baseHpBg  =this.add.rectangle(cx,cy-s3H/2-10,84,8,0x000000,0.8).setDepth(5);
@@ -2243,8 +2111,13 @@ class TowerDefenseScene extends Phaser.Scene {
 
     _buildPortalOverlays(){
         const TS=this.TILE_SIZE;
-        this._portalGfx=this._portalRooms.map(r=>({gfx:this.add.graphics().setDepth(1.5),px:(r.x+r.w/2)*TS,py:(r.y+r.h/2)*TS}));
-        this.time.addEvent({delay:48,loop:true,callback:()=>{if(this.gameOver)return;this._portalGfx.forEach((p,i)=>{const pulse=Math.sin(this.time.now*0.003+i*1.2)*0.5+0.5,g=p.gfx,r=18;g.clear();g.fillStyle(0x8800ff,0.10+0.08*pulse);g.fillCircle(p.px,p.py,r*2);g.lineStyle(2.5,0xaa44ff,0.65+0.3*pulse);g.strokeCircle(p.px,p.py,r);g.fillStyle(0x6600cc,0.85);g.fillCircle(p.px,p.py,r*0.7);g.fillStyle(0xcc88ff,0.5+0.3*pulse);g.fillCircle(p.px,p.py,r*0.35);g.fillStyle(0xffffff,0.4*pulse);g.fillCircle(p.px,p.py,r*0.14);});}});
+        if(!this.anims.exists('td_portal')) this.anims.create({key:'td_portal',frames:this.anims.generateFrameNames('td_room',{prefix:'portal_',start:0,end:3}),frameRate:8,repeat:-1});
+        this._portalGfx=this._portalRooms.map((r,i)=>{
+            const px=(r.x+r.w/2)*TS, py=(r.y+r.h/2)*TS;
+            const glow=this.add.image(px,py,'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0x8800ff).setDepth(1.5).setScale(0.6).setAlpha(0.45);
+            this.tweens.add({targets:glow,alpha:0.7,duration:1050,yoyo:true,repeat:-1,ease:'Sine.easeInOut',delay:i*400});
+            return {gfx:this.add.sprite(px,py,'td_room','portal_0').setDepth(1.5).play({key:'td_portal',startFrame:i%4}),glow,px,py};
+        });
     }
 
     // ─── PLAYER MOVEMENT (same tile-stepping as GameScene) ────────────────────
@@ -2256,14 +2129,7 @@ class TowerDefenseScene extends Phaser.Scene {
         this._glorpTileY=cr.y+2;
 
         // Table
-        const table=this.add.graphics().setDepth(1.5);
-        table.fillStyle(0x5c3a1e,1); table.fillRect(gx-32,gy+6,64,14);
-        table.fillStyle(0x7a4f2a,1); table.fillRect(gx-30,gy+4,60,5);
-        table.fillStyle(0x3a2010,1); table.fillRect(gx-28,gy+18,8,12); table.fillRect(gx+20,gy+18,8,12);
-        // Items on table
-        table.fillStyle(0xffdd44,0.9); table.fillCircle(gx-14,gy+1,4);
-        table.fillStyle(0x44aaff,0.8); table.fillRect(gx+4,gy-2,7,7);
-        table.fillStyle(0xff6644,0.8); table.fillCircle(gx+16,gy+2,3);
+        this.add.image(gx,gy,'td_room','table').setOrigin(32/64,3/34).setDepth(1.5);   // and a coin, a gem and an apple on it
 
         // Glurp — green slime, bigger
         if(!this.textures.exists('slime_green'))
@@ -2477,7 +2343,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     this._icePuddleSlow=this._icePuddleSlow??0.4;        // puddle slow strength
                     this._icePuddleRadius=this._icePuddleRadius??1;      // puddle half-size (1 = 3×3)
                     this._icePuddleDur=this._icePuddleDur??4000;         // puddle lifetime
-                    this._brittleMult=this._brittleMult??1.75;           // brittle amp
+                    this._tdBrittleAmp=this._tdBrittleAmp??1.75;           // brittle amp
                     this._brittleCharges=this._brittleCharges??1;        // SHATTERSTORM raises to 2
                     this._iceShatterBrittleR=this._iceShatterBrittleR??1.5; // shatter brittle radius (tiles)
                     this._iceWetDur=this._iceWetDur??1500;               // how long wet lingers
@@ -2585,12 +2451,11 @@ class TowerDefenseScene extends Phaser.Scene {
             .on('pointerdown',()=>this._closeGlurpShop()));
 
         const pw=Math.min(W*0.94,1000),ph=Math.min(H*0.94,720),px=W/2-pw/2,py=H/2-ph/2;
-        const panel=tr(this.add.graphics().setScrollFactor(0).setDepth(46));
-        panel.fillStyle(0x08121a,0.99); panel.fillRoundedRect(px,py,pw,ph,12);
-        panel.lineStyle(2,0x44ff88,0.55); panel.strokeRoundedRect(px,py,pw,ph,12);
+        UIKit.panel(this,{x:px,y:py,w:pw,h:ph,accent:0x44ff88,depth:46}).objs.forEach(tr);
 
         tr(this.add.text(px+pw/2,py+28,"GLURP'S SHOP",{fontSize:'24px',fontFamily:UIKit.FONT.title,color:'#44ff88',stroke:'#000',strokeThickness:4,fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(47));
-        const scrT=tr(this.add.text(px+pw-46,py+28,`⚙ ${this.scraps}`,{fontSize:'19px',fontFamily:UIKit.FONT.title,color:'#ffdd88',stroke:'#000',strokeThickness:2,fontStyle:'bold'}).setOrigin(1,0.5).setScrollFactor(0).setDepth(47));
+        const scrT=tr(this.add.text(px+pw-46,py+28,`${this.scraps}`,{fontSize:'19px',fontFamily:UIKit.FONT.title,color:'#ffdd88',stroke:'#000',strokeThickness:2,fontStyle:'bold'}).setOrigin(1,0.5).setScrollFactor(0).setDepth(47));
+        this._iconBy(scrT,tr(this._tdIcon('⚙',0,0,47)),false,5);
         tr(this.add.text(px+pw-16,py+10,'✕',{fontSize:'22px',fontFamily:UIKit.FONT.title,color:'#ff6666'}).setOrigin(1,0).setScrollFactor(0).setDepth(48).setInteractive().on('pointerdown',()=>this._closeGlurpShop()));
 
         // Glurp mini
@@ -2602,15 +2467,11 @@ class TowerDefenseScene extends Phaser.Scene {
         const tabBgs=[],tabLabels=[];
         const drawTabs=()=>tabs.forEach((tab,i)=>{
             const active=tab===activeTab;
-            tabBgs[i].clear();
-            tabBgs[i].fillStyle(active?0x144028:0x0e1820,0.99);
-            tabBgs[i].fillRoundedRect(tabX+i*(tabW+tabGap),tabY,tabW,tabH,5);
-            tabBgs[i].lineStyle(2,active?0x44ff88:0x1e2e3e,active?0.85:0.45);
-            tabBgs[i].strokeRoundedRect(tabX+i*(tabW+tabGap),tabY,tabW,tabH,5);
+            this._tdNineSet(tabBgs[i],'pill','pill_a',tabX+i*(tabW+tabGap),tabY,tabW,tabH,active?0x44ff88:0x2e4458);
             tabLabels[i].setColor(active?'#44ff88':'#8899aa');
         });
         tabs.forEach((tab,i)=>{
-            const bg=tr(this.add.graphics().setScrollFactor(0).setDepth(47));
+            const bg=tr(this._tdNine('pill','pill_a',tabX+i*(tabW+tabGap),tabY,tabW,tabH,0x2e4458,47));
             const lbl=tr(this.add.text(tabX+i*(tabW+tabGap)+tabW/2,tabY+tabH/2,tab,{fontSize:'16px',fontFamily:UIKit.FONT.title,color:'#8899aa',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(48));
             tabBgs.push(bg); tabLabels.push(lbl);
             const hit=tr(this.add.rectangle(tabX+i*(tabW+tabGap)+tabW/2,tabY+tabH/2,tabW,tabH,0xffffff,0).setScrollFactor(0).setDepth(49).setInteractive());
@@ -2652,22 +2513,14 @@ class TowerDefenseScene extends Phaser.Scene {
                 const isEquipped=isPetItem&&this._equippedWisps?.has(item.petType);
                 const equippedCount=this._equippedWisps?.size||0;
 
-                const bg=ctr(this.add.graphics().setScrollFactor(0).setDepth(47));
-                const draw=hov=>{
-                    bg.clear();
-                    const fill=isEquipped?0x0a2020:isOwned?0x0a1a10:locked?0x1a0a0a:hov?0x122030:0x0a1420;
-                    bg.fillStyle(fill,0.99); bg.fillRoundedRect(bx,by,cardW,cardH,7);
-                    bg.lineStyle(1.5,isEquipped?0x44ffaa:isOwned?0x44ff88:locked?0x443333:hov?0x4488cc:0x1a2a3a,isEquipped||isOwned?0.8:0.55);
-                    bg.strokeRoundedRect(bx,by,cardW,cardH,7);
-                    // Tier counter top-right
-                    if(item.maxTier<=50&&item.maxTier>1){
-                        bg.fillStyle(0x223344,0.7); bg.fillRoundedRect(bx+cardW-58,by+8,50,22,5);
-                    }
-                };
+                const bg=ctr(this._tdNine('card','card_a',bx,by,cardW,cardH,0x2a3e52,47));
+                const draw=hov=>this._tdNineSet(bg,'card','card_a',bx,by,cardW,cardH,isEquipped?0x44ffaa:isOwned?0x44ff88:locked?0x553838:hov?0x4488cc:0x2a3e52);
                 draw(false);
+                // Tier counter top-right
+                if(item.maxTier<=50&&item.maxTier>1) ctr(this._tdNine('pill','pill_a',bx+cardW-58,by+8,50,22,0x2e4458,47.5));
 
-                // Icon + name row
-                ctr(this.add.text(bx+14,by+12,item.icon,{fontSize:'28px'}).setScrollFactor(0).setDepth(48));
+                // Icon (td_ui, or the wisp itself) + name row
+                ctr(this._tdIcon(item.petType||item.icon,bx+28,by+28,48,28));
                 ctr(this.add.text(bx+52,by+16,item.name,{fontSize:'15px',fontFamily:'monospace',color:isEquipped?'#44ffaa':isOwned?'#44ff88':locked?'#664444':'#ffffff',fontStyle:'bold',wordWrap:{width:cardW-118}}).setScrollFactor(0).setDepth(48));
                 // Tier badge
                 if(item.maxTier>1&&item.maxTier<=50){
@@ -2678,6 +2531,12 @@ class TowerDefenseScene extends Phaser.Scene {
                 // Description
                 const desc=locked?'Requires Gold Wrench':(isPetItem?item.descFn(bought):maxed?'MAXED':item.descFn(bought));
                 ctr(this.add.text(bx+14,by+52,desc,{fontSize:'12px',fontFamily:'monospace',color:(isPetItem?isOwned:maxed)?'#44aa55':locked?'#664444':'#8a9bb0',wordWrap:{width:cardW-26},lineSpacing:2}).setScrollFactor(0).setDepth(48));
+                // its price at the bottom: the number after a gear (OWNED / LOCKED plain)
+                const costTag=()=>{
+                    const costCol=maxed&&!isPetItem?'#44ff88':locked?'#664444':canAfford?'#ffdd44':'#664433';
+                    const t=ctr(this.add.text(bx+cardW/2,by+cardH-22,maxed&&!isPetItem?'OWNED':locked?'LOCKED':`${cost}`,{fontSize:'17px',fontFamily:UIKit.FONT.title,color:costCol,fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(48));
+                    if(!(maxed&&!isPetItem)&&!locked) this._iconBy(t,ctr(this._tdIcon('⚙',0,0,48)),false,5);
+                };
                 // Cost button / equip UI for wisps
                 if(isPetItem&&isOwned){
                     // Show equip/unequip toggle instead of buy button
@@ -2700,9 +2559,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     // Slot counter in corner
                     ctr(this.add.text(bx+cardW-10,by+10,`${equippedCount}/5`,{fontSize:'11px',fontFamily:'monospace',color:'#7d8fa3'}).setOrigin(1,0).setScrollFactor(0).setDepth(48));
                 } else if(!isPetItem&&!maxed&&!locked&&cost>=0){
-                    const costStr=maxed?'OWNED':locked?'LOCKED':`⚙ ${cost}`;
-                    const costCol=maxed?'#44ff88':locked?'#664444':canAfford?'#ffdd44':'#664433';
-                    ctr(this.add.text(bx+cardW/2,by+cardH-22,costStr,{fontSize:'17px',fontFamily:UIKit.FONT.title,color:costCol,fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(48));
+                    costTag();
                     const hit=ctr(this.add.rectangle(bx+cardW/2,by+cardH/2,cardW,cardH,0xffffff,0).setScrollFactor(0).setDepth(49).setInteractive());
                     hit.on('pointerover',()=>draw(true));
                     hit.on('pointerout', ()=>draw(false));
@@ -2713,19 +2570,15 @@ class TowerDefenseScene extends Phaser.Scene {
                         this.scraps-=c; this.orbScraps=this.scraps;
                         item.eff();
                         this._shopPurchased[item.id]=(this._shopPurchased[item.id]||0)+1;
-                        scrT.setText(`⚙ ${this.scraps}`);
-                        this._showFloatingText(bx+cardW/2,by-8,`${item.icon} ${item.name}`,'#44ff88',0);
+                        this._iconText(scrT,`${this.scraps}`);
+                        this._showFloatingText(bx+cardW/2,by-8,item.name,'#44ff88',0);
                         buildCards();
                     });
                 } else if(!isPetItem){
-                    const costStr=maxed?'OWNED':locked?'LOCKED':`⚙ ${cost}`;
-                    const costCol=maxed?'#44ff88':locked?'#664444':canAfford?'#ffdd44':'#664433';
-                    ctr(this.add.text(bx+cardW/2,by+cardH-22,costStr,{fontSize:'17px',fontFamily:UIKit.FONT.title,color:costCol,fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(48));
+                    costTag();
                 } else if(isPetItem&&!isOwned&&!maxed&&!locked&&cost>=0){
                     // Not yet purchased — show buy button
-                    const costStr=`⚙ ${cost}`;
-                    const costCol=canAfford?'#ffdd44':'#664433';
-                    ctr(this.add.text(bx+cardW/2,by+cardH-22,costStr,{fontSize:'17px',fontFamily:UIKit.FONT.title,color:costCol,fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(48));
+                    costTag();
                     const hit=ctr(this.add.rectangle(bx+cardW/2,by+cardH/2,cardW,cardH,0xffffff,0).setScrollFactor(0).setDepth(49).setInteractive());
                     hit.on('pointerover',()=>draw(true));
                     hit.on('pointerout', ()=>draw(false));
@@ -2736,8 +2589,8 @@ class TowerDefenseScene extends Phaser.Scene {
                         this.scraps-=c; this.orbScraps=this.scraps;
                         item.eff();
                         this._shopPurchased[item.id]=(this._shopPurchased[item.id]||0)+1;
-                        scrT.setText(`⚙ ${this.scraps}`);
-                        this._showFloatingText(bx+cardW/2,by-8,`${item.icon} ${item.name}`,'#44ff88',0);
+                        this._iconText(scrT,`${this.scraps}`);
+                        this._showFloatingText(bx+cardW/2,by-8,item.name,'#44ff88',0);
                         buildCards();
                     });
                 }
@@ -2836,15 +2689,8 @@ class TowerDefenseScene extends Phaser.Scene {
         // every frame — the per-frame overwrite fought the movement tween and made it choppy.
         e.sprite.setOrigin(0.5,0.5+0.3/1.6);
         e._spriteYOffset = 0;
-        const TS=this.TILE_SIZE, hr=TS*1.2;
-        const hLeft  = -hr + TS*0.3;   // sides in 0.3
-        const hRight =  hr - TS*0.3;
-        const hTop   = -hr + TS*1.3;   // top down 1.3 (was 0.8)
-        const hBot   =  hr;
-        const hitRing=this.add.graphics().setDepth(e.sprite.depth+0.1);
-        hitRing.lineStyle(1.5,0xff44ff,0.55);
-        hitRing.strokeRect(hLeft, hTop, hRight-hLeft, hBot-hTop);
-        hitRing.x=e.sprite.x; hitRing.y=e.sprite.y;
+        // its hit box (td_foes ceobox, 44x27): 22px either side of it, from 2px to 29px below its middle
+        const hitRing=this.add.image(e.sprite.x,e.sprite.y,'td_foes','ceobox').setOrigin(22/44,-2/27).setDepth(e.sprite.depth+0.1);
         e._ceoHitRing=hitRing;
         // Shield bar
         const sbBg  =this.add.rectangle(e.sprite.x,e.sprite.y-6,24,4,0x000000,0.85).setDepth(4.7);
@@ -2918,7 +2764,8 @@ class TowerDefenseScene extends Phaser.Scene {
         e._pbAnchored=false;
         e._pbLastPortal=0;
         e._pbPortalInterval=5000; // drops a mini-portal every 5s once anchored
-        e._pbGfx=this.add.graphics().setDepth(3.2);
+        // its rings and heart (td_foes): two outer arcs, two small inner ones turning the other way, the heart
+        e._pbParts=['arc_0','arc_12','sarc_0','sarc_12','pbcore_v'].map(f=>this.add.image(e.sprite.x,e.sprite.y,'td_foes',f).setDepth(3.2));
         e._pbRot=0;
         return e;
     }
@@ -2929,7 +2776,8 @@ class TowerDefenseScene extends Phaser.Scene {
         if(!this._miniPortals) this._miniPortals=[];
         const TS=this.TILE_SIZE;
         const px=tileX*TS+TS/2, py=tileY*TS+TS/2;
-        const gfx=this.add.graphics().setDepth(3.5);
+        // its glow, two arcs turning opposite ways, its heart (td_foes mglow, arc_, mcore)
+        const gfx=this.add.container(px,py,['mglow','arc_0','arc_12','mcore'].map(f=>this.add.image(0,0,'td_foes',f))).setDepth(3.5);
         const portal={
             tileX,tileY,x:px,y:py,gfx,
             dmgMult,
@@ -2940,17 +2788,14 @@ class TowerDefenseScene extends Phaser.Scene {
             expiresAt:this.time.now+25000, // closes after 25s — punishing but not permanent
         };
         this._miniPortals.push(portal);
-        // Arrival burst visual
-        const burst=this.add.graphics().setDepth(5.5);
-        burst.x=px; burst.y=py;
-        burst.fillStyle(0xaa44ff,0.7); burst.fillCircle(0,0,TS*1.2);
-        burst.fillStyle(0xffffff,0.5); burst.fillCircle(0,0,TS*0.5);
-        this.tweens.add({targets:burst,scaleX:2.5,scaleY:2.5,alpha:0,duration:400,onComplete:()=>burst.destroy()});
+        this._tdBlast(px,py,TS*1.2*1.6,'v',400,5.5,0.8);   // arrival burst (x1.6: the old disc swelled x2.5)
         this._showFloatingText(px,py-24,'MINI PORTAL!','#cc44ff');
         this.cameras.main.shake(60,0.004);
         return portal;
     }
 
+    // which of td_foes' 24 arc frames (15 degrees apart) shows an arc starting at angle a
+    _arcStep(a){ return ((Math.round(a/(Math.PI/12))%24)+24)%24; }
     _updateMiniPortals(time,dt){
         if(!this._miniPortals?.length)return;
         const TS=this.TILE_SIZE;
@@ -2960,9 +2805,6 @@ class TowerDefenseScene extends Phaser.Scene {
             // Close after duration
             if(time>=p.expiresAt){
                 p.active=false;
-                // The portal graphic bakes absolute world coords into its draw calls, so its
-                // own transform sits at (0,0). Scale-tweening it would scale around (0,0) and
-                // fling the visual to the top-left. Just clear and destroy it.
                 p.gfx?.destroy();
                 this._miniPortals.splice(i,1);
                 continue;
@@ -2970,23 +2812,12 @@ class TowerDefenseScene extends Phaser.Scene {
             // Pulse warning when close to expiry
             const timeLeft=p.expiresAt-time;
             const closingPulse=timeLeft<5000?(0.5+0.5*Math.sin(time*0.02)):1;
-            // Draw pulsing portal ring
+            // Pulsing portal: two counter-rotating arcs
             p.rot+=dt*3.5;
-            p.gfx.clear();
             const pulse=(0.55+0.35*Math.sin(time*0.006))*closingPulse;
-            // Outer glow
-            p.gfx.fillStyle(0x6600aa,0.18*pulse); p.gfx.fillCircle(p.x,p.y,TS*1.1);
-            // Two counter-rotating arcs
-            for(let a=0;a<2;a++){
-                const ang=p.rot*(a?1:-1.3)+a*Math.PI;
-                p.gfx.lineStyle(3,0xaa44ff,0.8*pulse);
-                p.gfx.beginPath(); p.gfx.arc(p.x,p.y,TS*0.7,ang,ang+Math.PI*1.2,false); p.gfx.strokePath();
-                p.gfx.lineStyle(1.5,0xddaaff,0.5*pulse);
-                p.gfx.beginPath(); p.gfx.arc(p.x,p.y,TS*0.7,ang+Math.PI*1.3,ang+Math.PI*1.9,false); p.gfx.strokePath();
-            }
-            // Bright core
-            p.gfx.fillStyle(0xff88ff,0.7*pulse); p.gfx.fillCircle(p.x,p.y,TS*0.25);
-            p.gfx.fillStyle(0xffffff,0.6*pulse); p.gfx.fillCircle(p.x,p.y,TS*0.12);
+            const [glow,a1,a2,core]=p.gfx.list;
+            glow.setAlpha(pulse); core.setAlpha(pulse);
+            a1.setFrame('arc_'+this._arcStep(-p.rot*1.3)).setAlpha(pulse); a2.setFrame('arc_'+this._arcStep(p.rot+Math.PI)).setAlpha(pulse);
             // Spawn enemies periodically — spawns in the portal room then they path to base
             if(time-p.lastSpawn>=p.spawnInterval){
                 p.lastSpawn=time;
@@ -2997,11 +2828,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 const sx=p.tileX+Math.round((Math.random()-0.5)*2);
                 const sy=p.tileY+Math.round((Math.random()-0.5)*2);
                 this._spawnEnemy(type,sx,sy,1,false);
-                // Flash portal on spawn
-                const flash=this.add.graphics().setDepth(5.6);
-                flash.x=p.x; flash.y=p.y;
-                flash.fillStyle(0xffffff,0.5); flash.fillCircle(0,0,TS*0.6);
-                this.tweens.add({targets:flash,scaleX:1.8,scaleY:1.8,alpha:0,duration:200,onComplete:()=>flash.destroy()});
+                this._tdBlast(p.x,p.y,TS*0.6,'p',200,5.6,0.6);   // flash on spawn
             }
         }
     }
@@ -3018,7 +2845,7 @@ class TowerDefenseScene extends Phaser.Scene {
         e._tdGhostBuster=true;
         e._gbLastShot=0;
         e._gbShotInterval=3500;
-        e._gbGfx=this.add.graphics().setDepth(3.1);
+        e._gbGfx=this.add.image(0,0,'td_wisps','gb_0').setDepth(3.1);   // its ghost (td_wisps gb_0-1)
         return e;
     }
 
@@ -3035,11 +2862,7 @@ class TowerDefenseScene extends Phaser.Scene {
             const ang=baseAng+frac*spreadAngle;
             // Ghost bullet: alternating black/white gradient appearance
             const isWhite=(i%2===0);
-            const gfx=this.add.graphics().setDepth(5.8);
-            gfx.fillStyle(isWhite?0xffffff:0x111133,0.9); gfx.fillCircle(0,0,4.5);
-            gfx.lineStyle(1.5,isWhite?0x8888ff:0xffffff,0.7); gfx.strokeCircle(0,0,4.5);
-            gfx.fillStyle(isWhite?0x8888ff:0xffffff,0.6); gfx.fillCircle(0,0,2);
-            gfx.x=e.sprite.x; gfx.y=e.sprite.y;
+            const gfx=this.add.image(e.sprite.x,e.sprite.y,'td_wisps',isWhite?'gbul_w':'gbul_d').setDepth(5.8);
             const speed=TS*9;
             const vx=Math.cos(ang)*speed, vy=Math.sin(ang)*speed;
             this._gbBullets.push({gfx,vx,vy,x:e.sprite.x,y:e.sprite.y,born:time,isWhite});
@@ -3077,7 +2900,7 @@ class TowerDefenseScene extends Phaser.Scene {
         const target=candidates[Math.floor(Math.random()*candidates.length)];
         target._ghostMuted=true;
         target.stamina=Math.max(0,(target.stamina||0)-8);
-        const mutedGfx=this.add.graphics().setDepth(5.9);
+        const mutedGfx=this.add.image(0,0,'td_wisps','muted').setDepth(5.9).setAlpha(0.92).setVisible(false);   // set over the wisp in _updatePets
         this._showFloatingText(this.player.x,this.player.y-30,`${target.type} MUTED!`,'#ff4444');
         // Release after 5s
         this.time.delayedCall(5000,()=>{
@@ -3370,8 +3193,14 @@ class TowerDefenseScene extends Phaser.Scene {
 
                     // The MARKS are the brand; fire licks up AROUND them (drawn behind the text).
                     // More tiers = more/taller flame tongues surrounding the numerals.
-                    if(!e._lightBrandFire) e._lightBrandFire=this.add.graphics().setDepth(6.85);
-                    const fg=e._lightBrandFire; fg.clear();
+                    // the fire: a hot glow (light, drawn) and up to twelve flame tongues (td_wisps tongue_s/m/l)
+                    if(!e._lightBrandFire){
+                        e._lightBrandFire=this.add.container(0,0).setDepth(6.85);
+                        e._lightBrandFire.add(this.add.graphics());
+                        for(let i=0;i<12;i++) e._lightBrandFire.add(this.add.image(0,0,'td_wisps','tongue_s').setOrigin(0.5,1));
+                    }
+                    const fg=e._lightBrandFire.list[0]; fg.clear();
+                    e._lightBrandFire.list.forEach((t,i)=>{ if(i) t.setVisible(false); });
                     const markW=tier*9;                       // marks span wider with more tiers
                     const flames=3+tier*3;                    // flame tongues wrap the marks
                     const height=9+tier*4;                    // taller blaze per tier
@@ -3381,20 +3210,20 @@ class TowerDefenseScene extends Phaser.Scene {
                         const flick=0.55+0.45*Math.sin(now*0.022+i*1.7);
                         const h=height*(0.55+0.45*Math.sin(now*0.016+i*2.3))*flick;
                         const baseY=by+5;                      // flames rise from just below the marks
-                        fg.fillStyle(0xff4400,0.28*vis*flick); fg.fillTriangle(fx-3,baseY, fx+3,baseY, fx,baseY-h);
-                        fg.fillStyle(0xff9922,0.50*vis*flick); fg.fillTriangle(fx-2,baseY-1, fx+2,baseY-1, fx,baseY-h*0.78);
-                        fg.fillStyle(0xffee88,0.80*vis*flick); fg.fillTriangle(fx-1.2,baseY-2, fx+1.2,baseY-2, fx,baseY-h*0.52);
+                        if(h>=2) e._lightBrandFire.list[i+1].setPosition(Math.round(fx),baseY).setFrame(h<8?'tongue_s':h<14?'tongue_m':'tongue_l').setAlpha(vis*flick).setVisible(true);
                     }
                     // Hot glow directly behind the marks so they read as sitting inside the blaze.
                     fg.fillStyle(0xff6622,0.30*vis*(0.6+0.4*Math.sin(now*0.03))); fg.fillCircle(bx,by,markW*0.6+5);
 
                     // Holy numeral marks — centered IN the fire (same anchor), glowing hot.
                     if(!e._lightBrandGfx){
-                        e._lightBrandGfx=this.add.text(bx,by,'',{fontSize:'15px',fontFamily:'serif',color:'#fff6cc',fontStyle:'bold',stroke:'#ff5500',strokeThickness:4}).setOrigin(0.5).setDepth(7);
+                        e._lightBrandGfx=this.add.container(bx,by).setDepth(7);
+                        for(let i=0;i<3;i++) e._lightBrandGfx.add(this.add.image(0,0,'td_wisps','brand_mark'));
                     }
+                    // one holy star (td_wisps 'brand_mark') per tier, side by side
                     const bt=e._lightBrandGfx;
-                    bt.setText('✦'.repeat(tier));
-                    bt.x=bx; bt.y=by-1*Math.sin(now*0.006); // tiny bob, but stays inside the fire
+                    bt.list.forEach((m,i)=>m.setVisible(i<tier).setX((i-(tier-1)/2)*11));
+                    bt.x=bx; bt.y=Math.round(by-1*Math.sin(now*0.006)); // tiny bob, but stays inside the fire
                     bt.setAlpha(vis);
                 }
             } else if(e._lightBrandGfx||e._lightBrandFire){
@@ -3407,13 +3236,9 @@ class TowerDefenseScene extends Phaser.Scene {
             if(e._tdEMS && e.sprite?.active) this._updateEmsShield(e,time);
             if(e._brittle && e.sprite?.active) this._updateBrittleVisual(e,time);
             if(e._iceFrozen && e.sprite?.active){
-                if(!e._iceFrozenGfx) e._iceFrozenGfx=this.add.graphics().setDepth((e.sprite.depth||1)+0.2);
-                const g=e._iceFrozenGfx; g.clear();
-                const x=e.sprite.x,y=e.sprite.y,fl=0.5+0.3*Math.sin(time*0.006);
-                g.fillStyle(0x88ddff,0.25); g.fillCircle(x,y,10);
-                g.lineStyle(1.5,0xcceeff,0.8+0.2*Math.sin(time*0.01));
-                for(let i=0;i<6;i++){ const a=i*Math.PI/3+time*0.0005; g.beginPath(); g.moveTo(x,y); g.lineTo(x+Math.cos(a)*9,y+Math.sin(a)*9); g.strokePath(); }
-                g.fillStyle(0xffffff,fl*0.5); g.fillCircle(x,y,3);
+                // frost disc, six spokes slowly turning (td_wisps frozen_0-3: 15 degrees a frame)
+                if(!e._iceFrozenGfx) e._iceFrozenGfx=this.add.image(0,0,'td_wisps','frozen_0').setDepth((e.sprite.depth||1)+0.2);
+                e._iceFrozenGfx.setPosition(e.sprite.x,e.sprite.y).setFrame('frozen_'+(Math.floor(time/524)%4)).setAlpha(0.85+0.15*Math.sin(time*0.01)).setVisible(true);
             }
             if(e._tdDemon && e.sprite?.active){ this._updateDemon(e,time,dt); if(e._demonHidden) this._setEnemyBarsVisible(e,false); }
             if(e._tdAngel && e.sprite?.active) this._updateAngel(e,time,dt);
@@ -3455,11 +3280,7 @@ class TowerDefenseScene extends Phaser.Scene {
             if(e.isHealerTotem && e._healSlimeMark?.active){
                 const bob=Math.sin(time*0.005+e._healSlimePhase)*3;
                 const mx=e.sprite.x, my=e.sprite.y-22+bob;
-                const g=e._healSlimeMark; g.clear();
-                g.fillStyle(0x66ffaa,0.35); g.fillCircle(mx,my,7);        // soft glow
-                g.fillStyle(0xffffff,0.95);
-                g.fillRect(mx-1.7,my-6,3.4,12);                           // vertical arm
-                g.fillRect(mx-6,my-1.7,12,3.4);                           // horizontal arm
+                e._healSlimeMark.setPosition(mx,Math.round(my));          // the white cross in its soft glow
                 if(e._healerAura?.active){ e._healerAura.x=e.sprite.x; e._healerAura.y=e.sprite.y; }
             }
 
@@ -3505,11 +3326,8 @@ class TowerDefenseScene extends Phaser.Scene {
                     g.fillStyle(0xffdd00,0.12+0.14*p);
                     g.fillCircle(e.sprite.x,e.sprite.y,10+p*(rushing?9:6));
                     // "!" during the alert pause
-                    if(e._bomberState==='alert'){
-                        g.fillStyle(0xffee00,1);
-                        g.fillRect(e.sprite.x-1.5,e.sprite.y-30,3,10);
-                        g.fillCircle(e.sprite.x,e.sprite.y-17,2);
-                    }
+                    if(!e._bangImg) e._bangImg=this.add.image(0,0,'td_wisps','bang').setOrigin(0.5,0).setDepth(2.61);
+                    e._bangImg.setPosition(e.sprite.x,e.sprite.y-30).setVisible(e._bomberState==='alert');
                 }
                 const tt=e._bomberTarget;
                 if(tt&&tt.active&&Math.hypot(tt.px-e.sprite.x,tt.py-e.sprite.y)<=this.TILE_SIZE*1.7){
@@ -3646,40 +3464,22 @@ class TowerDefenseScene extends Phaser.Scene {
                         this.time.delayedCall(150,()=>{ if(e.sprite?.active) e.sprite.setTint(0xaa44ff); });
                     }
                 }
-                // Visual — two orbiting portal rings, one inside the other, rotating
-                if(e._pbGfx?.active){
+                // Visual — two orbiting portal rings, one inside the other, rotating (td_foes arc_/sarc_: a frame per 15 degrees)
+                if(e._pbParts){
                     e._pbRot=(e._pbRot||0)+dt*2.2;
-                    const g=e._pbGfx; g.clear();
-                    const ex=e.sprite.x, ey=e.sprite.y;
-                    // Outer ring: purple swirling arc
-                    for(let i=0;i<2;i++){
-                        const ang=e._pbRot+i*Math.PI;
-                        const r=18+3*Math.sin(time*0.003);
-                        g.lineStyle(2.5,0x9933ff,0.7);
-                        g.beginPath(); g.arc(ex,ey,r,ang,ang+Math.PI*1.1,false); g.strokePath();
-                        g.lineStyle(1,0xddaaff,0.4);
-                        g.beginPath(); g.arc(ex,ey,r,ang+Math.PI*1.15,ang+Math.PI*1.7,false); g.strokePath();
-                    }
-                    // Inner ring: smaller, counter-rotating
-                    for(let i=0;i<2;i++){
-                        const ang=-e._pbRot*1.4+i*Math.PI;
-                        g.lineStyle(1.8,0x6600cc,0.8);
-                        g.beginPath(); g.arc(ex,ey,10,ang,ang+Math.PI*0.9,false); g.strokePath();
-                    }
-                    // Glowing portal core — swirls inward when anchored
-                    const coreColor=e._pbAnchored?0xff88ff:0xaa44ff;
-                    const corePulse=0.6+0.4*Math.sin(time*0.008);
-                    g.fillStyle(coreColor,0.35*corePulse); g.fillCircle(ex,ey,8);
-                    g.fillStyle(0xffffff,0.5*corePulse); g.fillCircle(ex,ey,3.5);
+                    const ex=Math.round(e.sprite.x), ey=Math.round(e.sprite.y), [o1,o2,i1,i2,core]=e._pbParts;
+                    const k=this._arcStep(e._pbRot), q=this._arcStep(-e._pbRot*1.4);
+                    o1.setPosition(ex,ey).setFrame('arc_'+k).setAlpha(0.85); o2.setPosition(ex,ey).setFrame('arc_'+((k+12)%24)).setAlpha(0.85);
+                    i1.setPosition(ex,ey).setFrame('sarc_'+q); i2.setPosition(ex,ey).setFrame('sarc_'+((q+12)%24));
+                    // Glowing portal core — pink when anchored
+                    core.setPosition(ex,ey).setFrame(e._pbAnchored?'pbcore_p':'pbcore_v').setAlpha(0.6+0.4*Math.sin(time*0.008));
                     // Particles sucking inward if anchored (outward if traveling)
                     if(Math.random()<0.15){
                         const particleAng=Math.random()*Math.PI*2;
                         const particleR=e._pbAnchored?22:28;
                         const px2=ex+Math.cos(particleAng)*particleR;
                         const py2=ey+Math.sin(particleAng)*particleR;
-                        const p=this.add.graphics().setDepth(3.3);
-                        p.fillStyle(0xcc88ff,0.7); p.fillCircle(0,0,1.5);
-                        p.x=px2; p.y=py2;
+                        const p=this.add.image(px2,py2,'td_wisps','vmote').setDepth(3.3).setAlpha(0.8);
                         const targetX=e._pbAnchored?ex:px2+Math.cos(particleAng)*12;
                         const targetY=e._pbAnchored?ey:py2+Math.sin(particleAng)*12;
                         this.tweens.add({targets:p,x:targetX,y:targetY,alpha:0,duration:350,onComplete:()=>p.destroy()});
@@ -3692,25 +3492,9 @@ class TowerDefenseScene extends Phaser.Scene {
                 const TS=this.TILE_SIZE;
                 // Visual — translucent ghostly body with drifting white wisps
                 if(e._gbGfx?.active){
-                    const g=e._gbGfx; g.clear();
-                    const ex=e.sprite.x, ey=e.sprite.y;
+                    // a pale see-through ghost (hollow eyes, its little cannon), its hem rippling, breathing in and out
                     const pulse=0.5+0.35*Math.sin(time*0.007);
-                    // Main ghost body — soft translucent white oval
-                    g.fillStyle(0xeeeeff,0.18*pulse); g.fillEllipse(ex,ey,26,22);
-                    g.fillStyle(0xffffff,0.55*pulse); g.fillEllipse(ex,ey-2,16,18);
-                    // Three wavy tail lobes (same ghost silhouette as phantom)
-                    for(let t2=0;t2<3;t2++){
-                        const tw=Math.sin(time*0.006+t2*1.4)*2;
-                        g.fillStyle(0xffffff,0.45*pulse);
-                        g.fillCircle(ex-4+t2*4+tw,ey+8,3.2-t2*0.3);
-                    }
-                    // Two dark hollow eyes — ghost style
-                    g.fillStyle(0x111133,0.75); g.fillCircle(ex-3.5,ey-2,2); g.fillCircle(ex+3.5,ey-2,2);
-                    // Ethereal outline ring
-                    g.lineStyle(1,0xccccff,0.3*pulse); g.strokeCircle(ex,ey,14);
-                    // Gun barrel — a small spectral cannon pointing downward
-                    g.lineStyle(2,0xffffff,0.6*pulse); g.lineBetween(ex,ey+3,ex,ey+10);
-                    g.fillStyle(0xffffff,0.7); g.fillCircle(ex,ey+10,2.2);
+                    e._gbGfx.setPosition(e.sprite.x,e.sprite.y).setFrame('gb_'+(Math.floor(time/260)%2)).setAlpha(Math.min(1,0.25+pulse));
                 }
                 // Shoot 5-bullet ghostly spread at the base
                 if(time-e._gbLastShot>=e._gbShotInterval){
@@ -3748,7 +3532,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 }
                 // Hitbox ring follows sprite (with offset)
                 if(e._ceoHitRing?.active){
-                    e._ceoHitRing.x=e.sprite.x; e._ceoHitRing.y=e.sprite.y;
+                    e._ceoHitRing.x=Math.round(e.sprite.x); e._ceoHitRing.y=Math.round(e.sprite.y);
                 }
                 // NEARSIGHT: on a cooldown, the CEO curses a tower engaging it — that tower's
                 // range collapses for a few seconds, punishing towers that focus the CEO and
@@ -3777,11 +3561,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 }
                 if(time-e._ceoLastSwing>e._ceoSwingInterval){
                     e._ceoLastSwing=time;
-                    const r=3*this.TILE_SIZE;
-                    const sg=this.add.graphics().setDepth(4);
-                    sg.x=e.sprite.x; sg.y=e.sprite.y;
-                    sg.fillStyle(0x8844ff,0.4); sg.fillCircle(0,0,r);
-                    this.tweens.add({targets:sg,alpha:0,scaleX:1.3,scaleY:1.3,duration:400,onComplete:()=>sg.destroy()});
+                    this._tdBlast(e.sprite.x,e.sprite.y,2.5*this.TILE_SIZE,'v',400,4,0.45);   // (the 3-tile swing: the blast grows past it)
                     this._damageBase(8);
                     this._showFloatingText(e.sprite.x,e.sprite.y-30,'SWING!','#8844ff');
                 }
@@ -3915,22 +3695,9 @@ class TowerDefenseScene extends Phaser.Scene {
                         b._value=(b._value||1)+(a2._value||1);
                         a2.g.destroy();
                         this.orbObjects.splice(i,1);
-                        // Redraw b as a larger orb to reflect its new value
-                        b.g.clear();
+                        // b shows as the size of its new value
                         const v=b._value;
-                        if(v>=20){
-                            b.g.fillStyle(0xffaa00,1); b.g.fillCircle(0,0,9);
-                            b.g.fillStyle(0xffdd44,0.85); b.g.fillCircle(0,0,6.5);
-                            b.g.lineStyle(2,0xffcc00,0.9); b.g.strokeCircle(0,0,9);
-                        } else if(v>=5){
-                            b.g.fillStyle(0x44ffaa,1); b.g.fillCircle(0,0,7);
-                            b.g.fillStyle(0x88ffcc,0.8); b.g.fillCircle(0,0,5);
-                            b.g.lineStyle(1.5,0x00ffcc,0.9); b.g.strokeCircle(0,0,7);
-                        } else {
-                            b.g.fillStyle(0x00cc88,1); b.g.fillCircle(0,0,5);
-                            b.g.fillStyle(0x00ffaa,0.8); b.g.fillCircle(0,0,3.5);
-                            b.g.lineStyle(1.5,0x00ffcc,0.9); b.g.strokeCircle(0,0,5);
-                        }
+                        b.g.setFrame(v>=20?'orb_m':v>=5?'orb_l':'orb_s');
                         break; // only merge a once
                     }
                 }
@@ -4053,10 +3820,7 @@ class TowerDefenseScene extends Phaser.Scene {
             // Explosion on hit
             if(sniperTower._snExplode&&enemy.sprite?.active){
                 const r=(sniperTower._snAoeR||1.5)*this.TILE_SIZE;
-                const exp=this.add.graphics().setDepth(5);
-                exp.x=enemy.sprite.x; exp.y=enemy.sprite.y;
-                exp.fillStyle(0xff8844,0.6); exp.fillCircle(0,0,r);
-                this.tweens.add({targets:exp,scaleX:1.4,scaleY:1.4,alpha:0,duration:280,onComplete:()=>exp.destroy()});
+                this._tdBlast(enemy.sprite.x,enemy.sprite.y,r,'o',280,5,0.75);
                 for(const e2 of this.enemies){
                     if(!e2.sprite?.active||e2===enemy)continue;
                     if(Math.hypot(e2.sprite.x-enemy.sprite.x,e2.sprite.y-enemy.sprite.y)<=r){
@@ -4090,19 +3854,6 @@ class TowerDefenseScene extends Phaser.Scene {
         CombatSystem.prototype.damageEnemy.call(this,enemy,dmg,...rest);
         // Sync tracked health so updateEnemyHealthBar doesn't double-absorb this hit
         if(enemy._lastTrackedHealth!==undefined) enemy._lastTrackedHealth=enemy.health;
-    }
-
-    _taunterTendrils(taunter){
-        for(let i=0;i<2;i++){
-            const ang=Math.random()*Math.PI*2;
-            const len=taunter._taunterRadius*this.TILE_SIZE;
-            const ex=taunter.sprite.x+Math.cos(ang)*len;
-            const ey=taunter.sprite.y+Math.sin(ang)*len;
-            const g=this.add.graphics().setDepth(4);
-            g.lineStyle(2,0x44ff44,0.9);
-            g.beginPath(); g.moveTo(taunter.sprite.x,taunter.sprite.y); g.lineTo(ex,ey); g.strokePath();
-            this.tweens.add({targets:g,alpha:0,duration:300,onComplete:()=>g.destroy()});
-        }
     }
 
     _checkEnemiesAtBase(){
@@ -4933,11 +4684,7 @@ class TowerDefenseScene extends Phaser.Scene {
     _purpleFireBurst(tower){
         if(tower._purpleBurst)return; tower._purpleBurst=true;
         const TS=this.TILE_SIZE, px=tower.px, py=tower.py;
-        const g=this.add.graphics().setDepth(6); g.x=px; g.y=py;
-        g.fillStyle(0xaa44ff,0.5); g.fillCircle(0,0,TS*1.4);
-        g.fillStyle(0xff66ff,0.4); g.fillCircle(0,0,TS*0.9);
-        g.lineStyle(3,0xcc66ff,0.9); g.strokeCircle(0,0,TS*1.2);
-        this.tweens.add({targets:g,scaleX:1.6,scaleY:1.6,alpha:0,duration:350,onComplete:()=>g.destroy()});
+        this._tdBlast(px,py,TS*1.4,'v',350,6,0.6);
         this._showFloatingText(px,py-12,'PURPLE BURST','#cc66ff');
         for(const t of (this.towers||[])){
             if(!t.active||t===tower)continue;
@@ -4958,17 +4705,11 @@ class TowerDefenseScene extends Phaser.Scene {
     _updatePurpleFire(time,dt){
         for(const t of (this.towers||[])){
             if(!t.active||!t._purpleFire)continue;
-            if(time>=(t._purpleFireUntil||0)){ t._purpleFire=false; t._purpleFireGfx?.clear(); continue; }
+            if(time>=(t._purpleFireUntil||0)){ t._purpleFire=false; t._purpleFireImg?.setVisible(false); continue; }
             this._damageTower(t,(t._purpleFireDps||10)*dt);
-            // purple flame lick visual
-            if(!t._purpleFireGfx) t._purpleFireGfx=this.add.graphics().setDepth(5.3);
-            const g=t._purpleFireGfx; g.clear();
-            for(let i=0;i<4;i++){
-                const fx=t.px+(i/3-0.5)*this.TILE_SIZE*0.7 + Math.sin(time*0.012+i)*2;
-                const h=8+6*Math.abs(Math.sin(time*0.015+i*1.9));
-                g.fillStyle(0xaa44ff,0.5); g.fillTriangle(fx-2.5,t.py+4,fx+2.5,t.py+4,fx,t.py+4-h);
-                g.fillStyle(0xdd88ff,0.8); g.fillTriangle(fx-1.2,t.py+3,fx+1.2,t.py+3,fx,t.py+3-h*0.6);
-            }
+            // purple flames licking it (td_foes pfire_0-3)
+            if(!t._purpleFireImg) t._purpleFireImg=this.add.image(Math.round(t.px),Math.round(t.py)+5,'td_foes','pfire_0').setOrigin(0.5,1).setDepth(5.3);
+            t._purpleFireImg.setVisible(true).setFrame('pfire_'+(Math.floor(time/90)%4));
         }
     }
     // ── DEMON: dives into a hell-portal (invulnerable), resurfaces on a semi-random timer,
@@ -5004,8 +4745,8 @@ class TowerDefenseScene extends Phaser.Scene {
                 e._demonSurfaceAt=time+2000+Math.random()*2000;
                 e.sprite.setVisible(false);
                 e.sprite.y=e._demonPortalY;             // reset for underground movement
-                e._hornGfx?.clear();
-                e._demonPortalGfx?.clear();             // portal CLOSES once it's fully in hell
+                this._drawDemonHorns(e,time,0);
+                this._drawDemonPortal(e,time,0);        // portal CLOSES once it's fully in hell
             }
         } else if(e._demonState==='submerged'){
             // The demon keeps travelling underground (its sprite still moves invisibly), so the
@@ -5023,7 +4764,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 e._demonPortalX=ax; e._demonPortalY=ay; // reopen here
                 e.sprite.x=ax; e.sprite.y=ay;           // seat sprite at the true tile
                 e.sprite.setVisible(true); e._demonHidden=false; e._demonInvuln=false;
-                e._demonArrowGfx?.clear();
+                e._demonArrowImg?.setVisible(false);
                 this._setEnemyBarsVisible(e,true);
             }
         } else if(e._demonState==='rising'){
@@ -5039,7 +4780,7 @@ class TowerDefenseScene extends Phaser.Scene {
             if(p>=1){
                 e.sprite.setScale(e._baseScale||this.SLIME_SCALE); e.sprite.setAlpha(1);
                 e.sprite.y=e._demonPortalY;
-                e._demonPortalGfx?.clear();
+                this._drawDemonPortal(e,time,0);
                 e._demonState='attack';
                 e._demonAttackUntil=time+1800;    // full attack window
                 e._demonRecoverUntil=time+1800+1400;
@@ -5106,27 +4847,17 @@ class TowerDefenseScene extends Phaser.Scene {
     _applyBrittle(e){
         if(!e?.sprite?.active||e._isTotem)return;
         e._brittle=true;
-        e._brittleMult=this._brittleMult||1.75;   // next non-ice hit ×1.75 (tunable)
+        e._brittleMult=this._tdBrittleAmp||1.75;   // next non-ice hit ×1.75 (tunable)
         e._brittleLeft=this._brittleCharges||1;   // SHATTERSTORM raises this to 2+
         e._brittleUntil=this.time.now+6000;        // lingers a while waiting for the payoff hit
-        if(!e._brittleGfx) e._brittleGfx=this.add.graphics().setDepth((e.sprite.depth||1)+0.15);
+        if(!e._brittleGfx) e._brittleGfx=this.add.image(0,0,'td_wisps','brittle').setDepth((e.sprite.depth||1)+0.15).setVisible(false);
     }
     _updateBrittleVisual(e,time){
-        if(!e._brittle){ e._brittleGfx?.clear(); return; }
-        if(this.time.now>(e._brittleUntil||0)){ e._brittle=false; e._brittleGfx?.clear(); return; }
-        if(!e._brittleGfx) e._brittleGfx=this.add.graphics().setDepth((e.sprite.depth||1)+0.15);
-        const g=e._brittleGfx; g.clear();
-        const x=e.sprite.x, y=e.sprite.y, r=8;
-        const fl=0.6+0.3*Math.sin(time*0.02);
-        g.lineStyle(1.2,0xcceeff,fl);
-        for(let i=0;i<4;i++){
-            const a=i*Math.PI/2+0.4;
-            g.beginPath(); g.moveTo(x,y);
-            g.lineTo(x+Math.cos(a)*r*0.6, y+Math.sin(a)*r*0.6);
-            g.lineTo(x+Math.cos(a+0.3)*r, y+Math.sin(a+0.3)*r);
-            g.strokePath();
-        }
-        g.lineStyle(1,0xffffff,fl*0.7); g.strokeCircle(x,y,r);
+        if(!e._brittle){ e._brittleGfx?.setVisible(false); return; }
+        if(this.time.now>(e._brittleUntil||0)){ e._brittle=false; e._brittleGfx?.setVisible(false); return; }
+        if(!e._brittleGfx) e._brittleGfx=this.add.image(0,0,'td_wisps','brittle').setDepth((e.sprite.depth||1)+0.15);
+        // four bent cracks in a white ring (td_wisps 'brittle'), flickering
+        e._brittleGfx.setPosition(e.sprite.x,e.sprite.y).setAlpha(0.6+0.3*Math.sin(time*0.02)).setVisible(true);
     }
     // Freeze a single target: hard stun for a 4s window. If a follow-up ICE hit lands in that
     // window it SHATTERS (brittle + small puddle); otherwise it MELTS into a BIGGER puddle.
@@ -5141,7 +4872,7 @@ class TowerDefenseScene extends Phaser.Scene {
         e.isStunned=true; e.stunnedUntil=this.time.now+dur;
         e._committedPath=null; e._pathIndex=undefined;
         e.sprite.setTint(0x88ddff);
-        if(!e._iceFrozenGfx) e._iceFrozenGfx=this.add.graphics().setDepth((e.sprite.depth||1)+0.2);
+        if(!e._iceFrozenGfx) e._iceFrozenGfx=this.add.image(0,0,'td_wisps','frozen_0').setDepth((e.sprite.depth||1)+0.2).setVisible(false);
         // Auto-melt: if still frozen when the window ends, melt into a bigger puddle.
         e._iceMeltEvent=this.time.delayedCall(dur,()=>{
             if(e._iceFrozen && e.sprite?.active){
@@ -5154,13 +4885,11 @@ class TowerDefenseScene extends Phaser.Scene {
         if(!e?.sprite?.active)return;
         this._addWispMastery('ice',14);  // mastery: cashing the shatter is the harder half
         e._iceFrozen=false; e.isStunned=false; e._iceMeltEvent?.remove();
-        e.sprite.clearTint?.(); e._iceFrozenGfx?.clear();
+        e.sprite.clearTint?.(); e._iceFrozenGfx?.setVisible(false);
         const TS=this.TILE_SIZE, cx=e.sprite.x, cy=e.sprite.y;
         // Shatter burst visual.
-        const g=this.add.graphics().setDepth(5).setPosition(cx,cy);
-        g.fillStyle(0xcceeff,0.7); g.fillCircle(0,0,TS*0.5);
-        for(let i=0;i<8;i++){ const a=i*Math.PI/4; g.lineStyle(2,0xffffff,0.8); g.beginPath(); g.moveTo(0,0); g.lineTo(Math.cos(a)*TS*0.7,Math.sin(a)*TS*0.7); g.strokePath(); }
-        this.tweens.add({targets:g,alpha:0,scaleX:1.6,scaleY:1.6,duration:300,onComplete:()=>g.destroy()});
+        const g=this.add.image(cx,cy,'td_wisps','shatter').setDepth(5);   // an icy flash, eight shards of light
+        this.tweens.add({targets:g,alpha:0,duration:300,onComplete:()=>g.destroy()});
         this._showFloatingText(cx,cy-18,'SHATTER','#cceeff');
         // Apply BRITTLE to nearby enemies (the payoff for other damage sources).
         const br=(this._iceShatterBrittleR||1.5)*TS;
@@ -5192,7 +4921,7 @@ class TowerDefenseScene extends Phaser.Scene {
     _meltFrozen(e){
         if(!e?.sprite?.active)return;
         e._iceFrozen=false; e.isStunned=false;
-        e.sprite.clearTint?.(); e._iceFrozenGfx?.clear();
+        e.sprite.clearTint?.(); e._iceFrozenGfx?.setVisible(false);
         const TS=this.TILE_SIZE, cx=e.sprite.x, cy=e.sprite.y;
         this._showFloatingText(cx,cy-18,'melt','#aaccff');
         this._spawnWaterPuddle(Math.floor(cx/TS),Math.floor(cy/TS), (this._icePuddleRadius||1)+1); // bigger
@@ -5207,52 +4936,37 @@ class TowerDefenseScene extends Phaser.Scene {
         if(!this._waterDirty)return;
         this._waterDirty=false;
         const anyTiles=(this._waterPuddles?.length||0)+(this._iceTrail?.length||0);
-        if(!anyTiles){ this._waterGfx?.clear(); return; }
-        if(!this._waterGfx||!this._waterGfx.active) this._waterGfx=this.add.graphics().setDepth(0.85);
-        const g=this._waterGfx; g.clear();
+        if(!anyTiles){ this._waterGfx?.removeAll(true); return; }
+        if(!this._waterGfx||!this._waterGfx.active) this._waterGfx=this.add.container(0,0).setDepth(0.85);
+        const g=this._waterGfx; g.removeAll(true);
         const k=(x,y)=>x+','+y;
         const liquid=new Set(), frozen=new Set();
         for(const t of (this._waterPuddles||[])) (t.flashFrozen?frozen:liquid).add(k(t.tx,t.ty));
         for(const t of (this._iceTrail||[]))     (t.frozen     ?frozen:liquid).add(k(t.tx,t.ty));
         // Frozen wins if a tile somehow appears in both (a trail tile laid over a frozen puddle).
         for(const key of frozen) liquid.delete(key);
-        this._paintTileBody(g,liquid,{fill:0x3388cc,fillA:0.32,edge:0x66bbee,edgeA:0.75,ice:false});
-        this._paintTileBody(g,frozen,{fill:0x99e6ff,fillA:0.42,edge:0xddf6ff,edgeA:0.90,ice:true});
+        this._paintTileBody(g,liquid,false);
+        this._paintTileBody(g,frozen,true);
     }
 
     // Paint a tile set as ONE body: fill every tile, but stroke only the edges whose
     // neighbour is outside the set. That perimeter-only pass is what removes the interior
     // grid. Interior detail is derived from tile coordinates, never Math.random(), so the
     // surface does not crawl every time an unrelated tile expires and forces a redraw.
-    _paintTileBody(g,tiles,opt){
+    _paintTileBody(g,tiles,ice){
         if(!tiles.size)return;
         const TS=this.TILE_SIZE;
         const coords=[...tiles].map(key=>{const i=key.indexOf(',');return [ +key.slice(0,i), +key.slice(i+1) ];});
-        g.fillStyle(opt.fill,opt.fillA);
-        for(const [tx,ty] of coords) g.fillRect(tx*TS,ty*TS,TS,TS);
         for(const [tx,ty] of coords){
             const px=tx*TS, py=ty*TS;
-            if(opt.ice){
-                // Two thin diagonal crystal streaks — matches the original game's ice overlay.
-                g.lineStyle(0.7,0xffffff,0.45);
-                g.beginPath(); g.moveTo(px+4,py+4);      g.lineTo(px+TS-6,py+TS-4); g.strokePath();
-                g.beginPath(); g.moveTo(px+TS/2,py+2);   g.lineTo(px+6,py+TS-4);    g.strokePath();
-            } else {
-                // Short ripple dashes, offset per tile by a coordinate hash.
-                const h=((tx*73856093)^(ty*19349663))>>>0;
-                const o1=h%7, o2=(h>>3)%9;
-                g.lineStyle(1,0x99ddff,0.28);
-                g.beginPath(); g.moveTo(px+3+o1,py+7);     g.lineTo(px+9+o1,py+7);     g.strokePath();
-                g.beginPath(); g.moveTo(px+5+o2,py+TS-7);  g.lineTo(px+12+o2,py+TS-7); g.strokePath();
-            }
-        }
-        g.lineStyle(1.6,opt.edge,opt.edgeA);
-        for(const [tx,ty] of coords){
-            const px=tx*TS, py=ty*TS;
-            if(!tiles.has((tx)+','+(ty-1))){ g.beginPath(); g.moveTo(px,py);    g.lineTo(px+TS,py);    g.strokePath(); }
-            if(!tiles.has((tx)+','+(ty+1))){ g.beginPath(); g.moveTo(px,py+TS); g.lineTo(px+TS,py+TS); g.strokePath(); }
-            if(!tiles.has((tx-1)+','+(ty))){ g.beginPath(); g.moveTo(px,py);    g.lineTo(px,py+TS);    g.strokePath(); }
-            if(!tiles.has((tx+1)+','+(ty))){ g.beginPath(); g.moveTo(px+TS,py); g.lineTo(px+TS,py+TS); g.strokePath(); }
+            // water: one of three ripple layouts picked by a coordinate hash (never random, so it doesn't crawl); ice: streaks
+            g.add(this.add.image(px,py,'td_wisps',ice?'pud_ice':'pud_'+(((tx*73856093)^(ty*19349663))>>>0)%3).setOrigin(0));
+            // the edge only where the body ends
+            const e=ice?'pi_':'pe_';
+            if(!tiles.has(tx+','+(ty-1))) g.add(this.add.image(px,py,'td_wisps',e+'n').setOrigin(0));
+            if(!tiles.has(tx+','+(ty+1))) g.add(this.add.image(px,py+TS-2,'td_wisps',e+'s').setOrigin(0));
+            if(!tiles.has((tx-1)+','+ty)) g.add(this.add.image(px,py,'td_wisps',e+'w').setOrigin(0));
+            if(!tiles.has((tx+1)+','+ty)) g.add(this.add.image(px+TS-2,py,'td_wisps',e+'e').setOrigin(0));
         }
     }
 
@@ -5420,49 +5134,27 @@ class TowerDefenseScene extends Phaser.Scene {
             }
         }
     }
+    // The hell portal (td_foes dp_0-2: a quarter, half and full size as it opens) and the six embers circling it
+    // (dpe_0-3, a 15-degree step each, 65ms a step).
     _drawDemonPortal(e,time,scale){
-        if(scale<=0.01){ e._demonPortalGfx?.clear(); return; }
-        if(!e._demonPortalGfx) e._demonPortalGfx=this.add.graphics().setDepth(2.4);
-        const g=e._demonPortalGfx; g.clear();
-        const TS=this.TILE_SIZE, px=e._demonPortalX, py=e._demonPortalY;
-        const rx=TS*1.5*scale, ry=TS*0.85*scale;
-        // dark void
-        g.fillStyle(0x1a0022,0.85); g.fillEllipse(px,py,rx,ry);
-        g.fillStyle(0x440066,0.5);  g.fillEllipse(px,py,rx*0.7,ry*0.7);
-        // molten rim
-        g.lineStyle(3,0xcc44ff,0.9); g.strokeEllipse(px,py,rx,ry);
-        g.lineStyle(1.5,0xff88ff,0.7); g.strokeEllipse(px,py,rx*1.08,ry*1.08);
-        // swirling embers around the rim
-        for(let i=0;i<6;i++){
-            const a=time*0.004+i*Math.PI/3;
-            const ex=px+Math.cos(a)*rx*0.9, ey=py+Math.sin(a)*ry*0.9;
-            g.fillStyle(0xff66cc,0.6*scale); g.fillCircle(ex,ey,2);
-        }
+        if(scale<=0.01){ e._demonPortalImg?.setVisible(false); e._demonEmbers?.setVisible(false); return; }
+        if(!e._demonPortalImg){ e._demonPortalImg=this.add.image(0,0,'td_foes','dp_2').setDepth(2.4); e._demonEmbers=this.add.image(0,0,'td_foes','dpe_0').setDepth(2.41); }
+        const px=Math.round(e._demonPortalX), py=Math.round(e._demonPortalY);
+        e._demonPortalImg.setVisible(true).setFrame('dp_'+(scale>0.7?2:scale>0.35?1:0)).setPosition(px,py);
+        e._demonEmbers.setVisible(scale>0.7).setFrame('dpe_'+(Math.floor(time/65)%4)).setPosition(px,py).setAlpha(scale);
     }
     // Downward arrow bobbing over the demon's LIVE position, tracking it as it moves underground.
     _drawDemonArrow(e,time,tx,ty){
-        if(!e._demonArrowGfx) e._demonArrowGfx=this.add.graphics().setDepth(6.5);
-        const g=e._demonArrowGfx; g.clear();
-        const px=tx, py=ty-38+Math.sin(time*0.006)*4;
-        const prog=1-Math.max(0,(e._demonSurfaceAt-time)/2000); // brightens as resurface nears
-        const col=prog>0.7?0xff5555:0xcc44ff;
-        g.fillStyle(col,0.9);
-        g.fillTriangle(px-7,py-8, px+7,py-8, px,py+4);   // arrowhead pointing down
-        g.fillRect(px-3,py-16,6,8);
+        if(!e._demonArrowImg) e._demonArrowImg=this.add.image(0,0,'td_foes','arrow_v').setOrigin(0.5,0).setDepth(6.5).setAlpha(0.95);
+        const prog=1-Math.max(0,(e._demonSurfaceAt-time)/2000); // turns red as resurface nears
+        e._demonArrowImg.setVisible(true).setFrame(prog>0.7?'arrow_r':'arrow_v').setPosition(Math.round(tx),Math.round(ty-54+Math.sin(time*0.006)*4));
     }
-    // Red curved horns riding on the demon's head (alpha for the sink/rise fade).
+    // Red curved horns riding on the demon's head (td_foes horns; alpha for the sink/rise fade).
     _drawDemonHorns(e,time,alpha){
-        if(!e.sprite?.active){ e._hornGfx?.clear(); return; }
-        if(!e._hornGfx) e._hornGfx=this.add.graphics().setDepth((e.sprite.depth||5)+0.1);
-        const g=e._hornGfx; g.clear();
-        if(alpha<=0.02) return;
-        const x=e.sprite.x, y=e.sprite.y+this.TILE_SIZE*0.68, s=(e.sprite.scaleY||1)/(this._baseScale||this.SLIME_SCALE||1); // head sits low on the tile
-        const hh=8*s;   // horn height scales with the (shrinking) demon
-        g.fillStyle(0xcc2222,alpha); g.lineStyle(1.5,0x881111,alpha);
-        // left horn (curves up-out) — base on the head, tips up
-        g.beginPath(); g.moveTo(x-5*s,y-3*s); g.lineTo(x-8*s,y-3*s-hh); g.lineTo(x-3*s,y-4*s); g.closePath(); g.fillPath();
-        // right horn
-        g.beginPath(); g.moveTo(x+5*s,y-3*s); g.lineTo(x+8*s,y-3*s-hh); g.lineTo(x+3*s,y-4*s); g.closePath(); g.fillPath();
+        if(!e.sprite?.active||alpha<=0.02){ e._hornImg?.setVisible(false); return; }
+        if(!e._hornImg) e._hornImg=this.add.image(0,0,'td_foes','horns').setOrigin(0.5,0).setDepth((e.sprite.depth||5)+0.1);
+        const s=(e.sprite.scaleY||1)/(this._baseScale||this.SLIME_SCALE||1); // horns scale with the (shrinking) demon
+        e._hornImg.setVisible(true).setAlpha(alpha).setScale(s).setPosition(Math.round(e.sprite.x),Math.round(e.sprite.y+this.TILE_SIZE*0.68-11*s)); // head sits low on the tile
     }
     _drawDemonFlame(e,tt,time){
         if(!e._demonFlameGfx) e._demonFlameGfx=this.add.graphics().setDepth(5.2);
@@ -5517,8 +5209,7 @@ class TowerDefenseScene extends Phaser.Scene {
         const ringR=(3.5+Math.min(3,demons.length)*0.8)*this.TILE_SIZE;
         e._angelRingR=ringR;
         const healFrac=e._angelHealFrac||0.04;    // fraction of MAX HP healed per second (scales w/ enemy size + waves)
-        if(!e._angelHealGfx) e._angelHealGfx=this.add.graphics().setDepth(4.5);
-        const hg=e._angelHealGfx; hg.clear();
+        const plus=e._angelPlus||(e._angelPlus=[]); let np=0;   // heal motes (td_foes hplus), one per enemy it's healing
         for(const o of (this.enemies||[])){
             if(!o.sprite?.active)continue;
             if(Math.hypot(o.sprite.x-e.sprite.x,o.sprite.y-e.sprite.y)<=ringR){
@@ -5533,12 +5224,13 @@ class TowerDefenseScene extends Phaser.Scene {
                     if(o.healthBarFill && mh>0) o.healthBarFill.width=24*(o.health/mh); // reflect heal on the bar
                     // green heal shimmer — rising plus-motes over the healed enemy
                     const ph=(time*0.004+o.sprite.x)%1;
-                    hg.fillStyle(0x66ff99,0.7*(1-ph));
                     const hx=o.sprite.x+Math.sin(time*0.01+o.sprite.x)*4, hy=o.sprite.y+4-ph*16;
-                    hg.fillRect(hx-3,hy-1,6,2); hg.fillRect(hx-1,hy-3,2,6);
+                    const m=plus[np]||(plus[np]=this.add.image(0,0,'td_foes','hplus').setDepth(4.5)); np++;
+                    m.setVisible(true).setAlpha(0.7*(1-ph)).setPosition(Math.round(hx),Math.round(hy));
                 }
             }
         }
+        for(let i=np;i<plus.length;i++) plus[i].setVisible(false);
         for(const d of demons){ d._angelBuffed=true; }
         // Fly the angel BODY up off the ground, leaving a shadow at its true (path) position.
         // We don't move e.sprite (that's the pathing anchor) — we lift its display via origin and
@@ -5551,10 +5243,14 @@ class TowerDefenseScene extends Phaser.Scene {
 
         if(!e._angelGfx) e._angelGfx=this.add.graphics().setDepth(2.2);
         const g=e._angelGfx; g.clear();
+        // its shadow, wings and halo (td_foes ashadow, wing_l / wing_r, halo)
+        if(!e._angelParts) e._angelParts=[this.add.image(0,0,'td_foes','ashadow').setDepth(2.19),
+            this.add.image(0,0,'td_foes','wing_l').setOrigin(1,10/16).setDepth(2.21),this.add.image(0,0,'td_foes','wing_r').setOrigin(0,10/16).setDepth(2.21),
+            this.add.image(0,0,'td_foes','halo').setDepth(2.21)];
+        const [shadow,wingL,wingR,halo]=e._angelParts;
 
-        // 1) GROUND SHADOW at the true position (soft ellipse), shrinks a touch as it "hovers".
-        const shb=0.9+0.1*Math.sin(time*0.004);
-        g.fillStyle(0x000000,0.22); g.fillEllipse(gx,gy+6,20*shb,7*shb);
+        // 1) GROUND SHADOW at the true position
+        shadow.setPosition(Math.round(gx),Math.round(gy)+6);
 
         // 2) DETAILED HOLY RING on the ground — layered, rotating, with radiant tick marks.
         const rr=ringR;
@@ -5582,23 +5278,13 @@ class TowerDefenseScene extends Phaser.Scene {
         // 4) WINGS — anchored on the visible slime body. The slime art sits on the lower half of
         // its frame, so the real body centre is BELOW `by`; hang the wings there so they don't
         // float up by the halo.
-        const bodyY=by+this.TILE_SIZE*0.15;   // where the visible slime actually is
-        const flap=Math.sin(time*0.006)*0.25;
-        g.fillStyle(0xffffff,0.85); g.lineStyle(1,0xffe9b0,0.9);
-        for(const side of [-1,1]){
-            const wroot=bx+side*7;
-            for(let f=0;f<3;f++){
-                const spread=(0.35+f*0.32)+flap*side*0.3;
-                const wx=wroot+side*(6+f*7)*Math.cos(spread);
-                const wy=bodyY-(6+f*7)*Math.sin(spread)*0.6;
-                g.beginPath(); g.moveTo(wroot,bodyY); g.lineTo(wx,wy); g.lineTo(wroot+side*3,bodyY+5); g.closePath(); g.fillPath();
-            }
-        }
+        const bodyY=Math.round(by+this.TILE_SIZE*0.15);   // where the visible slime actually is
+        const flap=Math.round(Math.sin(time*0.006));       // one wing lifts a pixel as the other dips
+        wingL.setPosition(Math.round(bx)-7,bodyY+flap); wingR.setPosition(Math.round(bx)+7,bodyY-flap);
 
         // 5) HALO ring just above the head (head top ≈ bodyY - ~8).
         const hy=bodyY-9-2*Math.sin(time*0.004);
-        g.lineStyle(3,0xffee66,0.95); g.strokeEllipse(bx,hy,15,5);
-        g.lineStyle(1.5,0xffffff,0.8); g.strokeEllipse(bx,hy,12,4);
+        halo.setPosition(Math.round(bx),Math.round(hy));
 
         // Health bar: sit it neatly just above the halo. The fill is a centre-origin rect (same
         // as the base bars), so just centre it at bx — don't left-anchor it (that fought the base
@@ -5669,59 +5355,22 @@ class TowerDefenseScene extends Phaser.Scene {
         const px=tileX*TS+TS/2, py=tileY*TS+TS/2;
         const fpW=fp*TS;
 
-        // Base plate — full footprint size
-        const base=this.add.graphics().setDepth(1.6);
-        if(fp>1){
-            const ox=tileX*TS-half*TS, oy=tileY*TS-half*TS;
-            // Outer dark base
-            base.fillStyle(0x111111,0.97);
-            base.fillRect(ox+2,oy+2,fpW-4,fpW-4);
-            base.lineStyle(2,def.color,0.8);
-            base.strokeRect(ox+2,oy+2,fpW-4,fpW-4);
-            // Outer border inset panel (grey)
-            base.lineStyle(1,0x444444,0.7);
-            base.strokeRect(ox+5,oy+5,fpW-10,fpW-10);
-            // 4 outer panels — lines from outer edge to inner core boundary
-            const mid=ox+half*TS+TS/2;
-            const coreL=tileX*TS-2, coreR=tileX*TS+TS+2, coreT=tileY*TS-2, coreB=tileY*TS+TS+2;
-            base.lineStyle(1,0x333333,0.8);
-            base.beginPath(); base.moveTo(mid,oy+5);   base.lineTo(mid,coreT); base.strokePath();
-            base.beginPath(); base.moveTo(mid,coreB);  base.lineTo(mid,oy+fpW-5); base.strokePath();
-            base.beginPath(); base.moveTo(ox+5,mid);   base.lineTo(coreL,mid); base.strokePath();
-            base.beginPath(); base.moveTo(coreR,mid);  base.lineTo(ox+fpW-5,mid); base.strokePath();
-            // Rivets at 4 corners of inner panel
-            base.fillStyle(0x666666,0.9);
-            [[ox+8,oy+8],[ox+fpW-8,oy+8],[ox+8,oy+fpW-8],[ox+fpW-8,oy+fpW-8]].forEach(([rx,ry])=>{
-                base.fillCircle(rx,ry,2.5);
-                base.lineStyle(0.5,0x888888,0.6); base.strokeCircle(rx,ry,2.5);
-            });
-            // Inner core area — slightly lighter dark
-            base.fillStyle(0x1e0e02,0.97);
-            base.fillRect(tileX*TS-2,tileY*TS-2,TS+4,TS+4);
-            base.lineStyle(1.5,def.color,0.6);
-            base.strokeRect(tileX*TS-2,tileY*TS-2,TS+4,TS+4);
-            // Inner core subtle cross-panel lines
-            base.lineStyle(0.5,0x2a1a08,0.8);
-            base.beginPath(); base.moveTo(tileX*TS+TS/2,tileY*TS-2); base.lineTo(tileX*TS+TS/2,tileY*TS+TS+2); base.strokePath();
-            base.beginPath(); base.moveTo(tileX*TS-2,tileY*TS+TS/2); base.lineTo(tileX*TS+TS+2,tileY*TS+TS/2); base.strokePath();
-        } else {
-            base.fillStyle(0x222222,0.92);
-            base.fillRect(tileX*TS+3,tileY*TS+3,TS-6,TS-6);
-            base.lineStyle(1.5,def.color,0.85);
-            base.strokeRect(tileX*TS+3,tileY*TS+3,TS-6,TS-6);
-        }
+        // Base plate (td_towers): an iron plate rimmed in the tower's colour; the Skyward's covers its 3x3
+        const base=this.add.image(px,py,'td_towers',fp>1?'sky_plate':'plate_'+type).setDepth(1.6);
 
         // Mark all footprint tiles as occupied
         for(let dx=-half;dx<=half;dx++) for(let dy=-half;dy<=half;dy++)
             this.world[tileX+dx][tileY+dy]=3; // 3=tower-occupied
 
-        // Body — drawn in local space
-        const body=this.add.graphics().setDepth(1.7);
-        body.x=px; body.y=py;
+        // Body (td_towers, a 40x40 frame on the tile's middle); the turrets have a frame per way (_towerFace)
+        const body=this.add.sprite(px,py,'td_towers',TowerDefenseScene.TOWER_FRAME[type]).setDepth(1.7);
+        const anim=TowerDefenseScene.TOWER_ANIM[type];
+        if(anim){
+            if(!this.anims.exists('td_'+type)) this.anims.create({key:'td_'+type,frames:this.anims.generateFrameNames('td_towers',{prefix:anim[0],start:0,end:anim[1]}),frameRate:anim[2],repeat:-1});
+            body.play('td_'+type);
+        }
         const esTypeMap={tesla_coil:'tesla_coil',sniper:'sniper_tower',machine_gun:'machine_gun',magnetizer:'magnetizer'};
         const esType=esTypeMap[type];
-        if(esType) this._drawEngineerTowerBody(body,esType,def.color);
-        else        this._drawTDTowerBody(body,type,def.color);
 
         // Range ring
         const rangeRing=this.add.circle(px,py,def.range*TS,0,0).setDepth(1.5);
@@ -5788,42 +5437,56 @@ class TowerDefenseScene extends Phaser.Scene {
         return true;
     }
 
-    // Body for TD-unique types (cannon, healer_turret, healing_fountain) — local space
-    _drawTDTowerBody(g,type,color){
-        g.clear();
-        if(type==='cannon'){
-            g.fillStyle(0x444455,1); g.fillCircle(0,-2,9);
-            g.fillStyle(color,0.9);  g.fillCircle(0,-2,5);
-            g.lineStyle(4,0x777788,1); g.beginPath(); g.moveTo(0,2); g.lineTo(0,-14); g.strokePath();
-            g.fillStyle(0x999aaa,1); g.fillCircle(0,-14,3);
-        } else if(type==='healer_turret'){
-            g.fillStyle(0x1a3322,0.9); g.fillCircle(0,-2,9);
-            g.fillStyle(color,0.9);   g.fillCircle(0,-2,6);
-            g.fillStyle(0xffffff,1);  g.fillRect(-4,-3,8,2); g.fillRect(-1,-6,2,8);
-        } else if(type==='healing_fountain'){
-            g.fillStyle(0x1a3344,0.9); g.fillCircle(0,-2,9);
-            g.fillStyle(color,0.8);   g.fillCircle(0,-2,6);
-            g.fillStyle(0xaaeeff,0.7);g.fillCircle(0,-2,3);
-        } else if(type==='skyward'){
-            // Armoured platform: inner circle, 4 diagonal struts with nubs, crosshair, hot core
-            g.fillStyle(0x1a0a00,1); g.fillCircle(0,0,9);
-            g.lineStyle(1.5,0xff4422,0.7); g.strokeCircle(0,0,9);
-            // 4 diagonal struts
-            g.lineStyle(2,0xff4422,0.9);
-            for(let a=0;a<4;a++){
-                const ang=a*Math.PI/2+Math.PI/4;
-                g.beginPath(); g.moveTo(Math.cos(ang)*5,Math.sin(ang)*5);
-                g.lineTo(Math.cos(ang)*10,Math.sin(ang)*10); g.strokePath();
-                g.fillStyle(0xff6644,1); g.fillCircle(Math.cos(ang)*10,Math.sin(ang)*10,2);
-            }
-            // Crosshair
-            g.lineStyle(1,0xff2200,0.5);
-            g.beginPath(); g.moveTo(-9,0); g.lineTo(9,0); g.strokePath();
-            g.beginPath(); g.moveTo(0,-9); g.lineTo(0,9); g.strokePath();
-            // Hot core
-            g.fillStyle(0xff2200,1); g.fillCircle(0,0,3.5);
-            g.fillStyle(0xff8844,0.9); g.fillCircle(0,0,1.5);
-        }
+    static TOWER_FRAME={tesla_coil:'tesla_0',sniper:'sniper_0',machine_gun:'mg_0',magnetizer:'magnet',healer_turret:'healer',healing_fountain:'fountain_0',cannon:'cannon_0',skyward:'sky'};
+    static TOWER_ANIM={tesla_coil:['tesla_',3,8],healing_fountain:['fountain_',2,5]};   // [frame prefix, last frame, fps]
+    static TOWER_TURN={sniper:'sniper_',machine_gun:'mg_',cannon:'cannon_'};
+    // A blast (td_fx: typed puffs), r its radius at the start: it grows half as big again and fades, like the old disc.
+    // c: 'o' orange, 'g' grey, 'r' red, 'm' mint. Under 20px it's the small one, never shrunk below its own size.
+    _tdBlast(x,y,r,c='o',ms=320,depth=5,alpha=0.9){
+        const small=r<20, pre=(small?'pop_':'blast_')+c+'_', n=small?3:4;
+        const b=this.add.image(x,y,'td_fx',pre+0).setDepth(depth).setAlpha(alpha).setScale(Math.max(1,r/(small?10:30)));
+        this.tweens.addCounter({from:0,to:n-0.001,duration:ms,onUpdate:t=>b.active&&b.setFrame(pre+Math.floor(t.getValue())),onComplete:()=>b.destroy()});
+        this.tweens.add({targets:b,alpha:0,duration:ms,ease:'Quad.easeIn'});
+        return b;
+    }
+    // ── MENU ART: typed icons (td_ui) where the menus had emoji, frames from the shared ui_kit ──
+    static ICON={'⚙':['td_ui','scrap'],'✦':['cfx_bits','glorp'],'🏛':['td_ui','base'],'❤':['ui_hudbits','heart'],'👾':['td_ui','enemy'],'☠':['td_ui','skull'],
+        '🔧':['td_ui','wrench'],'↩':['td_ui','bounce'],'🎯':['td_ui','target'],'⚡':['td_ui','bolt'],'🌟':['td_ui','star'],'💎':['td_ui','diamond'],'💫':['td_ui','dizzy'],
+        '📡':['td_ui','dish'],'⏱':['td_ui','watch'],'🌩':['td_ui','storm'],'💊':['td_ui','pill'],'🛡':['td_ui','shield'],'🔩':['td_ui','nut'],'🔥':['td_ui','flame'],
+        '💰':['td_ui','bag'],'🧲':['td_ui','magnet'],'⛓':['td_ui','chain'],'⬆':['td_ui','up'],'🌀':['td_ui','swirl'],'❖':['td_ui','shard'],'⚫':['td_ui','gravity'],'🌊':['td_ui','wave'],'❄':['td_wisps','ice']};
+    // each wisp's own body (td_wisps) where its emoji was
+    static WISP_ICON={light:'light_0',ice:'ice',boom:'boom_0',fire:'fire_0',fist:'fist_0',void:'void_0',poison:'poison_0',skyward:'star',phantom:'phantom_0',life:'life'};
+    // An icon pinned to the screen, its middle at x,y, for an emoji (ICON), a wisp type or a tower ('t_<type>'), at the
+    // whole-number scale that brings it nearest px tall without going over
+    _tdIcon(key,x,y,depth,px=13){
+        const W=TowerDefenseScene.WISP_ICON[key], [tex,fr]=W?['td_wisps',W]:key.startsWith?.('t_')?['td_ui',key]:(TowerDefenseScene.ICON[key]||['td_ui','star']);
+        const im=this.add.image(Math.round(x),Math.round(y),tex,fr).setScrollFactor(0).setDepth(depth);
+        return im.setScale(Math.max(1,Math.floor(px/Math.max(im.width,im.height))));
+    }
+    // Lay an icon just before (or after) a text, the pair kept where the text was (a centred text stays centred). The text
+    // remembers its icon: _iconText(txt,str) changes the words and lays them out again.
+    _iconBy(txt,icon,after=false,gap=4){
+        if(txt._ax===undefined) txt._ax=txt.x;
+        txt._icon=icon; txt._iconAfter=after; txt._iconGap=gap;
+        const iw=icon.displayWidth, tw=txt.displayWidth, ox=txt.originX, left=txt._ax-ox*(iw+gap+tw);
+        const iy=Math.round(txt.y+(0.5-txt.originY)*txt.displayHeight);
+        if(after){ txt.x=Math.round(left+ox*tw); icon.setPosition(Math.round(left+tw+gap+iw/2),iy); }
+        else { icon.setPosition(Math.round(left+iw/2),iy); txt.x=Math.round(left+iw+gap+ox*tw); }
+        return icon;
+    }
+    _iconText(txt,str){ if(!txt?.active)return; txt.setText(str); if(txt._icon) this._iconBy(txt,txt._icon,txt._iconAfter,txt._iconGap); }
+    // a ui_kit frame nine-sliced to a w x h box (top left x,y) with its accent in col, pinned; _tdNineSet re-skins one
+    _tdNine(base,acc,x,y,w,h,col,depth){ return UIKit.nineImage(this,base,acc,x,y,w,h,col).setScrollFactor(0).setDepth(depth); }
+    _tdNineSet(img,base,acc,x,y,w,h,col){ const n=UIKit.nine(this,base,acc,w,h,col); img.setTexture(n.key).setPosition(Math.round(x)-n.pl,Math.round(y)-n.pt); }
+    // An animation of td_fx frames <prefix>0..last, made once; returns its key
+    _tdAnim(key,prefix,last,fps,repeat=-1){
+        if(!this.anims.exists(key)) this.anims.create({key,frames:this.anims.generateFrameNames('td_fx',{prefix,start:0,end:last}),frameRate:fps,repeat});
+        return key;
+    }
+    // A turret faces the nearest of its eight ways to tower._rot (0 = north, clockwise)
+    _towerFace(tower){
+        const pre=TowerDefenseScene.TOWER_TURN[tower.type];
+        if(pre&&tower.body?.active) tower.body.setFrame(pre+(((Math.round((tower._rot||0)/(Math.PI/4))%8)+8)%8));
     }
 
     _sellTower(tower,refund=true){
@@ -5846,7 +5509,7 @@ class TowerDefenseScene extends Phaser.Scene {
         tower._dotGfx?.destroy(); tower._skyAuraGfx?.destroy(); tower._skyReadyTxt?.destroy();
         tower._mgFocusGfx?.destroy(); tower._waveDirGfx?.destroy(); tower._auraGfx?.destroy();
         tower._mgAimGfx?.destroy();
-        tower._purpleFireGfx?.destroy();
+        tower._purpleFireImg?.destroy();
         if(tower._chillTiles){ tower._chillTiles.forEach(ct=>ct.gfx?.destroy()); tower._chillTiles=null; }
         tower.hpBarBg?.destroy(); tower.hpBarFill?.destroy(); tower.hitArea?.destroy();
         tower.active=false;
@@ -5873,14 +5536,14 @@ class TowerDefenseScene extends Phaser.Scene {
                 if(!tower._emsDisabled){
                     // Just got EMPed — snapshot normal state and go "powered down".
                     tower._emsDisabled=true;
-                    tower._emsPreRot = tower.body?.rotation||0;
+                    tower._emsPreRot = tower._rot||0;
                 }
                 // Gray out (drained of power) and droop the barrel downward like it went limp.
                 if(tower.body?.active){
                     tower.body.setTint?.(0x556677);
                     // Tilt the barrel down toward "resting" — rotate toward pointing down (PI/2)
                     // and sag slightly below the base.
-                    tower.body.rotation = Phaser.Math.Angle.RotateTo(tower.body.rotation, Math.PI/2, 0.12);
+                    tower._rot = Phaser.Math.Angle.RotateTo(tower._rot||0, Math.PI/2, 0.12); this._towerFace(tower);
                     tower.body.y = (tower.py||tower.body.y) + 2*Math.sin(time*0.004); // faint powerless wobble
                 }
                 if(tower.base?.active) tower.base.setTint?.(0x556677);
@@ -5978,7 +5641,7 @@ class TowerDefenseScene extends Phaser.Scene {
             if(tower._aimAngle!==undefined){
                 // Sniper snaps faster when locked, smooth otherwise
                 const step=tower.type==='sniper'&&tower._sniperTarget?.sprite?.active?0.35:0.18;
-                tower.body.rotation=Phaser.Math.Angle.RotateTo(tower.body.rotation,tower._aimAngle,step);
+                tower._rot=Phaser.Math.Angle.RotateTo(tower._rot||0,tower._aimAngle,step); this._towerFace(tower);
             }
         }
 
@@ -6161,11 +5824,8 @@ class TowerDefenseScene extends Phaser.Scene {
             tower.lastFireTime=time;
 
             for(const {x:tx,y:ty} of chosen){
-                const proj=this.add.graphics().setDepth(5);
-                proj.fillStyle(0x44ffaa,0.9); proj.fillCircle(0,0,6);
-                proj.fillStyle(0xffffff,0.5); proj.fillCircle(0,0,3);
-                proj.lineStyle(2,0x00ffcc,0.7); proj.strokeCircle(0,0,8);
-                proj.x=tower.px; proj.y=tower.py;
+                const proj=this.add.sprite(tower.px,tower.py,'td_fx','orb_0').setDepth(5);
+                proj.play(this._tdAnim('td_orb','orb_',1,12));
                 this._flashEngineerTower(tower,0x44ffaa);
                 this.tweens.add({targets:proj,x:tx,y:ty,duration:300,ease:'Quad.easeIn',
                     onComplete:()=>{
@@ -6340,10 +6000,7 @@ class TowerDefenseScene extends Phaser.Scene {
                                 return;
                             }
                             const shellR=4+si*0.5;
-                            const shell=this.add.graphics().setDepth(5);
-                            shell.fillStyle(def.color,1); shell.fillCircle(0,0,shellR);
-                            shell.fillStyle(0xffdd44,0.6); shell.fillCircle(0,0,shellR*0.5);
-                            shell.x=tower.px; shell.y=tower.py;
+                            const shell=this.add.image(tower.px,tower.py,'td_fx',shellR>4.6?'shell_10':'shell_8').setDepth(5);
                             this.tweens.add({targets:shell,x:tx,y:ty,duration:400+si*40,ease:'Quad.easeIn',
                                 onComplete:()=>{ shell.destroy(); this._cannonImpact(tower,tx,ty,baseDmg,aoeR,coreR,travelDist,false); }
                             });
@@ -6391,10 +6048,7 @@ class TowerDefenseScene extends Phaser.Scene {
 
                         // Normal flat shell
                         const shellR=4+si*0.5;
-                        const shell=this.add.graphics().setDepth(5);
-                        shell.fillStyle(def.color,1); shell.fillCircle(0,0,shellR);
-                        shell.fillStyle(0xffdd44,0.6); shell.fillCircle(0,0,shellR*0.5);
-                        shell.x=tower.px; shell.y=tower.py;
+                        const shell=this.add.image(tower.px,tower.py,'td_fx',shellR>4.6?'shell_10':'shell_8').setDepth(5);
                         this.tweens.add({targets:shell,x:tx,y:ty,duration:400+si*40,ease:'Quad.easeIn',
                             onComplete:()=>{
                                 shell.destroy();
@@ -6428,18 +6082,7 @@ class TowerDefenseScene extends Phaser.Scene {
             else{ dmg=baseDmg*0.10; }
 
             // Bullet visual — center=yellow, mid=white-blue, edge=ice blue+glow
-            const bul=this.add.graphics().setDepth(5);
-            if(isEdge){
-                bul.fillStyle(0x88ddff,1); bul.fillCircle(0,0,4);
-                bul.fillStyle(0xffffff,0.8); bul.fillCircle(0,0,2);
-                bul.lineStyle(1.5,0xaaeeff,0.7); bul.strokeCircle(0,0,5);
-            } else if(isMid){
-                bul.fillStyle(0xbbddff,0.9); bul.fillCircle(0,0,3);
-                bul.fillStyle(0xffffff,0.6); bul.fillCircle(0,0,1.5);
-            } else {
-                bul.fillStyle(0xff8844,0.9); bul.fillCircle(0,0,2.5);
-            }
-            bul.x=tower.px; bul.y=tower.py;
+            const bul=this.add.image(tower.px,tower.py,'td_fx',isEdge?'pel_ice':isMid?'pel_mid':'pel_hot').setDepth(5);
 
             const vx=Math.cos(ang)*speed, vy=Math.sin(ang)*speed;
             let dist=0;
@@ -6467,11 +6110,8 @@ class TowerDefenseScene extends Phaser.Scene {
                         if(e.sprite?.active) e.sprite.setTint(0x88ccff);
                         this.time.delayedCall(1500,()=>{if(e.sprite?.active)e.sprite.clearTint();});
                         // Ice hit spark
-                        const spark=this.add.graphics().setDepth(5);
-                        spark.x=e.sprite.x; spark.y=e.sprite.y;
-                        spark.fillStyle(0xaaddff,0.9); spark.fillCircle(0,0,6);
-                        spark.lineStyle(1.5,0xffffff,0.8); spark.strokeCircle(0,0,8);
-                        this.tweens.add({targets:spark,scaleX:2.5,scaleY:2.5,alpha:0,duration:250,onComplete:()=>spark.destroy()});
+                        const spark=this.add.sprite(e.sprite.x,e.sprite.y,'td_fx','spark_0').setDepth(5).setScale(2);
+                        spark.play(this._tdAnim('td_spark','spark_',2,12,0)).once('animationcomplete',()=>spark.destroy());
                     }
                     e.health-=totalDmg; this.updateEnemyHealthBar(e);
                     if(e.health<=0)this.killEnemy(e);
@@ -6507,10 +6147,7 @@ class TowerDefenseScene extends Phaser.Scene {
 
         // Wall flash
         if(hitWall){
-            const wf=this.add.graphics().setDepth(4.5);
-            wf.x=endX; wf.y=endY;
-            wf.fillStyle(0x44ffaa,0.9); wf.fillCircle(0,0,7);
-            this.tweens.add({targets:wf,scaleX:3,scaleY:3,alpha:0,duration:180,onComplete:()=>wf.destroy()});
+            this._tdBlast(endX,endY,7,'m',180,4.5);
         }
 
         // Damage enemies along beam
@@ -6547,11 +6184,7 @@ class TowerDefenseScene extends Phaser.Scene {
 
     _mgChainExplosion(ex,ey,baseDmg){
         const r=this.TILE_SIZE*2;
-        const exp=this.add.graphics().setDepth(5);
-        exp.x=ex; exp.y=ey;
-        exp.fillStyle(0x44ffaa,0.6); exp.fillCircle(0,0,r);
-        exp.fillStyle(0xffffff,0.3); exp.fillCircle(0,0,r*0.4);
-        this.tweens.add({targets:exp,scaleX:1.6,scaleY:1.6,alpha:0,duration:300,onComplete:()=>exp.destroy()});
+        this._tdBlast(ex,ey,r,'m',300,5,0.75);
         for(const e2 of [...this.enemies]){
             if(!e2.sprite?.active)continue;
             if(Math.hypot(e2.sprite.x-ex,e2.sprite.y-ey)>r)continue;
@@ -6653,15 +6286,17 @@ class TowerDefenseScene extends Phaser.Scene {
 
     _phantomThump(cx,cy,thumpR,dmgMult){
         const TS=this.TILE_SIZE;
-        // Ring of cloudiness — a dense band of wispy tendrils that expands outward
-        // Redrawn each frame on a single graphics object so it moves as a coherent ring
+        // Ring of cloudiness — a dense band of lilac puffs (td_wisps cloud_s/m/l) that expands outward;
+        // only the faint fill inside it is drawn
         const ringGfx=this.add.graphics().setDepth(4.2);
+        const puffs=this.add.container(0,0).setDepth(4.2);
+        for(let i=0;i<72;i++) puffs.add(this.add.image(0,0,'td_wisps','cloud_m'));
         const startTime=this.time.now;
         const dur=1800;
         const ticker=this.time.addEvent({delay:16,loop:true,callback:()=>{
-            if(!ringGfx.active){ticker.remove();return;}
+            if(!ringGfx.active){ticker.remove();puffs.destroy();return;}
             const elapsed=this.time.now-startTime;
-            if(elapsed>=dur){ticker.remove();ringGfx.destroy();return;}
+            if(elapsed>=dur){ticker.remove();ringGfx.destroy();puffs.destroy();return;}
             const t=elapsed/dur;
             const fade=t<0.12?t/0.12:1-((t-0.12)/0.88);
             const ringR=thumpR*(0.1+t*0.9);
@@ -6674,20 +6309,11 @@ class TowerDefenseScene extends Phaser.Scene {
                 const r=ringR+radOffset;
                 const bx=cx+Math.cos(ang)*r, by=cy+Math.sin(ang)*r;
                 const puffR=bandW*(0.42+Math.sin(i*1.9+0.5)*0.15);
-                // Thick outer glow layer
-                ringGfx.fillStyle(0xddccff,fade*0.18); ringGfx.fillCircle(bx,by,puffR*1.8);
-                // Dense mid layer
-                ringGfx.fillStyle(0xccaaff,fade*0.32); ringGfx.fillCircle(bx,by,puffR*1.1);
-                // Bright core
-                ringGfx.fillStyle(0xeeddff,fade*0.22); ringGfx.fillCircle(bx,by,puffR*0.65);
-                // Highlight spot
-                ringGfx.fillStyle(0xffeeff,fade*0.18); ringGfx.fillCircle(bx-puffR*0.25,by-puffR*0.28,puffR*0.35);
-                // Secondary offset puff
+                // a puff (glow, mid, bright core, highlight) and a smaller one offset beside it
+                puffs.list[i*2].setPosition(Math.round(bx),Math.round(by)).setFrame(puffR>=12?'cloud_l':'cloud_m').setAlpha(fade);
                 const ang2=ang+Math.PI*2/numClouds*0.5;
                 const r2=ringR+radOffset*0.5+bandW*0.12;
-                const bx2=cx+Math.cos(ang2)*r2, by2=cy+Math.sin(ang2)*r2;
-                ringGfx.fillStyle(0xccaaff,fade*0.20); ringGfx.fillCircle(bx2,by2,puffR*0.85);
-                ringGfx.fillStyle(0xeeddff,fade*0.12); ringGfx.fillCircle(bx2,by2,puffR*0.45);
+                puffs.list[i*2+1].setPosition(Math.round(cx+Math.cos(ang2)*r2),Math.round(cy+Math.sin(ang2)*r2)).setFrame(puffR*0.85>=10?'cloud_m':'cloud_s').setAlpha(fade*0.7);
             }
             // Visible inner ring fill to make it feel substantial
             ringGfx.fillStyle(0xaa88cc,fade*0.08); ringGfx.fillCircle(cx,cy,ringR*0.75);
@@ -7006,7 +6632,10 @@ class TowerDefenseScene extends Phaser.Scene {
         const existing=this._voidlets.find(v=>v.tileX===tileX&&v.tileY===tileY);
         if(existing){ existing.lastActiveTime=this.time.now; existing.gfx.setVisible(true); existing.label?.setVisible(true); return existing; }
         const cx=tileX*TS+TS/2, cy=tileY*TS+TS/2;
-        const gfx=this.add.graphics().setDepth(2.4);
+        // the voidlet (td_wisps voidlet_0-1) and the three motes trailing off it
+        const gfx=this.add.container(cx,cy).setDepth(2.4);
+        gfx.add([0,1,2].map(()=>this.add.image(0,0,'td_wisps','vmote')));
+        gfx.add(this.add.image(0,0,'td_wisps','voidlet_0'));
         // Hovering name label, same family as the wisp bed nameplates — glow copy + crisp white text, gently bobbing
         const glowTxt=this.add.text(cx,cy-13,'Voidlet',{fontSize:'7px',fontFamily:'monospace',color:'#aa44dd',stroke:'#aa44dd',strokeThickness:1.5,fontStyle:'bold'}).setOrigin(0.5).setDepth(2.38).setAlpha(0.4).setScale(1.12);
         const label=this.add.text(cx,cy-13,'Voidlet',{fontSize:'7px',fontFamily:'monospace',color:'#eeccff',stroke:'#000',strokeThickness:2,fontStyle:'bold'}).setOrigin(0.5).setDepth(2.42);
@@ -7172,11 +6801,9 @@ class TowerDefenseScene extends Phaser.Scene {
             const v=this._voidlets[i];
             // Despawn after prolonged inactivity
             if(time-v.lastActiveTime>v.despawnAfterIdle){
-                const fade=this.add.graphics().setDepth(2.4);
-                fade.x=v.x; fade.y=v.y;
-                fade.fillStyle(0x6600aa,0.6); fade.fillCircle(0,0,5);
-                this.tweens.add({targets:fade,alpha:0,scaleX:0.3,scaleY:0.3,duration:400,onComplete:()=>fade.destroy()});
-                v.gfx.destroy(); v.label?.destroy(); v.glowTxt?.destroy();
+                // it fades out where it hovered
+                const fade=v.gfx; this.tweens.add({targets:fade,alpha:0,duration:400,onComplete:()=>fade.destroy()});
+                v.label?.destroy(); v.glowTxt?.destroy();
                 this._voidlets.splice(i,1);
                 continue;
             }
@@ -7189,32 +6816,13 @@ class TowerDefenseScene extends Phaser.Scene {
             // Blink occasionally for personality
             if(!v.blinking&&Math.random()<0.01){ v.blinking=true; v.blinkTimer=time; }
             if(v.blinking&&time-v.blinkTimer>120){ v.blinking=false; }
-            v.gfx.clear();
-            // Soft trailing wisps drifting off the back — little personality tendrils
+            // its body bobbing, blinking now and then; soft motes drifting off its back
+            v.gfx.setPosition(bx,Math.round(by)).setAlpha(fade);
+            v.gfx.list[3].setFrame(v.blinking?'voidlet_1':'voidlet_0');
             for(let s=0;s<3;s++){
                 const sAng=time*0.0012+s*2.1;
-                const sx=bx+Math.cos(sAng)*5.5, sy=by+Math.sin(sAng)*2.5+3;
-                v.gfx.fillStyle(0x6600aa,0.18*fade); v.gfx.fillCircle(sx,sy,1.6-s*0.3);
+                v.gfx.list[s].setPosition(Math.round(Math.cos(sAng)*5.5),Math.round(Math.sin(sAng)*2.5+3));
             }
-            // Outer soft glow
-            v.gfx.fillStyle(0x440077,0.22*fade); v.gfx.fillCircle(bx,by,8);
-            // Round chibi body — soft purple blob
-            v.gfx.fillStyle(0x440077,0.9*fade); v.gfx.fillCircle(bx,by,5.5);
-            v.gfx.fillStyle(0x6622aa,0.7*fade); v.gfx.fillCircle(bx-0.8,by-1,4.2);
-            // Tiny highlight sheen
-            v.gfx.fillStyle(0xcc99ee,0.35*fade); v.gfx.fillCircle(bx-1.6,by-1.8,1.4);
-            // Big cute eyes — round and simple, blink by squishing to a line
-            const eyeY=by-0.3;
-            if(v.blinking){
-                v.gfx.lineStyle(1,0xffffff,0.9*fade);
-                v.gfx.lineBetween(bx-2.6,eyeY,bx-0.8,eyeY);
-                v.gfx.lineBetween(bx+0.8,eyeY,bx+2.6,eyeY);
-            } else {
-                v.gfx.fillStyle(0xffffff,0.95*fade); v.gfx.fillCircle(bx-1.7,eyeY,1.3); v.gfx.fillCircle(bx+1.7,eyeY,1.3);
-                v.gfx.fillStyle(0x220033,0.95*fade); v.gfx.fillCircle(bx-1.5,eyeY+0.2,0.6); v.gfx.fillCircle(bx+1.9,eyeY+0.2,0.6);
-            }
-            // Thin outline ring
-            v.gfx.lineStyle(0.8,0x8822bb,0.35*fade); v.gfx.strokeCircle(bx,by,6.2);
             // Label position and bob are owned entirely by its own tween (set at spawn time)
             // Attack nearby enemies with a small beam, similar to but weaker than the wisp's own
             if(time-v.lastAttackTime>=v.attackInterval){
@@ -7314,19 +6922,10 @@ class TowerDefenseScene extends Phaser.Scene {
         }
         if(!this._poisonTiles) this._poisonTiles=[];
 
-        // Textured base — dark pool with mottled green patches
-        const base=this.add.graphics().setDepth(0.5);
-        base.fillStyle(0x002200,0.95); base.fillRect(px,py,TS,TS);
-        base.fillStyle(0x003d00,0.7); base.fillRect(px+2,py+2,TS*0.55,TS*0.5);
-        base.fillStyle(0x004400,0.6); base.fillRect(px+TS*0.4,py+TS*0.35,TS*0.5,TS*0.45);
-        base.fillStyle(0x003300,0.8); base.fillRect(px+3,py+TS*0.5,TS*0.4,TS*0.45);
-        base.fillStyle(0x005500,0.4); base.fillRect(px+TS*0.55,py+TS*0.6,TS*0.38,TS*0.35);
-        base.fillStyle(0x006600,0.25); base.fillRect(px+6,py+TS*0.3,TS*0.25,3);
-        base.fillStyle(0x006600,0.2); base.fillRect(px+TS*0.5,py+TS*0.15,TS*0.3,2);
-        base.lineStyle(1.5,0x001100,0.8); base.strokeRect(px+0.5,py+0.5,TS-1,TS-1);
+        // the pool (td_wisps 'ptile': dark sludge in blotches) breathing
+        const base=this.add.image(px,py,'td_wisps','ptile').setOrigin(0).setDepth(0.5).setAlpha(0.95);
         this.tweens.add({targets:base,alpha:0.75,duration:1200,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});
 
-        // Bubble graphics — pop cycle animation
         const bubbleData=[
             {ox:0.22,oy:0.28,r:2.5,period:1800,offset:0},
             {ox:0.68,oy:0.48,r:2.0,period:2200,offset:600},
@@ -7335,34 +6934,19 @@ class TowerDefenseScene extends Phaser.Scene {
             {ox:0.75,oy:0.22,r:2.2,period:1900,offset:900},
             {ox:0.55,oy:0.40,r:1.6,period:2400,offset:1500},
         ];
-        const bubbleGfx=this.add.graphics().setDepth(0.56);
+        // its bubbles (pbub_0-2 as they swell, pbub_3 the pop), each on its own clock
+        const bubbleGfx=this.add.container(px,py).setDepth(0.56);
+        for(const b of bubbleData) bubbleGfx.add(this.add.image(Math.round(b.ox*TS),Math.round(b.oy*TS),'td_wisps','pbub_0'));
         const drawBubbles=()=>{
-            bubbleGfx.clear();
             const now=this.time.now;
-            for(const b of bubbleData){
+            bubbleData.forEach((b,i)=>{
+                const img=bubbleGfx.list[i];
                 const phase=((now+b.offset)%b.period)/b.period; // 0→1 cycle
-                if(phase>0.85)continue; // popped — invisible for last 15% of cycle
-                // 0→0.6: grow, 0.6→0.85: shrink/pop
                 const grow=phase<0.6 ? phase/0.6 : 1-(phase-0.6)/0.25;
                 const r=b.r*Math.max(0,grow);
-                if(r<0.3)continue;
-                const bx=px+b.ox*TS, by=py+b.oy*TS;
-                // Sphere body
-                bubbleGfx.fillStyle(0x00cc33,0.7*grow); bubbleGfx.fillCircle(bx,by,r);
-                // Rim
-                bubbleGfx.lineStyle(0.8,0x004411,0.5*grow); bubbleGfx.strokeCircle(bx,by,r);
-                // Shadow
-                bubbleGfx.fillStyle(0x001100,0.3*grow); bubbleGfx.fillCircle(bx+r*0.25,by+r*0.3,r*0.6);
-                // Highlight
-                bubbleGfx.fillStyle(0x99ffaa,0.9*grow); bubbleGfx.fillCircle(bx-r*0.3,by-r*0.32,r*0.3);
-                bubbleGfx.fillStyle(0xffffff,0.7*grow); bubbleGfx.fillCircle(bx-r*0.38,by-r*0.42,r*0.13);
-                // Pop flash at phase 0.75-0.85
-                if(phase>0.75){
-                    const popT=(phase-0.75)/0.1;
-                    bubbleGfx.lineStyle(0.8,0x44ff44,0.6*(1-popT));
-                    bubbleGfx.strokeCircle(bx,by,r*(1+popT*0.8));
-                }
-            }
+                if(phase>0.85||r<0.3){ img.setVisible(false); return; } // popped — invisible for last 15% of cycle
+                img.setVisible(true).setFrame(phase>0.75?'pbub_3':r<0.9?'pbub_0':r<1.8?'pbub_1':'pbub_2').setAlpha(phase>0.75?1-(phase-0.75)/0.1:Math.min(1,0.4+grow));
+            });
         };
         const bubbleTimer=this.time.addEvent({delay:32,loop:true,callback:drawBubbles});
         drawBubbles();
@@ -7462,7 +7046,7 @@ class TowerDefenseScene extends Phaser.Scene {
             for(const type of this._ownedWisps){
                 const bed=this._wispBeds[type]; if(!bed)continue;
                 if(!this._bedAuraGfx[type]||!this._bedAuraGfx[type].active){
-                    this._bedAuraGfx[type]=this.add.graphics().setDepth(0.95); // above bed (0.7) so it's actually visible
+                    this._bedAuraGfx[type]=this.add.image(bed.x,bed.y+1,'td_wisps','bedring').setDepth(0.95); // above bed (0.7) so it's actually visible
                 }
                 const g=this._bedAuraGfx[type];
                 const lockoutUntil=this._wispLockoutUntil?.[type]||0;
@@ -7473,7 +7057,6 @@ class TowerDefenseScene extends Phaser.Scene {
                               :(type==='light'&&this._lightMaxStam?this._lightMaxStam:(type==='fire'?200:100));
                 const stamina=pet?.stamina??this._wispStamina?.[type]??maxStam;
                 const pct=Math.max(0,Math.min(1,stamina/maxStam));
-                g.clear();
                 const pulse=0.6+0.25*Math.sin(time*0.0035);
                 let col;
                 if(isLockedOut) col=0xff2244;
@@ -7481,12 +7064,8 @@ class TowerDefenseScene extends Phaser.Scene {
                 else if(pct>0.6) col=0x44ff88;
                 else if(pct>0.25) col=0xffdd44;
                 else col=0xff8844;
-                // Glow ring AROUND the bed (larger than bed's 30×20 footprint), not underneath it
-                const ringAlpha=isLockedOut?0.7*pulse:0.45+0.25*pct*pulse;
-                g.lineStyle(2.5,col,ringAlpha); g.strokeEllipse(bed.x,bed.y+1,38,26);
-                g.lineStyle(1,col,ringAlpha*0.6); g.strokeEllipse(bed.x,bed.y+1,44,30);
-                // Soft outer glow fill, large enough to peek past the bed's opaque base
-                g.fillStyle(col,0.06+0.06*pct*pulse); g.fillEllipse(bed.x,bed.y+1,44,30);
+                // Glow ring AROUND the bed (td_wisps 'bedring', white, tinted to the state), its soft fill peeking past the bed
+                g.setTint(col).setAlpha(isLockedOut?0.7*pulse:0.45+0.25*pct*pulse);
             }
         }
         if(!this._restingWisps)return;
@@ -7495,9 +7074,7 @@ class TowerDefenseScene extends Phaser.Scene {
             if(!r.gfx?.active)continue;
             const bob=Math.sin(time*0.0025+r.bx*0.1)*1.5;
             const pulse=0.7+0.2*Math.sin(time*0.003);
-            r.gfx.clear();
-            r.gfx.fillStyle(r.col,0.7*pulse); r.gfx.fillCircle(r.bx,r.by-3+bob,4.5);
-            r.gfx.fillStyle(0xffffff,0.6); r.gfx.fillCircle(r.bx-1,r.by-4+bob,1.8);
+            r.gfx.setPosition(r.bx,Math.round(r.by-3+bob)).setAlpha(0.25+0.7*pulse);   // the wisp as an orb in its own colour
             // Recover stamina while resting — works even starting from 0
             if(!this._wispStamina) this._wispStamina={};
             const maxStam=type==='fire'?200:100;
@@ -7533,27 +7110,12 @@ class TowerDefenseScene extends Phaser.Scene {
         const colors={light:0xffffff,ice:0x88ddff,boom:0xff8844,fire:0xff4422,fist:0xff6622,void:0xaa00ff,poison:0x44cc44,skyward:0xffdd44,phantom:0xccaaff,life:0xff88bb};
         const icons={light:'✨',ice:'❄',boom:'💥',fire:'🔥',fist:'👊',void:'🌑',poison:'☠',skyward:'🌟',phantom:'👻',life:'🌸'};
         // Room label
-        this.add.text((br.x+br.w/2)*TS,(br.y-1)*TS,'💤 WISP QUARTERS',{fontSize:'9px',fontFamily:'monospace',color:'#556677'}).setOrigin(0.5).setDepth(0.8);
+        this._iconBy(this.add.text((br.x+br.w/2)*TS,(br.y-1)*TS,'WISP QUARTERS',{fontSize:'9px',fontFamily:'monospace',color:'#556677'}).setOrigin(0.5).setDepth(0.8),this.add.image(0,0,'td_ui','zzz').setDepth(0.8),false,3);
         wispTypes.forEach((type,i)=>{
             const bx=(startX+i*2)*TS+TS/2, by=bedY*TS+TS/2;
             const col=colors[type]||0xffffff;
-            const g=this.add.graphics().setDepth(0.7);
-            // Outer ring — raised cushioned rim (dog-bed style)
-            g.fillStyle(0x2a1f1a,0.95); g.fillEllipse(bx,by+2,30,20);
-            g.fillStyle(0x4a3a2e,0.9); g.fillEllipse(bx,by,28,18);
-            // Rim highlight
-            g.lineStyle(2,0x6a5544,0.6); g.strokeEllipse(bx,by-1,26,16);
-            // Inner cushion — soft sunken pillow colored by wisp
-            g.fillStyle(col,0.28); g.fillEllipse(bx,by+1,19,11);
-            g.fillStyle(col,0.15); g.fillEllipse(bx,by+1,12,7);
-            // Stitch dots around rim
-            for(let s=0;s<8;s++){
-                const sa=s/8*Math.PI*2;
-                g.fillStyle(0x6a5544,0.5);
-                g.fillCircle(bx+Math.cos(sa)*13,by+Math.sin(sa)*8,1);
-            }
-            // Soft highlight sheen top-left
-            g.fillStyle(0xffffff,0.08); g.fillEllipse(bx-5,by-4,10,5);
+            // a round cushioned dog bed, its padded rim stitched round, the cushion in the wisp's colour (td_wisps bed_<type>)
+            const g=this.add.image(bx,by,'td_wisps','bed_'+type).setOrigin(15.5/31,8.5/20).setDepth(0.7);
             // Hovering name plate instead of an emoji — full wisp name, glowing, gently bobbing
             const dispName=type.charAt(0).toUpperCase()+type.slice(1);
             const glowTxt=this.add.text(bx,by-18,dispName,{fontSize:'8px',fontFamily:'monospace',color:'#'+col.toString(16).padStart(6,'0'),stroke:'#'+col.toString(16).padStart(6,'0'),strokeThickness:1.5,fontStyle:'bold'}).setOrigin(0.5).setDepth(0.78).setAlpha(0.4).setScale(1.12);
@@ -7622,24 +7184,9 @@ class TowerDefenseScene extends Phaser.Scene {
         this._tvTileX=cr.x+3; this._tvTileY=cr.y+2;
         const x=this._tvTileX*TS+TS/2, y=this._tvTileY*TS+TS/2-TS/2;
 
-        const g=this.add.graphics().setDepth(1.5);
-        // stand
-        g.fillStyle(0x2a2a33,1); g.fillRect(x-6,y+20,12,8); g.fillRect(x-16,y+27,32,4);
-        // body
-        g.fillStyle(0x3b3b47,1); g.fillRoundedRect(x-26,y-16,52,38,4);
-        g.lineStyle(2,0x1a1a22,1); g.strokeRoundedRect(x-26,y-16,52,38,4);
-        // screen
-        g.fillStyle(0x061018,1); g.fillRoundedRect(x-21,y-12,36,28,2);
-        g.lineStyle(1,0x224466,0.9); g.strokeRoundedRect(x-21,y-12,36,28,2);
-        // knobs
-        g.fillStyle(0x8a8a99,1); g.fillCircle(x+20,y-6,2.4); g.fillCircle(x+20,y+2,2.4);
-        // antenna
-        g.lineStyle(2,0x8a8a99,1);
-        g.lineBetween(x-6,y-16,x-16,y-30); g.lineBetween(x+4,y-16,x+14,y-30);
-        this._tvGfx=g;
-
-        // animated scanline / flicker on the screen
-        this._tvScreen=this.add.graphics().setDepth(1.6);
+        // the set (td_room 'tv') and its screen (tvscr_0-6, a bright band rolling down it)
+        this._tvGfx=this.add.image(x,y,'td_room','tv').setOrigin(28/56,31/62).setDepth(1.5);
+        this._tvScreen=this.add.image(x-20,y-11,'td_room','tvscr_0').setOrigin(0).setDepth(1.6);
         this._tvScreenBox={x:x-21,y:y-12,w:36,h:28};
 
         this._tvLabel=this.add.text(x,y-42,'[F] Wave Intel',{
@@ -7686,13 +7233,8 @@ class TowerDefenseScene extends Phaser.Scene {
     _updateWaveTV(time){
         if(this._waveTVOpen) this._updateWaveTVBelt(time);
         if(!this._tvScreen||!this._tvScreenBox)return;
-        const b=this._tvScreenBox;
-        const g=this._tvScreen; g.clear();
-        // faint moving scanline so the TV reads as "on"
-        const t=(time%1600)/1600;
-        g.fillStyle(0x0d2b3d,0.55); g.fillRect(b.x+1,b.y+1,b.w-2,b.h-2);
-        g.fillStyle(0x66ddff,0.10); g.fillRect(b.x+1,b.y+1+ t*(b.h-4),b.w-2,3);
-        for(let i=2;i<b.h-2;i+=4){ g.fillStyle(0x000000,0.18); g.fillRect(b.x+1,b.y+i,b.w-2,1); }
+        // the band rolling down so the TV reads as "on"
+        if(this._tvScreen.active) this._tvScreen.setFrame('tvscr_'+Math.floor((time%1600)/1600*7));
         // proximity label
         const near=Math.abs(this._myX-this._tvTileX)+Math.abs(this._myY-this._tvTileY)<=3;
         this._tvLabel?.setVisible(near&&!this._waveTVOpen);
@@ -7914,14 +7456,11 @@ class TowerDefenseScene extends Phaser.Scene {
         const px=W/2-panelW/2, py=H/2-panelH/2;
 
         tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.55).setScrollFactor(0).setDepth(40).setInteractive());
-        const bg=tr(this.add.graphics().setScrollFactor(0).setDepth(41));
-        bg.fillStyle(0x0a0f18,0.97); bg.fillRoundedRect(px,py,panelW,panelH,10);
-        bg.lineStyle(2,0x4488cc,0.7); bg.strokeRoundedRect(px,py,panelW,panelH,10);
-        tr(this.add.text(px+panelW/2,py+30,'🧚 WISP ROSTER',{fontSize:'23px',fontFamily:UIKit.FONT.title,color:'#88ccff',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));
+        UIKit.panel(this,{x:px,y:py,w:panelW,h:panelH,accent:0x4488cc,depth:41}).objs.forEach(tr);
+        this._iconBy(tr(this.add.text(px+panelW/2,py+30,'WISP ROSTER',{fontSize:'23px',fontFamily:UIKit.FONT.title,color:'#88ccff',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(42)),tr(this._tdIcon('light',0,0,42)),false,6);
         const equipTxt=tr(this.add.text(px+panelW/2,py+58,'',{fontSize:'13px',fontFamily:'monospace',color:'#778899'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));
         this._wrEquipTxt=equipTxt;
 
-        const icons={light:'✨',ice:'❄',boom:'💥',fire:'🔥',fist:'👊',void:'🌑',poison:'☠',skyward:'🌟',phantom:'👻',life:'🌸'};
         const names={light:'Light',ice:'Ice',boom:'Boom',fire:'Fiery',fist:'Fist',void:'Void',poison:'Poison',skyward:'Skyward',phantom:'Phantom',life:'Life'};
 
         if(!owned.length){
@@ -7932,16 +7471,10 @@ class TowerDefenseScene extends Phaser.Scene {
             const col=i%cols, row=Math.floor(i/cols);
             const bx=px+24+col*(cardW+gap), by=py+84+row*(cardH+gap);
 
-            const cardBg=tr(this.add.graphics().setScrollFactor(0).setDepth(42));
-            const drawCard=(hov,isEquipped,isAsleep)=>{
-                cardBg.clear();
-                const fill=isEquipped?0x0a2a20:isAsleep?0x1a1010:hov?0x152535:0x0d1622;
-                cardBg.fillStyle(fill,0.99); cardBg.fillRoundedRect(bx,by,cardW,cardH,8);
-                cardBg.lineStyle(2,isEquipped?0x44ffaa:isAsleep?0x553333:hov?0x4488cc:0x223344,isEquipped?0.9:0.5);
-                cardBg.strokeRoundedRect(bx,by,cardW,cardH,8);
-            };
+            const cardBg=tr(this._tdNine('card','card_a',bx,by,cardW,cardH,0x2a3e52,42));
+            const drawCard=(hov,isEquipped,isAsleep)=>this._tdNineSet(cardBg,'card','card_a',bx,by,cardW,cardH,isEquipped?0x44ffaa:isAsleep?0x553333:hov?0x4488cc:0x2a3e52);
 
-            tr(this.add.text(bx+cardW/2,by+26,icons[type]||'?',{fontSize:'34px'}).setOrigin(0.5).setScrollFactor(0).setDepth(43));
+            tr(this._tdIcon(type,bx+cardW/2,by+26,43,34));   // the wisp itself (td_wisps)
             const nameTxt=tr(this.add.text(bx+cardW/2,by+60,names[type]||type,{fontSize:'14px',fontFamily:'monospace',color:'#ccddee',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(43));
 
             const barBg=tr(this.add.rectangle(bx+cardW/2,by+80,88,8,0x000000,0.6).setScrollFactor(0).setDepth(43));
@@ -7965,10 +7498,12 @@ class TowerDefenseScene extends Phaser.Scene {
             // Clicking it opens the radial tree; stopPropagation keeps it from also
             // triggering the card's equip/unequip toggle.
             if(this._getWispSkillTree(type)){
-                const badge=tr(this.add.graphics().setScrollFactor(0).setDepth(46));
-                const drawBadge=(hov)=>{ badge.clear(); badge.fillStyle(hov?0x2a4a7a:0x14243f,0.98); badge.fillCircle(bx+19,by+19,13); badge.lineStyle(2,0x66aaff,hov?1:0.75); badge.strokeCircle(bx+19,by+19,13); };
+                // a socket (ui_kit) with a glorp in it
+                tr(this.add.image(bx+19,by+19,'ui_kit','sock_ult_big').setScrollFactor(0).setDepth(46));
+                const badge=tr(this.add.image(bx+19,by+19,'ui_kit','sock_ult_big_rim').setTint(0x66aaff).setScrollFactor(0).setDepth(46.1));
+                const drawBadge=(hov)=>badge.setAlpha(hov?1:0.7);
                 drawBadge(false);
-                tr(this.add.text(bx+19,by+18,'✦',{fontSize:'16px',color:'#aaccff'}).setOrigin(0.5).setScrollFactor(0).setDepth(47));
+                tr(this._tdIcon('✦',bx+19,by+19,47));
                 const bhit=tr(this.add.rectangle(bx+19,by+19,30,30,0xffffff,0).setScrollFactor(0).setDepth(48).setInteractive());
                 bhit.on('pointerover',()=>drawBadge(true)); bhit.on('pointerout',()=>drawBadge(false));
                 bhit.on('pointerdown',p=>{ p.event.stopPropagation(); this._openWispSkillTree(type); });
@@ -7980,7 +7515,8 @@ class TowerDefenseScene extends Phaser.Scene {
                 if(this._fireWispMode===undefined) this._fireWispMode='single';
                 // Sits INSIDE the card's lower edge — with the tighter row gap, hanging it
                 // below the card would overlap the next row.
-                const modeBg=tr(this.add.rectangle(bx+cardW/2,by+cardH-11,cardW-10,18,0x0d1622,0.95).setScrollFactor(0).setDepth(43).setInteractive());
+                tr(this._tdNine('pill','pill_a',bx+5,by+cardH-20,cardW-10,18,0xffaa44,43));
+                const modeBg=tr(this.add.rectangle(bx+cardW/2,by+cardH-11,cardW-10,18,0x000000,0.001).setScrollFactor(0).setDepth(43.1).setInteractive());
                 const modeTxt=tr(this.add.text(bx+cardW/2,by+cardH-11,'',{fontSize:'11px',fontFamily:'monospace',color:'#ffaa44',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(44));
                 const refreshModeTxt=()=>{
                     modeTxt.setText(this._fireWispMode==='single'?'◀ SINGLE ▶':'◀ MULTI ▶');
@@ -8263,9 +7799,9 @@ class TowerDefenseScene extends Phaser.Scene {
                     // ── SHATTERPOINT — the brittle payoff branch. ──
                     {label:'Shatterpoint', angle:-162, color:0xcceeff, ids:['ic_e1','ic_e2','ic_e3','ic_e4'], nodes:[
                         {name:'Fault Lines', tiers:4, costFn:t=>[60,110,180,270][t]||999,
-                         desc:t=>{ const m=Math.round(((TS._brittleMult||1.75)-1)*100);
+                         desc:t=>{ const m=Math.round(((TS._tdBrittleAmp||1.75)-1)*100);
                                    return t>=4?`Brittle amp: +${m}% (max).`:`+10% brittle amp (the next non-ice hit hits harder). Now +${m}% → +${m+10}%.`; },
-                         eff:()=>{ TS._brittleMult=(TS._brittleMult||1.75)+0.10; }},
+                         eff:()=>{ TS._tdBrittleAmp=(TS._tdBrittleAmp||1.75)+0.10; }},
                         {name:'Splinter', tiers:2, costFn:t=>[100,190][t]||999, requires:'ic_e1',
                          desc:t=>{ const r=TS._iceShatterBrittleR||1.5;
                                    return t>=2?`Shatter radius: ${r} tiles (max).`:`+0.75 tile shatter radius (brittles more enemies). Now ${r} → ${(r+0.75).toFixed(2)} tiles.`; },
@@ -8318,19 +7854,20 @@ class TowerDefenseScene extends Phaser.Scene {
         // Dim + click-out to close
         tr(this.add.rectangle(cx,cy,W,H,0x000000,0.72).setScrollFactor(0).setDepth(50)
             .setInteractive().on('pointerdown',()=>this._closeWispSkillTree()));
-        const bg=tr(this.add.graphics().setScrollFactor(0).setDepth(51));
-        bg.fillStyle(0x070b12,0.98); bg.fillRoundedRect(px,py,PW,PH,14);
-        bg.lineStyle(2,tree.accent,0.55); bg.strokeRoundedRect(px,py,PW,PH,14);
+        UIKit.panel(this,{x:px,y:py,w:PW,h:PH,accent:tree.accent,depth:51}).objs.forEach(tr);
 
         // ── Header: title · ESC hint (moved here, out of the info panel) · Glorps ──
-        tr(this.add.text(px+22,py+24,`${tree.icon}  ${tree.title} — SKILL TREE`,
+        this._iconBy(tr(this.add.text(px+22,py+24,`${tree.title} — SKILL TREE`,
             {fontSize:'20px',fontFamily:UIKit.FONT.title,color:accentHex,fontStyle:'bold',stroke:'#000',strokeThickness:3})
-            .setOrigin(0,0.5).setScrollFactor(0).setDepth(53));
+            .setOrigin(0,0.5).setScrollFactor(0).setDepth(53)),tr(this._tdIcon(type,0,0,53,24)),false,8);
         tr(this.add.text(cx,py+24,'[ESC] close',{fontSize:'12px',fontFamily:'monospace',color:'#5a6a7a'})
             .setOrigin(0.5).setScrollFactor(0).setDepth(53));
-        const scrapTxt=tr(this.add.text(px+PW-22,py+18,`✦ ${this.glorps||0}`,
-            {fontSize:'19px',fontFamily:UIKit.FONT.title,color:'#ccffff',fontStyle:'bold',stroke:'#000',strokeThickness:2})
-            .setOrigin(1,0.5).setScrollFactor(0).setDepth(53));
+        // glorps and mastery shards, each after its icon, right-aligned
+        const hdrSt={fontSize:'19px',fontFamily:UIKit.FONT.title,color:'#ccffff',fontStyle:'bold',stroke:'#000',strokeThickness:2};
+        const shardTxt=tr(this.add.text(px+PW-22,py+18,'0',hdrSt).setOrigin(1,0.5).setScrollFactor(0).setDepth(53));
+        this._iconBy(shardTxt,tr(this._tdIcon('❖',0,0,53)),false,5);
+        const scrapTxt=tr(this.add.text(px+PW-90,py+18,`${this.glorps||0}`,hdrSt).setOrigin(1,0.5).setScrollFactor(0).setDepth(53));
+        this._iconBy(scrapTxt,tr(this._tdIcon('✦',0,0,53)),false,5);
         // Mastery readout sits on its own line — the currency line is right-aligned against
         // the centred [ESC] hint and has no room to grow.
         const masteryTxt=tr(this.add.text(px+PW-22,py+38,'',
@@ -8346,9 +7883,7 @@ class TowerDefenseScene extends Phaser.Scene {
         // ended up ~1400px away and clipped the description away entirely. ──
         const infoH=130;
         const infoTop=py+PH-infoH;
-        const infoDiv=tr(this.add.graphics().setScrollFactor(0).setDepth(52));
-        infoDiv.fillStyle(0x0a121c,0.95); infoDiv.fillRoundedRect(px+12,infoTop,PW-24,infoH-12,10);
-        infoDiv.lineStyle(1,0x1e3245,1);  infoDiv.strokeRoundedRect(px+12,infoTop,PW-24,infoH-12,10);
+        tr(this._tdNine('card','card_a',px+12,infoTop,PW-24,infoH-12,0x2e4458,52));
         const infoName=tr(this.add.text(cx,infoTop+22,'Hover a node',{fontSize:'18px',fontFamily:UIKit.FONT.title,color:'#ccd8ee',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(53));
         const infoDesc=tr(this.add.text(cx,infoTop+46,'Tap an unlocked node to spend ✦ Glorps.',{fontSize:'14px',fontFamily:'monospace',color:'#8a9bb0',align:'center',wordWrap:{width:PW-80},lineSpacing:4}).setOrigin(0.5,0).setScrollFactor(0).setDepth(53));
         const setInfo=(name,desc,col)=>{
@@ -8382,8 +7917,9 @@ class TowerDefenseScene extends Phaser.Scene {
         // overlap on smaller screens (a fixed radius did). Budget: two adjacent nodes plus
         // their 3px halos plus a small gap. Capstones are 5px larger.
         const tightest=Math.min(...tree.paths.map((p,pi)=>p.nodes.length>1?pathR[pi]*(frFor(p.nodes.length)[1]-frFor(p.nodes.length)[0]):999));
-        const NR=Math.max(12,Math.min(22,Math.floor((tightest-16)/2)));
-        const NRC=NR+5;
+        // Nodes are ui_kit sockets: 11px (sock_ult), capstones 14px (sock_ult_big) with spikes; twice that where there's room
+        const NR0=Math.max(12,Math.min(22,Math.floor((tightest-16)/2))), NS=NR0>=21?2:1;
+        const NR=11*NS, NRC=14*NS;
         const fBig=NR>=19, glyphF=fBig?'16px':'12px', capF=fBig?'24px':'17px', costF=fBig?'14px':'11px';
 
         let nodeObjs=[];
@@ -8392,7 +7928,8 @@ class TowerDefenseScene extends Phaser.Scene {
             nodeObjs=[];
             const nt=o=>{nodeObjs.push(o);objs.push(o);return o;};
             const mNow=this._masteryStore(type);
-            if(scrapTxt.active)   scrapTxt.setText(`✦ ${this.glorps||0}    ❖ ${mNow.shards}`);
+            this._iconText(shardTxt,`${mNow.shards}`);
+            if(scrapTxt.active){ scrapTxt._ax=shardTxt._icon.x-shardTxt._icon.displayWidth/2-18; this._iconText(scrapTxt,`${this.glorps||0}`); }
             if(masteryTxt.active) masteryTxt.setText(`${tree.title} MASTERY ${mNow.level}   ${mNow.xp}/${this._masteryNeed(mNow.level)} to next ❖`);
             const store=this._wispUpgrades[type]||(this._wispUpgrades[type]={});
 
@@ -8413,15 +7950,11 @@ class TowerDefenseScene extends Phaser.Scene {
                 });
             });
 
-            // Hub — the wisp gem
-            const hub=nt(this.add.graphics().setScrollFactor(0).setDepth(52));
-            const hr=Math.round(NR*1.05);
-            hub.fillStyle(tree.accent,0.16); hub.fillCircle(cx,cy2,hr*1.85);
-            hub.fillStyle(0x04070c,1);      hub.fillCircle(cx,cy2,hr+4);
-            hub.fillStyle(0xffffff,0.96);   hub.fillCircle(cx,cy2,hr);
-            hub.lineStyle(2.5,tree.accent,0.95); hub.strokeCircle(cx,cy2,hr);
-            for(let i=0;i<5;i++){ const a=(i/5)*Math.PI*2-Math.PI/2; hub.lineStyle(1.5,0xffffff,0.5); hub.lineBetween(cx,cy2,cx+Math.cos(a)*(hr-2),cy2+Math.sin(a)*(hr-2)); }
-            nt(this.add.text(cx,cy2,tree.icon,{fontSize:(NR>=19?'26px':'18px')}).setOrigin(0.5).setScrollFactor(0).setDepth(53));
+            // Hub — the wisp itself in a socket, its glow in the tree's colour (ui_kit sockets, td_wisps body)
+            nt(this.add.image(cx,cy2,'ui_kit','sock_gad_glow').setScale(2*NS).setTint(tree.accent).setAlpha(0.16).setScrollFactor(0).setDepth(52));
+            nt(this.add.image(cx,cy2,'ui_kit','sock_ult_big').setScale(NS).setScrollFactor(0).setDepth(52));
+            nt(this.add.image(cx,cy2,'ui_kit','sock_ult_big_rim').setScale(NS).setTint(tree.accent).setAlpha(0.95).setScrollFactor(0).setDepth(52.1));
+            nt(this._tdIcon(type,cx,cy2,53,24*NS));
 
             // Nodes
             tree.paths.forEach((path,pi)=>{
@@ -8455,40 +7988,27 @@ class TowerDefenseScene extends Phaser.Scene {
                     const available=unlocked&&canAfford&&(!shardNeedEarly||this._masteryStore(type).shards>=shardNeedEarly);
                     const nr=node.capstone?NRC:NR;
 
-                    const ng=nt(this.add.graphics().setScrollFactor(0).setDepth(52.5));
+                    // the node: a ui_kit socket (a capstone's bigger, with spikes: td_ui spikes), its rim in the branch's
+                    // colour, a glow under it when it can be bought, tier pips (td_ui pip) under it
+                    const sock=node.capstone?'sock_ult_big':'sock_ult', X=Math.round(nx), Y=Math.round(ny);
+                    const glow=nt(this.add.image(X,Y,'ui_kit','sock_gad_glow').setScale(2*NS).setTint(path.color).setScrollFactor(0).setDepth(52.4).setVisible(available));
+                    const disc=nt(this.add.image(X,Y,'ui_kit',sock).setScale(NS).setScrollFactor(0).setDepth(52.5));
+                    const rim=nt(this.add.image(X,Y,'ui_kit',sock+'_rim').setScale(NS).setScrollFactor(0).setDepth(52.6));
+                    const spikes=node.capstone?nt(this.add.image(X,Y,'td_ui','spikes').setScale(NS).setScrollFactor(0).setDepth(52.6)):null;
+                    if(node.tiers>1) for(let t=0;t<node.tiers;t++)
+                        nt(this.add.image(Math.round(nx-((node.tiers-1)*8)/2+t*8),Y+nr+9,'td_ui','pip').setTint(t<purchased?path.color:0x2e3d4f).setScrollFactor(0).setDepth(52.6));
                     const drawNode=(hov)=>{
-                        ng.clear();
-                        // Fills are lifted well clear of the panel bg (luminance ~11) so the
-                        // circles actually read; locked nodes stay dim but still visible.
-                        const fill=maxed?0x0e3a20:!prereq?0x151b26:hov?0x2a4463:0x1c2c40;
                         const border=maxed?0x55ffa0:!prereq?0x39485c:(hov&&available?0xffffff:path.color);
                         const bAlpha=maxed?1:prereq?(available?1:0.75):0.6;
-                        // Dark halo first: separates the node from the spoke line running under it.
-                        ng.fillStyle(0x04070c,1); ng.fillCircle(nx,ny,nr+3);
-                        // Soft accent glow so buyable nodes pop.
-                        if(available) { ng.fillStyle(path.color,hov?0.30:0.16); ng.fillCircle(nx,ny,nr+3); }
-                        if(node.capstone){
-                            ng.fillStyle(fill,1); ng.fillCircle(nx,ny,nr);
-                            ng.lineStyle(3,border,bAlpha); ng.strokeCircle(nx,ny,nr);
-                            for(let i=0;i<8;i++){ const a=(i/8)*Math.PI*2; ng.lineStyle(2,border,bAlpha*0.85); ng.lineBetween(nx+Math.cos(a)*nr,ny+Math.sin(a)*nr,nx+Math.cos(a)*(nr+6),ny+Math.sin(a)*(nr+6)); }
-                        } else {
-                            ng.fillStyle(fill,1); ng.fillCircle(nx,ny,nr);
-                            ng.lineStyle(2.5,border,bAlpha); ng.strokeCircle(nx,ny,nr);
-                        }
-                        // Inner highlight ring gives the disc some depth.
-                        ng.lineStyle(1,0xffffff,prereq?0.14:0.05); ng.strokeCircle(nx,ny,nr-4);
-                        // tier pips (small dots under the node)
-                        if(node.tiers>1) for(let t=0;t<node.tiers;t++){
-                            const px2=nx-((node.tiers-1)*8)/2+t*8;
-                            ng.fillStyle(t<purchased?path.color:0x2e3d4f,1);
-                            ng.fillCircle(px2,ny+nr+9,3.2);
-                        }
+                        disc.setTint(maxed?0x88ffbb:!prereq?0x9a9aa8:hov?0xc8dcff:0xffffff);
+                        rim.setTint(border).setAlpha(bAlpha); spikes?.setTint(border).setAlpha(bAlpha*0.85);
+                        glow.setAlpha(hov?0.30:0.16);
                     };
                     drawNode(false);
 
-                    // glyph: capstone star, else tier count or check
-                    const glyph=node.capstone?'★':maxed?'✓':`${purchased}/${node.tiers}`;
-                    nt(this.add.text(nx,ny-1,glyph,{fontSize:node.capstone?capF:glyphF,fontFamily:'monospace',
+                    // glyph: capstone star (td_ui star), else tier count or check
+                    if(node.capstone) nt(this._tdIcon('🌟',nx,ny,53,13*NS).setAlpha(prereq?1:0.45));
+                    else nt(this.add.text(nx,ny-1,maxed?'✓':`${purchased}/${node.tiers}`,{fontSize:glyphF,fontFamily:'monospace',
                         color:maxed?'#7dffbe':prereq?'#ffffff':'#5a6b7d',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(53));
                     // cost tag
                     const shardNeed=node.shardCost||0;
@@ -8570,11 +8090,10 @@ class TowerDefenseScene extends Phaser.Scene {
         if(this._restingWisps?.[type])return;
         const bed=this._wispBeds?.[type]; if(!bed)return;
         bed.occupied=true;
-        const colors={light:0xffffff,ice:0x88ddff,boom:0xff8844,fire:0xff4422,fist:0xff6622,void:0xaa00ff,poison:0x44cc44,skyward:0xffdd44,phantom:0xccaaff,life:0xff88bb};
-        const g=this.add.graphics().setDepth(0.75);
+        const g=this.add.image(bed.x,bed.y-3,'td_wisps','rest_'+type).setDepth(0.75);
         const staminaGfx=this.add.graphics().setDepth(0.78);
         if(!this._restingWisps) this._restingWisps={};
-        this._restingWisps[type]={gfx:g,staminaGfx,bx:bed.x,by:bed.y,col:colors[type]||0xffffff};
+        this._restingWisps[type]={gfx:g,staminaGfx,bx:bed.x,by:bed.y};
     }
 
     _despawnRestingWisp(type){
@@ -8697,7 +8216,7 @@ class TowerDefenseScene extends Phaser.Scene {
         // (Previously checked `_shopOpen` — a flag nothing ever set — and later a
         // close+reopen, which reset the tab back to the first one.)
         if(!this._glurpShopOpen)return;
-        this._gsScrapTxt?.active && this._gsScrapTxt.setText(`⚙ ${this.scraps}`);
+        this._iconText(this._gsScrapTxt,`${this.scraps}`);
         this._gsBuildCards?.();
     }
 
@@ -8764,16 +8283,39 @@ class TowerDefenseScene extends Phaser.Scene {
             _fireTarget:null, _fireLockStart:0, _fireRamp:0,
             _boomMarked:new Set(),
         };
-        const g=this.add.graphics().setDepth(4.5);
+        // The wisp (td_wisps frames): its body, and for some a tired grey copy or the pieces set round it
+        const g=this.add.container(0,0).setDepth(4.5);
+        pet.body=this.add.sprite(0,0,'td_wisps','fly');
+        if(type==='life'){ pet.glow=this.add.image(0,0,'td_wisps','life_glow'); g.add(pet.glow); }
+        g.add(pet.body);
+        if(['light','ice','boom','void','poison'].includes(type)) g.add(pet.dimBody=this.add.sprite(0,0,'td_wisps','fly'));
+        if(type==='skyward'){
+            pet.trails=[0,1,2].map(()=>this.add.image(0,0,'td_wisps','ball_tr'));
+            pet.balls=[0,1,2].map(()=>this.add.image(0,0,'td_wisps','ball_2'));
+            g.add([...pet.trails,...pet.balls]);
+        }
+        if(type==='life'){
+            pet.lring=this.add.image(0,0,'td_wisps','life_ring_0');
+            pet.sparks=[0,1,2].map(()=>this.add.image(0,0,'td_wisps','life_spark'));
+            g.add([pet.lring,...pet.sparks]);
+        }
         const ring=this.add.graphics().setDepth(1.2);
         const staminaGfx=this.add.graphics().setDepth(5.2);
         pet.gfx=g; pet.ring=ring; pet.staminaGfx=staminaGfx;
+        this._wispPose(pet,this.player.x,this.player.y,'fly');
         this.pets.push(pet);
         // Skill-tree stats that live on the pet (interval/drain) are re-applied here so they
         // survive the respawn that happens on every equip — the pet literal above always
         // resets them to base, so this must run after.
         this._applyWispStats(pet);
         this._showFloatingText(this.player.x,this.player.y-30,`${type.charAt(0).toUpperCase()+type.slice(1)} Wisp!`,'#ffdd44');
+    }
+
+    // Shows a wisp at (x,y) as one td_wisps frame, everything set round it hidden (callers show what they need)
+    _wispPose(pet,x,y,frame,alpha=1){
+        pet.gfx.setPosition(x,y);
+        for(const c of pet.gfx.list) c.setVisible(false);
+        return pet.body.setFrame(frame).setAlpha(alpha).setVisible(true);
     }
 
     // Re-applies scene-stored skill-tree stats that live on the pet object (fire interval,
@@ -8803,23 +8345,8 @@ class TowerDefenseScene extends Phaser.Scene {
             if(pet._ghostMuted){
                 const orbitX=px+Math.cos(pet.angle)*pet.orbitR;
                 const orbitY=py+Math.sin(pet.angle)*pet.orbitR;
-                if(pet._mutedGfx?.active){
-                    const g=pet._mutedGfx;
-                    g.clear();
-                    const r=12;
-                    // Red circle
-                    g.lineStyle(2.5,0xff2222,0.92);
-                    g.strokeCircle(orbitX,orbitY,r);
-                    // Diagonal slash — top-right to bottom-left (classic no/mute symbol)
-                    const slashAng=Math.PI*0.75; // 135 degrees
-                    const sx1=orbitX+Math.cos(slashAng)*r, sy1=orbitY+Math.sin(slashAng)*r;
-                    const sx2=orbitX+Math.cos(slashAng+Math.PI)*r, sy2=orbitY+Math.sin(slashAng+Math.PI)*r;
-                    g.lineStyle(2.5,0xff2222,0.92);
-                    g.lineBetween(sx1,sy1,sx2,sy2);
-                    // Soft red fill to show area
-                    g.fillStyle(0xff0000,0.12);
-                    g.fillCircle(orbitX,orbitY,r);
-                }
+                // the no sign (td_wisps 'muted') over it
+                if(pet._mutedGfx?.active) pet._mutedGfx.setPosition(orbitX,orbitY).setVisible(true);
             }
 
             // Flying back to bed when manually unequipped
@@ -8839,10 +8366,8 @@ class TowerDefenseScene extends Phaser.Scene {
                     continue;
                 } else {
                     const nx=curX+tdx/td*speed, ny=curY+tdy/td*speed;
-                    pet.gfx.clear();
                     pet.gfx.lastBedX=nx; pet.gfx.lastBedY=ny;
-                    pet.gfx.fillStyle(0xffffff,0.7); pet.gfx.fillCircle(nx,ny,5);
-                    pet.gfx.fillStyle(0xffffff,0.35); pet.gfx.fillCircle(nx,ny,8);
+                    this._wispPose(pet,nx,ny,'fly',0.82);
                     pet.ring?.clear(); pet.staminaGfx?.clear(); pet._fireLaserGfx?.clear();
                     continue;
                 }
@@ -8858,12 +8383,9 @@ class TowerDefenseScene extends Phaser.Scene {
                 if(td<8){ pet._flyingIn=false; }
                 else {
                     pet._flyFromX+=tdx/td*speed; pet._flyFromY+=tdy/td*speed;
-                    pet.gfx.clear();
-                    pet.gfx.fillStyle(0xffffff,0.85); pet.gfx.fillCircle(pet._flyFromX,pet._flyFromY,5);
-                    pet.gfx.fillStyle(0xffffff,0.4); pet.gfx.fillCircle(pet._flyFromX,pet._flyFromY,8);
+                    this._wispPose(pet,pet._flyFromX,pet._flyFromY,'fly');
                     // Sparkle trail
-                    const tg=this.add.graphics().setDepth(4.3);
-                    tg.fillStyle(0xffffaa,0.6); tg.fillCircle(pet._flyFromX,pet._flyFromY,2);
+                    const tg=this.add.image(pet._flyFromX,pet._flyFromY,'td_wisps','trail').setDepth(4.3).setAlpha(0.6);
                     this.tweens.add({targets:tg,alpha:0,duration:300,onComplete:()=>tg.destroy()});
                     pet.ring?.clear(); pet.staminaGfx?.clear(); pet._fireLaserGfx?.clear();
                     continue;
@@ -8885,10 +8407,8 @@ class TowerDefenseScene extends Phaser.Scene {
                 let nx,ny;
                 if(td<6){ nx=pet._sleepTargetX; ny=pet._sleepTargetY; pet._travelingToSleep=false; pet._sleeping=true; }
                 else { nx=curX+tdx/td*speed; ny=curY+tdy/td*speed; }
-                pet.gfx.clear();
                 pet.gfx.lastX=nx; pet.gfx.lastY=ny;
-                pet.gfx.fillStyle(0x666677,0.6); pet.gfx.fillCircle(nx,ny,5);
-                pet.gfx.fillStyle(0x9999aa,0.5); pet.gfx.fillCircle(nx,ny,2);
+                this._wispPose(pet,nx,ny,'to_sleep');
                 pet.ring?.clear();
                 pet.staminaGfx?.clear();
                 pet._fireLaserGfx?.clear();
@@ -8911,11 +8431,8 @@ class TowerDefenseScene extends Phaser.Scene {
                 }
                 const bed=this._wispBeds?.[pet.type];
                 const bx=bed?.x??pet._sleepTargetX, by=bed?.y??pet._sleepTargetY;
-                const breathe=1+0.08*Math.sin(time*0.002);
-                pet.gfx.clear();
-                const bodyCol=isLockedOut?0x553344:0x777788;
-                pet.gfx.fillStyle(bodyCol,0.55); pet.gfx.fillEllipse(bx,by,9*breathe,6);
-                pet.gfx.fillStyle(isLockedOut?0x884466:0xaaaabb,0.4); pet.gfx.fillEllipse(bx-1,by-1,4,3);
+                // asleep, breathing (red-tinged while locked out)
+                this._wispPose(pet,bx,by,(isLockedOut?'sleep_lock_':'sleep_')+(Math.sin(time*0.002)>0?1:0));
                 // Zzz floating up — red-tinted while locked out
                 if(!pet._zzzTimer||time-pet._zzzTimer>1400){
                     pet._zzzTimer=time;
@@ -8999,189 +8516,60 @@ class TowerDefenseScene extends Phaser.Scene {
             // rather than from the player/base.
             pet._wx=wx; pet._wy=wy;
 
-            // Draw wisp body
-            pet.gfx.clear();
+            // Draw wisp body (td_wisps frames; fire, fist and phantom pose themselves in their own blocks below)
             const col=pet.type==='light'?0xffffff : pet.type==='ice'?0x88ddff : pet.type==='boom'?0xff8844 : pet.type==='fist'?0xff6622 : pet.type==='void'?0xaa00ff : pet.type==='poison'?0x44cc44 : pet.type==='skyward'?0xffdd44 : pet.type==='phantom'?0xccaaff : pet.type==='life'?0xff88bb : 0xff4422;
             const pulse=0.7+0.3*Math.sin(time*0.008+(pet.type==='fire'?pet._fireRamp*2:0));
-            if(!(pet.type==='fire'&&pet._fireRamp>=10)&&pet.type!=='fist'&&pet.type!=='phantom'&&pet.type!=='skyward'&&pet.type!=='life'&&pet.type!=='fire'){
-                // Dim toward grey as stamina depletes below 30%
+            if(pet.dimBody){
+                // light / ice / boom / void / poison: their spin is typed phases; they grey out below 30% stamina
                 const stamPct=(pet.stamina||100)/pet.maxStamina;
                 const dimAmt=stamPct<0.3?1-(stamPct/0.3):0; // 0=full color, 1=fully grey
-                const finalCol=dimAmt>0?Phaser.Display.Color.Interpolate.ColorWithColor(
-                    Phaser.Display.Color.IntegerToColor(col),
-                    Phaser.Display.Color.IntegerToColor(0x555566),
-                    100,dimAmt*100
-                ):null;
-                const drawCol=finalCol?Phaser.Display.Color.GetColor(finalCol.r,finalCol.g,finalCol.b):col;
-                const da=1-dimAmt*0.3, dimGate=1-dimAmt*0.4;
-                const spin=time*0.0025;
-
-                if(pet.type==='light'){
-                    // Faceted gem — bright core with 5 sharp rays, like a tiny shard of pure light
-                    pet.gfx.fillStyle(drawCol,0.18*pulse*da); pet.gfx.fillCircle(wx,wy,11);
-                    for(let i=0;i<5;i++){
-                        const a=spin+(i/5)*Math.PI*2;
-                        const rx=wx+Math.cos(a)*8, ry=wy+Math.sin(a)*8;
-                        pet.gfx.lineStyle(1,0xffffff,0.55*pulse*da);
-                        pet.gfx.lineBetween(wx,wy,rx,ry);
-                    }
-                    pet.gfx.fillStyle(drawCol,0.9*pulse*da); pet.gfx.fillCircle(wx,wy,5);
-                    pet.gfx.lineStyle(1,0xffffff,0.7*dimGate); pet.gfx.strokeCircle(wx,wy,5);
-                    pet.gfx.fillStyle(0xffffff,0.95*dimGate); pet.gfx.fillCircle(wx-1,wy-1,1.6);
-
-                } else if(pet.type==='ice'){
-                    // Hexagonal snowflake-crystal — six-pointed facets with a frosty core
-                    pet.gfx.fillStyle(drawCol,0.85*pulse*da);
-                    pet.gfx.beginPath();
-                    for(let i=0;i<6;i++){
-                        const a=Math.PI/6+(i/6)*Math.PI*2;
-                        const px2=wx+Math.cos(a)*5.5, py2=wy+Math.sin(a)*5.5;
-                        i===0?pet.gfx.moveTo(px2,py2):pet.gfx.lineTo(px2,py2);
-                    }
-                    pet.gfx.closePath(); pet.gfx.fillPath();
-                    pet.gfx.lineStyle(1,0xffffff,0.6*dimGate); pet.gfx.strokePath();
-                    for(let i=0;i<6;i++){
-                        const a=(i/6)*Math.PI*2;
-                        pet.gfx.lineStyle(0.8,0xffffff,0.4*pulse*da);
-                        pet.gfx.lineBetween(wx,wy,wx+Math.cos(a)*8,wy+Math.sin(a)*8);
-                    }
-                    pet.gfx.fillStyle(0xffffff,0.85*dimGate); pet.gfx.fillCircle(wx,wy,1.8);
-
-                } else if(pet.type==='boom'){
-                    // Spiked powder-keg orb — jagged spikes radiating off a core, fuse-like flicker
-                    pet.gfx.fillStyle(0x331100,0.7*pulse*da); pet.gfx.fillCircle(wx,wy,6.5);
-                    pet.gfx.fillStyle(drawCol,0.85*pulse*da); pet.gfx.fillCircle(wx,wy,5);
-                    for(let i=0;i<8;i++){
-                        const a=spin*1.5+(i/8)*Math.PI*2;
-                        const baseR=5, tipR=8.5+Math.sin(time*0.01+i)*0.8;
-                        const bx=wx+Math.cos(a)*baseR, by=wy+Math.sin(a)*baseR;
-                        const tx=wx+Math.cos(a)*tipR, ty=wy+Math.sin(a)*tipR;
-                        pet.gfx.lineStyle(1.4,0xffaa44,0.7*pulse*da);
-                        pet.gfx.lineBetween(bx,by,tx,ty);
-                    }
-                    pet.gfx.fillStyle(0xffdd66,0.9*dimGate); pet.gfx.fillCircle(wx-1,wy-1,1.7);
-
-                } else if(pet.type==='void'){
-                    // Tiny event-horizon — dark core ringed by an orbiting accretion arc
-                    pet.gfx.fillStyle(0x110022,0.9*pulse*da); pet.gfx.fillCircle(wx,wy,5.5);
-                    pet.gfx.lineStyle(1.6,drawCol,0.8*pulse*da);
-                    pet.gfx.beginPath(); pet.gfx.arc(wx,wy,8,spin*3,spin*3+Math.PI*1.3,false); pet.gfx.strokePath();
-                    pet.gfx.lineStyle(1,0xdd88ff,0.5*pulse*da);
-                    pet.gfx.beginPath(); pet.gfx.arc(wx,wy,8,spin*3+Math.PI,spin*3+Math.PI+Math.PI*0.6,false); pet.gfx.strokePath();
-                    pet.gfx.fillStyle(0xdd88ff,0.7*dimGate); pet.gfx.fillCircle(wx+Math.cos(spin*3)*8,wy+Math.sin(spin*3)*8,1.2);
-                    pet.gfx.fillStyle(0xffffff,0.5*dimGate); pet.gfx.fillCircle(wx-1,wy-1,1);
-
-                } else if(pet.type==='poison'){
-                    // Bubbling vial-blob — irregular drip silhouette with rising bubbles
-                    pet.gfx.fillStyle(drawCol,0.85*pulse*da);
-                    pet.gfx.fillCircle(wx,wy+1,5.2);
-                    pet.gfx.fillCircle(wx-2.5,wy-1.5,2.6);
-                    pet.gfx.fillCircle(wx+2.8,wy-1,2.4);
-                    pet.gfx.fillStyle(0x226622,0.3*pulse*da); pet.gfx.fillCircle(wx,wy+1,5.2);
-                    for(let i=0;i<3;i++){
-                        const bub=(time*0.003+i*1.7)%1;
-                        const by2=wy+4-bub*9;
-                        pet.gfx.fillStyle(0xaaffaa,0.5*(1-bub)*da);
-                        pet.gfx.fillCircle(wx+(i-1)*2.2,by2,0.8+bub*0.6);
-                    }
-                    pet.gfx.fillStyle(0xccffcc,0.8*dimGate); pet.gfx.fillCircle(wx-1,wy-1,1.5);
-
-                } else if(pet.type==='fire'){
-                    // Flickering flame teardrop — layered tongues of fire with rising embers
-                    const flicker=0.8+0.2*Math.sin(time*0.02)+0.1*Math.sin(time*0.035+1.3);
-                    pet.gfx.fillStyle(0x882200,0.5*pulse*da); pet.gfx.fillCircle(wx,wy+1,7*flicker);
-                    pet.gfx.fillStyle(drawCol,0.85*pulse*da);
-                    pet.gfx.fillTriangle(wx-4*flicker,wy+3,wx+4*flicker,wy+3,wx,wy-6*flicker);
-                    pet.gfx.fillCircle(wx,wy+2,4*flicker);
-                    pet.gfx.fillStyle(0xffaa33,0.8*pulse*da);
-                    pet.gfx.fillTriangle(wx-2.2*flicker,wy+2,wx+2.2*flicker,wy+2,wx,wy-3.5*flicker);
-                    pet.gfx.fillStyle(0xffee99,0.85*dimGate); pet.gfx.fillCircle(wx,wy+1,1.6);
-                    for(let i=0;i<3;i++){
-                        const ember=(time*0.0025+i*1.4)%1;
-                        const ey=wy-ember*11;
-                        const exo=Math.sin(time*0.01+i*2)*2;
-                        pet.gfx.fillStyle(0xffaa44,0.6*(1-ember)*da);
-                        pet.gfx.fillCircle(wx+exo,ey,0.9-ember*0.5);
-                    }
-
-                } else {
-                    pet.gfx.fillStyle(drawCol,pulse*da); pet.gfx.fillCircle(wx,wy,6);
-                    pet.gfx.fillStyle(0xffffff,0.8*dimGate); pet.gfx.fillCircle(wx,wy,2.5);
-                    pet.gfx.lineStyle(1.5,drawCol,0.4*pulse); pet.gfx.strokeCircle(wx,wy,9);
-                }
+                const a=pulse*(1-dimAmt*0.3);
+                const f=pet.type==='light'?'light_'+(Math.floor(time/126)%4)
+                      :pet.type==='ice'?'ice'
+                      :pet.type==='boom'?'boom_'+(Math.floor(time/52)%4)
+                      :pet.type==='void'?'void_'+(Math.floor(time/105)%8)
+                      :'poison_'+(Math.floor(time/83)%4);
+                this._wispPose(pet,wx,wy,f,a*(1-dimAmt));
+                if(dimAmt>0) pet.dimBody.setFrame(pet.type+'_dim'+f.slice(pet.type.length)).setAlpha(a*dimAmt).setVisible(true);
             }
             // Stamina arc around every wisp
             this._drawStaminaArc(pet,wx,wy);
-            // Skyward Apprentice — star body with orbiting mini-cannonballs
+            // Skyward Apprentice — star body with orbiting mini-cannonballs (they grow as its shot charges)
             if(pet.type==='skyward'){
-                pet.gfx.clear();
                 const rot=time*0.003;
-                const cooldown=pet.fireInterval;
-                const pct=Math.min(1,(time-(pet.lastFire||0))/cooldown);
-                // Star body — 5 points
-                const starR=7, innerR=3.5;
-                const pts=5;
-                pet.gfx.fillStyle(0xffdd44,0.85*pulse);
-                pet.gfx.beginPath();
-                for(let i=0;i<pts*2;i++){
-                    const ang=i/pts*Math.PI-Math.PI/2;
-                    const r=i%2===0?starR:innerR;
-                    const sx=wx+Math.cos(ang)*r, sy=wy+Math.sin(ang)*r;
-                    i===0?pet.gfx.moveTo(sx,sy):pet.gfx.lineTo(sx,sy);
-                }
-                pet.gfx.closePath(); pet.gfx.fillPath();
-                pet.gfx.lineStyle(1,0xffffff,0.7); pet.gfx.strokePath();
-                // Center bright dot
-                pet.gfx.fillStyle(0xffffff,0.9); pet.gfx.fillCircle(wx,wy,2);
-                // 3 orbiting mini-cannonballs at different phases
-                const orbitR=10;
+                const pct=Math.min(1,(time-(pet.lastFire||0))/pet.fireInterval);
+                this._wispPose(pet,wx,wy,'star',0.85*pulse);
+                const ball='ball_'+(pct<0.34?0:pct<0.67?1:2);
                 for(let b=0;b<3;b++){
                     const bang=rot*(b%2===0?1:-0.7)+b*(Math.PI*2/3);
-                    const bx=wx+Math.cos(bang)*orbitR, by=wy+Math.sin(bang)*orbitR;
-                    const bScale=0.7+0.3*pct; // grow as cooldown charges
-                    pet.gfx.fillStyle(0x444455,0.9); pet.gfx.fillCircle(bx,by,2.5*bScale);
-                    pet.gfx.fillStyle(0x9999bb,0.7); pet.gfx.fillCircle(bx-0.5*bScale,by-0.7*bScale,1.2*bScale);
-                    // Trail dot behind each ball
                     const trailAng=bang-(b%2===0?0.4:-0.3);
-                    pet.gfx.fillStyle(0xffcc44,0.25*(0.3+0.7*pct));
-                    pet.gfx.fillCircle(wx+Math.cos(trailAng)*orbitR,wy+Math.sin(trailAng)*orbitR,1.5*bScale);
+                    pet.balls[b].setFrame(ball).setPosition(Math.round(Math.cos(bang)*10),Math.round(Math.sin(bang)*10)).setVisible(true);
+                    pet.trails[b].setPosition(Math.round(Math.cos(trailAng)*10),Math.round(Math.sin(trailAng)*10)).setAlpha(0.25*(0.3+0.7*pct)).setVisible(true);
                 }
-                // Charge ring — fills up as cooldown completes (gold = attack cooldown, distinct from stamina arc further out)
+                // Charge ring — a meter (gold = attack cooldown, distinct from stamina arc further out)
                 if(pct<1){
-                    pet.gfx.lineStyle(1.5,0xffcc44,0.4);
-                    pet.gfx.beginPath(); pet.gfx.arc(wx,wy,14,-Math.PI/2,-Math.PI/2+pct*Math.PI*2,false); pet.gfx.strokePath();
+                    const sg=pet.staminaGfx;
+                    sg.lineStyle(1.5,0xffcc44,0.4);
+                    sg.beginPath(); sg.arc(wx,wy,14,-Math.PI/2,-Math.PI/2+pct*Math.PI*2,false); sg.strokePath();
                 }
             }
-            // Life wisp — heart-shaped pulsing core with pink glow
+            // Life wisp — pulsing heart, its glow flaring after a drain, a ring breathing out
             if(pet.type==='life'){
-                pet.gfx.clear();
                 const sinceDrain=time-(pet.lastFire||0);
                 const activityPct=Math.max(0,1-sinceDrain/1500);
                 const lp=0.6+0.4*Math.sin(time*0.012);
-                pet.gfx.fillStyle(0xff44aa,0.12+0.18*activityPct*lp); pet.gfx.fillCircle(wx,wy,14);
-                pet.gfx.fillStyle(0xff88bb,0.8*lp); pet.gfx.fillCircle(wx,wy,6);
-                pet.gfx.fillStyle(0xff88bb,0.7*lp); pet.gfx.fillCircle(wx-3,wy-3,4);
-                pet.gfx.fillStyle(0xff88bb,0.7*lp); pet.gfx.fillCircle(wx+3,wy-3,4);
-                pet.gfx.fillStyle(0xff88bb,0.7*lp); pet.gfx.fillTriangle(wx-5,wy+1,wx+5,wy+1,wx,wy+8);
-                // Thin outline tracing the heart silhouette for definition
-                pet.gfx.lineStyle(0.8,0xffccee,0.5*lp);
-                pet.gfx.strokeCircle(wx-3,wy-3,4); pet.gfx.strokeCircle(wx+3,wy-3,4);
-                pet.gfx.fillStyle(0xffeeff,0.85); pet.gfx.fillCircle(wx-1,wy-1,2);
-                // Slow ambient pulse-ring breathing outward, independent of drain activity
+                this._wispPose(pet,wx,wy,'life',0.3+0.55*lp);
+                pet.glow.setAlpha(0.12+0.18*activityPct*lp).setVisible(true);
                 const ringPulse=(time*0.0008)%1;
-                pet.gfx.lineStyle(1,0xff88bb,0.25*(1-ringPulse));
-                pet.gfx.strokeCircle(wx,wy,4+ringPulse*7);
+                pet.lring.setFrame('life_ring_'+Math.min(3,Math.floor(ringPulse*4))).setAlpha(0.25*(1-ringPulse)).setVisible(true);
                 // Charge sparkles flare right after a drain
                 if(activityPct>0.15){
-                    for(let s=0;s<3;s++){
-                        const sa=time*0.005+s*2.1;
-                        const sr=8+2*Math.sin(time*0.01+s);
-                        pet.gfx.fillStyle(0xff44aa,0.6*activityPct);
-                        pet.gfx.fillCircle(wx+Math.cos(sa)*sr,wy+Math.sin(sa)*sr,1.5*activityPct);
-                    }
+                    pet.sparks.forEach((s,i)=>{
+                        const sa=time*0.005+i*2.1, sr=8+2*Math.sin(time*0.01+i);
+                        s.setPosition(Math.round(Math.cos(sa)*sr),Math.round(Math.sin(sa)*sr)).setAlpha(0.6*activityPct).setVisible(true);
+                    });
                 }
             }
-
             // Attack range ring
             pet.ring.clear();
             // NOTE: the DPS totem (_isTotem) is intentionally INCLUDED here. Every other
@@ -9237,11 +8625,7 @@ class TowerDefenseScene extends Phaser.Scene {
                             pet._fireLaserGfx.beginPath(); pet._fireLaserGfx.moveTo(wx,wy); pet._fireLaserGfx.lineTo(ex,ey); pet._fireLaserGfx.strokePath();
                             pet._fireLaserGfx.lineStyle(2.2,0xffffff,0.85*pulse);
                             pet._fireLaserGfx.beginPath(); pet._fireLaserGfx.moveTo(wx,wy); pet._fireLaserGfx.lineTo(ex,ey); pet._fireLaserGfx.strokePath();
-                            pet.gfx.clear();
-                            pet.gfx.fillStyle(0xaa00ff,0.9+0.1*pulse); pet.gfx.fillCircle(wx,wy,11);
-                            pet.gfx.fillStyle(0xffffff,0.8); pet.gfx.fillCircle(wx,wy,4.5);
-                            pet.gfx.lineStyle(4.5,0xcc44ff,0.55*pulse); pet.gfx.strokeCircle(wx,wy,18);
-                            pet.gfx.lineStyle(2,0xffffff,0.22*pulse); pet.gfx.strokeCircle(wx,wy,23);
+                            this._wispPose(pet,wx,wy,'fire_pur_'+(Math.floor(time/120)%2),0.85+0.15*pulse);   // its purple sun
                             pet._fireLaserGfx.fillStyle(0x9900ff,0.9*pulse); pet._fireLaserGfx.fillCircle(ex,ey,18);
                             pet._fireLaserGfx.fillStyle(0xcc44ff,0.65*pulse); pet._fireLaserGfx.fillCircle(ex,ey,11);
                             pet._fireLaserGfx.fillStyle(0xffffff,0.65*pulse); pet._fireLaserGfx.fillCircle(ex,ey,5);
@@ -9263,31 +8647,16 @@ class TowerDefenseScene extends Phaser.Scene {
                             pet._fireLaserGfx.fillStyle(0xffdd44,spark*0.7); pet._fireLaserGfx.fillCircle(ex,ey,2+intensity*4);
                             // Wisp's own body — was missing entirely in this branch, leaving
                             // just a beam with no visible source during the whole ramp phase
-                            pet.gfx.clear();
-                            const flicker=0.8+0.2*Math.sin(time*0.02)+0.1*Math.sin(time*0.035+1.3);
-                            const bodyGrow=1+intensity*0.6; // grows slightly as it ramps toward purple
-                            pet.gfx.fillStyle(0x882200,0.5*flicker); pet.gfx.fillCircle(wx,wy+1,7*flicker*bodyGrow);
-                            pet.gfx.fillStyle(0xff4422,0.85*flicker);
-                            pet.gfx.fillTriangle(wx-4*flicker*bodyGrow,wy+3,wx+4*flicker*bodyGrow,wy+3,wx,wy-6*flicker*bodyGrow);
-                            pet.gfx.fillCircle(wx,wy+2,4*flicker*bodyGrow);
-                            pet.gfx.fillStyle(0xffaa33,0.8*flicker);
-                            pet.gfx.fillTriangle(wx-2.2*flicker*bodyGrow,wy+2,wx+2.2*flicker*bodyGrow,wy+2,wx,wy-3.5*flicker*bodyGrow);
-                            pet.gfx.fillStyle(0xffee99,0.85); pet.gfx.fillCircle(wx,wy+1,1.6);
-                            // Ramp ring — fills in as a visual cue toward the purple transformation threshold
-                            pet.gfx.lineStyle(1.5,0xffaa44,0.5);
-                            pet.gfx.beginPath(); pet.gfx.arc(wx,wy,11,-Math.PI/2,-Math.PI/2+intensity*Math.PI*2,false); pet.gfx.strokePath();
+                            // its flame grows as it ramps toward purple (calm, ramping, ramped frames, each flickering)
+                            this._wispPose(pet,wx,wy,intensity<0.25?'fire_'+(Math.floor(time/80)%3):(intensity<0.6?'fire_m_':'fire_l_')+(Math.floor(time/80)%2));
+                            // Ramp ring — a meter filling toward the purple transformation threshold
+                            const sg=pet.staminaGfx;
+                            sg.lineStyle(1.5,0xffaa44,0.5);
+                            sg.beginPath(); sg.arc(wx,wy,11,-Math.PI/2,-Math.PI/2+intensity*Math.PI*2,false); sg.strokePath();
                         }
                     } else {
                         // No enemy in range at all — idle flame, calm and small, never invisible
-                        pet.gfx.clear();
-                        const flicker=0.8+0.2*Math.sin(time*0.02)+0.1*Math.sin(time*0.035+1.3);
-                        pet.gfx.fillStyle(0x882200,0.4*flicker); pet.gfx.fillCircle(wx,wy+1,6*flicker);
-                        pet.gfx.fillStyle(0xff4422,0.7*flicker);
-                        pet.gfx.fillTriangle(wx-3.2*flicker,wy+3,wx+3.2*flicker,wy+3,wx,wy-5*flicker);
-                        pet.gfx.fillCircle(wx,wy+2,3.2*flicker);
-                        pet.gfx.fillStyle(0xffaa33,0.65*flicker);
-                        pet.gfx.fillTriangle(wx-1.8*flicker,wy+2,wx+1.8*flicker,wy+2,wx,wy-3*flicker);
-                        pet.gfx.fillStyle(0xffee99,0.7); pet.gfx.fillCircle(wx,wy+1,1.3);
+                        this._wispPose(pet,wx,wy,'fire_'+(Math.floor(time/80)%3),0.85);
                     }
 
                     if(pet._fireTarget&&pet._fireTarget.sprite?.active&&time-pet.lastFire>=pet.fireInterval){
@@ -9313,12 +8682,9 @@ class TowerDefenseScene extends Phaser.Scene {
                 if(!pet._fireLaserGfx||!pet._fireLaserGfx.active)
                     pet._fireLaserGfx=this.add.graphics().setDepth(4.8);
                 pet._fireLaserGfx.clear();
-                pet.gfx.clear();
                 // Body — calmer, ember-like rather than the ramping single-target core
                 const mpulse=0.65+0.25*Math.sin(time*0.012);
-                pet.gfx.fillStyle(0xff5522,0.8*mpulse); pet.gfx.fillCircle(wx,wy,6.5);
-                pet.gfx.fillStyle(0xffaa44,0.6*mpulse); pet.gfx.fillCircle(wx,wy,3.2);
-                pet.gfx.lineStyle(1.5,0xff6633,0.4*mpulse); pet.gfx.strokeCircle(wx,wy,10);
+                this._wispPose(pet,wx,wy,'fire_mul_'+(Math.floor(time/150)%2),0.3+0.75*mpulse);
 
                 // Refresh target list periodically rather than every frame
                 const MULTI_CAP=10; // a LOT of enemies, capped for performance/readability
@@ -9387,40 +8753,14 @@ class TowerDefenseScene extends Phaser.Scene {
 
                 // Unstable, agitated wisp — jittery irregular core that never sits still,
                 // crackling with barely-contained energy. Shudders harder right before punching.
-                pet.gfx.clear();
                 const isAttacking=time-(pet._lastPunchAnim||0)<200;
-                const fc=isAttacking?0xff2200:0xff5522;
-                const fx2=pet._fistX, fy2=pet._fistY;
                 // Constant high-frequency jitter offset — body never sits perfectly still
                 const agitation=isAttacking?2.8:1.1;
                 const jx=Math.sin(time*0.04)*agitation*0.6+Math.sin(time*0.071+1.7)*agitation*0.4;
                 const jy=Math.cos(time*0.037)*agitation*0.6+Math.cos(time*0.063+0.9)*agitation*0.4;
-                const cx2=fx2+jx, cy2=fy2+jy;
                 const fpulse=0.75+0.25*Math.sin(time*0.025);
-                // Outer flare when actively punching
-                if(isAttacking){ pet.gfx.fillStyle(0xffaa44,0.45*fpulse); pet.gfx.fillCircle(cx2,cy2,12); }
-                // Irregular jagged core — radius wobbles per-vertex so the silhouette is never a clean circle
-                const spikes=7;
-                pet.gfx.fillStyle(fc,0.9*fpulse);
-                pet.gfx.beginPath();
-                for(let i=0;i<spikes;i++){
-                    const ang=(i/spikes)*Math.PI*2;
-                    const wobble=1+Math.sin(time*0.018+i*1.9)*0.35+(isAttacking?0.25:0);
-                    const rad=(5.5+i%2*0.8)*wobble;
-                    const px2=cx2+Math.cos(ang)*rad, py2=cy2+Math.sin(ang)*rad;
-                    i===0?pet.gfx.moveTo(px2,py2):pet.gfx.lineTo(px2,py2);
-                }
-                pet.gfx.closePath(); pet.gfx.fillPath();
-                // Crackling energy lines snapping off the core at random angles
-                for(let c=0;c<3;c++){
-                    const cAng=time*0.01+c*2.4+Math.sin(time*0.05+c)*0.8;
-                    const innerR=4, outerR=8.5+Math.sin(time*0.04+c*3)*1.5;
-                    pet.gfx.lineStyle(0.9,0xffcc66,0.55*fpulse*(isAttacking?1.4:1));
-                    pet.gfx.lineBetween(cx2+Math.cos(cAng)*innerR,cy2+Math.sin(cAng)*innerR,cx2+Math.cos(cAng)*outerR,cy2+Math.sin(cAng)*outerR);
-                }
-                // Hot inner core
-                pet.gfx.fillStyle(0xffdd88,0.85); pet.gfx.fillCircle(cx2,cy2,1.8);
-                pet.gfx.lineStyle(1,0xff8844,0.4*fpulse); pet.gfx.strokeCircle(cx2,cy2,9.5);
+                // jagged, crackling core in its faint ring (four typed shudders); punching, it flares and goes red
+                this._wispPose(pet,pet._fistX+jx,pet._fistY+jy,isAttacking?'fist_hit_'+(Math.floor(time/50)%2):'fist_'+(Math.floor(time/60)%4),fpulse);
 
                 // Range ring
                 pet.ring.clear();
@@ -9446,9 +8786,8 @@ class TowerDefenseScene extends Phaser.Scene {
                         const pGfx=this.add.graphics().setDepth(5.5);
                         pGfx.lineStyle(5,0xff2200,0.95);
                         pGfx.beginPath(); pGfx.moveTo(pet._fistX,pet._fistY); pGfx.lineTo(target.sprite.x,target.sprite.y); pGfx.strokePath();
-                        pGfx.fillStyle(0xff2200,0.9); pGfx.fillCircle(target.sprite.x,target.sprite.y,14);
-                        pGfx.fillStyle(0xffffff,0.8); pGfx.fillCircle(target.sprite.x,target.sprite.y,6);
-                        this.tweens.add({targets:pGfx,alpha:0,duration:350,onComplete:()=>pGfx.destroy()});
+                        const ko=this.add.image(target.sprite.x,target.sprite.y,'td_wisps','ko').setDepth(5.5);
+                        this.tweens.add({targets:[pGfx,ko],alpha:0,duration:350,onComplete:()=>{pGfx.destroy(); ko.destroy();}});
                         this._showFloatingText(target.sprite.x,target.sprite.y-24,'💥 KO!','#ff2200');
                         const koDmg=Math.max(40*dmgMult,target.health*0.05); this._lastDamageFromWisp=true; target.health-=koDmg; this.updateEnemyHealthBar(target); this._lastDamageFromWisp=false;
                         if(!target._isTotem&&!target._isDummy){
@@ -9474,9 +8813,8 @@ class TowerDefenseScene extends Phaser.Scene {
                                 const pGfx=this.add.graphics().setDepth(5.5);
                                 pGfx.lineStyle(2,0xff8844,0.85);
                                 pGfx.beginPath(); pGfx.moveTo(pet._fistX,pet._fistY); pGfx.lineTo(target.sprite.x,target.sprite.y); pGfx.strokePath();
-                                pGfx.fillStyle(0xff8844,0.8); pGfx.fillCircle(target.sprite.x,target.sprite.y,6);
-                                pGfx.fillStyle(0xffffff,0.5); pGfx.fillCircle(target.sprite.x,target.sprite.y,2.5);
-                                this.tweens.add({targets:pGfx,alpha:0,duration:100,onComplete:()=>pGfx.destroy()});
+                                const bap=this.add.image(target.sprite.x,target.sprite.y,'td_wisps','bap').setDepth(5.5);
+                                this.tweens.add({targets:[pGfx,bap],alpha:0,duration:100,onComplete:()=>{pGfx.destroy(); bap.destroy();}});
                                 this._showFloatingText(target.sprite.x+(Math.random()-0.5)*12,target.sprite.y-16,'bap','#ff8844');
                                 const bapDmg=(8+(this.wave||1)*0.8)*dmgMult; this._lastDamageFromWisp=true; target.health-=bapDmg; this.updateEnemyHealthBar(target); this._lastDamageFromWisp=false;
                                 if(target.health<=0)this.killEnemy(target);
@@ -9533,21 +8871,8 @@ class TowerDefenseScene extends Phaser.Scene {
                         pet._phantomTravelDest={x:orbitX,y:orbitY};
                         pet._phantomPending=null; // no pending — will pick on arrival
                     }
-                    pet.gfx.clear();
                     const ppulse=0.5+0.4*Math.sin(time*0.01);
-                    // Ghostly body — rounded top, three wavy tail points trailing below
-                    const ghAng=time*0.003;
-                    pet.gfx.fillStyle(0xccaaff,0.15*ppulse); pet.gfx.fillCircle(wx,wy,11);
-                    pet.gfx.fillStyle(0xccaaff,ppulse);
-                    pet.gfx.fillCircle(wx,wy-1.5,5.5); // rounded head
-                    for(let t=0;t<3;t++){
-                        const tx2=wx-3+t*3, tWave=Math.sin(ghAng*2+t*1.5)*1.2;
-                        pet.gfx.fillCircle(tx2+tWave,wy+4+t*0.4,2.4-t*0.3); // wavy trailing tail lobes
-                    }
-                    pet.gfx.fillStyle(0xffffff,0.7); pet.gfx.fillCircle(wx-1,wy-2.5,2);
-                    // Two small dark eye dots
-                    pet.gfx.fillStyle(0x442288,0.7*ppulse); pet.gfx.fillCircle(wx-1.8,wy-1.8,0.7); pet.gfx.fillCircle(wx+1.6,wy-1.8,0.7);
-                    pet.gfx.lineStyle(1.5,0xaa88ff,0.4*ppulse); pet.gfx.strokeCircle(wx,wy-1.5,8);
+                    this._wispPose(pet,wx,wy,'phantom_'+(Math.floor(time/262)%4),0.3+0.7*ppulse);   // the ghost, its hem rippling
                     pet.ring.clear();
                     pet.ring.lineStyle(1.5,0xccaaff,0.35+0.15*Math.sin(time*0.006)); pet.ring.strokeCircle(e.sprite.x,e.sprite.y,TS*0.85);
                     const rot2=time*0.004; pet.ring.lineStyle(1,0xaa88ff,0.2);
@@ -9555,19 +8880,8 @@ class TowerDefenseScene extends Phaser.Scene {
                 } else {
                     if(pet._phantomTarget){ pet._phantomTarget._possessed=false; pet._phantomTarget=null; }
                     pet.ring.clear();
-                    pet.gfx.clear();
                     const ppulse2=0.5+0.3*Math.sin(time*0.008);
-                    const ghAng2=time*0.003;
-                    pet.gfx.fillStyle(0xccaaff,0.15*ppulse2); pet.gfx.fillCircle(wx,wy,11);
-                    pet.gfx.fillStyle(0xccaaff,ppulse2);
-                    pet.gfx.fillCircle(wx,wy-1.5,5.5);
-                    for(let t=0;t<3;t++){
-                        const tx2=wx-3+t*3, tWave=Math.sin(ghAng2*2+t*1.5)*1.2;
-                        pet.gfx.fillCircle(tx2+tWave,wy+4+t*0.4,2.4-t*0.3);
-                    }
-                    pet.gfx.fillStyle(0xffffff,0.7); pet.gfx.fillCircle(wx-1,wy-2.5,2);
-                    pet.gfx.fillStyle(0x442288,0.7*ppulse2); pet.gfx.fillCircle(wx-1.8,wy-1.8,0.7); pet.gfx.fillCircle(wx+1.6,wy-1.8,0.7);
-                    pet.gfx.lineStyle(1.5,0xaa88ff,0.35*ppulse2); pet.gfx.strokeCircle(wx,wy-1.5,8);
+                    this._wispPose(pet,wx,wy,'phantom_'+(Math.floor(time/262)%4),0.3+0.7*ppulse2);   // the ghost, its hem rippling
                 }
                 continue;
             }
@@ -9645,18 +8959,15 @@ class TowerDefenseScene extends Phaser.Scene {
                             if(!this.cameras?.main)return;
                             const dropX=tx2+(Math.random()-0.5)*12;
                             const dropY=ty2+(Math.random()-0.5)*12;
-                            // Cannonball
-                            const ball=this.add.graphics().setDepth(5.8);
-                            ball.fillStyle(0x333344,1); ball.fillCircle(0,0,8);
-                            ball.fillStyle(0x6666aa,0.7); ball.fillCircle(0,0,5);
-                            ball.fillStyle(0xaaaacc,0.5); ball.fillCircle(-2,-3,2.5);
+                            // Cannonball (td_wisps 'sky_ball')
+                            const ball=this.add.image(0,0,'td_wisps','sky_ball').setDepth(5.8);
                             ball.x=dropX+(Math.random()-0.5)*30;
                             ball.y=this.cameras.main.worldView.y-30;
                             // Trail line (wispy smoke)
                             const trail=this.add.graphics().setDepth(5.6);
                             const startY=ball.y;
                             // Shadow shrinks as ball approaches
-                            const shadow=this.add.ellipse(dropX,dropY,14,7,0x000000,0.35).setDepth(0.6);
+                            const shadow=this.add.image(dropX,dropY,'td_fx','shade_l').setDepth(0.6);
                             this.tweens.add({targets:shadow,scaleX:0.2,scaleY:0.2,duration:400});
                             this.tweens.add({targets:ball,x:dropX,y:dropY,duration:400,ease:'Quad.easeIn',
                                 onUpdate:()=>{
@@ -9667,16 +8978,10 @@ class TowerDefenseScene extends Phaser.Scene {
                                 onComplete:()=>{
                                     ball.destroy(); shadow.destroy(); trail.destroy();
                                     // Impact — scorch + explosion
-                                    const scorch=this.add.graphics().setDepth(0.8);
-                                    scorch.fillStyle(0x111111,0.4); scorch.fillEllipse(dropX,dropY,TS*1.2,TS*0.7);
+                                    const scorch=this.add.image(dropX,dropY,'td_wisps','scorch').setDepth(0.8);
                                     this.time.delayedCall(3000,()=>this.tweens.add({targets:scorch,alpha:0,duration:800,onComplete:()=>scorch.destroy()}));
-                                    const exp=this.add.graphics().setDepth(5.5);
-                                    exp.x=dropX; exp.y=dropY;
-                                    exp.fillStyle(0xff6622,0.95); exp.fillCircle(0,0,TS*1.5);
-                                    exp.fillStyle(0xffcc44,0.7); exp.fillCircle(0,0,TS*0.9);
-                                    exp.fillStyle(0xffffff,0.4); exp.fillCircle(0,0,TS*0.4);
+                                    this._tdBlast(dropX,dropY,TS*1.5*1.4,'o',350,5.5,0.95);   // (x1.4: the old disc swelled x2.2 as it faded)
                                     this.cameras.main.shake(60,0.002);
-                                    this.tweens.add({targets:exp,scaleX:2.2,scaleY:2.2,alpha:0,duration:350,onComplete:()=>exp.destroy()});
                                     const baseDmg=(50+waveNum*5)*dmgMult;
                                     const aoeR=TS*1.8;
                                     for(const e2 of [...this.enemies]){
@@ -9713,11 +9018,7 @@ class TowerDefenseScene extends Phaser.Scene {
                         const totalDist=Math.hypot(tgt.sprite.x-wx,tgt.sprite.y-wy);
                         const speed=300;
                         const travelDur=(totalDist/speed)*1000;
-                        const proj=this.add.graphics().setDepth(5.5);
-                        proj.fillStyle(0xaa00ff,1); proj.fillCircle(0,0,5);
-                        proj.fillStyle(0xffffff,0.6); proj.fillCircle(0,0,2);
-                        proj.lineStyle(2,0xcc44ff,0.7); proj.strokeCircle(0,0,7);
-                        proj.x=wx; proj.y=wy;
+                        const proj=this.add.image(wx,wy,'td_wisps','vbolt').setDepth(5.5);
                         const trail=this.add.graphics().setDepth(5.4);
                         let trailPts=[];
                         const trailTimer=this.time.addEvent({delay:30,loop:true,callback:()=>{
@@ -9735,10 +9036,7 @@ class TowerDefenseScene extends Phaser.Scene {
                         this.tweens.add({targets:proj,x:targetX,y:targetY,duration:travelDur,ease:'Linear',
                             onComplete:()=>{
                                 proj.destroy(); trailTimer.remove(); trail.destroy();
-                                const imp=this.add.graphics().setDepth(5.5);
-                                imp.x=targetX; imp.y=targetY;
-                                imp.fillStyle(0xaa00ff,0.8); imp.fillCircle(0,0,12);
-                                this.tweens.add({targets:imp,scaleX:2,scaleY:2,alpha:0,duration:200,onComplete:()=>imp.destroy()});
+                                this._tdBlast(targetX,targetY,12*1.3,'v',200,5.5,0.8);
                                 this._spawnVoidBlackHole(targetX,targetY,dmgMult,wx,wy);
                             }
                         });
@@ -9755,11 +9053,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     let pendingSnaps=targets.length;
                     targets.forEach((tgt,ti)=>{
                         const ex=tgt.sprite.x, ey=tgt.sprite.y;
-                        const pulse=this.add.graphics().setDepth(5.2);
-                        pulse.x=ex; pulse.y=ey;
-                        pulse.fillStyle(0xff88bb,0.6); pulse.fillCircle(0,0,8);
-                        pulse.fillStyle(0xffeeff,0.8); pulse.fillCircle(0,0,4);
-                        this.tweens.add({targets:pulse,scaleX:2.2,scaleY:2.2,alpha:0,duration:180,onComplete:()=>pulse.destroy()});
+                        this._tdBlast(ex,ey,8*1.4,'p',180,5.2,0.7);
                         const tensionGfx=this.add.graphics().setDepth(5.1);
                         let tensionT=0;
                         const tensionTimer=this.time.addEvent({delay:16,loop:true,callback:()=>{
@@ -9795,17 +9089,10 @@ class TowerDefenseScene extends Phaser.Scene {
                             const snap=this.add.graphics().setDepth(5.5);
                             snap.lineStyle(5,0xff44aa,0.9); snap.beginPath(); snap.moveTo(tgt.sprite?.x||ex,tgt.sprite?.y||ey); snap.lineTo(wx,wy); snap.strokePath();
                             snap.lineStyle(2,0xffeeff,0.95); snap.beginPath(); snap.moveTo(tgt.sprite?.x||ex,tgt.sprite?.y||ey); snap.lineTo(wx,wy); snap.strokePath();
-                            const orb=this.add.graphics().setDepth(5.8);
-                            orb.fillStyle(0xff88bb,1); orb.fillCircle(0,0,5);
-                            orb.fillStyle(0xffeeff,0.8); orb.fillCircle(0,0,2.5);
-                            orb.lineStyle(1.5,0xff44aa,0.7); orb.strokeCircle(0,0,7);
-                            orb.x=tgt.sprite?.x||ex; orb.y=tgt.sprite?.y||ey;
+                            const orb=this.add.image(tgt.sprite?.x||ex,tgt.sprite?.y||ey,'td_wisps','lorb').setDepth(5.8);
                             this.tweens.add({targets:orb,x:wx,y:wy,duration:180,ease:'Quad.easeIn',
                                 onComplete:()=>{
                                     orb.destroy();
-                                    pet.gfx.clear();
-                                    pet.gfx.fillStyle(0xff44aa,1); pet.gfx.fillCircle(wx,wy,10);
-                                    pet.gfx.fillStyle(0xffeeff,0.9); pet.gfx.fillCircle(wx,wy,5);
                                     pendingSnaps--;
                                     if(!pendingSnaps) pet._draining=false;
                                 }
@@ -9822,11 +9109,7 @@ class TowerDefenseScene extends Phaser.Scene {
             else if(pet.type==='poison'){
                 const tgt=inRange[0];
                 // Barf projectile — green blob with travel time
-                const barf=this.add.graphics().setDepth(5.5);
-                barf.fillStyle(0x44cc44,0.9); barf.fillCircle(0,0,7);
-                barf.fillStyle(0x88ff44,0.6); barf.fillCircle(-2,-2,4);
-                barf.fillStyle(0xffff44,0.4); barf.fillCircle(0,0,3);
-                barf.x=wx; barf.y=wy;
+                const barf=this.add.image(wx,wy,'td_wisps','barf').setDepth(5.5);
                 // Wavy arc to target
                 const cx=tgt.sprite.x, cy=tgt.sprite.y;
                 const dist=Math.hypot(cx-wx,cy-wy);
@@ -9845,11 +9128,7 @@ class TowerDefenseScene extends Phaser.Scene {
                                 this._spawnPoisonTile(ltx+dx,lty+dy,dmgMult);
                         }
                         // Splat visual
-                        const splat=this.add.graphics().setDepth(1.1);
-                        splat.fillStyle(0x33aa33,0.5); splat.fillCircle(cx,cy,TS2*1.6);
-                        splat.fillStyle(0x44cc44,0.3); splat.fillCircle(cx-8,cy+6,TS2*0.8);
-                        splat.fillStyle(0x55dd55,0.2); splat.fillCircle(cx+10,cy-4,TS2*0.6);
-                        this.tweens.add({targets:splat,alpha:0,duration:600,onComplete:()=>splat.destroy()});
+                        this._tdBlast(cx,cy,TS2*1.6,'t',600,1.1,0.5);
                     }
                 });
             }
@@ -10132,22 +9411,14 @@ class TowerDefenseScene extends Phaser.Scene {
         const fuseDur=Math.max(1200,3000-stacks*300);
         // Bomb icon — ⊗ drawn above enemy, updates with stack count
         if(!enemy._bombGfx||!enemy._bombGfx.active){
-            enemy._bombGfx=this.add.graphics().setDepth(6.5);
+            enemy._bombGfx=this.add.image(0,0,'td_wisps','bomb_0').setOrigin(8.5/19,13.5/22).setDepth(6.5);   // the bomb, its fuse spark flaring
             enemy._bombLabel=this.add.text(0,0,'',{fontSize:'8px',fontFamily:'monospace',color:'#ffcc44',stroke:'#000',strokeThickness:2}).setOrigin(0.5).setDepth(6.6);
         }
         const drawBombIcon=()=>{
             if(!enemy.sprite?.active||!enemy._bombGfx?.active)return;
             const ex=enemy.sprite.x, ey=enemy.sprite.y-TS*0.9;
             const pulse=0.7+0.3*Math.sin(this.time.now*0.02*(1+stacks*0.3));
-            enemy._bombGfx.clear();
-            // Bomb circle
-            enemy._bombGfx.fillStyle(0x222222,0.85); enemy._bombGfx.fillCircle(ex,ey,7);
-            enemy._bombGfx.lineStyle(2,0xff4400,pulse); enemy._bombGfx.strokeCircle(ex,ey,7);
-            // Fuse line
-            enemy._bombGfx.lineStyle(1.5,0xffaa44,pulse);
-            enemy._bombGfx.beginPath(); enemy._bombGfx.moveTo(ex+3,ey-6); enemy._bombGfx.lineTo(ex+7,ey-11); enemy._bombGfx.strokePath();
-            // Fuse spark
-            enemy._bombGfx.fillStyle(0xffcc44,pulse); enemy._bombGfx.fillCircle(ex+7,ey-11,2);
+            enemy._bombGfx.setPosition(ex,ey).setFrame(pulse>0.85?'bomb_0':'bomb_1');
             // Stack count
             if(stacks>1){ enemy._bombLabel.setText(`×${stacks}`); enemy._bombLabel.setPosition(ex+9,ey); }
             else { enemy._bombLabel.setText(''); }
@@ -10169,12 +9440,7 @@ class TowerDefenseScene extends Phaser.Scene {
             // Explosion visual — max 4 rings regardless of stacks
             for(let ring=0;ring<Math.min(4,2+stacks);ring++){
                 this.time.delayedCall(ring*40,()=>{
-                    const exp=this.add.graphics().setDepth(5.5);
-                    exp.x=ex; exp.y=ey;
-                    exp.fillStyle(0xff2200,0.9); exp.fillCircle(0,0,aoeR*(0.5+ring*0.2));
-                    exp.fillStyle(0xff8844,0.7); exp.fillCircle(0,0,aoeR*(0.3+ring*0.15));
-                    exp.fillStyle(0xffdd44,0.5); exp.fillCircle(0,0,aoeR*(0.15+ring*0.1));
-                    this.tweens.add({targets:exp,scaleX:2.5,scaleY:2.5,alpha:0,duration:400+ring*60,onComplete:()=>exp.destroy()});
+                    this._tdBlast(ex,ey,aoeR*(0.5+ring*0.2)*1.6,ring?'r':'o',400+ring*60,5.5,0.9);   // (x1.6: the old discs swelled x2.5)
                 });
             }
             this.cameras.main.shake(Math.min(160,80+stacks*15),Math.min(0.006,0.003+stacks*0.0005));
@@ -10279,12 +9545,12 @@ class TowerDefenseScene extends Phaser.Scene {
         const arcH=20+Math.min(flightDist/TS,6)/6*30;
 
         // Shadow
-        const shadow=this.add.ellipse(fromX,fromY,shellR*1.4,shellR*0.7,0x000000,0.3).setDepth(0.5);
+        const shadow=this.add.image(fromX,fromY,'td_fx',shellR>=8?'shade_l':'shade_s').setDepth(0.5);
         this.tweens.add({targets:shadow,x:toX,y:toY,scaleX:2,alpha:0.4,duration:dur,ease:'Linear'});
 
         // Ball graphic
-        const ball=this.add.graphics().setDepth(5);
-        ball.x=fromX; ball.y=fromY;
+        const rollKey=isBowler?'rollb_':shellR>4.6?'roll_10_':'roll_8_';
+        const ball=this.add.image(fromX,fromY,'td_fx',rollKey+0).setDepth(5);
         const startX=fromX,startY=fromY;
         let elapsed=0,rot=0;
         const arc=this.time.addEvent({delay:16,loop:true,callback:()=>{
@@ -10293,11 +9559,7 @@ class TowerDefenseScene extends Phaser.Scene {
             ball.x=startX+(toX-startX)*t;
             ball.y=startY+(toY-startY)*t - 4*arcH*t*(1-t);
             rot+=15*(16/1000);
-            ball.clear();
-            ball.fillStyle(isBowler?0x888899:0xff8844,1); ball.fillCircle(0,0,shellR);
-            ball.fillStyle(0xffdd44,0.7); ball.fillCircle(0,0,shellR*0.5);
-            const sx=Math.cos(rot)*shellR*0.4, sy=Math.sin(rot)*shellR*0.4;
-            ball.fillStyle(0xffffff,0.5); ball.fillCircle(sx,sy,shellR*0.25);
+            ball.setFrame(rollKey+(Math.floor(rot/(Math.PI/2))%4));
             if(t>=1){
                 arc.remove(); ball.destroy(); shadow.active&&shadow.destroy();
                 // Impact
@@ -10318,8 +9580,9 @@ class TowerDefenseScene extends Phaser.Scene {
     _fireBowlingBall(tower,tx,ty,baseDmg,aoeR){
         const TS=this.TILE_SIZE;
         const ang=Math.atan2(ty-tower.py,tx-tower.px);
-        const ball=this.add.graphics().setDepth(5.5);
-        ball.x=tx; ball.y=ty;
+        const ball=this.add.image(tx,ty,'td_fx','bowl_0').setDepth(5.5);
+        const grind=this.add.image(tx,ty,'td_fx','grind_'+['e','se','s','sw','w','nw','n','ne'][((Math.round(ang/(Math.PI/4))%8)+8)%8]).setDepth(5.4);
+        ball.once('destroy',()=>grind.destroy());
         const speed=180;
         let rot=0;
         const hitCooldowns=new Map();
@@ -10328,25 +9591,10 @@ class TowerDefenseScene extends Phaser.Scene {
             ball.x+=Math.cos(ang)*speed*(16/1000);
             ball.y+=Math.sin(ang)*speed*(16/1000);
             rot+=20;
-            ball.clear();
-            ball.fillStyle(0x333344,1); ball.fillCircle(0,0,13);
-            ball.fillStyle(0x666677,0.9); ball.fillCircle(0,0,9);
-            ball.fillStyle(0x9999aa,0.6); ball.fillCircle(0,0,5);
-            const sx=Math.cos(rot*Math.PI/180)*5, sy=Math.sin(rot*Math.PI/180)*5;
-            ball.fillStyle(0xddddee,0.8); ball.fillCircle(sx,sy,3);
-            // Grind trail
-            ball.lineStyle(2,0xffaa44,0.35);
-            ball.beginPath();
-            ball.moveTo(-Math.cos(ang)*10,-Math.sin(ang)*10);
-            ball.lineTo(-Math.cos(ang)*22,-Math.sin(ang)*22);
-            ball.strokePath();
+            ball.setFrame('bowl_'+(Math.floor(rot/90)%4)); grind.setPosition(ball.x,ball.y);
             const btx=Math.floor(ball.x/TS), bty=Math.floor(ball.y/TS);
             if(this.world[btx]?.[bty]!==this.FLOOR){
-                const wallExp=this.add.graphics().setDepth(5);
-                wallExp.x=ball.x; wallExp.y=ball.y;
-                wallExp.fillStyle(0x666677,0.8); wallExp.fillCircle(0,0,aoeR);
-                wallExp.fillStyle(0xffffff,0.4); wallExp.fillCircle(0,0,aoeR*0.4);
-                this.tweens.add({targets:wallExp,scaleX:1.8,scaleY:1.8,alpha:0,duration:400,onComplete:()=>wallExp.destroy()});
+                this._tdBlast(ball.x,ball.y,aoeR,'g',400);
                 this.cameras.main.shake(150,0.006);
                 ball.destroy(); roll.remove(); return;
             }
@@ -10381,13 +9629,8 @@ class TowerDefenseScene extends Phaser.Scene {
         if(this.world[tileX]?.[tileY]!==this.FLOOR)return;
         const TS=this.TILE_SIZE;
         const px=tileX*TS+TS/2, py=tileY*TS+TS/2;
-        // Exact main-game lava tile: 3-layer rectangle stack
-        const base=this.add.rectangle(px,py,TS,TS,0xcc2200,0.85).setDepth(0.5);
-        const glow=this.add.rectangle(px,py,TS-4,TS-4,0xff6600,0.6).setDepth(0.51);
-        const core=this.add.rectangle(px,py,TS-10,TS-10,0xffaa00,0.4).setDepth(0.52);
-        this.tweens.add({targets:glow,alpha:0.9,duration:180,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});
-        this.tweens.add({targets:core,alpha:0.7,scaleX:0.85,scaleY:0.85,duration:130,yoyo:true,repeat:-1,ease:'Sine.easeInOut',delay:60});
-        this._lavaTiles.push({tileX,tileY,visuals:[base,glow,core],createdAt:this.time.now,durationMs,_lastTick:0});
+        // the main game's lava tile (typed molten slab + its glows)
+        this._lavaTiles.push({tileX,tileY,visuals:this._vfxLavaTile(px,py),createdAt:this.time.now,durationMs,_lastTick:0});
     }
 
     _spawnLavaTilesInCircle(cx,cy,radiusPx,durationMs=4000){
@@ -10441,10 +9684,7 @@ class TowerDefenseScene extends Phaser.Scene {
         // ── CATAPULT: entirely replaces normal shell ──────────────────────────
         if(tower._canCatapult){
             const miniCount=20, spreadR=aoeR*1.5;
-            const arcShell=this.add.graphics().setDepth(6);
-            arcShell.fillStyle(0x884422,1); arcShell.fillCircle(0,0,8);
-            arcShell.fillStyle(0xff6622,0.8); arcShell.fillCircle(0,0,5);
-            arcShell.x=tower.px; arcShell.y=tower.py;
+            const arcShell=this.add.image(tower.px,tower.py,'td_fx','cata').setDepth(6);
             const peakX=(tower.px+tx)/2;
             const peakY=Math.min(tower.py,ty)-140;
             this.tweens.add({targets:arcShell,x:peakX,y:peakY,duration:550,ease:'Sine.easeOut',
@@ -10456,29 +9696,18 @@ class TowerDefenseScene extends Phaser.Scene {
                         const splitX=arcShell.x, splitY=arcShell.y;
                         arcShell.destroy();
                         // Flash
-                        const flash=this.add.graphics().setDepth(7);
-                        flash.x=splitX; flash.y=splitY;
-                        flash.fillStyle(0xff8844,0.9); flash.fillCircle(0,0,14);
-                        this.tweens.add({targets:flash,scaleX:2.5,scaleY:2.5,alpha:0,duration:250,onComplete:()=>flash.destroy()});
+                        this._tdBlast(splitX,splitY,14,'o',250,7);
                         // 20 mini-balls all spawn at once, land simultaneously
                         for(let m=0;m<miniCount;m++){
                             const ang=(m/miniCount)*Math.PI*2+(Math.random()-0.5)*0.4;
                             const dist=Math.random()*spreadR;
                             const mx=tx+Math.cos(ang)*dist, my=ty+Math.sin(ang)*dist;
-                            const mini=this.add.graphics().setDepth(6);
-                            mini.fillStyle(0xff6622,1); mini.fillCircle(0,0,3.5);
-                            mini.fillStyle(0xffaa44,0.8); mini.fillCircle(0,0,1.5);
-                            mini.x=splitX; mini.y=splitY;
+                            const mini=this.add.image(splitX,splitY,'td_fx','mini').setDepth(6);
                             this.tweens.add({targets:mini,x:mx,y:my,duration:300,ease:'Quad.easeIn',
                                 onComplete:()=>{
                             mini.destroy();
                                     const miniR=TS*1.8; // much bigger explosion
-                                    const miniExp=this.add.graphics().setDepth(5);
-                                    miniExp.x=mx; miniExp.y=my;
-                                    miniExp.fillStyle(0xff6622,0.7); miniExp.fillCircle(0,0,miniR);
-                                    miniExp.fillStyle(0xffdd44,0.5); miniExp.fillCircle(0,0,miniR*0.55);
-                                    miniExp.fillStyle(0xffffff,0.3); miniExp.fillCircle(0,0,miniR*0.25);
-                                    this.tweens.add({targets:miniExp,scaleX:1.5,scaleY:1.5,alpha:0,duration:300,onComplete:()=>miniExp.destroy()});
+                                    this._tdBlast(mx,my,miniR,'o',300,5,0.75);
                                     // Lava tile always spawns on landing
                                     if(tower._canNapalm) this._spawnLavaTilesInCircle(mx,my,miniR);
                                     for(const e of [...this.enemies]){
@@ -10498,12 +9727,7 @@ class TowerDefenseScene extends Phaser.Scene {
         }
 
         // ── NORMAL IMPACT ─────────────────────────────────────────────────────
-        const exp=this.add.graphics().setDepth(5);
-        exp.x=tx; exp.y=ty;
-        exp.fillStyle(0xff8844,0.65); exp.fillCircle(0,0,aoeR);
-        exp.fillStyle(0xffdd44,0.45); exp.fillCircle(0,0,aoeR*0.5);
-        if(coreR>0){ exp.fillStyle(0xffffff,0.5); exp.fillCircle(0,0,coreR); }
-        this.tweens.add({targets:exp,scaleX:1.5,scaleY:1.5,alpha:0,duration:320,onComplete:()=>exp.destroy()});
+        this._tdBlast(tx,ty,aoeR,'o',320,5,0.8);
         this.cameras.main.shake(60,0.002);
 
         for(const e of [...this.enemies]){
@@ -10521,11 +9745,7 @@ class TowerDefenseScene extends Phaser.Scene {
         if(isBowler) this._fireBowlingBall(tower,tx,ty,baseDmg,aoeR);
         if(tower._canAftershock&&coreR>0){
             this.time.delayedCall(400,()=>{
-                const exp2=this.add.graphics().setDepth(5);
-                exp2.x=tx; exp2.y=ty;
-                exp2.fillStyle(0xff4422,0.7); exp2.fillCircle(0,0,coreR*1.3);
-                exp2.fillStyle(0xffffff,0.4); exp2.fillCircle(0,0,coreR*0.6);
-                this.tweens.add({targets:exp2,scaleX:1.8,scaleY:1.8,alpha:0,duration:350,onComplete:()=>exp2.destroy()});
+                this._tdBlast(tx,ty,coreR*1.3,'r',350,5,0.8);
                 for(const e of [...this.enemies]){
                     if(!e.sprite?.active)continue;
                     if(Math.hypot(e.sprite.x-tx,e.sprite.y-ty)<=coreR*1.3){
@@ -10565,11 +9785,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     tower.body.setAlpha(0.4);
                     this.tweens.add({targets:tower.body,alpha:1,duration:80});
                 }
-                const shell=this.add.graphics().setDepth(6);
-                shell.fillStyle(0xff6644,1); shell.fillCircle(0,0,5);
-                shell.fillStyle(0xffaa44,0.7); shell.fillCircle(0,0,3);
-                shell.x=tower.px+(Math.random()-0.5)*20;
-                shell.y=tower.py;
+                const shell=this.add.image(tower.px+(Math.random()-0.5)*20,tower.py,'td_fx','sky_shell').setDepth(6);
                 // Fast upward — exits screen in ~400ms
                 this.tweens.add({
                     targets:shell,
@@ -10618,12 +9834,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 if(!target.sprite?.active)return;
                 const tx=target.sprite.x, ty=target.sprite.y;
 
-                const bolt=this.add.graphics().setDepth(7);
-                bolt.fillStyle(0xff4422,1); bolt.fillCircle(0,0,7);
-                bolt.fillStyle(0xff8844,0.9); bolt.fillCircle(0,0,4);
-                bolt.fillStyle(0xffffff,0.7); bolt.fillCircle(0,0,2);
-                bolt.x=tx+(Math.random()-0.5)*30;
-                bolt.y=-30; // off screen top
+                const bolt=this.add.image(tx+(Math.random()-0.5)*30,-30,'td_fx','sky_bolt').setDepth(7);   // from off the top
 
                 // Slow heavy fall — 1500ms, easeIn to feel weighty
                 this.tweens.add({
@@ -10634,12 +9845,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     onComplete:()=>{
                         bolt.destroy();
                         // Impact explosion
-                        const exp=this.add.graphics().setDepth(5.5);
-                        exp.x=tx; exp.y=ty;
-                        exp.fillStyle(0xff4422,0.8); exp.fillCircle(0,0,aoeR);
-                        exp.fillStyle(0xffcc44,0.55); exp.fillCircle(0,0,aoeR*0.6);
-                        exp.fillStyle(0xffffff,0.4); exp.fillCircle(0,0,aoeR*0.28);
-                        this.tweens.add({targets:exp,scaleX:1.6,scaleY:1.6,alpha:0,duration:450,onComplete:()=>exp.destroy()});
+                        this._tdBlast(tx,ty,aoeR,'r',450,5.5);
                         // Heavier shake per impact
                         this.cameras.main.shake(120,0.0055);
                         // Damage
@@ -10742,20 +9948,22 @@ class TowerDefenseScene extends Phaser.Scene {
         const totalW=cols*btnW+(cols-1)*gap,sx=W/2-totalW/2,sy=H/2-(rows*(btnH+gap))/2-28;
         this._bmObjs=[];const tr=o=>{this._bmObjs.push(o);return o;};
         tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.72).setScrollFactor(0).setDepth(20).setVisible(false).setInteractive());
-        const panel=tr(this.add.graphics().setScrollFactor(0).setDepth(21).setVisible(false));
-        panel.fillStyle(0x12121e,0.97);panel.fillRoundedRect(sx-18,sy-34,totalW+36,rows*(btnH+gap)+64,10);
-        panel.lineStyle(1.5,0x2a3a5a,0.8);panel.strokeRoundedRect(sx-18,sy-34,totalW+36,rows*(btnH+gap)+64,10);
-        tr(this.add.text(W/2,sy-18,'⚙  BUILD TOWER  [Q to close]',{fontSize:'15px',fontFamily:'monospace',color:'#aaddff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0).setDepth(22).setVisible(false));
+        UIKit.panel(this,{x:sx-18,y:sy-34,w:totalW+36,h:rows*(btnH+gap)+64,accent:0x2a3a5a,depth:21}).objs.forEach(o=>tr(o.setVisible(false)));
+        const title=tr(this.add.text(W/2,sy-18,'BUILD TOWER  [Q to close]',{fontSize:'15px',fontFamily:'monospace',color:'#aaddff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0).setDepth(22).setVisible(false));
+        this._iconBy(title,tr(this._tdIcon('⚙',0,0,22).setVisible(false)),false,10);
         this._bmBtnData=[];
         for(let i=0;i<types.length;i++){
             const type=types[i],def=defs[type],col=i%cols,row=Math.floor(i/cols),bx=sx+col*(btnW+gap),by=sy+row*(btnH+gap);
-            const bg=tr(this.add.graphics().setScrollFactor(0).setDepth(22).setVisible(false));
+            const dim=((def.color>>17&127)<<16)|((def.color>>9&127)<<8)|(def.color>>1&127);   // its colour at half, the card's rim at rest
+            const bg=tr(this._tdNine('card','card_a',bx,by,btnW,btnH,dim,22).setVisible(false));
             const nameT=tr(this.add.text(bx+btnW/2,by+68,def.name,{fontSize:'10px',fontFamily:'monospace',color:'#'+def.color.toString(16).padStart(6,'0'),fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(23).setVisible(false));
-            const costT=tr(this.add.text(bx+btnW/2,by+80,`⚙ ${this._getTowerCost(type)}`,{fontSize:'10px',fontFamily:'monospace',color:'#ffdd88'}).setOrigin(0.5).setScrollFactor(0).setDepth(23).setVisible(false));
+            const costT=tr(this.add.text(bx+btnW/2,by+80,`${this._getTowerCost(type)}`,{fontSize:'10px',fontFamily:'monospace',color:'#ffdd88'}).setOrigin(0.5).setScrollFactor(0).setDepth(23).setVisible(false));
+            const costI=tr(this._tdIcon('⚙',0,0,23).setVisible(false)); this._iconBy(costT,costI);
             tr(this.add.text(bx+btnW/2,by+92,def.desc,{fontSize:'8px',fontFamily:'monospace',color:'#556688',wordWrap:{width:btnW-8}}).setOrigin(0.5,0).setScrollFactor(0).setDepth(23).setVisible(false));
-            const miniG=tr(this.add.graphics().setScrollFactor(0).setDepth(23).setVisible(false));
-            this._drawTowerMini(miniG,type,def,bx+btnW/2,by+32);
-            const drawBtn=hov=>{bg.clear();bg.fillStyle(hov?0x223050:0x1a2035,0.98);bg.fillRoundedRect(bx,by,btnW,btnH,7);bg.lineStyle(1.5,def.color,hov?1:0.55);bg.strokeRoundedRect(bx,by,btnW,btnH,7);};drawBtn(false);
+            // its picture (td_ui t_<type>, at 2x) in a slot rimmed in its colour
+            const slot=tr(this._tdNine('pill','pill_a',bx+btnW/2-17,by+15,34,34,def.color,23).setVisible(false));
+            const miniG=tr(this.add.image(bx+btnW/2,by+32,'td_ui','t_'+type).setScale(2).setScrollFactor(0).setDepth(23.1).setVisible(false));
+            const drawBtn=hov=>this._tdNineSet(bg,'card','card_a',bx,by,btnW,btnH,hov?def.color:dim);
             const hit=tr(this.add.rectangle(bx+btnW/2,by+btnH/2,btnW,btnH,0xffffff,0).setScrollFactor(0).setDepth(24).setVisible(false).setInteractive());
             hit.on('pointerover',()=>drawBtn(true));hit.on('pointerout',()=>drawBtn(false));
             hit.on('pointerdown',p=>{
@@ -10770,45 +9978,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 this._closeBuildMenu();
                 this.time.delayedCall(50,()=>this._startPlacementMode(type));
             });
-            this._bmBtnData.push({bg,miniG,nameT,costT,hit,type,def,drawBtn});
-        }
-    }
-
-    _drawTowerMini(g,type,def,cx,cy){
-        g.clear();g.fillStyle(0x2a2a3c,1);g.fillRect(cx-17,cy-17,34,34);g.lineStyle(1.5,def.color,0.65);g.strokeRect(cx-17,cy-17,34,34);
-        switch(type){
-            case 'tesla_coil':   g.lineStyle(2.5,0x44aaff,1);g.beginPath();g.moveTo(cx,cy-13);g.lineTo(cx,cy+13);g.strokePath();g.beginPath();g.moveTo(cx-8,cy-4);g.lineTo(cx,cy-13);g.lineTo(cx+8,cy-4);g.strokePath();g.fillStyle(0xaaffff,1);g.fillCircle(cx,cy-13,4);break;
-            case 'sniper':       g.fillStyle(0x555566,1);g.fillRect(cx-4,cy-14,8,24);g.fillStyle(0xff6644,1);g.fillCircle(cx,cy,6);g.lineStyle(3.5,0xff8866,1);g.beginPath();g.moveTo(cx,cy);g.lineTo(cx,cy-15);g.strokePath();break;
-            case 'machine_gun':  g.fillStyle(0x999aaa,1);g.fillRect(cx-12,cy-5,24,10);g.fillStyle(0xffcc44,1);g.fillCircle(cx,cy,6);g.lineStyle(3,0xffeeaa,1);g.beginPath();g.moveTo(cx+6,cy-3);g.lineTo(cx+15,cy-3);g.strokePath();g.beginPath();g.moveTo(cx+6,cy+3);g.lineTo(cx+15,cy+3);g.strokePath();break;
-            case 'magnetizer':   g.lineStyle(3,0x44ffaa,0.9);g.strokeCircle(cx,cy,12);g.fillStyle(0x44ffaa,1);g.fillRect(cx-10,cy-5,7,10);g.fillRect(cx+3,cy-5,7,10);g.lineStyle(2,0xaaffdd,0.6);g.beginPath();g.arc(cx-6,cy-8,4,-Math.PI,0,false);g.strokePath();g.beginPath();g.arc(cx+6,cy-8,4,-Math.PI,0,false);g.strokePath();break;
-            case 'healer_turret':g.fillStyle(0x335544,1);g.fillCircle(cx,cy+4,11);g.fillStyle(0x44ff88,1);g.fillCircle(cx,cy,9);g.fillStyle(0xffffff,1);g.fillRect(cx-5,cy-1.5,10,3);g.fillRect(cx-1.5,cy-5,3,10);break;
-            case 'healing_fountain':g.fillStyle(0x223344,1);g.fillCircle(cx,cy+6,11);g.fillStyle(0x88ffdd,0.9);g.fillCircle(cx,cy+6,7);g.fillStyle(0x99ffee,0.7);g.fillCircle(cx,cy+6,4);break;
-            case 'cannon':       g.fillStyle(0x445566,1);g.fillCircle(cx,cy+2,12);g.fillStyle(0xff8844,0.9);g.fillCircle(cx,cy+2,7);g.lineStyle(5,0x777788,1);g.beginPath();g.moveTo(cx,cy+2);g.lineTo(cx,cy-14);g.strokePath();g.fillStyle(0x999aaa,1);g.fillCircle(cx,cy-14,4);break;
-            case 'skyward':{
-                // Dark armoured platform base
-                g.fillStyle(0x1a0a00,1); g.fillRect(cx-10,cy-10,20,20);
-                g.lineStyle(1.5,0xff4422,0.7); g.strokeRect(cx-10,cy-10,20,20);
-                // Inner plate
-                g.fillStyle(0x2a1100,1); g.fillCircle(cx,cy,8);
-                g.lineStyle(1,0xff6644,0.5); g.strokeCircle(cx,cy,8);
-                // 4 diagonal struts to corners
-                g.lineStyle(2,0xff4422,0.8);
-                for(let a=0;a<4;a++){
-                    const ang=a*Math.PI/2+Math.PI/4;
-                    g.beginPath(); g.moveTo(cx+Math.cos(ang)*8,cy+Math.sin(ang)*8);
-                    g.lineTo(cx+Math.cos(ang)*13,cy+Math.sin(ang)*13); g.strokePath();
-                    // Corner nubs
-                    g.fillStyle(0xff6644,0.9); g.fillCircle(cx+Math.cos(ang)*13,cy+Math.sin(ang)*13,2);
-                }
-                // Crosshair lines
-                g.lineStyle(1,0xff2200,0.5);
-                g.beginPath(); g.moveTo(cx-9,cy); g.lineTo(cx+9,cy); g.strokePath();
-                g.beginPath(); g.moveTo(cx,cy-9); g.lineTo(cx,cy+9); g.strokePath();
-                // Hot core
-                g.fillStyle(0xff2200,0.95); g.fillCircle(cx,cy,3.5);
-                g.fillStyle(0xff8844,0.8); g.fillCircle(cx,cy,1.5);
-                break;
-            }
+            this._bmBtnData.push({bg,miniG,slot,nameT,costT,costI,hit,type,def,drawBtn});
         }
     }
 
@@ -10818,9 +9988,9 @@ class TowerDefenseScene extends Phaser.Scene {
         this._bmObjs.forEach(o=>o.setVisible(true));
         this._bmBtnData.forEach(b=>{
             const cost=this._getTowerCost(b.type);
-            b.costT.setText(`⚙ ${cost}  ×${this.towers.filter(t=>t.type===b.type).length||''}`);
+            this._iconText(b.costT,`${cost}  ×${this.towers.filter(t=>t.type===b.type).length||''}`);
             const ok=this.scraps>=cost;
-            b.nameT.setAlpha(ok?1:0.35); b.costT.setAlpha(ok?1:0.35); b.miniG.setAlpha(ok?1:0.25);
+            b.nameT.setAlpha(ok?1:0.35); b.costT.setAlpha(ok?1:0.35); b.costI.setAlpha(ok?1:0.35); b.miniG.setAlpha(ok?1:0.25); b.slot.setAlpha(ok?1:0.4);
         });
     }
     _closeBuildMenu(){this._buildMenuOpen=false;this._bmObjs.forEach(o=>o.setVisible(false));}
@@ -10874,18 +10044,16 @@ class TowerDefenseScene extends Phaser.Scene {
         tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.7).setScrollFactor(0).setDepth(25)
             .setInteractive().on('pointerdown',()=>this._closeUpgradeMenu()));
 
-        const panelBg=tr(this.add.rectangle(W/2,H/2,panelW,panelH,0x0a1520,0.98).setScrollFactor(0).setDepth(26));
-        panelBg.setStrokeStyle(2,def.color,0.75);
+        UIKit.panel(this,{x:px,y:py,w:panelW,h:panelH,accent:def.color,depth:26}).objs.forEach(tr);
 
-        tr(this.add.text(px+panelW/2,py+22,`${def.icon}  ${def.name.toUpperCase()}`,
+        this._iconBy(tr(this.add.text(px+panelW/2,py+22,def.name.toUpperCase(),
             {fontSize:'21px',fontFamily:UIKit.FONT.title,color:colHex,stroke:'#000',strokeThickness:3,fontStyle:'bold'})
-            .setOrigin(0.5).setScrollFactor(0).setDepth(27));
+            .setOrigin(0.5).setScrollFactor(0).setDepth(27)),tr(this._tdIcon('t_'+tower.type,0,0,27,26)),false,8);
         const hpFracHdr=(tower.maxHp>0)?Math.round(tower.hp/tower.maxHp*100):100;
         const statsStr=`Range ${def.range+(tower._rangeBonus||0)}  ·  CD ${Math.round((def.fireInterval||0)*this._towerCDMult)}ms  ·  HP ${hpFracHdr}%`;
         tr(this.add.text(px+panelW/2,py+46,statsStr,{fontSize:'12px',fontFamily:'monospace',color:'#5f7d92'})
             .setOrigin(0.5).setScrollFactor(0).setDepth(27));
-        const dv=tr(this.add.graphics().setScrollFactor(0).setDepth(27));
-        dv.lineStyle(1,0x1a2a3a,1); dv.lineBetween(px+14,py+62,px+panelW-14,py+62);
+        tr(UIKit.nineImage(this,null,'rule',px+14,py+61,panelW-28,2,0x2a3e52).setScrollFactor(0).setDepth(27));
 
         const tAX=px+14,tAW=panelW-28,tAY=py+74,tAH=panelH-172;
         const tree=this._getUpgradeTree(tower.type);
@@ -10921,9 +10089,7 @@ class TowerDefenseScene extends Phaser.Scene {
                 const step=nodeH+vGap;
 
                 // Column header — branch name (first node's name) on a tinted bar.
-                const hdr=nt(this.add.graphics().setScrollFactor(0).setDepth(28));
-                hdr.fillStyle(pc,0.16); hdr.fillRoundedRect(colX,tAY,colW,headH,5);
-                hdr.lineStyle(1.5,pc,0.5); hdr.strokeRoundedRect(colX,tAY,colW,headH,5);
+                nt(this._tdNine('pill','pill_a',colX,tAY,colW,headH,pc,28));
                 nt(this.add.text(cx,tAY+headH/2,`${['I','II','III','IV'][pi]||pi+1}  ·  ${path.label||this._branchName(path)}`,
                     {fontSize:'12px',fontFamily:'monospace',color:pcHex,fontStyle:'bold'})
                     .setOrigin(0.5).setScrollFactor(0).setDepth(29));
@@ -10953,33 +10119,23 @@ class TowerDefenseScene extends Phaser.Scene {
                         if(pp>0){ cl.fillStyle(pc,0.7); cl.fillTriangle(cx-4,ny-3,cx+4,ny-3,cx,ny+2); }
                     }
 
-                    const ng=nt(this.add.graphics().setScrollFactor(0).setDepth(28));
-                    const drawNg=(hov)=>{
-                        ng.clear();
-                        const fill=maxed?0x0a2010:isExcluded?0x1a0808:hov?0x123049:unlocked?0x0d1a26:0x080c10;
-                        const border=maxed?0x44ff88:isExcluded?0x441111:hov&&available?pc:unlocked?0x2a4058:0x141c24;
-                        ng.fillStyle(fill,0.98); ng.fillRoundedRect(colX,ny,colW,nodeH,6);
-                        ng.lineStyle(maxed||(hov&&available)?2.5:1.5,border,maxed?0.9:unlocked?0.65:0.3);
-                        ng.strokeRoundedRect(colX,ny,colW,nodeH,6);
-                        // status pip top-left
-                        ng.fillStyle(maxed?0x44ff88:isExcluded?0x662222:unlocked?pc:0x223040,1);
-                        ng.fillCircle(colX+11,ny+11,4);
-                        // tier pips bottom
-                        if(node.tiers>1) for(let t=0;t<node.tiers;t++){
-                            ng.fillStyle(t<purchased?pc:0x2a4058,1);
-                            ng.fillCircle(colX+12+t*(colW-24)/(node.tiers-1),ny+nodeH-9,3.5);
-                        }
-                    };
+                    // the node: a ui_kit card rimmed by its state, a status pip top left, tier pips along the bottom (td_ui pip)
+                    const ng=nt(this._tdNine('card','card_a',colX,ny,colW,nodeH,0x2a4058,28).setAlpha(unlocked||maxed?1:0.55));
+                    const drawNg=(hov)=>this._tdNineSet(ng,'card','card_a',colX,ny,colW,nodeH,maxed?0x44ff88:isExcluded?0x663333:hov&&available?pc:unlocked?0x3a5878:0x1e2a36);
                     drawNg(false);
+                    nt(this.add.image(colX+11,ny+11,'td_ui','pip').setTint(maxed?0x44ff88:isExcluded?0x662222:unlocked?pc:0x223040).setScrollFactor(0).setDepth(28.5));
+                    if(node.tiers>1) for(let t=0;t<node.tiers;t++)
+                        nt(this.add.image(Math.round(colX+12+t*(colW-24)/(node.tiers-1)),ny+nodeH-9,'td_ui','pip').setTint(t<purchased?pc:0x2a4058).setScrollFactor(0).setDepth(28.5));
 
                     const pad=9;
                     const nameTxt=nt(this.add.text(cx,ny+pad,node.name,
                         {fontSize:'14px',fontFamily:'monospace',color:maxed?'#66ffaa':isExcluded?'#664444':unlocked?'#e6eef8':'#46586c',
                          fontStyle:'bold',wordWrap:{width:colW-18},align:'center'}).setOrigin(0.5,0).setScrollFactor(0).setDepth(29));
-                    const cs=maxed?'✓ MAX':isExcluded?'✕ EXCL':unlocked?`${node.costFn(purchased)} ⚙`:'LOCKED';
+                    const cs=maxed?'✓ MAX':isExcluded?'✕ EXCL':unlocked?`${node.costFn(purchased)}`:'LOCKED';
                     const cc=maxed?'#66ffaa':isExcluded?'#ff5555':canAfford&&unlocked?'#ffdd44':'#6a5033';
-                    nt(this.add.text(cx,ny+nodeH-pad-2,cs,{fontSize:'13px',fontFamily:'monospace',color:cc,fontStyle:'bold'})
+                    const csT=nt(this.add.text(cx,ny+nodeH-pad-2,cs,{fontSize:'13px',fontFamily:'monospace',color:cc,fontStyle:'bold'})
                         .setOrigin(0.5,1).setScrollFactor(0).setDepth(29));
+                    if(unlocked&&!maxed&&!isExcluded) this._iconBy(csT,nt(this._tdIcon('⚙',0,0,29).setAlpha(canAfford?1:0.5)),true,4);
                     if(node.desc){
                         // Center the description in the gap between the name and the cost line.
                         const gapTop=ny+pad+nameTxt.height+4;
@@ -11013,34 +10169,33 @@ class TowerDefenseScene extends Phaser.Scene {
         rebuild();
 
         const fY=py+panelH-34;
-        const fd=tr(this.add.graphics().setScrollFactor(0).setDepth(27));
+        // a plank button (ui_kit btn) under a hit rectangle, its rim in col, an icon before its words
+        const plank=(x,y,w,h,col,label,st,icon)=>{
+            tr(this._tdNine('btn','btn_a',x-w/2,y-h/2,w,h,col,27));
+            const t=tr(this.add.text(x,y,label,st).setOrigin(0.5).setScrollFactor(0).setDepth(28));
+            if(icon) this._iconBy(t,tr(this._tdIcon(icon,0,0,28)),false,5);
+            return [tr(this.add.rectangle(x,y,w,h,0x000000,0.001).setScrollFactor(0).setDepth(27.5).setInteractive()),t];
+        };
         // Cannon fixed aim — dedicated button
         if(tower.type==='cannon'){
             const isFixed=tower._cannonFixedAng!==undefined;
             // Set Aim button
-            const aimBg=tr(this.add.rectangle(px+panelW/2-(isFixed?70:0),fY-44,isFixed?128:180,30,0x0d1a26).setScrollFactor(0).setDepth(27).setInteractive());
-            aimBg.setStrokeStyle(2,isFixed?0xff8844:0x334455,1);
-            tr(this.add.text(px+panelW/2-(isFixed?70:0),fY-44,isFixed?`🎯 ${Math.round(tower._cannonFixedAng*(180/Math.PI))}°`:'🎯 Set Aim Direction',
-                {fontSize:'13px',fontFamily:'monospace',color:isFixed?'#ff8844':'#aabbcc',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(28));
+            const [aimBg]=plank(px+panelW/2-(isFixed?70:0),fY-44,isFixed?128:180,30,isFixed?0xff8844:0x334455,isFixed?`${Math.round(tower._cannonFixedAng*(180/Math.PI))}°`:'Set Aim Direction',
+                {fontSize:'13px',fontFamily:'monospace',color:isFixed?'#ff8844':'#aabbcc',fontStyle:'bold'},'🎯');
             aimBg.on('pointerdown',p=>{ p.event.stopPropagation(); this._closeUpgradeMenu(); this._openCannonAimPicker(tower); });
             // Clear button if aimed
             if(isFixed){
-                const clrBg=tr(this.add.rectangle(px+panelW/2+80,fY-44,64,30,0x1a0a0a).setScrollFactor(0).setDepth(27).setInteractive());
-                clrBg.setStrokeStyle(2,0x442222,1);
-                tr(this.add.text(px+panelW/2+80,fY-44,'✕ Clear',{fontSize:'12px',fontFamily:'monospace',color:'#884444'}).setOrigin(0.5).setScrollFactor(0).setDepth(28));
+                const [clrBg]=plank(px+panelW/2+80,fY-44,64,30,0x442222,'✕ Clear',{fontSize:'12px',fontFamily:'monospace',color:'#884444'});
                 clrBg.on('pointerdown',p=>{ p.event.stopPropagation(); tower._cannonFixedAng=undefined; tower._cannonFixedDist=undefined; tower._mgAimGfx?.clear(); this._closeUpgradeMenu(); this._openUpgradeMenu(tower); });
             }
         }
         // Magnetizer mode toggle
         if(tower.type==='magnetizer'){
-            const modes=[['gravity','⚫ Gravity'],['wave','🌊 Wave'],['aura','❄ Aura']];
-            modes.forEach(([mode,label],i)=>{
+            const modes=[['gravity','Gravity','⚫'],['wave','Wave','🌊'],['aura','Aura','❄']];
+            modes.forEach(([mode,label,icon],i)=>{
                 const active=(tower._magMode||'gravity')===mode;
                 const mx=px+panelW/2-120+i*120;
-                const mBg=tr(this.add.rectangle(mx,fY-56,110,30,active?0x0a2a1a:0x0d1a26).setScrollFactor(0).setDepth(27).setInteractive());
-                mBg.setStrokeStyle(2,active?0x44ffaa:0x334455,1);
-                const mTxt=tr(this.add.text(mx,fY-56,label,{fontSize:'13px',fontFamily:'monospace',color:active?'#44ffaa':'#668899',fontStyle:'bold'})
-                    .setOrigin(0.5).setScrollFactor(0).setDepth(28));
+                const [mBg]=plank(mx,fY-56,110,30,active?0x44ffaa:0x334455,label,{fontSize:'13px',fontFamily:'monospace',color:active?'#44ffaa':'#668899',fontStyle:'bold'},icon);
                 mBg.on('pointerdown',p=>{
                     p.event.stopPropagation();
                     tower._magMode=mode;
@@ -11059,17 +10214,15 @@ class TowerDefenseScene extends Phaser.Scene {
             }
         }
 
-        fd.lineStyle(1,0x1a2a3a,1); fd.lineBetween(px+14,fY-20,px+panelW-14,fY-20);
+        tr(UIKit.nineImage(this,null,'rule',px+14,fY-21,panelW-28,2,0x2a3e52).setScrollFactor(0).setDepth(27));
         const _hpFrac=(tower.maxHp>0)?Math.max(0,Math.min(1,tower.hp/tower.maxHp)):1;
         const sa=Math.floor((tower.paidCost||def.cost)*(0.2+0.4*_hpFrac));
         // Sell button (left)
-        const sBg=tr(this.add.rectangle(px+panelW/2-72,fY,132,38,0x0d1a26).setScrollFactor(0).setDepth(27).setInteractive());
-        sBg.setStrokeStyle(2,0x331111,1);
-        const sTxt=tr(this.add.text(px+panelW/2-72,fY,`Sell +${sa}⚙`,
-            {fontSize:'15px',fontFamily:'monospace',color:'#ff6644',fontStyle:'bold',stroke:'#000',strokeThickness:2})
-            .setOrigin(0.5).setScrollFactor(0).setDepth(28));
-        sBg.on('pointerover',()=>{sBg.setFillStyle(0x221010);sTxt.setColor('#ff9977');});
-        sBg.on('pointerout', ()=>{sBg.setFillStyle(0x0d1a26);sTxt.setColor('#ff6644');});
+        const [sBg,sTxt]=plank(px+panelW/2-72,fY,132,38,0x663322,`Sell +${sa}`,
+            {fontSize:'15px',fontFamily:'monospace',color:'#ff6644',fontStyle:'bold',stroke:'#000',strokeThickness:2});
+        this._iconBy(sTxt,tr(this._tdIcon('⚙',0,0,28)),true,3);
+        sBg.on('pointerover',()=>sTxt.setColor('#ff9977'));
+        sBg.on('pointerout', ()=>sTxt.setColor('#ff6644'));
         sBg.on('pointerdown',p=>{p.event.stopPropagation();this._sellTower(tower);this._closeUpgradeMenu();});
         // Duplicate button (right) — costs the original build price
         // Dupe cost = placement cost + total upgrade cost spent
@@ -11087,14 +10240,12 @@ class TowerDefenseScene extends Phaser.Scene {
         }
         const dupCost=dupBaseCost+upgradeCostTotal;
         const canDup=this.scraps>=dupCost;
-        const dBg=tr(this.add.rectangle(px+panelW/2+72,fY,120,38,canDup?0x0d1a1a:0x111111).setScrollFactor(0).setDepth(27).setInteractive());
-        dBg.setStrokeStyle(2,canDup?0x113311:0x222222,1);
-        const dTxt=tr(this.add.text(px+panelW/2+72,fY,`Dupe ${dupCost}⚙`,
-            {fontSize:'15px',fontFamily:'monospace',color:canDup?'#44ffaa':'#446655',fontStyle:'bold',stroke:'#000',strokeThickness:2})
-            .setOrigin(0.5).setScrollFactor(0).setDepth(28));
+        const [dBg,dTxt]=plank(px+panelW/2+72,fY,120,38,canDup?0x226633:0x333333,`Dupe ${dupCost}`,
+            {fontSize:'15px',fontFamily:'monospace',color:canDup?'#44ffaa':'#446655',fontStyle:'bold',stroke:'#000',strokeThickness:2});
+        this._iconBy(dTxt,tr(this._tdIcon('⚙',0,0,28).setAlpha(canDup?1:0.5)),true,3);
         if(canDup){
-            dBg.on('pointerover',()=>{dBg.setFillStyle(0x102a1a);dTxt.setColor('#88ffcc');});
-            dBg.on('pointerout', ()=>{dBg.setFillStyle(0x0d1a1a);dTxt.setColor('#44ffaa');});
+            dBg.on('pointerover',()=>dTxt.setColor('#88ffcc'));
+            dBg.on('pointerout', ()=>dTxt.setColor('#44ffaa'));
             dBg.on('pointerdown',p=>{
                 p.event.stopPropagation();
                 this._closeUpgradeMenu();
@@ -11472,15 +10623,14 @@ class TowerDefenseScene extends Phaser.Scene {
         if(total<=0)return;
         // Remove old dot gfx if any
         tower._dotGfx?.destroy();
-        const g=this.add.graphics().setDepth(1.65);
+        const g=this.add.container(0,0).setDepth(1.65);
         tower._dotGfx=g;
-        const def=this._towerDefs()[tower.type];
         const TS=this.TILE_SIZE,px=tower.tileX*TS,py=tower.tileY*TS;
-        // Up to 6 gold dots across bottom of tile
+        // Up to 6 gold studs (td_towers 'stud') across the bottom of the tile
         const max=Math.min(total,6);
         for(let i=0;i<max;i++){
-            const dx=px+4+(i*(TS-8)/(max>1?max-1:1));
-            g.fillStyle(0xffdd44,0.9); g.fillCircle(dx,py+TS-4,2.5);
+            const dx=Math.round(px+4+(i*(TS-8)/(max>1?max-1:1)));
+            g.add(this.add.image(dx-2,py+TS-6,'td_towers','stud').setOrigin(0));
         }
         // Tint body slightly based on path
         if(tower._upgrades){
@@ -11510,19 +10660,21 @@ class TowerDefenseScene extends Phaser.Scene {
         hudBg.lineStyle(1,0xc9a45a,0.35);hudBg.lineBetween(0,38,W,38);
         const s={fontSize:'14px',fontFamily:UIKit.FONT.title,fontStyle:'bold',color:'#d8e6ff',stroke:'#05060a',strokeThickness:3};
         const slot=[[14,0],[120,0],[215,0],[305,0],[460,0],[610,0],[700,0]],at=k=>slot[k][0];
-        this._hudWave=this.add.text(at(0),11,'WAVE 0',{...s,color:'#f6d58a'}).setScrollFactor(0).setDepth(11);this._hudScrap=this.add.text(at(1),11,'⚙ 50',{...s,color:'#ffdd88'}).setScrollFactor(0).setDepth(11);
-        this._hudGlorp=this.add.text(at(2),11,'✦ 20',{...s,color:'#7dffc8'}).setScrollFactor(0).setDepth(11);
-        this._hudBase=this.add.text(at(3),11,'🏛 500',s).setScrollFactor(0).setDepth(11);this._hudPlayer=this.add.text(at(4),11,'❤ 100',{...s,color:'#ffb0bc'}).setScrollFactor(0).setDepth(11);
-        this._hudEnemy=this.add.text(at(5),11,'👾 0',s).setScrollFactor(0).setDepth(11);
-        this._hudKills=this.add.text(at(6),11,'☠ 0',s).setScrollFactor(0).setDepth(11);
+        // each stat after its icon (td_ui / cfx_bits glorp / ui_hudbits heart)
+        const stat=(k,icon,str,st=s)=>{ const t=this.add.text(at(k),11,str,st).setScrollFactor(0).setDepth(11); this._iconBy(t,this._tdIcon(icon,0,0,11),false,5); return t; };
+        this._hudWave=this.add.text(at(0),11,'WAVE 0',{...s,color:'#f6d58a'}).setScrollFactor(0).setDepth(11);this._hudScrap=stat(1,'⚙','50',{...s,color:'#ffdd88'});
+        this._hudGlorp=stat(2,'✦','20',{...s,color:'#7dffc8'});
+        this._hudBase=stat(3,'🏛','500');this._hudPlayer=stat(4,'❤','100',{...s,color:'#ffb0bc'});
+        this._hudEnemy=stat(5,'👾','0');
+        this._hudKills=stat(6,'☠','0');
         this.add.text(W-14,12,`[${'Q'}] BUILD`,{fontSize:'12px',fontFamily:UIKit.FONT.title,fontStyle:'bold',color:'#8a93a6'}).setOrigin(1,0).setScrollFactor(0).setDepth(11);
     }
     _updateHUD(){
-        this._hudWave.setText(`WAVE ${this.wave}`);this._hudScrap.setText(`⚙ ${this.scraps}`);
-        if(this._hudGlorp) this._hudGlorp.setText(`✦ ${this.glorps||0}`);
-        this._hudBase.setText(`🏛 ${Math.ceil(this.baseHP)}/${this.baseMaxHP}`);this._hudPlayer.setText(`❤ ${Math.ceil(this.playerHP)}/${this.playerMaxHP}`);
-        this._hudEnemy.setText(`👾 ${this.enemies.filter(e=>!e._isTotem&&!e._isDummy).length}`);
-        if(this._hudKills) this._hudKills.setText(`☠ ${this._killCount||0}`);
+        this._hudWave.setText(`WAVE ${this.wave}`);this._hudScrap.setText(`${this.scraps}`);
+        if(this._hudGlorp) this._hudGlorp.setText(`${this.glorps||0}`);
+        this._hudBase.setText(`${Math.ceil(this.baseHP)}/${this.baseMaxHP}`);this._hudPlayer.setText(`${Math.ceil(this.playerHP)}/${this.playerMaxHP}`);
+        this._hudEnemy.setText(`${this.enemies.filter(e=>!e._isTotem&&!e._isDummy).length}`);
+        if(this._hudKills) this._hudKills.setText(`${this._killCount||0}`);
         if(this._baseHpFill){const pct=this.baseHP/this.baseMaxHP;this._baseHpFill.width=Math.max(0,80*pct);this._baseHpFill.fillColor=pct>0.6?0x44aaff:pct>0.3?0xffdd44:0xff4444;}
     }
 

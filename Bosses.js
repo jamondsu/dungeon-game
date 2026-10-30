@@ -12,8 +12,10 @@
 //               as the wind-up runs out and flash when it lands
 //   shots       pixel-art bolts, shards, darts and orbs that point the way they fly, each with a
 //               wake, a light and an impact in its own colour
-//   bosses      the Voltslime crackles, the Void Sovereign is a slime of night sky with a ring and
-//               a floating crown, the Fracture Core turns smoothly, the Queen glows red
+//   bosses      each on its own sheet typed by hand (assets/art boss_volt, boss_void, boss_queen,
+//               boss_tide, boss_geode): what it's doing picks its frame (a wind-up, a cast, a wince,
+//               its death); the Voltslime crackles, the Sovereign's ring and crown float round it,
+//               the Geode's plates, cracks and rifts are tiles of its own
 //   rifts       void portals in the floor (the snipers, the maw) open, swirl, idle and close
 // The pixel art is in BossFX.art(); colours and sizes worth tuning in _bfxCfg().
 // ═══════════════════════════════════════════════════════════════════════════
@@ -232,14 +234,176 @@ class BossFX {
             homing: { frame: 'homing', color: 0xb070ff, wake: 'void', burst: 'cosmic',    light: 46 },
             ripple: { frame: 'ripple', color: 0xb45cff, wake: 'void', burst: 'cosmic',    light: 24 },
             shell:  { frame: 'shell',  color: 0xff7a1a, wake: 'bolt', burst: 'fire',      light: 30 },
+            jet:    { frame: 'volt',   color: 0x6ad8ff, wake: 'volt', burst: null,        light: 22, turn: true },   // the Torpedo Diver's water (its own typed slug and splash)
+            haze:   { frame: 'ember',  color: 0x5e5276, wake: null,   burst: null,        light: 0 },   // a Blinder's haze (it trails and thins its own way: Blinder.js); no light
         });
     }
     static kindOf(p) {
         return p._bfxKind || (p.isRopeTendril ? 'vine' : p._isShotgunPellet ? 'shard' : p.isRicochetArrow ? 'dart' : 'bolt');
     }
 
+    // ── THE BOSSES' OWN SHEETS (assets/art boss_*, typed by hand) ─────────────
+    // Their animations, made the first time; false while the sheets aren't there (then the old drawing stands in).
+    static VOLT_K = 2;   // the Voltslime's art is drawn at twice its pixels
+    static anims(scene) {
+        if (!scene?.textures?.exists('boss_volt')) return false;
+        const A = scene.anims;
+        if (A.exists('bv_spark')) return true;
+        const mk = (key, tex, names, frameRate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: names.map(frame => ({ key: tex, frame })), frameRate, repeat }); };
+        const n = (b, k) => Array.from({ length: k }, (_, i) => b + i);
+        mk('bv_spark', 'boss_volt', n('spark_', 4), 18, -1);
+        mk('bv_zap', 'boss_volt', n('zap_', 4), 18, -1);
+        mk('bv_orb', 'boss_volt', n('orb_', 4), 12, -1);
+        mk('bv_cell', 'boss_volt', [...n('cell_', 4)], 13);
+        mk('bv_die', 'boss_volt', ['die_0', 'die_0', 'die_1', 'die_1', 'die_2'], 6);
+        mk('bv_crown', 'boss_volt', ['crown', 'crown_1', 'crown_2', 'crown_3'], 14, -1);
+        if (scene.textures.exists('boss_tide')) mk('bt_drop', 'boss_tide', ['drop_0', 'drop_1'], 8, -1);
+        if (scene.textures.exists('boss_queen')) mk('bq_crown', 'boss_queen', ['crown', 'crown_1', 'crown_2', 'crown_3'], 14, -1);
+        if (scene.textures.exists('boss_void')) { mk('bvd_frag', 'boss_void', n('frag_', 4), 9, -1); mk('bvd_ripple', 'boss_void', ['ripple_0', 'ripple_1'], 10, -1); }
+        return true;
+    }
+    // The nearest of the eight ways to angle a: the frame typed for it (east, south-east, south, north-east) and whether it's flipped both ways
+    static way8(a) { return [['e', 0], ['se', 0], ['s', 0], ['ne', 1], ['e', 1], ['se', 1], ['s', 1], ['ne', 0]][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
+    // Every boss on its own sheet shows the frame for what it's doing (after each update)
+    static frames(S) {
+        const now = S.time.now, vb = S.voltslimeBoss, vs = S.voidSovereignBoss;
+        const set = (s, f) => { if (s.frame.name !== f) s.setFrame(f); };
+        if (vb?._bfxArt && vb.body?.active && vb.active) set(vb.body, BossFX.voltFrame(S, vb, now));
+        if (vs?._bfxArt && vs.body?.active && vs.active && !vs._bfxDying) set(vs.body, BossFX.voidFrame(vs, now));
+        for (const q of S.portals || []) if (q._bfxArt && q.active && q.sprite?.active && !q._bfxDying) { const f = BossFX.queenFrame(q, now); if (q.sprite.frame.name !== f) q.sprite.setFrame(f); }
+    }
+    // Its roar as its entrance begins (HUD._bossIntro): the boss of that bar casts
+    static roar(S, key) {
+        const b = key === 'volt' ? S.voltslimeBoss : key === 'sovereign' ? S.voidSovereignBoss : key === 'tide' ? (S.portals || []).find(p => p.tide) : /^queen/.test(key) ? S.portals?.[+key.slice(5)] : null;
+        if (b) BossFX.pose(b, b === S.voltslimeBoss ? 'cast_0' : 'cast', 1400);
+    }
+    // A boss holds a pose (a frame of its sheet) for ms; soft: only if it isn't already in one
+    static pose(b, frame, ms, soft = false) {
+        const F = b?._bfx, now = (b?.body || b?.sprite)?.scene?.time?.now;
+        if (!F || !b._bfxArt || now == null) return;
+        F.poses = (F.poses || []).filter(p => now < p[1]);
+        if (soft && F.poses.length) return;
+        F.poses = [[frame, now + ms]];
+    }
+    // ── THE GEODE (any scene that has one) ───────────────────────────────────
+    // Its body: the amber core (boss_geode core_<whole, cracked, breaking>_<turn>), at twice its pixels
+    static coreBody(scene) {
+        return scene?.textures?.get('boss_geode')?.has('core_0_0') ? scene.add.image(0, 0, 'boss_geode', 'core_0_0').setScale(2) : null;
+    }
+    // Its plates, its fault lines and its rifts as typed sprites (boss_geode), kept in step with the fight every frame
+    // (LevelManager._geodeDraw hands them here). False: no art, draw them the old way.
+    static geodeDraw(S, core, time) {
+        if (!S.textures.exists('boss_geode')) return false;
+        const C = S._geodeCfg(), T = S.TILE_SIZE, c = core.container, G = core._bfxG ||= { rift: new Map(), faults: new Map(), plates: [] };
+        core.fxG?.clear(); core.plateG?.clear();
+        const img = (x, y, f, d) => { const o = S.add.image(x, y, 'boss_geode', f).setScale(2).setDepth(d); S._vfxSort?.(o); return o; };
+        // the rifts: a molten gash, tile by tile, glowing as it breathes
+        const glow = Math.floor(time / 260) % 2 ? 'magmb_' : 'magma_';
+        for (const line of core.riftLines) {
+            const way = line.length > 1 && Math.abs(line[1][0] - line[0][0]) >= Math.abs(line[1][1] - line[0][1]) ? 'h' : 'v';   // (along the room or down it)
+            for (const [x, y] of line) {
+                const k = x + ',' + y;
+                let o = G.rift.get(k);
+                if (!o) G.rift.set(k, o = img(x * T + T / 2, y * T + T / 2, 'magma_h0', 0.36));
+                o.setFrame(glow + way + ((x * 7 + y * 3) % 3));
+            }
+        }
+        // the faults: a crack across each tile, lit step by step as it comes; flames bursting up along it as it erupts
+        for (const [f, list] of G.faults) if (!core.faults.includes(f)) { list.forEach(o => o.destroy()); G.faults.delete(f); }
+        for (const f of core.faults) {
+            let list = G.faults.get(f);
+            if (!list) {
+                const [a, b] = [f.tiles[0], f.tiles[1] || f.tiles[0]], dx = b[0] - a[0], dy = b[1] - a[1];
+                const o = !dy ? 'h' : !dx ? 'v' : dx * dy > 0 ? 'd' : 'u';
+                list = f.tiles.map(([x, y]) => img(x * T + T / 2, y * T + T / 2, `crk_${o}_0`, 0.37));
+                list.o = o;
+                G.faults.set(f, list);
+            }
+            const k = Math.min(1, (time - f.at) / C.FAULT_TELE), on = time - f.at >= C.FAULT_TELE;
+            const step = on ? 3 : Math.min(2, Math.floor(k * 3));
+            for (const o of list) o.setFrame(`crk_${list.o}_${step}`);
+            if (on && !f._bfxFire) {
+                f._bfxFire = true;
+                const F = typeof Scythe !== 'undefined' && S.textures.exists('ember_scythe') ? Scythe.fire(S) : null;
+                if (F) for (const [x, y] of f.tiles) { for (let i = 0; i < 3; i++) F.flame.emitParticleAt(x * T + T / 2 + (Math.random() - 0.5) * 12, y * T + T / 2 + (Math.random() - 0.5) * 8, 1); if (Math.random() < 0.4) F.ember.emitParticleAt(x * T + T / 2, y * T + T / 2, 1); }
+            }
+        }
+        // the plates, round it on its ellipse, each the way it faces (never turned), warming orange, violet when Hexed
+        const show = c.visible && core.state !== 'vuln' && core.state !== 'dive', cs = Math.abs(c.scaleX || 1);
+        core.plates.forEach((p, i) => {
+            let o = G.plates[i];
+            if (!o) o = G.plates[i] = img(0, 0, 'plate_e', 3.05);
+            if (p.broken || !show) { o.setVisible(false); return; }
+            const [w, fl] = BossFX.way8(p.a), cracked = p.hp < p.max * C.CRACKED_AT, sn = Math.sin(p.a);
+            o.setVisible(true).setFrame(`plate_${w}${cracked ? '_c' : ''}`).setFlip(!!fl, !!fl).setScale(2 * cs).setAlpha(c.alpha)
+             .setPosition(Math.round(c.x + Math.cos(p.a) * 29 * cs), Math.round(c.y + sn * 22.5 * cs)).setDepth(3.05);   // (laid over the core's rim, as its shell)
+            const heat = p.heat / C.HEAT_MAX;
+            if (p.hexUntil > time) o.setTint(0xc89aff);
+            else if (heat > 0) o.setTint(MenuArt.mix(0xffffff, p.heat >= C.HEAT_SHOCK ? 0xff7a2a : 0xffb070, 0.35 + 0.5 * heat));
+            else o.clearTint();
+        });
+        for (let i = core.plates.length; i < G.plates.length; i++) G.plates[i]?.setVisible(false);
+        return true;
+    }
+    // A burst of void reaching exactly R: a ring of its dust thrown out to R, a pop of light, glow (CosmicSystem's typed motes)
+    static voidBurst(scene, x, y, R) {
+        if (typeof CosmicSystem === 'undefined' || !scene.textures?.exists('fx_cosmic')) return false;
+        const E = CosmicSystem.fx(scene);
+        CosmicSystem.ring(E.dust, x, y, R, 300, Math.round(10 + R / 4), 6);
+        CosmicSystem.ring(E.pink, x, y, R * 0.8, 340, Math.round(6 + R / 8), 4);
+        CosmicSystem.puff(E.glow, x, y, 6, 0, Math.PI, 10, 40);
+        const p = scene.add.sprite(x, y, 'fx_cosmic', 'pop_0').setScale(Math.min(3, 1.2 + R / 60)).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6).play('csw_pop');
+        scene._vfxSort?.(p);
+        p.once('animationcomplete', () => p.destroy());
+        scene._vfxFlash?.(x, y, R * 1.3, 0xb45cff, 280, 0.8);
+        return true;
+    }
+    // Something typed in four quarter turns, tumbling (turns: how far round): its frame for that, never the art turned.
+    // Anything else (no such frames) is turned the old way.
+    static ROCK = ['rock_0', 'rock_1', 'rock_2', 'rock_3'];
+    static CROWN = ['crown', 'crown_1', 'crown_2', 'crown_3'];
+    static tumble(o, turns, frames) {
+        if (!o?.active) return;
+        if (o.texture?.has?.(frames[0])) o.setFrame(frames[((Math.floor(turns * 4) % 4) + 4) % 4]);
+        else o.setAngle(turns * 360);
+    }
+    // The Voltslime's discharge to radius R: bolts out every way, flares where they ground, sparks, light
+    static voltBlast(scene, x, y, R) {
+        if (!scene?.textures?.exists('fx_storm') || typeof WeaponSystem === 'undefined') return false;
+        for (let i = 0; i < 10; i++) {
+            const a = i / 10 * Math.PI * 2 + Math.random() * 0.3, d = R * (0.7 + Math.random() * 0.3), x1 = x + Math.cos(a) * d, y1 = y + Math.sin(a) * d * 0.7;
+            WeaponSystem.bolt(scene, x, y - 8, x1, y1, i % 3 ? 'c' : 'y', { life: 260, br: 1, lag: i * 12, d: 4.3 });
+            if (i % 2) WeaponSystem.zapFlare(scene, x1, y1, 'c', 1.2, 4.3);
+        }
+        const spk = WeaponSystem.zapSparks(scene, 'c');
+        for (let i = 0; i < 24; i++) spk.emitParticleAt(x + (Math.random() - 0.5) * 50, y - Math.random() * 20, 1);
+        scene._vfxFlash?.(x, y, R * 1.1, 0x9ff6ff, 300, 0.5);
+        return true;
+    }
+    // A storm cell opening on the floor where the Voltslime's brood comes up
+    static voltCell(scene, x, y) {
+        if (!BossFX.anims(scene)) return false;
+        const c = scene.add.sprite(x, y + 4, 'boss_volt', 'cell_0').setScale(1.5).setDepth(0.99).play('bv_cell');
+        scene._vfxSort?.(c);
+        c.once('animationcomplete', () => c.destroy());
+        WeaponSystem.bolt(scene, x, y - 40, x, y, 'c', { life: 180, br: 1, d: 3.1 });
+        return true;
+    }
+
     // ── SHOTS (any scene) ────────────────────────────────────────────────────
     static shot(scene, kind, x, y, angle = 0, depth = 2.6) {
+        // the Sovereign's own (boss_void): the maw's pellet drawn the way it flies, snapped to the eight (whatever turns it
+        // later, a bounce, picks its frame instead: its rotation is its heading, never the art turned); the ripple spun by frames
+        if ((kind === 'maw' || kind === 'ripple') && BossFX.anims(scene) && scene.textures.exists('boss_void')) {
+            const img = kind === 'ripple' ? scene.add.sprite(x, y, 'boss_void', 'ripple_0').play('bvd_ripple') : scene.add.image(x, y, 'boss_void', 'maw_e');
+            img.setScale(2).setDepth(depth);
+            if (kind === 'maw') {
+                Object.defineProperty(img, 'rotation', { configurable: true, get: () => 0, set: a => { const [f, fl] = BossFX.way8(a); img.setFrame('maw_' + f).setFlip(!!fl, !!fl); } });
+                img.rotation = angle;
+            }
+            scene._vfxSort?.(img);
+            return img;
+        }
         BossFX.sheet(scene);
         const K = BossFX.kinds()[kind] || BossFX.kinds().bolt;
         const img = scene.add.image(x, y, 'bfx_shots', K.frame).setDepth(depth).setRotation(angle);
@@ -264,6 +428,7 @@ class BossFX {
     // A shot leaving: a flash at the muzzle and a spray of sparks the way it goes.
     static muzzle(scene, kind, x, y, angle = 0, big = false) {
         const K = BossFX.kinds()[kind] || BossFX.kinds().bolt;
+        if (kind === 'maw') BossFX.pose(scene.voidSovereignBoss, 'cast', 380);   // (the Sovereign, its maw open as it fires)
         if (scene.textures?.exists('vfx_glow')) {
             const f = scene.add.image(x, y, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(K.color)
                 .setDepth(3.1).setScale(big ? 0.45 : 0.26);
@@ -293,6 +458,20 @@ class BossFX {
         const B = K.burst && scene._vfxBursts?.[K.burst];
         if (B) B.explode(14, x, y);
         scene._vfxFlash?.(x, y, R * 1.6, K.color, 320, 1);
+    }
+
+    // The Geode's shell blast (it rises, its heart is laid bare, it hops): blast()'s light and sparks, its ring typed
+    // (fx_geode_ring: four frames opening to 18, 36, 48 and 60 px; a smaller blast stops at the frame that fits it)
+    static geodeBlast(scene, x, y, R) {
+        if (!scene.textures?.exists('fx_geode_ring')) return BossFX.blast(scene, x, y, R, 'shell');
+        const last = R > 48 ? 3 : 2, ring = scene.add.sprite(x, y, 'fx_geode_ring', '0').setBlendMode(Phaser.BlendModes.ADD).setScale(2).setDepth(3.05);
+        const core = scene.add.image(x, y, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xff7a1a).setDepth(3.04).setScale(R / 64).setAlpha(0.9);
+        scene._vfxSort?.(ring); scene._vfxSort?.(core);
+        for (let f = 1; f <= last; f++) scene.time.delayedCall(f * 40, () => ring.active && ring.setFrame(String(f)));
+        scene.tweens.add({ targets: ring, alpha: 0, delay: 120, duration: 260, onComplete: () => ring.destroy() });
+        scene.tweens.add({ targets: core, alpha: 0, scale: R / 50, duration: 300, ease: 'Quad.easeOut', onComplete: () => core.destroy() });
+        scene._vfxBursts?.fire?.explode(14, x, y);
+        scene._vfxFlash?.(x, y, R * 1.6, 0xff7a1a, 320, 1);
     }
 
     // ── TELEGRAPHS (any scene) ───────────────────────────────────────────────
@@ -495,7 +674,11 @@ class BossFX {
                                               scale: { start: 0.6, end: 0 }, alpha: { start: 0.9, end: 0 } });
             this._bfxMotes.setDepth(3.3);
         }
+        // the bosses' frames, picked after every update (an entrance stands the game still: they still change then)
+        const frames = () => { if (this._bfxOn) BossFX.frames(this); };
+        this.events.on('postupdate', frames);
         this.events.once('shutdown', () => {
+            this.events.off('postupdate', frames);
             this._bfxOn = false; this._bfxRifts = null; this._bfxWake = null; this._bfxMotes = null;
             this._bfxRiftG = this._bfxRootG = this._bfxSingG = null; this._bfxSingList = null; this._bfxCalls = null;
             this._bfxCollapse = null; this._bfxFrags = null;
@@ -533,8 +716,16 @@ class BossFX {
         return img;
     }
     // The Voltslime's own shots (its update moves them; it drew them as circles every frame).
+    // Its own typed sparks (boss_volt), spun by their frames: cyan, the ricochet's magenta, the homing ball violet.
     _bfxVoltShot(kind, x, y) {
         if (!this._bfxOn) return null;
+        if (BossFX.anims(this)) {
+            const a = { volt: 'bv_spark', zap: 'bv_zap', homing: 'bv_orb' }[kind] || 'bv_spark';
+            const sp = this.add.sprite(x, y, 'boss_volt').setDepth(3).setScale(1.5).play(a);
+            sp.anims.setProgress(Math.random());
+            this._vfxSort?.(sp);
+            return sp;
+        }
         const img = BossFX.shot(this, kind, x, y, Math.random() * Math.PI * 2, 3);
         if (kind === 'homing') img.setScale(1.2);
         return img;
@@ -547,7 +738,7 @@ class BossFX {
         for (let i = list.length - 1; i >= 0; i--) {
             const f = list[i];
             if (!f.active) { list.splice(i, 1); continue; }
-            f.rotation += dt * 0.0025;
+            if (!f.anims) f.rotation += dt * 0.0025;   // (a typed one tumbles by its frames)
             if (f._bfxRing?.active) f._bfxRing.setPosition(f.x, f.y);
         }
     }
@@ -568,10 +759,13 @@ class BossFX {
         const vb = this.voltslimeBoss;
         if (vb?.active) {
             const share = Math.min(1, 14 / Math.max(1, vb.projectiles.length));
-            for (const p of vb.projectiles) if (p.g?.active && Math.random() < share) (p.type === 'ricochet' ? W.zap : W.volt).emitParticleAt(p.g.x, p.g.y, 1);
-            for (const p of vb.homingProjectiles) if (p.g?.active) W.void.emitParticleAt(p.g.x + (Math.random() - 0.5) * 8, p.g.y + (Math.random() - 0.5) * 8, 1);
+            // (its own sparks shed the hand-drawn ones; the violet ball and the ripples, the void's typed dust)
+            const spk = this.textures.exists('fx_storm') ? WeaponSystem.zapSparks(this, 'c') : W.volt, E = this.textures.exists('fx_cosmic') ? CosmicSystem.fx(this).fine : W.void;
+            for (const p of vb.projectiles) if (p.g?.active && Math.random() < share * (p.type === 'ricochet' ? 1 : 0.4)) (p.type === 'ricochet' ? W.zap : spk).emitParticleAt(p.g.x, p.g.y, 1);
+            for (const p of vb.homingProjectiles) if (p.g?.active) E.emitParticleAt(p.g.x + (Math.random() - 0.5) * 8, p.g.y + (Math.random() - 0.5) * 8, 1);
         }
-        for (const r of this._voidRipples || []) if (r.gfx?.active && Math.random() < 0.5) W.void.emitParticleAt(r.gfx.x, r.gfx.y, 1);
+        const E2 = this._voidRipples?.length && this.textures.exists('fx_cosmic') ? CosmicSystem.fx(this).fine : W.void;
+        for (const r of this._voidRipples || []) if (r.gfx?.active && Math.random() < 0.5) E2.emitParticleAt(r.gfx.x, r.gfx.y, 1);
     }
 
     // From _vfxLights: the lights the attacks give off. Shots in their own colours (the nearest few),
@@ -630,6 +824,8 @@ class BossFX {
         this._vfxSort?.(t);
         list.push(t);
         this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 170, ease: 'Back.easeOut' });
+        const vs = this.voidSovereignBoss;   // the Sovereign calling its attack: it opens the void in itself as it does
+        if (vs?.active && vs.container && Math.abs(vs.container.x - x) < 4) BossFX.pose(vs, 'cast', 700);
         this.tweens.add({ targets: t, y: y0 - 14, alpha: 0, delay: 1250, duration: 420, ease: 'Quad.easeIn', onComplete: () => t.destroy() });
         return t;
     }
@@ -743,20 +939,28 @@ class BossFX {
         b._bfxFlashAt = now;
         s.setTintFill(0xffffff);
         this.time.delayedCall(60, () => { if (s.active && s.tintFill) s.clearTint(); });
+        BossFX.pose(b, 'hurt', 150, true);   // (its wince, unless it's in the middle of something)
     }
 
     // ── VOLTSLIME ────────────────────────────────────────────────────────────
-    // A slime of electric blue with arcs crawling over it. Its body is anchored at its base, so the
-    // slam's squash presses it into the floor instead of lifting it off.
+    // Its own typed sheet (boss_volt): face, crown and the lightning inside it are in its frames, and what it's doing
+    // picks the frame (a pose it holds a while: the slam's squash, a cast, a wince), else it idles and blinks. Its body
+    // is anchored at its base, so a squash presses it into the floor instead of lifting it off. Bolts crawl over it.
     _bfxVoltDress(b) {
         b._bfx = {};
         const s = b.body, c = b.container;
-        const key = BossFX.body(this, 'volt');
-        if (key && s?.active) {
-            s.setTexture(key, 0).clearTint();
-            if (this.anims.exists('volt_idle')) s.play('volt_idle');
-            const k = Math.abs(s.scaleY || 4.5);
-            s.setY(s.y + (1 - s.originY) * 32 * k).setOrigin(0.5, 1);
+        if (s?.active && BossFX.anims(this)) {
+            s.anims?.stop();
+            s.setTexture('boss_volt', b._asleep ? 'sleep_0' : 'idle_0').clearTint().setScale(BossFX.VOLT_K).setOrigin(0.5, 1).setY(7);
+            b._bfxArt = true;
+        } else {
+            const key = BossFX.body(this, 'volt');
+            if (key && s?.active) {
+                s.setTexture(key, 0).clearTint();
+                if (this.anims.exists('volt_idle')) s.play('volt_idle');
+                const k = Math.abs(s.scaleY || 4.5);
+                s.setY(s.y + (1 - s.originY) * 32 * k).setOrigin(0.5, 1);
+            }
         }
         // the bob, kept so the slam can plant it
         b._bfx.bob = this.tweens.getTweensOf(c).find(t => t.loop !== 0 || t.repeat !== 0) || this.tweens.getTweensOf(c)[0] || null;
@@ -779,11 +983,11 @@ class BossFX {
         return z;
     }
     _bfxVoltTick(b, now, dt) {
-        const F = b._bfx, c = b.container, s = b.body, C = this._bfxCfg();
+        const F = b._bfx, c = b.container, s = b.body, C = this._bfxCfg(), u = s?._cfx;
         this._bfxBossIce(b, 3.4, 9);
-        if (b._asleep) {   // dozing: dim, no arcs, eyes shut, its brood too, Zs drifting up
+        if (b._asleep) {   // dozing: dim, no arcs, its brood asleep too, Zs drifting up
             F.glow?.setAlpha(0.07); b.aura?.clear?.();
-            if (s?._cfx) s._cfx.expr = 'blink';
+            if (!b._bfxArt && u) u.expr = 'blink';
             if (now - (F.zAt || 0) > 650) { F.zAt = now; this._bfxZzz(c.x + 16, c.y - 70, 22); }
             for (const e of b._sleepers || []) {
                 if (!e.sprite?.active) continue;
@@ -795,44 +999,54 @@ class BossFX {
         if (F.glow?.active) F.glow.setAlpha(0.26 + 0.1 * Math.sin(now * 0.011) + (F.slam && now < F.slam.end ? 0.25 : 0));
         if (!b.active || !s?.active) { b.aura?.clear?.(); return; }
         // sparks lifting off it now and then
-        if (this._bfxMotes && Math.random() < dt / 90) {
-            this._bfxMotes.setParticleTint?.(Math.random() < 0.5 ? 0x9ff6ff : 0xfff27a);
-            this._bfxMotes.emitParticleAt(c.x + (Math.random() - 0.5) * 60, c.y - 10 - Math.random() * 24, 1);
-        }
-        const g = b.aura;
-        if (!g?.active || now < (F.arcAt || 0)) return;
+        if (Math.random() < dt / 70) WeaponSystem.zapSparks(this, 'c').emitParticleAt(c.x + (Math.random() - 0.5) * 70, c.y - 14 - Math.random() * 34, 1);
+        if (now < (F.arcAt || 0)) return;
         const slam = F.slam && now < F.slam.end;
         F.arcAt = now + C.ARC_MS * (slam ? 0.6 : 1) + Math.random() * 40;
-        g.clear();
-        // the dome of its body: centre, half width, half height (it squashes for the slam)
-        const kx = Math.abs(s.scaleX) / 4.5, ky = Math.abs(s.scaleY) / 4.5;
-        const ex = c.x, ey = c.y + 7 - 22 * ky, rx = 36 * kx, ry = 22 * ky;
+        b.aura?.clear?.();
+        // the dome of its body (it squashes for the slam): bolts jump across it, one way of the eight at a time
+        const kx = Math.abs(s.scaleX) / BossFX.VOLT_K, ky = Math.abs(s.scaleY) / BossFX.VOLT_K, sq = s.frame.name === 'slam_0' ? 0.75 : 1;
+        const ex = c.x, ey = c.y + 7 - 22 * ky * sq, rx = 36 * kx / sq, ry = 22 * ky * sq;
         const on = a => [ex + Math.cos(a) * rx, ey + Math.sin(a) * ry * (Math.sin(a) < 0 ? 1 : 0.55)];
-        const n = slam ? 4 : 2;
-        for (let i = 0; i < n; i++) {
-            const a0 = -Math.PI * Math.random(), a1 = a0 + (0.6 + Math.random() * 0.9) * (Math.random() < 0.5 ? -1 : 1);
+        const d = (c.depth || 3) + 0.02;
+        for (let i = 0, n = slam ? 3 : 1; i < n; i++) {
+            const a0 = -Math.PI * (0.1 + 0.8 * Math.random()), a1 = a0 + (0.5 + Math.random() * 0.7) * (Math.random() < 0.5 ? -1 : 1);
             const [x0, y0] = on(a0), [x1, y1] = on(a1);
-            BossFX.arc(g, x0, y0, x1, y1, Math.random() < 0.3 ? C.SPARK : C.VOLT, 5, 5, 1.6);
+            WeaponSystem.bolt(this, x0, y0, x1, y1, Math.random() < 0.3 ? 'w' : 'c', { life: 110, thin: true, br: 0, d, glow: false });
         }
         // and now and then one grounds itself on the floor beside it
-        if (Math.random() < (slam ? 0.8 : 0.22)) {
-            const side = Math.random() < 0.5 ? -1 : 1, d = 40 + Math.random() * 24;
+        if (Math.random() < (slam ? 0.8 : 0.2)) {
+            const side = Math.random() < 0.5 ? -1 : 1, dd = 52 + Math.random() * 24;
             const [x0, y0] = on(-Math.PI / 2 + side * (0.9 + Math.random() * 0.6));
-            const x1 = c.x + side * d, y1 = c.y + 4 + (Math.random() - 0.3) * 18;
-            BossFX.arc(g, x0, y0, x1, y1, C.SPARK, 7, 6, 1.4);
-            this._vfxFlash?.(x1, y1, 34, C.SPARK, 120, 0.6);
+            const x1 = c.x + side * dd, y1 = c.y + 4 + (Math.random() - 0.3) * 18;
+            WeaponSystem.bolt(this, x0, y0, x1, y1, 'c', { life: 140, br: 1, d });
+            WeaponSystem.zapFlare(this, x1, y1, 'c', 1.2, d);
+            this._vfxFlash?.(x1, y1, 30, C.SPARK, 120, 0.5);
         }
-        // in the slam's wind-up, arcs run out to the tiles it will hit
+        // in the slam's wind-up, bolts run out to the tiles it will hit
         if (slam && F.slam.tiles?.length) {
             const T = this.TILE_SIZE;
-            for (let i = 0; i < 2; i++) {
-                const [tx, ty] = F.slam.tiles[Math.floor(Math.random() * F.slam.tiles.length)];
-                BossFX.arc(g, ex + (Math.random() - 0.5) * 20, ey + 6, tx * T + T / 2, ty * T + T / 2, C.SPARK, 6, 6, 1.4);
-            }
+            const [tx, ty] = F.slam.tiles[Math.floor(Math.random() * F.slam.tiles.length)];
+            WeaponSystem.bolt(this, ex + (Math.random() - 0.5) * 30, c.y, tx * T + T / 2, ty * T + T / 2, 'y', { life: 120, thin: true, br: 1, d: 0.98 });
         }
     }
+    // The frame it shows now: asleep (and woken rudely), its crown still in the air as it wakes, a pose, or idling
+    static voltFrame(scene, b, now) {
+        const F = b._bfx, u = b.body._cfx;
+        if (b._asleep) return b._rage ? 'rage' : u?.expr === 'wince' ? 'sleep_wince' : Math.floor(scene.game.loop.time / 900) % 2 ? 'sleep_1' : 'sleep_0';
+        if (u && u.set !== 'volt') return 'wake';
+        // a burst of its shots (or its brood called up): a cast, flickering
+        const n = b.projectiles.length + b.homingProjectiles.length;
+        if (n > (F.nShots || 0) || (b.phase === 'spawner' && F.phase !== 'spawner')) BossFX.pose(b, Math.floor(now / 70) % 2 ? 'cast_1' : 'cast_0', b.phase === 'spawner' ? 500 : 240);
+        F.nShots = n; F.phase = b.phase;
+        while (F.poses?.length && now >= F.poses[0][1]) F.poses.shift();
+        if (F.poses?.length) { const p = F.poses[0][0]; return p === 'cast_0' || p === 'cast_1' ? (Math.floor(now / 70) % 2 ? 'cast_1' : 'cast_0') : p; }
+        if (b._isFrozen) return 'idle_0';
+        if (now >= (F.blinkAt ||= now + 2500)) { F.blinkUntil = now + 130; F.blinkAt = now + 2200 + Math.random() * 3000; }
+        return now < (F.blinkUntil || 0) ? 'blink' : 'idle_' + (Math.floor(now / 110) % 3) + (Math.floor(now / 500) % 2 ? 's' : '');   // crackling, and breathing as a slime does
+    }
 
-    // The slam: it plants itself on its own tile (the bob stops; it settles onto the floor) and the
+    // The slam: it plants itself on its own tile (the bob stops; it settles onto the floor), squashes down, and the
     // diamond it will hit (Manhattan 2 from that tile, the hit test's own area) lights up.
     _bfxSlamWarn(b, ms) {
         if (!b?._bfx) return null;
@@ -844,6 +1058,8 @@ class BossFX {
         const tiles = BossFX.tilesManhattan(this, tx, ty, 2);
         const m = BossFX.mark(this, tiles, this._bfxCfg().SPARK, ms);
         F.slam = { tiles, end: this.time.now + ms, m };
+        F.poses = [];
+        BossFX.pose(b, 'slam_0', ms + 40);
         return m;
     }
 
@@ -851,16 +1067,18 @@ class BossFX {
         const F = b?._bfx;
         m?.done?.(320);
         if (!F) return;
-        const c = b.container, T = this.TILE_SIZE, C = this._bfxCfg();
-        // lightning into every tile it reached, a ring to the edge of the diamond, light
-        const g = this.add.graphics().setDepth(3.5).setBlendMode(Phaser.BlendModes.ADD);
-        this._vfxSort?.(g);
+        const c = b.container, T = this.TILE_SIZE;
+        F.poses = [['slam_1', this.time.now + 130], ['slam_2', this.time.now + 300]];
+        // a strike into every tile it reached, racing out from it, sparks, light
+        const ox = c.x, oy = c.y + 4;
         for (const [tx, ty] of F.slam?.tiles || []) {
-            if (Math.random() < 0.55) BossFX.arc(g, c.x + (Math.random() - 0.5) * 30, c.y - 6, tx * T + T / 2, ty * T + T / 2, C.SPARK, 6, 5, 1.5);
+            const x = tx * T + T / 2, y = ty * T + T / 2, lag = Math.hypot(x - ox, y - oy) * 0.9;
+            WeaponSystem.zapFlare(this, x, y, Math.random() < 0.35 ? 'y' : 'c', 1.3, 0.99);
+            if (Math.random() < 0.6) WeaponSystem.bolt(this, ox + (Math.random() - 0.5) * 40, oy, x, y, 'c', { life: 200, br: 1, lag: lag * 0.3, d: 0.99 });
         }
-        this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
-        BossFX.blast(this, c.x, c.y + 10, 2.5 * T, 'volt');
-        this._vfxBursts?.lightning?.explode(18, c.x, c.y);
+        const spk = WeaponSystem.zapSparks(this, 'c');
+        for (let i = 0; i < 26; i++) spk.emitParticleAt(ox + (Math.random() - 0.5) * 80, oy - Math.random() * 16, 1);
+        this._vfxFlash?.(ox, oy - 10, 2.5 * T * 1.4, 0x9ff6ff, 260, 0.8);
         F.slam = null;
         // back to its bob once the dust settles
         F.unplant = this.time.delayedCall(600, () => {
@@ -869,117 +1087,148 @@ class BossFX {
         });
     }
 
-    // A minion of the spawner phase: its pulse jumps to the four tiles next to it (the tiles its
-    // zap reaches, Manhattan 1) instead of three random scribbles.
+    // A minion of the spawner phase: its pulse jumps to the four tiles next to it (the tiles its zap reaches,
+    // Manhattan 1), a bolt to each and a flare where it lands.
     _bfxVoltZap(e, g) {
-        if (!g?.active || !e?.sprite?.active) return;
-        const T = this.TILE_SIZE, C = this._bfxCfg(), x = e.sprite.x, y = e.sprite.y + 6;
-        if (g.blendMode !== Phaser.BlendModes.ADD) g.setBlendMode(Phaser.BlendModes.ADD);
-        g.clear();
+        if (!e?.sprite?.active) return;
+        g?.clear?.();
+        const T = this.TILE_SIZE, x = e.sprite.x, y = e.sprite.y + 6;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const tx = (e.x + dx) * T + T / 2, ty = (e.y + dy) * T + T / 2;
             if (this.world?.[e.x + dx]?.[e.y + dy] !== this.FLOOR) continue;
-            BossFX.arc(g, x, y, tx, ty, C.VOLT, 4, 4, 1.3);
-            g.fillStyle(C.VOLT, 0.25); g.fillRect(tx - T / 2 + 2, ty - T / 2 + 2, T - 4, T - 4);
+            WeaponSystem.bolt(this, x, y, tx, ty, 'c', { life: 200, thin: true, br: 0, d: 3.1 });
+            WeaponSystem.zapFlare(this, tx, ty, 'c', 0.9, 0.99);
         }
-        this.tweens.killTweensOf(g);
-        g.setAlpha(1);
-        this.tweens.add({ targets: g, alpha: 0, duration: 380, ease: 'Quad.easeIn' });
     }
 
-    // Its death: a discharge in every direction, a splash of its blue, the crown thrown up.
+    // Its death: it goes dark and sags (its X-eyed frames, on a sprite of its own as the boss fades), melts to a puddle that
+    // soaks away; a discharge in every direction, its crown thrown up tumbling and landing beside it.
     _bfxVoltDeath(b) {
-        const c = b.container, x = c.x, y = c.y - 14, C = this._bfxCfg();
-        this._vfxFlash?.(x, y, 280, 0x9ff6ff, 700, 1);
-        const g = this.add.graphics().setDepth(5).setBlendMode(Phaser.BlendModes.ADD);
-        this._vfxSort?.(g);
-        for (let i = 0; i < 12; i++) {
-            const a = i / 12 * Math.PI * 2 + Math.random() * 0.3, d = 60 + Math.random() * 50;
-            BossFX.arc(g, x, y, x + Math.cos(a) * d, y + Math.sin(a) * d * 0.7, i % 3 ? C.VOLT : C.SPARK, 9, 7, 2);
+        const c = b.container, s = b.body, x = c.x, y = c.y - 14;
+        this._vfxFlash?.(x, y, 160, 0x9ff6ff, 600, 0.9);
+        for (let i = 0; i < 10; i++) {
+            const a = i / 10 * Math.PI * 2 + Math.random() * 0.3, d = 70 + Math.random() * 50;
+            WeaponSystem.bolt(this, x, y, x + Math.cos(a) * d, y + Math.sin(a) * d * 0.7, i % 3 ? 'c' : 'y', { life: 320, br: 2, lag: i * 18, d: 5 });
         }
-        this.tweens.add({ targets: g, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
-        BossFX.blast(this, x, y + 10, 90, 'volt');
+        const spk = WeaponSystem.zapSparks(this, 'c');
+        for (let i = 0; i < 40; i++) spk.emitParticleAt(x + (Math.random() - 0.5) * 70, y + (Math.random() - 0.5) * 40, 1);
+        if (b._bfxArt && s?.active && BossFX.anims(this)) {
+            const k = Math.abs(s.scaleY) || BossFX.VOLT_K, body = this.add.sprite(x, c.y + 7, 'boss_volt', 'die_0').setOrigin(0.5, 1).setScale(k).setDepth(c.depth || 3);
+            this._vfxSort?.(body);
+            s.setVisible(false);
+            body.play('bv_die');
+            this.tweens.add({ targets: body, alpha: 0, delay: 2600, duration: 2400, onComplete: () => body.destroy() });
+            const cr = this.add.sprite(x, c.y - 44, 'boss_volt', 'crown').setScale(k).setDepth((c.depth || 3) + 0.1).play('bv_crown');
+            this._vfxSort?.(cr);
+            const side = Math.random() < 0.5 ? -1 : 1, x1 = x + side * (60 + Math.random() * 20), y1 = c.y + 2;
+            this.tweens.addCounter({ from: 0, to: 1, duration: 760, onUpdate: tw => {
+                const v = tw.getValue();
+                cr.setPosition(x + (x1 - x) * v, (c.y - 44) + (y1 - (c.y - 44)) * v - Math.sin(Math.PI * v) * 90);
+            }, onComplete: () => {
+                cr.anims.stop(); cr.setFrame('crown');   // it lands the right way up
+                this.cameras.main.shake(60, 0.002);
+                this.tweens.add({ targets: cr, alpha: 0, delay: 2600, duration: 1600, onComplete: () => cr.destroy() });
+            } });
+        }
         const goo = this._vfxBursts?.goo;
-        if (goo) { goo.setParticleTint?.(0x3fd4ff); goo.explode(34, x, y); }
-        this._vfxBursts?.lightning?.explode(30, x, y);
+        if (goo) { goo.setParticleTint?.(0x3fd4ff); goo.explode(26, x, y); }
         if (this.textures.exists('vfx_splat')) {
-            const sp = this.add.image(x, c.y + 8, 'vfx_splat').setTint(0x3fd4ff).setAlpha(0.6).setDepth(0.2).setScale(2.2);
+            const sp = this.add.image(x, c.y + 8, 'vfx_splat').setTint(0x3fd4ff).setAlpha(0.5).setDepth(0.2).setScale(2.2);
             this._vfxSort?.(sp);
             this.tweens.add({ targets: sp, alpha: 0, delay: 2500, duration: 3000, onComplete: () => sp.destroy() });
-        }
-        if (this.textures.exists('cfx_face')) {
-            const cr = this.add.image(x, c.y + 7, 'cfx_face', 'h_volt_0').setOrigin(0.5, 1).setScale(4.5).setDepth(5.1);
-            this._vfxSort?.(cr);
-            this.tweens.add({ targets: cr, y: c.y - 60, angle: 200, duration: 520, ease: 'Quad.easeOut' });
-            this.tweens.add({ targets: cr, alpha: 0, delay: 380, duration: 300, onComplete: () => cr.destroy() });
         }
     }
 
     // ── VOID SOVEREIGN ───────────────────────────────────────────────────────
-    // A slime of night sky (stars that twinkle as it breathes) with a ring of light round it, shards
-    // riding the ring, and a crown floating over its head. The ring's back half goes behind it.
+    // Its own typed sheet (boss_void): a slime of night sky whose stars twinkle frame to frame, a ring of light round it
+    // (its lights run round by palette; the far half goes behind it), shards riding the ring, a crown floating over it.
     _bfxVoidDress(b) {
         b._bfx = {};
         const s = b.body, c = b.container;
         // the drawn ring, crown, orbiting dots and the debug hitbox square all stop drawing: the
         // ring and crown below replace them (they are only ever Graphics in its container)
         if (typeof CreatureFX !== 'undefined') for (const o of c.list) if (o.type === 'Graphics') CreatureFX.mute(o);
-        const key = BossFX.body(this, 'void');
-        if (key && s?.active) {
-            s.setTexture(key, 0).clearTint();
-            if (this.anims.exists('void_idle')) s.play('void_idle');
+        const art = s?.active && BossFX.anims(this) && this.textures.exists('boss_void');
+        if (art) {
+            s.anims?.stop();
+            s.setTexture('boss_void', 'idle_0').clearTint().setScale(2).setOrigin(0.5, 1).setY(10);
+            b._bfxArt = true;
+        } else {
+            const key = BossFX.body(this, 'void');
+            if (key && s?.active) {
+                s.setTexture(key, 0).clearTint();
+                if (this.anims.exists('void_idle')) s.play('void_idle');
+            }
         }
-        const back = this.make.graphics({}, false), front = this.make.graphics({}, false);
+        const back = art ? this.make.sprite({ x: 0, y: -16, key: 'boss_void', frame: 'ringb_0' }, false).setOrigin(0.5, 1).setScale(2) : this.make.graphics({}, false);
+        const front = art ? this.make.sprite({ x: 0, y: -16, key: 'boss_void', frame: 'ringf_0' }, false).setOrigin(0.5, 0).setScale(2) : this.make.graphics({}, false);
         c.addAt(back, Math.max(0, c.getIndex(s)));
         c.add(front);
         const halo = this.make.image({ x: 0, y: -58, key: 'vfx_glow' }, false).setBlendMode(Phaser.BlendModes.ADD)
             .setTint(0xff4ad8).setAlpha(0.45).setScale(0.55, 0.32);
-        const crown = this.make.image({ x: 0, y: -58, key: 'bfx_shots', frame: 'vcrown' }, false).setScale(3);
+        const crown = art ? this.make.image({ x: 0, y: -58, key: 'boss_void', frame: 'crown' }, false).setScale(2)
+                          : this.make.image({ x: 0, y: -58, key: 'bfx_shots', frame: 'vcrown' }, false).setScale(3);
         const under = this.make.image({ x: 0, y: 4, key: 'vfx_glow' }, false).setBlendMode(Phaser.BlendModes.ADD)
             .setTint(0x8a3aff).setAlpha(0.35).setScale(1.4, 0.5);
         c.addAt(under, 0);
         c.add([halo, crown]);
-        b._bfx = { back, front, crown, halo, under, frozenAt: 0 };
+        // the shards that ride the ring (each moves to the near side or the far side of it as it goes round)
+        const shards = art ? Array.from({ length: 6 }, () => { const o = this.make.image({ x: 0, y: 0, key: 'boss_void', frame: 'shard' }, false).setScale(2); c.add(o); return o; }) : [];
+        b._bfx = { back, front, crown, halo, under, shards, frozenAt: 0, crownY: -58 };
         this._bfxCrisp(c);
     }
 
     _bfxVoidTick(b, now, dt) {
-        const F = b._bfx, c = b.container;
+        const F = b._bfx, c = b.container, s = b.body;
         this._bfxBossIce(b, 3.8, 12);
         if (!c.visible) return;
         // frozen, the ring stops turning
         if (b._isFrozen) F.frozenAt = F.frozenAt || now; else F.frozenAt = 0;
         const t = F.frozenAt || now;
         const { back, front } = F;
-        back.clear(); front.clear();
-        const cy = -15, RX = 64, RY = 14, N = 80;
-        for (let i = 0; i < N; i++) {
-            const a = i / N * Math.PI * 2, sn = Math.sin(a);
-            const run = 0.5 + 0.5 * Math.sin(a * 3 - t * 0.0032);
-            const g = sn < 0 ? back : front;
-            g.fillStyle(run > 0.86 ? 0xffd0ff : run > 0.5 ? 0xb46cff : 0x6a2ad0, (sn < 0 ? 0.45 : 0.85) * (0.35 + 0.65 * run));
-            g.fillRect(Math.round(Math.cos(a) * RX) - 1, Math.round(cy + sn * RY), 2, run > 0.86 ? 2 : 1);
+        if (b._bfxArt) {
+            const k = Math.floor(t / 90) % 4;
+            back.setFrame('ringb_' + k); front.setFrame('ringf_' + k);
+            // the shards, round the ring's ellipse (68 x 17 px, its middle 16 px up), in front of it or behind it
+            F.shards.forEach((o, i) => {
+                const a = i / F.shards.length * Math.PI * 2 + t * 0.0009, sn = Math.sin(a);
+                o.setPosition(Math.round(Math.cos(a) * (66 + (i % 3) * 4) / 2) * 2, Math.round((-16 + sn * (17 + (i % 3) * 2)) / 2) * 2);
+                const behind = sn < 0;
+                if (behind !== o._behind) { o._behind = behind; if (behind) c.moveBelow(o, s); else c.moveAbove(o, front); }
+                o.setAlpha(behind ? 0.6 : 1);
+            });
+        } else {
+            back.clear(); front.clear();
+            const cy = -15, RX = 64, RY = 14, N = 80;
+            for (let i = 0; i < N; i++) {
+                const a = i / N * Math.PI * 2, sn = Math.sin(a);
+                const run = 0.5 + 0.5 * Math.sin(a * 3 - t * 0.0032);
+                const g = sn < 0 ? back : front;
+                g.fillStyle(run > 0.86 ? 0xffd0ff : run > 0.5 ? 0xb46cff : 0x6a2ad0, (sn < 0 ? 0.45 : 0.85) * (0.35 + 0.65 * run));
+                g.fillRect(Math.round(Math.cos(a) * RX) - 1, Math.round(cy + sn * RY), 2, run > 0.86 ? 2 : 1);
+            }
         }
-        for (let i = 0; i < 8; i++) {
-            const a = i / 8 * Math.PI * 2 + t * 0.0009, sn = Math.sin(a), lane = i % 3;
-            const x = Math.round(Math.cos(a) * (RX + 6 + lane * 4)), y = Math.round(cy + sn * (RY + 2 + lane));
-            const g = sn < 0 ? back : front, lit = sn < 0 ? 0.5 : 1;
-            g.fillStyle(0x12061f, 0.95 * lit); g.fillRect(x - 2, y - 3, 4, 7);
-            g.fillStyle(i % 2 ? 0xb46cff : 0xff7ae8, lit); g.fillRect(x - 1, y - 2, 2, 5);
-            g.fillStyle(0xffffff, lit); g.fillRect(x - 1, y - 2, 1, 1);
-        }
-        const bob = Math.sin(t * 0.0024) * 2.5;
-        F.crown.y = -58 + bob; F.halo.y = -56 + bob;
+        const bob = Math.round(Math.sin(t * 0.0024) * 1.5) * 2;   // (whole pixels of its art)
+        F.crown.y = F.crownY + bob; F.halo.y = F.crownY + 2 + bob;
         F.halo.setAlpha(0.35 + 0.15 * Math.sin(t * 0.004));
-        if (b.active && this._bfxMotes && Math.random() < dt / 160) {
-            this._bfxMotes.setParticleTint?.(Math.random() < 0.6 ? 0xc99cff : 0xffffff);
-            this._bfxMotes.emitParticleAt(c.x + (Math.random() - 0.5) * 70, c.y - Math.random() * 30, 1);
+        if (b.active && Math.random() < dt / 160) {
+            const E = typeof CosmicSystem !== 'undefined' ? CosmicSystem.fx(this) : null;
+            if (E) CosmicSystem.puff(Math.random() < 0.6 ? E.fine : E.dust, c.x + (Math.random() - 0.5) * 90, c.y - Math.random() * 50, 1, -Math.PI / 2, 0.5, 8, 26);
+            else if (this._bfxMotes) { this._bfxMotes.setParticleTint?.(Math.random() < 0.6 ? 0xc99cff : 0xffffff); this._bfxMotes.emitParticleAt(c.x + (Math.random() - 0.5) * 70, c.y - Math.random() * 30, 1); }
         }
+    }
+    // The frame it shows: a pose (a cast as it calls an attack, a wince), else its stars twinkling, a blink now and then
+    static voidFrame(b, now) {
+        const F = b._bfx;
+        while (F.poses?.length && now >= F.poses[0][1]) F.poses.shift();
+        if (F.poses?.length) { const p = F.poses[0][0]; return p === 'cast' ? (Math.floor(now / 90) % 2 ? 'cast_1' : 'cast_0') : p; }
+        if (now >= (F.blinkAt ||= now + 3000)) { F.blinkUntil = now + 140; F.blinkAt = now + 2600 + Math.random() * 3500; }
+        return now < (F.blinkUntil || 0) ? 'blink' : (b._phase3Unlocked ? 'rage_' : 'idle_') + (Math.floor(now / 260) % 4) + (Math.floor(now / 500) % 2 ? 's' : '');   // (its last third: burning; breathing as a slime does)
     }
 
     // A void mine: the tiles it will catch (the blast reads your sprite, SLIME_Y_OFFSET over your
-    // tile, so they are worked out the same way) filling in as it counts down, a heart that beats
-    // faster, and a ring closing round it like a clock. Drawn into the mine's own graphics.
+    // tile, so they are worked out the same way) filling in as it counts down, its seed of dark on the floor (its heart
+    // beating faster as it goes), and a clock closing round it. Drawn into the mine's own graphics; the seed is its own.
     _bfxDrawMine(m, p, now) {
         const g = m.gfx, T = this.TILE_SIZE, R = m.radius * T;
         if (!m._bfxTiles) m._bfxTiles = BossFX.tilesInRadius(this, g.x, g.y, R, true);
@@ -988,14 +1237,22 @@ class BossFX {
         g.clear();
         BossFX.drawTiles(g, T, m._bfxTiles, 0xb45cff, p, now, g.x, g.y, { fill: 0.05 });
         const beat = Math.max(0, Math.sin(now * (0.012 + 0.03 * p)));
-        g.fillStyle(0x6a2ad0, 0.5); g.fillCircle(0, 0, 9);
-        g.fillStyle(0xff7ae8, 0.55 + 0.45 * beat); g.fillCircle(0, 0, 3 + 2.5 * beat);
-        g.fillStyle(0xffffff, 0.8 * beat); g.fillCircle(0, 0, 1.5);
+        if (this.textures.exists('boss_void')) {
+            if (!m._bfxSeed) {
+                m._bfxSeed = this.add.image(g.x, g.y + 2, 'boss_void', 'mine_0').setScale(2).setDepth(0.47);
+                this._vfxSort?.(m._bfxSeed);
+                g.once('destroy', () => m._bfxSeed?.destroy());
+            }
+            m._bfxSeed.setFrame(beat > 0.6 ? 'mine_1' : 'mine_0');
+        } else {
+            g.fillStyle(0x6a2ad0, 0.5); g.fillCircle(0, 0, 9);
+            g.fillStyle(0xff7ae8, 0.55 + 0.45 * beat); g.fillCircle(0, 0, 3 + 2.5 * beat);
+        }
         g.lineStyle(2, 0xffb8ff, 0.9);
-        g.beginPath(); g.arc(0, 0, 12, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2, false); g.strokePath();
+        g.beginPath(); g.arc(0, 0, 13, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2, false); g.strokePath();
     }
 
-    // It goes off: the tiles flash, a ring opens exactly to its reach, void sparks.
+    // It goes off: the tiles flash, a ring of void dust runs out exactly to its reach, a pop of light.
     _bfxMineBlast(m) {
         const g = m.gfx, T = this.TILE_SIZE, R = m.radius * T, off = this.SLIME_Y_OFFSET || 0;
         const fl = this.add.graphics().setDepth(0.46).setBlendMode(Phaser.BlendModes.ADD);
@@ -1005,7 +1262,7 @@ class BossFX {
         fl.fillStyle(0xffffff, 0.3);
         for (const [x, y] of m._bfxTiles || []) fl.fillRect(x * T + 4, y * T + 4, T - 8, T - 8);
         this.tweens.add({ targets: fl, alpha: 0, duration: 340, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
-        BossFX.blast(this, g.x, g.y - off, R, 'ripple');
+        if (!BossFX.voidBurst(this, g.x, g.y - off, R)) BossFX.blast(this, g.x, g.y - off, R, 'ripple');
     }
 
     // The laser grid's beams. While it warns: thin dashes. Live: a soft band as wide as the hit test
@@ -1027,11 +1284,13 @@ class BossFX {
         g.lineStyle(1, 0xffffff, 0.9 * alpha); segs.forEach(line);
     }
 
-    // A dark-matter fragment: a crystal of void that turns as it orbits. Its touch reaches 1.2 tiles,
+    // A dark-matter fragment: a crystal of void tumbling (its frames) as it orbits. Its touch reaches 1.2 tiles,
     // shown as a faint ring of dark round it.
     _bfxFragment() {
         BossFX.sheet(this);
-        const img = this.add.image(0, 0, 'bfx_shots', 'frag').setDepth(3.5).setScale(1.6);
+        const art = BossFX.anims(this) && this.anims.exists('bvd_frag');
+        const img = art ? this.add.sprite(0, 0, 'boss_void', 'frag_0').setDepth(3.5).setScale(2).play('bvd_frag')
+                        : this.add.image(0, 0, 'bfx_shots', 'frag').setDepth(3.5).setScale(1.6);
         this._vfxSort?.(img);
         const T = this.TILE_SIZE;
         const ring = this.add.graphics().setDepth(0.46).setBlendMode(Phaser.BlendModes.ADD);
@@ -1044,45 +1303,43 @@ class BossFX {
         return img;
     }
 
-    // Something breaking into shards of its colour: the shards fly, sparks, a flash and a ring.
+    // Something breaking into shards of its colour: crystal chips tumbling off (their frames, never turned), dust, light.
     _bfxShatter(x, y, color = 0xb45cff, n = 10) {
-        BossFX.sheet(this);
+        const chips = typeof WeaponSystem !== 'undefined' && WeaponSystem.fractalArt?.(this);
         for (let i = 0; i < n; i++) {
             const a = i / n * Math.PI * 2 + Math.random() * 0.4, d = 26 + Math.random() * 26;
-            const s = this.add.image(x, y, 'bfx_shots', 'shard').setDepth(4.6).setRotation(a).setScale(1.2).setTint(color);
+            const s = chips ? this.add.sprite(x, y, 'fx_fractal', 'shard_0').setDepth(4.6).setScale(1.6).setTint(color).play('frac_tumble')
+                            : this.add.image(x, y, 'bfx_shots', 'shard').setDepth(4.6).setRotation(a).setScale(1.2).setTint(color);
+            if (chips) s.anims.setProgress(Math.random());
             this._vfxSort?.(s);
-            this.tweens.add({ targets: s, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, alpha: 0, scale: 0.4,
+            this.tweens.add({ targets: s, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.7 + 8, alpha: 0,
                               duration: 380 + Math.random() * 160, ease: 'Quad.easeOut', onComplete: () => s.destroy() });
         }
-        this._vfxBursts?.cosmic?.explode(16, x, y);
+        const E = typeof CosmicSystem !== 'undefined' ? CosmicSystem.fx(this) : null;
+        if (E) { CosmicSystem.puff(E.dust, x, y, 12, 0, Math.PI, 30, 90); CosmicSystem.puff(E.glow, x, y, 4, 0, Math.PI, 10, 30); }
+        else this._vfxBursts?.cosmic?.explode(16, x, y);
         this._vfxFlash?.(x, y, 90, color, 300, 0.9);
-        if (this.textures.exists('vfx_ring')) {
-            const r = this.add.image(x, y, 'vfx_ring').setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.5).setScale(0.3);
-            this._vfxSort?.(r);
-            this.tweens.add({ targets: r, scale: 1.5, alpha: 0, duration: 320, ease: 'Cubic.easeOut', onComplete: () => r.destroy() });
-        }
     }
 
     // The stomp's target, redrawn as it follows you: the tiles it will crush (radius 2.5 tiles read
-    // against your sprite, as the hit test does), a reticle, and its shadow growing as it falls.
+    // against your sprite, as the hit test does), and its shadow growing on the floor as it falls.
     _bfxStompTrack(g, x, y, p) {
         const T = this.TILE_SIZE, now = this.time.now, off = this.SLIME_Y_OFFSET || 0;
         if (g.depth !== 0.45) g.setDepth(0.45);
         const tiles = BossFX.tilesInRadius(this, x, y, 2.5 * T, true);
         g._bfxTiles = tiles;
         BossFX.drawTiles(g, T, tiles, 0xff4a2a, Math.min(1, p), now, 0, 0, { fill: 0.06 });
-        const cy = y - off;
-        const sh = 0.25 + 0.75 * Math.min(1, p);
-        g.fillStyle(0x000000, 0.18 + 0.3 * p); g.fillEllipse(x, cy + 2, 70 * sh, 22 * sh);
-        const r = 2.5 * T, k = 0.75 + 0.25 * Math.sin(now * 0.015);
-        g.lineStyle(2, 0xff6a3a, 0.7 * k);
-        for (let i = 0; i < 4; i++) {
-            const a = i * Math.PI / 2 + now * 0.002;
-            g.beginPath(); g.arc(x, cy, r, a - 0.35, a + 0.35, false); g.strokePath();
+        const cy = y - off, sh = 0.25 + 0.75 * Math.min(1, p);
+        if (!g._bfxShadow && this.textures.exists('vfx_shadow')) {
+            g._bfxShadow = this.add.image(x, cy, 'vfx_shadow').setDepth(0.46);
+            this._vfxSort?.(g._bfxShadow);
+            g.once('destroy', () => g._bfxShadow?.destroy());
         }
+        if (g._bfxShadow) g._bfxShadow.setPosition(x, cy + 2).setDisplaySize(84 * sh, 26 * sh).setAlpha(0.3 + 0.45 * p).setVisible(g.visible);
+        else { g.fillStyle(0x000000, 0.18 + 0.3 * p); g.fillEllipse(x, cy + 2, 70 * sh, 22 * sh); }
     }
 
-    // It lands: the tiles flash, a ring opens to exactly its reach, dust, cracks in the floor.
+    // It lands: the tiles flash, void dust runs out to exactly its reach, the floor cracks (a typed crack, left a while).
     _bfxStompLand(x, y, R, tiles) {
         const T = this.TILE_SIZE, off = this.SLIME_Y_OFFSET || 0, cy = y - off;
         const t = tiles || BossFX.tilesInRadius(this, x, y, R, true);
@@ -1093,17 +1350,12 @@ class BossFX {
         fl.fillStyle(0xffffff, 0.3);
         for (const [tx, ty] of t) fl.fillRect(tx * T + 4, ty * T + 4, T - 8, T - 8);
         this.tweens.add({ targets: fl, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
-        BossFX.blast(this, x, cy, R, 'bolt');
-        const cr = this.add.graphics().setDepth(0.35);
-        this._vfxSort?.(cr);
-        cr.lineStyle(2, 0x07040d, 0.75);
-        for (let i = 0; i < 7; i++) {
-            let a = i / 7 * Math.PI * 2 + Math.random() * 0.5, px = x, py = cy;
-            cr.beginPath(); cr.moveTo(px, py);
-            for (let k = 0; k < 4; k++) { a += (Math.random() - 0.5) * 0.8; px += Math.cos(a) * 9; py += Math.sin(a) * 6; cr.lineTo(px, py); }
-            cr.strokePath();
+        if (!BossFX.voidBurst(this, x, cy, R)) BossFX.blast(this, x, cy, R, 'bolt');
+        if (this.textures.exists('boss_void')) {
+            const cr = this.add.image(x, cy + 4, 'boss_void', 'floorcrack').setScale(2).setDepth(0.35).setAlpha(0.85).setFlipX(Math.random() < 0.5);
+            this._vfxSort?.(cr);
+            this.tweens.add({ targets: cr, alpha: 0, delay: 1400, duration: 1200, onComplete: () => cr.destroy() });
         }
-        this.tweens.add({ targets: cr, alpha: 0, delay: 1400, duration: 1200, onComplete: () => cr.destroy() });
         const goo = this._vfxBursts?.goo;
         if (goo) { goo.setParticleTint?.(0x8a7a9a); goo.explode(20, x, cy); }
     }
@@ -1149,7 +1401,7 @@ class BossFX {
             if (R.closing) {
                 const k = Math.min(1, (now - R.closeT0) / R.closeMs);
                 R.open = R.openAtClose * (1 - k * k);
-                if (k >= 1) { list.splice(i, 1); continue; }
+                if (k >= 1) { R.spr?.destroy(); list.splice(i, 1); continue; }
             } else {
                 const k = Math.min(1, (now - R.t0) / Math.max(1, R.ms));
                 R.open = R.size * (1 - (1 - k) * (1 - k));
@@ -1158,39 +1410,27 @@ class BossFX {
             // something about to climb out: its eyes show in the dark for the last 700ms
             if (R.exitAt && !R.closing) R.eyes = Math.max(0, Math.min(1, (now - (R.exitAt - 700)) / 300));
             const m = R.r * 3 + 40;
-            if (R.x + m < v.x || R.x - m > v.right || R.y + m < v.y || R.y - m > v.bottom) continue;
+            if (R.x + m < v.x || R.x - m > v.right || R.y + m < v.y || R.y - m > v.bottom) { R.spr?.setVisible(false); continue; }
             this._bfxDrawRift(g, R, now);
         }
     }
 
     _bfxDrawRift(g, R, now) {
         const o = R.open;
-        if (o < 0.02) return;
-        const rx = R.r * o, ry = rx * 0.42, x = R.x, y = R.y;
-        // the glow round it, the rim, the dark inside
-        g.fillStyle(R.color, 0.16); g.fillEllipse(x, y, rx * 2.5, ry * 2.6);
-        g.fillStyle(0x05020c, 0.92); g.fillEllipse(x, y, rx * 2, ry * 2);
-        // arms of light turning into the middle
-        const arms = R.big ? 5 : 3;
-        for (let a = 0; a < arms; a++) {
-            g.lineStyle(R.big ? 2 : 1.5, a % 2 ? 0xff7ae8 : 0xb46cff, 0.85);
-            g.beginPath();
-            for (let s = 0; s <= 10; s++) {
-                const t = s / 10, ang = R.spin + a * Math.PI * 2 / arms + t * 2.4, rr = 1 - t;
-                const px = x + Math.cos(ang) * rx * rr, py = y + Math.sin(ang) * ry * rr;
-                if (s === 0) g.moveTo(px, py); else g.lineTo(px, py);
-            }
-            g.strokePath();
+        if (BossFX.anims(this) && this.textures.exists('boss_void')) {
+            if (!R.spr) { R.spr = this.add.image(R.x, R.y, 'boss_void', 'rift_s0').setDepth(0.935).setScale(R.big ? 2 : 1); this._vfxSort?.(R.spr); }
+            const k = o / R.size;
+            R.spr.setVisible(o >= 0.02).setPosition(R.x, R.y)
+                .setFrame(k < 0.35 ? 'rift_s0' : k < 0.7 ? 'rift_s1' : 'rift_' + (Math.floor(R.spin * 2.5) % 4 + 4) % 4).setAlpha(R.idle ? 0.8 : 1);
+            if (o < 0.02) return;
+        } else {
+            if (o < 0.02) return;
+            const rx = R.r * o, ry = rx * 0.42, x = R.x, y = R.y;
+            g.fillStyle(R.color, 0.16); g.fillEllipse(x, y, rx * 2.5, ry * 2.6);
+            g.fillStyle(0x05020c, 0.92); g.fillEllipse(x, y, rx * 2, ry * 2);
+            g.lineStyle(2, 0xe0a8ff, 0.95); g.strokeEllipse(x, y, rx * 2, ry * 2);
         }
-        g.lineStyle(2, 0xe0a8ff, 0.95); g.strokeEllipse(x, y, rx * 2, ry * 2);
-        g.lineStyle(1, 0xffffff, 0.5); g.strokeEllipse(x, y - 1, rx * 1.7, ry * 1.6);
-        // motes falling in
-        for (let k = 0; k < (R.big ? 10 : 5); k++) {
-            const ph = (now * 0.0007 + k / (R.big ? 10 : 5)) % 1, ang = R.spin * 0.6 + k * 2.39996;
-            const rr = 1.5 - ph * 1.3;
-            g.fillStyle(k % 2 ? 0xffffff : 0xff9af0, 0.9 * Math.min(1, ph * 3));
-            g.fillRect(Math.round(x + Math.cos(ang) * rx * rr), Math.round(y + Math.sin(ang) * ry * rr), 2, 2);
-        }
+        const x = R.x, y = R.y;
         // eyes in the dark: something is about to come out
         if (R.eyes > 0) {
             const blink = Math.floor(now / 120) % 9 === 0 ? 0 : 1;
@@ -1265,30 +1505,40 @@ class BossFX {
     _bfxCoreLayout() {}
 
     _bfxCoreTick(core, now, dt) {
-        const C = this._bfxCfg(), c = core.container;
+        const C = this._bfxCfg(), c = core.container, b = core.body;
         const kick = core._bfxKick || 0;
-        c.angle += (C.CORE_SPIN + kick) * dt / 1000;
         core._bfxKick = kick * Math.pow(0.04, dt / 1000);
-        if (c.visible && this._bfxMotes && Math.random() < dt / 120) {
-            this._bfxMotes.setParticleTint?.(Math.random() < 0.5 ? 0xffc460 : 0xff8a2a);
-            this._bfxMotes.emitParticleAt(c.x + (Math.random() - 0.5) * 40, c.y + (Math.random() - 0.5) * 30, 1);
+        if (b?.texture?.key === 'boss_geode') {
+            // its typed core turns by its frames (the light handed round its facets), cracking as it's hurt, shuddering when struck
+            core._bfxTurn = ((core._bfxTurn || 0) + (C.CORE_SPIN + kick) * dt / 1000) % 360;
+            const f = core.health / core.maxHealth, fr = `core_${f > 0.66 ? 0 : f > 0.33 ? 1 : 2}_${Math.floor(core._bfxTurn / 45)}`;
+            if (b.frame.name !== fr) b.setFrame(fr);
+            const j = kick > 60 ? Math.round((Math.random() - 0.5) * Math.min(3, kick / 150)) * 2 : 0;
+            b.setPosition(j, Math.round(Math.sin(now * 0.002) * 1.2) * 2);
+        } else c.angle += (C.CORE_SPIN + kick) * dt / 1000;
+        if (c.visible && Math.random() < dt / 110) {
+            const F = typeof Scythe !== 'undefined' && this.textures.exists('ember_scythe') ? Scythe.fire(this) : null;
+            if (F) F.ember.emitParticleAt(c.x + (Math.random() - 0.5) * 44, c.y + (Math.random() - 0.5) * 34, 1);
+            else if (this._bfxMotes) { this._bfxMotes.setParticleTint?.(Math.random() < 0.5 ? 0xffc460 : 0xff8a2a); this._bfxMotes.emitParticleAt(c.x + (Math.random() - 0.5) * 40, c.y + (Math.random() - 0.5) * 30, 1); }
         }
     }
-    // A hit on a weak point kicks its spin, and the spin settles back (it used to restart a tween,
-    // which jerked it to a new speed every time).
+    // A hit on a weak point kicks it (its typed shell shudders; the old drawing spun faster), and it settles back.
     _bfxCoreKick(core) {
         core._bfxKick = Math.min(900, (core._bfxKick || 0) + 420);
         const c = core.container;
         if (c?.active) this._vfxFlash?.(c.x, c.y, 70, this._bfxCfg().CORE, 160, 0.7);
     }
 
-    // It breaks: amber shards, sparks, a ring and a flash where it was.
+    // It breaks: its shell at its most broken flies apart in amber chips, fire rings out, embers, light.
     _bfxCoreDeath(core) {
         const c = core.container, x = c.x, y = c.y;
         this._bfxShatter(x, y, 0xffa63a, 16);
-        BossFX.blast(this, x, y, 70, 'shell');
-        this._vfxBursts?.fire?.explode(30, x, y);
-        this._vfxFlash?.(x, y, 260, 0xffb44a, 700, 1);
+        const F = typeof Scythe !== 'undefined' && this.textures.exists('ember_scythe') ? Scythe.fire(this) : null;
+        if (F) { Scythe.ringFire(this, x, y, 10, 70, 360, 12); for (let i = 0; i < 24; i++) F.ember.emitParticleAt(x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 30, 1); }
+        else { BossFX.blast(this, x, y, 70, 'shell'); this._vfxBursts?.fire?.explode(30, x, y); }
+        this._vfxFlash?.(x, y, 180, 0xffb44a, 700, 0.9);
+        const G = core._bfxG;   // its plates, cracks and rifts go with it
+        if (G) { for (const o of [...G.rift.values(), ...G.plates, ...[...G.faults.values()].flat()]) o?.destroy?.(); core._bfxG = null; }
     }
 
     // A debris tile landing: a puff of dust that spreads where it fell (it used to fly off toward the
@@ -1325,6 +1575,14 @@ class BossFX {
         }
         c.add(br);
         q._bfx.brackets = br;
+        // her own typed sheet (the Tide Mother hers): set on her sprite, seated on the floor, at two of the world's pixels to one of hers
+        const s = q.sprite, key = q.tide ? 'boss_tide' : 'boss_queen';
+        if (s?.active && BossFX.anims(this) && this.textures.exists(key)) {
+            s.anims?.stop(); s.preFX?.clear?.();
+            const k = 2 / Math.abs(c.scaleY || 1);
+            s.setTexture(key, 'idle_0').clearTint().setScale(k).setOrigin(0.5, 1).setY(11);
+            q._baseScale = k; q._bfxArt = true;
+        }
         this._bfxCrisp(c);
     }
     _bfxQueenTick(q, now) {
@@ -1333,21 +1591,44 @@ class BossFX {
         const br = q._bfx?.brackets;
         if (br?.active) br.setAlpha(0.55 + 0.25 * Math.sin(now * 0.004));
     }
+    // What she's doing picks her frame: straining as she lays one of her brood, the pop as it comes, a wince when hit
+    static queenFrame(q, now) {
+        const F = q._bfx, s = q.sprite, n = q.spawnedEnemies?.length || 0;
+        if (s.tintFill) BossFX.pose(q, 'hurt', 150, true);
+        if (n > (F.brood ?? n)) BossFX.pose(q, 'spawn_1', 220);
+        F.brood = n;
+        while (F.poses?.length && now >= F.poses[0][1]) F.poses.shift();
+        if (F.poses?.length) { const fr = F.poses[0][0]; return fr === 'pulse' || fr === 'cast' ? (q.tide ? 'cast_' : 'pulse_') + (Math.floor(now / 90) % 2) : fr; }
+        if (q._spawning && !q.tide && now >= (q._strainAt || 0)) return 'spawn_0';
+        if (now >= (F.blinkAt ||= now + 2000)) { F.blinkUntil = now + 140; F.blinkAt = now + 2400 + Math.random() * 3000; }
+        return now < (F.blinkUntil || 0) ? 'blink' : 'idle_' + (Math.floor(now / 450) % 2);
+    }
 
-    // Her pulse: the tiles it reaches light up red while it comes, and flash when it lands.
+    // Her pulse: she swells and glows; the tiles it reaches light up red while it comes, and flash when it lands.
     _bfxQueenPulse(q, px, py, R, ms) {
+        BossFX.pose(q, 'pulse', ms);
         const tiles = BossFX.tilesInRadius(this, px, py, R, false);
         return BossFX.mark(this, tiles, this._bfxCfg().QUEEN, ms, { fill: 0.04 });
     }
 
-    // Her death: a burst of her red, a ring, and her crown thrown off.
+    // Her death: a burst of her red, her crown thrown off tumbling (its quarter turns), and her, X-eyed, sinking into a splash.
     _bfxQueenDeath(q, px, py) {
-        const c = q.container, x = c?.x ?? px, y = (c?.y ?? py) - 14, col = q.tide ? TideMother.CFG.COL : 0xff3a4a;
+        const c = q.container, x = c?.x ?? px, y = (c?.y ?? py) - 14, col = q.tide ? TideMother.CFG.COL : 0xff3a4a, s = q.sprite;
         const goo = this._vfxBursts?.goo;
         if (goo) { goo.setParticleTint?.(col); goo.explode(q.tide ? 60 : 30, x, y); }
-        BossFX.blast(this, x, y + 14, q.tide ? 110 : 60, q.tide ? 'volt' : 'bolt');
-        this._vfxFlash?.(x, y, 200, q.tide ? col : this._bfxCfg().QUEEN, 600, 1);
-        if (this.textures.exists('cfx_face') && c) {
+        if (!q._bfxArt) BossFX.blast(this, x, y + 14, q.tide ? 110 : 60, q.tide ? 'volt' : 'bolt');
+        this._vfxFlash?.(x, y, 160, q.tide ? col : this._bfxCfg().QUEEN, 600, 0.9);
+        if (q._bfxArt && !q.tide && s && c) {
+            BossFX.anims(this);
+            const k = Math.abs(s.scaleY) * Math.abs(c.scaleY || 1), body = this.add.sprite(x, c.y + 11, 'boss_queen', 'die_0').setOrigin(0.5, 1).setScale(k).setDepth(c.depth || 1.5);
+            this._vfxSort?.(body);
+            this.tweens.add({ targets: body, scaleY: k * 0.25, scaleX: k * 1.3, alpha: 0, delay: 500, duration: 700, ease: 'Quad.easeIn', onComplete: () => body.destroy() });
+            const cy0 = c.y - 22, cr = this.add.sprite(x, cy0, 'boss_queen', 'crown').setScale(k).setDepth((c.depth || 1.5) + 0.1).play('bq_crown');   // (off her head, where it sat)
+            this._vfxSort?.(cr);
+            const side = Math.random() < 0.5 ? -1 : 1, x1 = x + side * 50, y1 = c.y + 6;
+            this.tweens.addCounter({ from: 0, to: 1, duration: 700, onUpdate: tw => { const v = tw.getValue(); cr.setPosition(x + (x1 - x) * v, cy0 + (y1 - cy0) * v - Math.sin(Math.PI * v) * 70); },
+                onComplete: () => { cr.anims.stop(); cr.setFrame('crown'); this.tweens.add({ targets: cr, alpha: 0, delay: 2200, duration: 1400, onComplete: () => cr.destroy() }); } });   // (it lands the right way up)
+        } else if (this.textures.exists('cfx_face') && c) {
             const cr = this.add.image(x, c.y - 40, 'cfx_face', 'h_queen_0').setScale(3.2).setDepth(5.1);
             this._vfxSort?.(cr);
             this.tweens.add({ targets: cr, y: c.y - 110, angle: -160, duration: 560, ease: 'Quad.easeOut' });
@@ -1367,6 +1648,7 @@ class BossFX {
     _bfxDrawVine(p, retract = 0) {
         const g = p.gfx;
         if (!g?.active) return;
+        if (typeof EnemyFX !== 'undefined' && EnemyFX.vine(this, p, retract)) return;   // the Rooter's typed vine (EnemyFX.js)
         const tipX = p._tipX, tipY = p._tipY, sx = p.startX, sy = p.startY + 8;
         g.setPosition(tipX, tipY);
         if (g.depth !== 1.05) g.setDepth(1.05);
@@ -1433,6 +1715,7 @@ class BossFX {
             targets: o, k: 1, duration: 260, ease: 'Quad.easeIn',
             onUpdate: () => {
                 if (!g.active) return;
+                if (p.sourceEnemy?.sprite?.active) { p.startX = p.sourceEnemy.sprite.x; p.startY = p.sourceEnemy.sprite.y; }
                 p._tipX += (p.startX - p._tipX) * o.k * 0.3; p._tipY += (p.startY + 8 - p._tipY) * o.k * 0.3;
                 this._bfxDrawVine(p, o.k);
             },
@@ -1450,20 +1733,7 @@ class BossFX {
         this._vfxSort?.(g);
         BossFX.drawTiles(g, T, tiles, C.VINE, 1, this.time.now, 0, 0, { fill: 0.2 });
         this.tweens.add({ targets: g, alpha: 0, duration: 520, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
-        // the sprouts grow up from the floor: scaled about the row's mean height, not world 0
-        const oy = tiles.length ? tiles.reduce((a, [, ty]) => a + ty, 0) / tiles.length * T + T / 2 + 6 : 0;
-        const sp = this.add.graphics().setDepth(1.06).setPosition(0, oy);
-        this._vfxSort?.(sp);
-        for (const [tx, ty] of tiles) {
-            if (Math.random() < 0.4) continue;
-            const x = tx * T + T / 2 + (Math.random() - 0.5) * 8, y = ty * T + T / 2 + 6 - oy;
-            sp.fillStyle(0x0b1a0d, 1); sp.fillTriangle(x - 3, y, x + 3, y, x, y - 10);
-            sp.fillStyle(0x46c24e, 1); sp.fillTriangle(x - 2, y, x + 2, y, x, y - 8);
-            sp.fillStyle(0xb6ff7a, 1); sp.fillRect(x, y - 7, 1, 2);
-        }
-        sp.setScale(1, 0.2);
-        this.tweens.add({ targets: sp, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
-        this.tweens.add({ targets: sp, alpha: 0, delay: 360, duration: 300, onComplete: () => sp.destroy() });
+        if (typeof EnemyFX !== 'undefined') EnemyFX.sprouts(this, tiles);   // roots burst up out of the floor (typed: EnemyFX.js)
         BossFX.blast(this, enemy.x * T + T / 2, enemy.y * T + T / 2, (r + 0.5) * T, 'vine');
         this._vfxBursts?.goo && (this._vfxBursts.goo.setParticleTint?.(0x5a4a3a), this._vfxBursts.goo.explode(12, enemy.x * T + T / 2, enemy.y * T + T / 2));
     }
@@ -1475,7 +1745,9 @@ class BossFX {
         const g = this._bfxRootG, p = this.player;
         if (!g?.active) return;
         g.clear();
-        if (!this._playerRooted || !p?.active || p.visible === false) return;
+        const held = this._playerRooted && p?.active && p.visible !== false;
+        if (typeof EnemyFX !== 'undefined' && EnemyFX.wrap(this, held && this._bfxRootKind === 'vine', p)) return;   // a Rooter's roots: typed (EnemyFX.js)
+        if (!held) return;
         const vine = this._bfxRootKind === 'vine';
         const dark = vine ? 0x0b1a0d : 0x12061f, mid = vine ? 0x2f7a3a : 0x6a2ad0, hi = vine ? 0xb6ff7a : 0xff9af0;
         const T = this.TILE_SIZE, bx = p.x, base = p.y - (this.SLIME_Y_OFFSET || 0) + 10;
@@ -1549,10 +1821,10 @@ class BossFX {
         const g = this.add.graphics().setDepth(15.2).setBlendMode(Phaser.BlendModes.ADD);
         this._vfxSort?.(g);
         let motes = null;
-        if (this.add.particles && this.textures.exists('vfx_dot')) {
-            motes = this.add.particles(0, 0, 'vfx_dot', {
-                lifespan: { min: 600, max: 1100 }, scale: { start: 0.9, end: 0.2 }, alpha: { start: 0.2, end: 1 },
-                tint: [0xb46cff, 0xff7ae8, 0xffffff], blendMode: 'ADD', emitting: false, moveToX: cx, moveToY: cy,
+        if (this.add.particles && this.textures.exists('fx_cosmic')) {   // (the hand-drawn void motes, drawn in to the middle)
+            motes = this.add.particles(0, 0, 'fx_cosmic', { frame: Array.from({ length: 10 }, (_, i) => 'p_' + i),
+                lifespan: { min: 600, max: 1100 }, scale: { start: 1.6, end: 0.8 }, alpha: { start: 0.3, end: 1 },
+                color: [0x6a32c8, 0xa874f8, 0xff7ae8, 0xffffff], blendMode: 'ADD', emitting: false, moveToX: cx, moveToY: cy,
             }).setDepth(16.1);
             this._vfxSort?.(motes);
         }
@@ -1621,24 +1893,24 @@ class BossFX {
     // The game has made each pillar tile floor (this.world). Every tile in and round them gets the
     // frame Visuals.js would paint for it now (the walls lose their faces, the floor round them its
     // contact shadow), the lifted wall caps over them go, and they crumble: dust, rubble, pebbles.
-    // The tiles are bobs in two blitters on the atlas: the world (depth 0) and the caps above it.
-    _bfxCrumble(tiles) {
+    // The tiles are bobs in blitters on the atlas, a chunk each (Visuals.blitChunks): the world (depth 0) and the caps above it.
+    // quiet: only drawn again, nothing crumbles (the Training Ground's painted walls).
+    _bfxCrumble(tiles, quiet = false) {
         const T = this.TILE_SIZE;
         if (!tiles?.length || !this._vfxFrame) return;
         const key = (x, y) => x + ',' + y;
         const near = new Set();
         for (const [x, y] of tiles) for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) near.add(key(x + dx, y + dy));
         const blits = this.children.list.filter(o => o.type === 'Blitter' && o.texture?.key === 'vfx_atlas');
-        const bobsOf = bl => {
+        const bobsOf = bls => {
             const m = new Map();
-            for (const b of bl?.children?.list || []) {
+            for (const bl of bls) for (const b of bl.children.list) {
                 const k = key(Math.round(b.x / T), Math.round(b.y / T));
                 if (near.has(k)) m.set(k, b);
             }
             return m;
         };
-        const world = bobsOf(blits.find(o => (o.depth || 0) === 0));
-        const capLayer = blits.find(o => o.depth > 0 && o.depth < 0.5), caps = bobsOf(capLayer);
+        const world = bobsOf(blits.filter(o => (o.depth || 0) === 0)), caps = bobsOf(blits.filter(o => o.depth > 0 && o.depth < 0.5));
         const TH = this._vfxTheme?.() || { floor: 0xffffff, wall: 0xffffff };
         for (const k of near) {
             const [x, y] = k.split(',').map(Number), fr = this._bfxTileFrame(x, y);
@@ -1646,14 +1918,15 @@ class BossFX {
             const b = world.get(k);
             if (b) { b.setFrame(fr.frame); b.setTint(fr.floor ? TH.floor : TH.wall); }
             let c = caps.get(k);
-            if (!c && fr.lift && capLayer) { c = capLayer.create(x * T, y * T, fr.lift); if (TH.wall !== 0xffffff) c.setTint(TH.wall); }   // a wall that rose (the Tower's shift)
+            if (!c && fr.lift && this._vfxLiftBob) { c = this._vfxLiftBob(x, y, fr.lift); if (TH.wall !== 0xffffff) c.setTint(TH.wall); }   // a wall that rose (the Tower's shift), in its own chunk's caps
             if (!c) continue;
             c.setVisible(!!fr.lift);
             if (fr.lift) c.setFrame(fr.lift);
         }
         const a = this._vfxAtlas?.();
-        const pebbles = this._vfxPaintDecal ? this._vfxFrame('dc_pebbles', (ctx, X, Y, S) => this._vfxPaintDecal(ctx, X, Y, S, 'dc_pebbles')) : null;
+        const pebbles = !quiet && this._vfxPaintDecal ? this._vfxFrame('dc_pebbles', (ctx, X, Y, S) => this._vfxPaintDecal(ctx, X, Y, S, 'dc_pebbles')) : null;
         if (a?._vfxDirty) { a.refresh(); a._vfxDirty = false; }
+        if (quiet) return;
         tiles.forEach(([x, y], i) => {
             const px = x * T + T / 2, py = y * T + T / 2;
             this.time.delayedCall(i * 40, () => {
@@ -1681,8 +1954,14 @@ class BossFX {
     // Its death: it folds in on itself (a star of light, the ring and its shards thrown out), then
     // goes off in a burst of night.
     _bfxVoidDeath(b) {
-        const c = b.container, x = c.x, y = c.y - 15;
-        this._vfxFlash?.(x, y, 300, 0xc99cff, 1400, 1);
+        const c = b.container, x = c.x, y = c.y - 15, s = b.body;
+        this._vfxFlash?.(x, y, 200, 0xc99cff, 1400, 0.9);
+        // it cracks with light, then breaks apart (its frames), shards of it flying
+        if (b._bfxArt && s?.active) {
+            b._bfxDying = true; s.setFrame('die_0');
+            this.time.delayedCall(420, () => { if (s.active) s.setFrame('die_1'); });
+            this.tweens.add({ targets: s, x: { from: -2, to: 2 }, duration: 50, yoyo: true, repeat: 7 });
+        }
         for (let i = 0; i < 6; i++) {
             this.time.delayedCall(i * 140, () => {
                 const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 40;
@@ -1690,14 +1969,24 @@ class BossFX {
             });
         }
         this.time.delayedCall(800, () => {
-            BossFX.blast(this, x, y, 120, 'ripple');
-            this._vfxBursts?.cosmic?.explode(40, x, y);
+            if (!BossFX.voidBurst(this, x, y, 120)) { BossFX.blast(this, x, y, 120, 'ripple'); this._vfxBursts?.cosmic?.explode(40, x, y); }
             const goo = this._vfxBursts?.goo;
             if (goo) { goo.setParticleTint?.(0x2a0f52); goo.explode(30, x, y); }
-            if (this.textures.exists('vfx_splat')) {
+            if (b._bfxArt) {   // what's left of it: a pool of night, its last stars in it, soaking away
+                const pool = this.add.image(x, c.y + 10, 'boss_void', 'die_2').setOrigin(0.5, 1).setScale(2).setDepth(0.3).setAlpha(0);
+                this._vfxSort?.(pool);
+                this.tweens.add({ targets: pool, alpha: 1, duration: 300 });
+                this.tweens.add({ targets: pool, alpha: 0, delay: 3200, duration: 2600, onComplete: () => pool.destroy() });
+            } else if (this.textures.exists('vfx_splat')) {
                 const sp = this.add.image(x, y + 24, 'vfx_splat').setTint(0x5a2aa6).setAlpha(0.6).setDepth(0.2).setScale(2.6);
                 this._vfxSort?.(sp);
                 this.tweens.add({ targets: sp, alpha: 0, delay: 3000, duration: 3000, onComplete: () => sp.destroy() });
+            }
+            const cr = b._bfx?.crown;   // its crown falls and rolls to rest
+            if (cr?.active && b._bfxArt) {
+                const k = this.add.image(x, c.y - 84, 'boss_void', 'crown').setScale(2).setDepth(c.depth + 0.1);
+                this._vfxSort?.(k);
+                this.tweens.add({ targets: k, y: c.y + 4, duration: 520, ease: 'Bounce.easeOut', onComplete: () => this.tweens.add({ targets: k, alpha: 0, delay: 2600, duration: 1600, onComplete: () => k.destroy() }) });
             }
         });
         for (const R of this._bfxRifts || []) this._bfxRiftClose(R, 300);

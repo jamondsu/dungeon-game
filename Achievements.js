@@ -74,6 +74,7 @@ const Achievements = {
         this.bump('kills', 1, scene);
         if (e._lastEl) this.bump('kills_' + e._lastEl, 1, scene);
         if (e._lastResisted) this.bump('resistKills', 1, scene);
+        if (typeof Bounties !== 'undefined') Bounties.onKill(scene, e);   // (the run's bounties count kills too)
     },
     // From the Tower's floor clear: the best floor, a boss, a floor from 10 up without a scratch
     onFloor(scene, T) {
@@ -84,7 +85,12 @@ const Achievements = {
 
     _earn(a, scene) {
         const done = this.done(); done.add(a.id); this._write('ach_done', [...done]);
-        const R = a.reward || {};
+        scene = this.pay(a.reward, scene);
+        scene?._achThisLevel?.push(a);   // the win screen's cards
+        if (scene?.add) this.toast(scene, a);
+    },
+    // A reward into the save (and the scene's own purse, if it keeps one); returns the scene it went to. Bounties pay here too.
+    pay(R = {}, scene = null) {
         scene ||= typeof game !== 'undefined' ? game.scene.getScenes(true).slice(-1)[0] : null;
         if (R.glorps) {
             try { localStorage.setItem('glorps', String((parseInt(localStorage.getItem('glorps') || '0', 10) || 0) + R.glorps)); } catch (e) {}
@@ -94,8 +100,7 @@ const Achievements = {
         if (R.dust && typeof Enchants !== 'undefined') Enchants.addDust(R.dust);
         if (R.books && typeof Enchants !== 'undefined') Enchants.addBooks(R.books);
         if (R.seed && typeof Garden !== 'undefined') Garden.give(R.seed);
-        scene?._achThisLevel?.push(a);   // the win screen's cards
-        if (scene?.add) this.toast(scene, a);
+        return scene;
     },
     rewardText(a) {
         const R = a.reward || {}, out = [];
@@ -118,15 +123,14 @@ const Achievements = {
         if (!a) return;
         const end = () => { this._queue.shift(); this._next(); };
         if (!scene?.sys?.isActive?.()) return end();
+        if (a.draw) return a.draw(scene, end);   // (one that draws itself, in its turn: a bounty's scroll)
         const W = scene.scale.width, w = 440, h = 78, D = 60, col = this.TIER_COL[a.tier];
         const c = scene.add.container(W / 2, -h).setScrollFactor(0).setDepth(D);
         const bg = scene.add.graphics();
         bg.fillStyle(0x0b0812, 0.94).fillRoundedRect(-w / 2, 0, w, h, 8);
         bg.lineStyle(2, col, 1).strokeRoundedRect(-w / 2, 0, w, h, 8);
-        bg.fillStyle(col, 1).fillCircle(-w / 2 + 38, h / 2, 20);
-        bg.fillStyle(0x0b0812, 1).fillCircle(-w / 2 + 38, h / 2, 15);
-        const star = scene.add.text(-w / 2 + 38, h / 2, '★', { fontSize: '20px', color: UIKit._hex(col) }).setOrigin(0.5);
-        const t1 = scene.add.text(-w / 2 + 70, 10, `ACHIEVEMENT  ·  ${a.name.toUpperCase()}`, { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(col) });
+        const star = scene.add.image(-w / 2 + 38, h / 2, ...(a.icon || ['map_kit', 'toast_' + a.tier])).setScale(2);   // its medal, the star in it (assets/art map_kit; a bounty's, its note: ui_bounty)
+        const t1 = scene.add.text(-w / 2 + 70, 10, `${a.label || 'ACHIEVEMENT'}  ·  ${a.name.toUpperCase()}`, { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(col) });
         const t2 = scene.add.text(-w / 2 + 70, 32, a.desc, { fontSize: '12px', fontFamily: 'monospace', color: '#e8dcc0' });
         const t3 = scene.add.text(-w / 2 + 70, 52, this.rewardText(a), { fontSize: '11px', fontFamily: 'monospace', color: '#9be08a' });
         c.add([bg, star, t1, t2, t3]);

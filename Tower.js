@@ -108,65 +108,21 @@ class TowerFloors {
     }
 
     // ── ART ───────────────────────────────────────────────────────────────────
-    // The way up: a stone dais in 3/4 view, runes going round its rim, gold light spiralling
-    // into the well, chevrons rising out of it (48px, 8 frames).
+    // The way up: a stone dais in 3/4 view between two standing stones, runes going round its rim, gold light
+    // spiralling into the well, chevrons rising out of it (assets/art/tower_exit, 48px, 8 frames).
     static exitKey(scene) {
         const key = 'tower_exit';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 48, { d: '#2a2436', s: '#5a5270', S: '#8a82a4', D: '#3a3350', n: '#140c26', v: '#3a1e5a', o: '#ffb02a', y: '#ffe066', Y: '#fff6c0', w: '#ffffff', g: '#ffe9a0' }, (m, f) => {
-            const ell = (cx, cy, rx, ry, c) => { for (let y = 0; y < 48; y++) for (let x = 0; x < 48; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) m.set(x, y, c); };
-            const X = 24, Y = 32, ph = f / 8 * Math.PI * 2;
-            for (const sx of [3, 41]) {                                        // two standing stones behind it, runes lit in turn
-                m.rect(sx, 8, 5, 20, 's'); m.rect(sx, 8, 1, 20, 'S'); m.rect(sx + 4, 8, 1, 20, 'D'); m.rect(sx + 1, 6, 3, 2, 's');
-                for (let k = 0; k < 4; k++) m.rect(sx + 2, 11 + k * 4, 1, 2, (k + f + (sx > 20 ? 2 : 0)) % 4 === 0 ? 'Y' : 'o');
-                m.disc(sx + 2.5, 4.5, 1.6 + (f % 2) * 0.4, 'y'); m.set(sx + 2, 4, 'w');   // a flame of the same gold on top
-            }
-            ell(X, Y + 3, 21, 11.5, 'd'); ell(X, Y, 21, 11.5, 's');           // the dais: its side, its top
-            for (let k = 0; k < 16; k++) {                                     // the stones of its rim
-                const a = k / 16 * Math.PI * 2;
-                m.line(X + Math.cos(a) * 17, Y + Math.sin(a) * 9.4, X + Math.cos(a) * 20.5, Y + Math.sin(a) * 11.2, 'D');
-                if (Math.sin(a + 0.2) < -0.2) m.set(X + Math.cos(a + 0.2) * 19.5, Y + Math.sin(a + 0.2) * 10.6, 'S');
-            }
-            ell(X, Y, 16.5, 9, 'D'); ell(X, Y + 0.6, 15, 8, 'n'); ell(X, Y + 1, 10, 5.2, 'v');   // the lip, the well
-            for (let k = 0; k < 6; k++) {                                      // runes, going round
-                const a = k / 6 * Math.PI * 2 + ph / 6, x = X + Math.cos(a) * 18.7, y = Y + Math.sin(a) * 10.2;
-                const c = k === f % 6 ? 'w' : 'y';
-                m.set(x, y, c); m.set(x + 1, y, c); m.set(x, y - 1, 'o');
-            }
-            for (let arm = 0; arm < 3; arm++) {                                // light spiralling in
-                for (let k = 0; k <= 20; k++) {
-                    const t = k / 20, a = arm * 2.094 + t * 3.4 - ph * 0.5, r = (1 - t) * 13.5;
-                    m.set(X + Math.cos(a) * r, Y + 1 + Math.sin(a) * r * 0.55, t < 0.45 ? 'o' : t < 0.8 ? 'y' : 'Y');
-                }
-            }
-            ell(X, Y + 1, 3.2, 1.8, 'Y'); m.rect(X - 1, Y, 2, 1, 'w');
-            for (let i = 0; i < 3; i++) {                                      // chevrons rising: up
-                const yy = 27 - ((f * 3 + i * 8) % 24);
-                for (let d = 0; d <= 3; d++) { m.set(X - d, yy + d, 'g'); m.set(X - 1 + d + 1, yy + d, 'g'); }
-            }
-        }, 8);
+        if (scene.textures.exists(key) && !scene.anims.exists(key))
+            scene.anims.create({ key, frames: scene.anims.generateFrameNames(key, { start: 0, end: 7 }), frameRate: 6, repeat: -1 });
+        return key;
     }
     // The shrine: a stone pedestal with a carved rune, a bowl on top, and a boon crystal turning
-    // over it (32px, 8 frames).
+    // over it (assets/art/tower_shrine, 32px, 8 frames).
     static shrineKey(scene) {
         const key = 'tower_shrine';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 32, { d: '#2a2e3a', s: '#566070', S: '#8a96a8', D: '#1c4a40', t: '#2a8a70', T: '#7ae0c0', a: '#7ae0c0', A: '#d8fff2', E: '#2f9a7e', w: '#ffffff', g: '#b8fff0' }, (m, f) => {
-            const ell = (cx, cy, rx, ry, c) => { for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) m.set(x, y, c); };
-            ell(16, 29.5, 11, 2.4, 'd'); m.rect(5, 26, 22, 4, 'd'); ell(16, 26, 11, 2.4, 's'); m.rect(7, 26, 2, 3, 's');   // the base slab
-            m.rect(10, 15, 12, 11, 's'); m.rect(10, 15, 2, 11, 'S'); m.rect(20, 15, 2, 11, 'd');   // the column, lit from the left
-            m.rect(10, 16, 12, 1, 'D'); m.rect(10, 24, 12, 1, 'D'); m.rect(12, 16, 8, 1, 't'); m.rect(12, 24, 8, 1, 't');   // carved bands, teal in the grooves
-            const lit = [0, 1, 2, 2, 1, 0, 0, 0][f];
-            m.poly([[16, 17], [18.5, 20], [16, 23], [13.5, 20]], lit ? 'T' : 't'); m.set(16, 20, lit > 1 ? 'w' : 'a');   // its rune
-            ell(16, 14.5, 9, 3, 'd'); ell(16, 14, 8, 2.4, 's'); ell(16, 14, 6.5, 1.7, 'D'); ell(16, 14, 4.5, 1, 'T');   // the bowl, glowing
-            const by = 6 + [0, 0, -1, -1, -1, -1, 0, 0][f], fx = 16 + 3.6 * Math.sin(f / 8 * Math.PI * 2);   // the crystal, turning: its facet edge sweeps across
-            const gem = [[16, by - 6], [20.5, by - 2], [20.5, by + 2], [16, by + 6], [11.5, by + 2], [11.5, by - 2]];
-            m.poly(gem, 'a');
-            m.poly([[16, by - 6], [fx, by - 2], [fx, by + 2], [16, by + 6], [11.5, by + 2], [11.5, by - 2]], 'A');
-            m.line(fx, by - 2, fx, by + 2, 'E'); m.line(19.5, by - 1, 19.5, by + 2, 'E');
-            m.set(14, by - 3, 'w'); m.set(13, by - 1, 'w');
-            for (let i = 0; i < 2; i++) { const a = f / 8 * Math.PI * 2 + i * Math.PI; m.set(16 + Math.cos(a) * 7, by + Math.sin(a) * 2.5, 'g'); }   // motes round it
-        }, 8);
+        if (scene.textures.exists(key) && !scene.anims.exists(key))
+            scene.anims.create({ key, frames: scene.anims.generateFrameNames(key, { start: 0, end: 7 }), frameRate: 6, repeat: -1 });
+        return key;
     }
 
     // ── PICKS ────────────────────────────────────────────────────────────
@@ -194,36 +150,7 @@ class TowerFloors {
         { id: 'mend',     name: 'Second Wind', max: 3, col: 0x9be08a, text: t => `a cleared floor heals ${10 * t}% more` },
         { id: 'keen',     name: 'Keen Edge',   max: 5, col: 0xffd34a, text: t => `${5 * t}% of your hits crit (×1.5)` },
     ];
-    // A boon's icon: 16px pixel art in its own colour (ShopScene.icon). `a` its colour, `b` a
-    // lighter one, `w` the highlight.
-    static pickIcon(scene, p) {
-        const key = 'tw_pick_' + p.id;
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return null;
-        const hex = c => '#' + c.toString(16).padStart(6, '0');
-        const lite = c => hex([16, 8, 0].reduce((v, sh) => v | (Math.min(255, ((c >> sh) & 255) + 70) << sh), 0));
-        return ShopScene.icon(scene, key, 16, { a: hex(p.col), b: lite(p.col), w: '#ffffff', d: '#3a2a1a', s: '#8a8aa0' }, (m) => {
-            const D = {
-                might:    () => { m.line(3, 12, 11, 4, 's'); m.line(4, 12, 12, 4, 'w'); m.line(4, 13, 12, 5, 's'); m.rect(2, 11, 3, 1, 'a'); m.rect(3, 10, 1, 3, 'a'); m.set(2, 13, 'd'); },
-                vigor:    () => { m.disc(5.5, 6, 3, 'a'); m.disc(10.5, 6, 3, 'a'); m.poly([[2.6, 7], [13.4, 7], [8, 13.5]], 'a'); m.set(5, 5, 'w'); m.set(4, 6, 'b'); },
-                guard:    () => { m.poly([[3, 3], [13, 3], [13, 8], [8, 14], [3, 8]], 'a'); m.poly([[5, 5], [11, 5], [11, 8], [8, 11.5], [5, 8]], 'b'); m.line(8, 4, 8, 12, 'w'); },
-                fire:     () => { m.poly([[8, 1.5], [12.5, 8], [11.5, 13], [4.5, 13], [3.5, 8], [6, 9]], 'a'); m.poly([[8, 6], [10.5, 10], [10, 13], [6, 13], [5.5, 10]], 'b'); m.set(8, 11, 'w'); },
-                ice:      () => { for (const [dx, dy] of [[0, 1], [1, 0], [1, 1], [1, -1]]) { m.line(8 - dx * 6, 8 - dy * 6, 8 + dx * 6, 8 + dy * 6, dx && dy ? 'b' : 'a'); } m.set(8, 8, 'w'); },
-                lightning:() => { m.poly([[9.5, 1.5], [4, 9], [7.5, 9], [6, 14.5], [12, 6.5], [8.5, 6.5]], 'a'); m.line(8.5, 3, 6, 8, 'w'); },
-                cosmic:   () => { m.poly([[8, 1.5], [9.6, 6.2], [14.5, 6.4], [10.6, 9.4], [12, 14.2], [8, 11.3], [4, 14.2], [5.4, 9.4], [1.5, 6.4], [6.4, 6.2]], 'a'); m.disc(8, 8, 1.6, 'b'); m.set(7, 7, 'w'); },
-                gems:     () => { m.poly([[4, 6], [6, 3], [10, 3], [12, 6], [8, 13]], 'a'); m.poly([[6, 6], [7, 4], [9, 4], [10, 6], [8, 10]], 'b'); m.set(7, 5, 'w'); m.line(4, 6, 12, 6, 'b'); },
-                catalyst: () => { m.rect(6, 2, 4, 4, 's'); m.poly([[6, 6], [10, 6], [13, 13], [3, 13]], 'a'); m.poly([[5, 10], [11, 10], [12.5, 13], [3.5, 13]], 'b'); m.set(7, 11, 'w'); m.set(9, 8, 'w'); },
-                swift:    () => { m.poly([[4, 4], [8, 4], [8, 9], [13, 10], [13, 13], [4, 13]], 'a'); m.rect(4, 11, 9, 2, 'b'); for (let i = 0; i < 3; i++) m.line(1, 6 + i * 2, 3, 6 + i * 2, 'w'); },
-                leech:    () => { m.poly([[8, 2], [12, 8], [11, 12], [8, 14], [5, 12], [4, 8]], 'a'); m.disc(8, 10, 2.5, 'b'); m.set(7, 9, 'w'); },
-                thorns:   () => { m.disc(8, 9, 4, 'a'); for (let k = 0; k < 6; k++) { const t = k / 6 * Math.PI * 2; m.line(8 + Math.cos(t) * 4, 9 + Math.sin(t) * 4, 8 + Math.cos(t) * 7, 9 + Math.sin(t) * 7, 'b'); } m.set(7, 8, 'w'); },
-                greed:    () => { m.disc(8, 8, 6, 'a'); m.ring(8, 8, 6, 1, 'd'); m.disc(8, 8, 3.5, 'b'); m.rect(7, 5, 2, 6, 'a'); m.set(6, 5, 'w'); },
-                keen:     () => { m.poly([[3, 13], [12, 2], [14, 4], [5, 14]], 's'); m.line(4, 13, 13, 3, 'w'); m.poly([[8, 5], [9, 3], [10, 5], [12, 6], [10, 7], [9, 9], [8, 7], [6, 6]], 'a'); },
-                crescendo:() => { m.ring(8, 9, 5.5, 1.2, 'a'); m.ring(8, 9, 3, 1, 'b'); m.disc(8, 9, 1.2, 'w'); for (let k = 0; k < 3; k++) m.line(3 + k * 4, 3, 5 + k * 4, 1, 'w'); },
-                fusion:   () => { m.disc(5.5, 8, 4, 'a'); m.disc(10.5, 8, 4, 'b'); m.disc(8, 8, 2, 'w'); for (let k = 0; k < 4; k++) m.set(8 + Math.cos(k * 1.57) * 6, 8 + Math.sin(k * 1.57) * 6, 'w'); },
-                mend:     () => { m.rect(6, 2, 4, 12, 'a'); m.rect(2, 6, 12, 4, 'a'); m.rect(7, 3, 2, 10, 'b'); m.rect(3, 7, 10, 2, 'b'); m.set(7, 7, 'w'); },
-            };
-            (D[p.id] || D.might)();
-        });
-    }
+    // A boon's icon: assets/art/tw_picks, a 16px frame per boon named by its id, in its own colour.
 
     // What a set of picks ({ id: tier }) adds up to.
     static mods(picks = {}) {
@@ -318,13 +245,13 @@ class TowerFloors {
     // An item popping out of (x, y): up in an arc, a bounce, a moment on the floor, then into you, its name over you
     static dropItem(S, x, y, key, frame, label, colour, scale = 2) {
         const p = S.player; if (!p?.active) return;
-        const o = key && S.textures.exists(key) ? S.add.image(x, y, key, frame ?? undefined) : S.add.star(x, y, 5, 3, 7, 0xffe08a);
+        const o = key && S.textures.exists(key) ? S.add.image(x, y, key, frame ?? undefined) : S.add.image(x, y, 'cfx_bits', 'star').setTint(0xffe08a);
         o.setScale(scale).setDepth(6);
         const glow = S.add.image(x, y, 'vfx_glow').setTint(Phaser.Display.Color.HexStringToColor(colour).color).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35).setAlpha(0.7).setDepth(5.9);
         const lx = x + (Math.random() - 0.5) * 30, ly = y + 6, q = { t: 0 };
-        S.tweens.add({ targets: q, t: 1, duration: 420, ease: 'Linear', onUpdate: () => { const k = q.t, hop = Math.sin(Math.PI * k) * 26; o.setPosition(x + (lx - x) * k, y + (ly - y) * k - hop).setRotation(k * 6); glow.setPosition(o.x, o.y); },
+        S.tweens.add({ targets: q, t: 1, duration: 420, ease: 'Linear', onUpdate: () => { const k = q.t, hop = Math.sin(Math.PI * k) * 26; o.setPosition(x + (lx - x) * k, y + (ly - y) * k - hop).setFlipX(k > 0.5); glow.setPosition(o.x, o.y); },
             onComplete: () => {
-                o.setRotation(0); S.tweens.add({ targets: o, y: ly - 6, duration: 140, yoyo: true, ease: 'Quad.easeOut' });   // the bounce
+                o.setFlipX(false); S.tweens.add({ targets: o, y: ly - 6, duration: 140, yoyo: true, ease: 'Quad.easeOut' });   // the bounce
                 S.time.delayedCall(450, () => { if (!o.active) return;
                     const r = { t: 0 }, fx = o.x, fy = o.y;
                     S.tweens.add({ targets: r, t: 1, duration: 320, ease: 'Cubic.easeIn', onUpdate: () => { o.setPosition(fx + (p.x - fx) * r.t, fy + (p.y - 10 - fy) * r.t).setScale(scale * (1 - 0.5 * r.t)); glow.setPosition(o.x, o.y); },
@@ -531,9 +458,9 @@ class TowerFloors {
             this.time.delayedCall(delay, () => {
                 const px = x * T + T / 2, py = y * T + T / 2;
                 const hole = this.add.rectangle(px, py, T, T, 0x040208, 1).setDepth(0.25).setAlpha(0);
-                const chunk = this.add.rectangle(px, py, T - 2, T - 2, (x + y) % 2 ? 0x4a4458 : 0x3c3650).setDepth(0.26).setStrokeStyle(1, 0x1a1626);
+                const chunk = this.add.image(px, py, 'fx_tower_chunk', String((x + y) % 2)).setDepth(0.26);   // a slab of the floor (assets/art)
                 this.tweens.add({ targets: hole, alpha: 1, duration: 120 });
-                this.tweens.add({ targets: chunk, y: py + 26 + Math.random() * 20, angle: (Math.random() - 0.5) * 40, scale: 0.6, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() });
+                this.tweens.add({ targets: chunk, y: py + 26 + Math.random() * 20, scale: 0.6, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() });
                 if (Math.random() < 0.15) this._vfxBursts?.goo?.setParticleTint?.(0x6a6280)?.explode?.(4, px, py);
             });
         }
@@ -899,14 +826,11 @@ class TowerFloors {
             objs.push(...UIKit.panel(this, { x, y: y0, w: cw, h: ch, accent: p.col, depth: D + 1 }).objs);
             const glow = keep(this.add.image(cx, y0 + 52, 'vfx_glow').setTint(p.col).setBlendMode(Phaser.BlendModes.ADD).setScrollFactor(0).setDepth(D + 2).setScale(0.3).setAlpha(0.7));
             this.tweens.add({ targets: glow, scale: 0.36, alpha: 0.9, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-            const ik = TowerFloors.pickIcon(this, p);
-            if (ik) keep(this.add.image(cx, y0 + 52, ik).setScale(3).setScrollFactor(0).setDepth(D + 3));
+            if (this.textures.get('tw_picks').has(p.id)) keep(this.add.image(cx, y0 + 52, 'tw_picks', p.id).setScale(3).setScrollFactor(0).setDepth(D + 3));
             keep(this.add.text(cx, y0 + 98, p.name, { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: UIKit._hex(p.col) }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 3));
-            const pips = keep(this.add.graphics().setScrollFactor(0).setDepth(D + 3));
-            for (let k = 0; k < p.max; k++) {
-                const px = cx - (p.max - 1) * 9 + k * 18, py = y0 + 124;
-                pips.fillStyle(k < t ? p.col : k === t ? 0xffffff : 0x2a2a38, k === t ? 0.9 : 1);
-                pips.fillPoints([{ x: px, y: py - 5 }, { x: px + 5, y: py }, { x: px, y: py + 5 }, { x: px - 5, y: py }], true);
+            for (let k = 0; k < p.max; k++) {   // its tiers: had (its colour), the one you'd take (white), still to come (dark)
+                const pip = keep(this.add.image(cx - (p.max - 1) * 9 + k * 18, y0 + 124, 'fx_pip', k <= t ? 'on' : 'off').setScrollFactor(0).setDepth(D + 3));
+                if (k < t) pip.setTint(p.col); else if (k === t) pip.setAlpha(0.9);
             }
             keep(this.add.text(cx, y0 + 148, p.text(t + 1), { fontSize: '13px', fontFamily: 'monospace', color: UIKit.CSS.textHi, align: 'center', wordWrap: { width: cw - 30 } }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(D + 3));
             if (t) keep(this.add.text(cx, y0 + 186, `now: ${p.text(t)}`, { fontSize: '11px', fontFamily: 'monospace', color: UIKit.CSS.textLo, align: 'center', wordWrap: { width: cw - 30 } }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(D + 3));

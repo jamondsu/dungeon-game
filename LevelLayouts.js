@@ -25,6 +25,12 @@ const LevelLayouts = {
         g_landing: { w: 10, h: 8, name: 'Landing' },   // where a floor starts: the lift comes up here
         g_circuit: { w: 17, h: 11, name: 'The Circuit', open: true },   // the Coil Works' maze (LevelManager._circuitBuild lays it); open: its doors never lock
         g_coil:    { w: 18, h: 13, name: 'The Coil Hall', walls: [[4, 3], [13, 3], [4, 9], [13, 9]].flatMap(([x, y]) => [[x, y], [x, y + 1]]) },
+        // 2-4, the Dynamo: all floor, its patterns the hardest (Pulse.GAUNTLET): the dancefloor, a long hall the cascades sweep, the dynamo itself
+        // the overload run: four walls across it leave five lanes, joined at the foot and the head in turn, a winding hall from west to east
+        g_run:     { w: 24, h: 14, name: 'The Overload', open: true, walls: [4, 9, 14, 19].flatMap((x, i) => Array.from({ length: 11 }, (_, y) => [x, i % 2 ? y + 3 : y])) },
+        g_dance:   { w: 18, h: 14, name: 'The Dancefloor' },
+        g_cascade: { w: 26, h: 10, name: 'The Cascade' },
+        g_dynamo:  { w: 20, h: 16, name: 'The Dynamo', walls: [[5, 4], [14, 4], [5, 11], [14, 11]].flatMap(([x, y]) => [[x, y], [x + 1, y]]) },
         g_boss:    { w: 24, h: 22, walls: [...[[2, 2], [20, 2], [2, 17], [20, 17]].flatMap(([x, y]) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]),
                                            [11, 2], [12, 2], [11, 18], [12, 18], [2, 10], [2, 11], [21, 10], [21, 11]] },
         // ── the Void Rift's rooms ──
@@ -67,7 +73,8 @@ const LevelLayouts = {
     FLOORS: {
         2: [{ name: 'STORM GATE', path: ['g_start', 'g_pillars', 'g_brawl'], story: [0, 1, 2], side: [['chest_s', 1]], exit: 'lift', cells: [2, 'chest_s'], storm: 0.15 },
             { name: 'THE BARRACKS', path: ['g_landing', 'g_choke', 'g_lanes'], story: [null, 3, 4], side: [['elite', 1]], exit: 'lift', cells: [1, 'elite'], storm: 0.4 },
-            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', 'g_coil'], story: [null, 5, null], side: [['chest', 1], ['g_circuit', 1, [1, 2], ['east']]], exit: 'lift', cells: [1, 'chest', 'g_circuit'], need: 2, storm: 0.7 },
+            { name: 'THE COIL WORKS', path: ['g_landing', 'g_ambush', ['g_run', 1, ['east']], ['g_coil', 2, ['east']]], story: [null, 5, null, null], side: [['chest', 1, [1]], ['g_circuit', 1, [1, 3], ['east']]], exit: 'lift', cells: [1, 'chest', 'g_circuit'], need: 2, storm: 0.7 },
+            { name: 'THE DYNAMO', path: ['g_landing', 'g_dance', 'g_cascade', 'g_dynamo'], story: [null, 7, 8, 9], exit: 'lift', storm: 0.85 },
             { name: 'THE ROOF', path: ['g_landing', 'g_boss'], story: [null, 6], storm: 1, sky: true, rain: 0.7 }],
     },
     // full names: lockTutorialDoors reads door.direction as 'east'/'west'/'north'/'south'

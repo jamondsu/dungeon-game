@@ -7,8 +7,8 @@
 //
 //   faces    every slime gets eyes. Enemies glare at you, you look where you aim; they blink,
 //            wince when hit, go to X's when stunned and stare when frozen
-//   hats     each enemy type wears what it is (horns, a mortar barrel, a sprout, a fin, a helmet,
-//            a raincloud...) in place of the icon that used to float over its head
+//   hats     what an enemy wears that its own body doesn't carry (a raincloud, a helmet, a crown of
+//            icicles, the Hunter's ears...), and the fishing hats you can wear in the garden
 //   status   drawn on the body from the enemy's state: fire on it, frost creeping in, a block of
 //            ice, stars, sparks, drips, marks orbiting it; flame pips for stacked burns
 //   symbols  the "!" warnings, slow and speed chevrons, pickups (glorps, potions, scrap) as
@@ -37,36 +37,18 @@ class CreatureFX {
   "angry": {"at": [[11, 26], [19, 26]], "c": [["kkw", ".wk"], ["wkk", "kw."]], "l": [["kkw", ".kw"], ["wkk", "kw."]], "r": [["kkw", ".wk"], ["wkk", "wk."]], "blink": [["kk.", ".kk"], [".kk", "kk."]], "wince": [["k..", ".k.", "k.."], ["..k", ".k.", "..k"]], "wince_at": [[11, 25], [19, 25]], "x": [["k.k", ".k.", "k.k"], ["k.k", ".k.", "k.k"]], "x_at": [[11, 25], [19, 25]]}
  },
  "hats": {
-  "horns": {"x": 9, "y": 16, "pal": {"b": "#f2e9d2", "s": "#b8aa8c"}, "rows": [
-    ".k...........k.", "kbk.........kbk", "kbk.........kbk", "kbbk.......kbbk", ".kbbk.....kbbk.", ".ksbbk...kbbsk.",
-    "..ksbk...kbsk..", "...kk.....kk..."]},
-  "mortar": {"x": 12, "y": 15, "pal": {"m": "#6f7c8f", "M": "#3d4656", "o": "#ff7a1a", "O": "#ffd060", "r": "#8a6a3a"}, "rows": [
-    "..kkkkk..", ".kmoOomk.", ".kMmmmMk.", "..kMmMk..", "..kMmMk..", ".kkMmMkk.", ".krrrrrk.", "kkrrrrrkk",
-    ".kkkkkkk."]},
-  "sprout": {"x": 12, "y": 17, "pal": {"L": "#b6ff7a", "l": "#46c24e", "s": "#2c8a3a"}, "rows": [
-    ".kk...kk.", "kLlk.klLk", "klllklllk", ".kklslkk.", "...ksk...", "...ksk...", "....k...."]},
   "bud": {"x": 12, "y": 15, "pal": {"P": "#ffb0dc", "p": "#e0609e", "L": "#b6ff7a", "l": "#46c24e"}, "rows": [
     "...kkk...", "..kPPpk..", ".kPPPppk.", ".kPPpppk.", "..kpppk..", "kk.klk.kk", "kLkklkkLk", ".kLLlLLk.", "..kkkkk.."]},
   "ears": {"x": 9, "y": 15, "pal": {"E": "#3a2a32", "e": "#5a4048", "r": "#c8303a", "R": "#ff6a6a"}, "rows": [
     "kk.........kk", "kEk.......kEk", "kEek.....keEk", "kEeEk...kEeEk", "kEEEkkkkkEEEk", "krrRrrrrrrRrk", ".kkkkkkkkkkk."]},
   "flamecrown": {"x": 10, "y": 16, "pal": {"F": "#ffd04a", "f": "#ff7a1a", "r": "#c02a0a"}, "rows": [
     "..k...k...k..", ".kFk.kFk.kFk.", ".kfFkFffkFfk.", "kfffffrfffffk", "krrrrrrrrrrrk", ".kkkkkkkkkkk."]},
-  "tophat": {"x": 11, "y": 16, "pal": {"B": "#1a1420", "b": "#3a2e48", "g": "#ffd84a"}, "rows": [
-    "..kkkkkkk..", "..kBBBBBk..", "..kBbBBBk..", "..kBbBBBk..", "..kgggggk..", "kkkBBBBBkkk", "kBBBBBBBBBk", ".kkkkkkkkk."]},
-  "medic": {"x": 11, "y": 18, "pal": {"W": "#f4fff8", "w": "#c8e8d8", "G": "#3ad86a"}, "rows": [
-    "...kkkkk...", "..kWWGWWk..", ".kWWGGGWWk.", ".kWWWGWWWk.", "kwwwwwwwwwk", ".kkkkkkkkk."]},
-  "anchorhat": {"x": 12, "y": 14, "pal": {"S": "#8aa4c0", "s": "#4a6078"}, "rows": [
-    "...kkk...", "...kSk...", ".kkkSkkk.", ".kSSSSSk.", "...kSk...", "k..kSk..k", "kSkkSkkSk", ".kSSsSSk.", "..kkkkk.."]},
+  "tophat": {"x": 11, "y": 16, "pal": {"B": "#1c1624", "b": "#3a3150", "h": "#7c6f96", "d": "#0e0a14", "G": "#ffd84a", "g": "#b0802a"}, "rows": ["..kkkkkkk..", "..kbhBBdk..", "..kbhBBdk..", "..kbBBBdk..", "..kGGGGgk..", "kkkbBBBdkkk", "kbbbBBBBBdk", ".kkkkkkkkk."]},
   "goggles": {"x": 7, "y": 20, "pal": {"B": "#1a2a3a", "L": "#9fe8ff", "l": "#3aa8d8", "W": "#ffffff"}, "rows": [
     "...kkkk....kkkk...", "..kLWLLkBBkLWLLk..", "..kLllLk..kLllLk..", "...kkkk....kkkk..."]},
-  "shades": {"x": 10, "y": 25, "pal": {"P": "#c070ff", "p": "#7a30c0"}, "rows": [
-    "kkkkkkkkkkkkk", "kPPpk...kPPpk", ".kkk.....kkk."]},
-  "mask": {"x": 9, "y": 28, "pal": {"M": "#3a2450", "m": "#24163a"}, "rows": [
-    "kMMMMMMMMMMMMMk", ".kmmmmmmmmmmmk."]},
   "fangs": {"x": 15, "y": 29, "pal": {"W": "#ffffff", "R": "#d01a1a"}, "rows": [
     "W.W", "R.R"]},
-  "terminals": {"x": 11, "y": 18, "pal": {"W": "#ffe08a", "R": "#d83a2a", "D": "#2a2a2a"}, "rows": [
-    ".kWk...kWk.", ".kRk...kDk.", ".kRk...kDk.", "kkkkk.kkkkk"]},
+  "terminals": {"x": 11, "y": 18, "pal": {"W": "#fff4c0", "R": "#e83a2a", "r": "#8a1a14", "D": "#3a3a44", "d": "#1a1a20"}, "rows": [".kWk...kWk.", ".kRk...kDk.", ".krk...kdk.", "kkkkk.kkkkk"]},
   "bud0": {"x": 14, "y": 19, "pal": {"S": "#a0703a", "s": "#6a4a20"}, "rows": [
     ".kk.", "kSsk", ".kk."]},
   "bud1": {"x": 13, "y": 17, "pal": {"L": "#7ad84a", "G": "#3a8a2a"}, "rows": [
@@ -83,53 +65,29 @@ class CreatureFX {
     "..k.......k..", ".kIk..k..kIk.", ".kIk.kIk.kik.", "kiIikkIikkIik", "kdddiiiiidddk", ".kkkkkkkkkkk."]},
   "boltcrown": {"x": 10, "y": 16, "pal": {"Y": "#fff27a", "y": "#e0b020", "W": "#ffffff"}, "rows": [
     ".k...kk...k..", "kYk..kYk.kYk.", ".kYk.kYYk.kYk", "kYyk.kyYkkYyk", "kyyyyyWyyyyyk", ".kkkkkkkkkkk."]},
-  "seam": {"x": 14, "y": 23, "pal": {"t": "#f4ead2"}, "rows": [
-    "..k..", ".tkt.", "..k..", ".tkt.", "..k.."]},
-  "spout": {"x": 12, "y": 27, "pal": {"r": "#5a0c1c", "p": "#ff9fb4"}, "rows": [
-    "....kkk....", "p..krrrk..p", "....krk...."]},
-  "hood": {"x": 9, "y": 15, "pal": {"h": "#3a1d5c", "H": "#5c3388"}, "rows": [
-    ".......k.......", "......khk......", ".....khHhk.....", "....khHHhhk....", "...khHHhhhhk...", "..khHHhhhhhhk..",
-    ".khHhhhhhhhhhk.", "khHhhhhhhhhhhhk", "khhhhhhhhhhhhhk", "khhkkkkkkkkkhhk", "khk.........khk", ".k...........k."]},
-  "monocle": {"x": 18, "y": 25, "pal": {"g": "#ffcf4a", "G": "#b8892a"}, "rows": [
-    ".ggg.", "g...g", "g...g", ".gGg.", "...G.", "....G"]},
   "fin": {"x": 13, "y": 14, "pal": {"f": "#e6f6ff", "F": "#9fc8e6"}, "rows": [
     "......k", ".....kk", "....kfk", "...kfk.", "..kffk.", ".kfFfk.", ".kfFffk", "kfFfffk", "kfffffk", ".kkkkk."]},
   "antennae": {"x": 11, "y": 16, "pal": {"o": "#66f0ff", "O": "#e0ffff"}, "rows": [
     ".kk.....kk.", "kOok...kOok", ".kk.....kk.", "..k.....k..", "...k...k...", "...k...k...", "....k.k....",
     "....k.k...."]},
-  "cloud": {"x": 11, "y": 10, "pal": {"c": "#9fb4d4", "C": "#dfe9f8", "s": "#6f84a8", "d": "#4aa8ff"}, "rows": [
-    "....kkk....", "..kkCCCkk..", ".kcCCCCCck.", "kcccCCcccck", "ksssssssssk", ".kkkkkkkkk.", "..d...d....",
-    "....d...d.."]},
-  "helm": {"x": 10, "y": 14, "pal": {"t": "#ffd24a", "T": "#b8892a", "h": "#a9bdd2", "H": "#e2ecf6", "d": "#5f7186"}, "rows": [
-    "....t.t.t....", "....t.t.t....", "....ttttt....", ".....ktk.....", "....kkTkk....", "...khHHHhk...",
-    "..khHHhhhhk..", ".khHhhhhhhhk.", ".khhhhhhhhhk.", "khhhhhhhhhhhk", "kdddddddddddk", ".kkkkkkkkkkk."]},
-  "rod": {"x": 14, "y": 11, "pal": {"Y": "#ffe94a", "W": "#ffffff", "m": "#8e9bb0", "M": "#5b6577"}, "rows": [
-    ".kkk.", "kYWYk", ".kYk.", "..k..", ".kmk.", "..m..", ".kmk.", "..m..", ".kmk.", "..M..", ".kMk.", "kmmmk",
-    ".kkk."]},
-  "storm": {"x": 10, "y": 14, "pal": {"y": "#fff27a", "Y": "#ffffff"}, "rows": [
-    "......k......", ".....kyk.....", ".k...kYk...k.", "kyk.kYk...kyk", ".kyk.kyk.kyk.", "..kYk.kYkYk..",
-    "..kykkYkkyk..", "...kyk.kyk...", "....k...k...."]},
-  "halo": {"x": 10, "y": 15, "pal": {"v": "#6a2aa8", "V": "#c07cff"}, "rows": [
-    "...kkkkkkk...", ".kkVVVVVVVkk.", "kVVkkkkkkkVVk", "kvvk.....kvvk", ".kkvvvvvvvkk.", "...kkkkkkk..."]},
-  "weeds": {"x": 10, "y": 20, "pal": {"s": "#2f6b3e", "S": "#5aa860"}, "rows": [
-    ".....kkk.....", "...kksSskk...", "..ksSssSssk..", ".ksksk.ksSsk.", ".ks.s...k.sk.", ".sk.k.....s..",
-    ".s........k..", ".k..........."]},
-  "roof": {"x": 8, "y": 12, "pal": {"r": "#a0522d", "R": "#d2783c", "p": "#6b4423"}, "rows": [
-    "......kkkkk......", "....kkrRRRrkk....", "..kkrRRRRRRRrkk..", "kkrRRRRRRRRRRRrkk", "kkkkkkkkkkkkkkkkk",
-    ".kp...........pk.", ".kp...........pk.", ".kp...........pk.", ".kp...........pk.", ".kp...........pk.",
-    ".kp...........pk.", ".kp...........pk.", ".kk...........kk."]},
+  "cloud": {"x": 11, "y": 10, "pal": {"C": "#e8f0fc", "W": "#ffffff", "c": "#b0c0dc", "s": "#7084a8", "d": "#6ab4ff", "D": "#3a7ad8"}, "rows": ["....kkk....", "..kkCWWkk..", ".kcCWCCCck.", "kcCCCCCccck", "ksssssssssk", ".kkkkkkkkk.", "..d...d....", "....D...D.."]},
+  "helm": {"x": 10, "y": 14, "pal": {"Y": "#fff0a0", "t": "#ffd24a", "T": "#b8892a", "h": "#a9bdd2", "H": "#e2ecf6", "d": "#5f7186"}, "rows": ["....Y.Y.Y....", "....t.t.T....", "....ttttT....", ".....ktk.....", "....kkTkk....", "...kHHHhhk...", "..kHHHhhhdk..", ".kHHhhhhhhdk.", ".kHhhhhhhhdk.", "kHhhhhhhhhddk", "kdTdddTdddTdk", ".kkkkkkkkkkk."]},
+  "storm": {"x": 10, "y": 14, "pal": {"Y": "#fff27a", "y": "#d8a818", "W": "#ffffff"}, "rows": [
+    "......k......", ".....kYk.....", ".k...kWk...k.", "kYk.kWk...kYk", ".kYk.kyk.kYk.", "..kWk.kWkWk..",
+    "..kykkWkkyk..", "...kyk.kyk...", "....k...k...."]},
+  "weeds": {"x": 10, "y": 20, "pal": {"G": "#6ab05a", "g": "#2f6b3e", "L": "#9ad87a"}, "rows": [".....kkk.....", "...kkGLGkk...", "..kgGgGLgGk..", ".kgkGk.kGgGk.", ".kg.G...k.gk.", ".gk.k.....G..", ".g........k..", ".k..........."]},
+  "roof": {"x": 8, "y": 12, "pal": {"R": "#d2783c", "r": "#a0522d", "L": "#f0a060", "p": "#6b4423", "P": "#8a5a2a"}, "rows": ["......kkkkk......", "....kkrLLLrkk....", "..kkrRRLRRRRrkk..", "kkrRRrRRRRrRRRrkk", "kkkkkkkkkkkkkkkkk", ".kP...........pk.", ".kP...........pk.", ".kP...........pk.", ".kP...........pk.", ".kP...........pk.", ".kP...........pk.", ".kP...........pk.", ".kk...........kk."]},
   "crown": {"x": 10, "y": 17, "pal": {"g": "#ffd84a", "G": "#fff3a8", "d": "#b8892a", "c": "#5ff4ff", "y": "#ff5a8a"}, "rows": [
     "k.....k.....k", "kk...kGk...kk", "kgk..kgk..kgk", "kggkkgGgkkggk", "kGcgGgygGgcGk", "kdddddddddddk",
     ".kkkkkkkkkkk."]},
   "icecrown": {"x": 10, "y": 13, "pal": {"W": "#ffffff", "I": "#9fe8ff", "i": "#5fb8e0", "d": "#2a6a9a"}, "rows": [
     "......k......", ".....kWk.....", "..k..kIk..k..", ".kWk.kIk.kWk.", ".kIkkiIikkIk.", "kiIiiIIIiiIik", "kiiiiiiiiiiik",
     "kdddddddddddk", ".kkkkkkkkkkk."]},
-  "bow": {"x": 11, "y": 18, "pal": {"P": "#fff3a8", "p": "#ffd84a", "d": "#c89a2a"}, "rows": [
-    ".kk.....kk.", "kPpk...kpPk", "kPppkkkpppk", "kpppkPkpppk", "kdppkkkppdk", ".kkk...kkk."]},
+  "bow": {"x": 11, "y": 18, "pal": {"P": "#fff3a8", "Y": "#ffd84a", "y": "#c89a2a", "G": "#fffbe0"}, "rows": ["kkk.....kkk", "kPYkk.kkYyk", "kYPYYkYYyyk", "kYYYkGkyyyk", "kyykkkkkyyk", ".kkk...kkk."]},
   "qcrown": {"x": 11, "y": 18, "pal": {"g": "#ffd84a", "G": "#fff3a8", "d": "#b8892a", "r": "#ff3a5a", "c": "#5ff4ff"}, "rows": [
     "k....k....k", "kk..kGk..kk", "kGk.kgk.kGk", "kgrkgGgkrgk", "kgggggcgggk", "kdddddddddk", ".kkkkkkkkk."]}
  },
- "sets": {"berserker": ["horns"], "rooter": ["sprout"], "voidsniper": ["shades", "mask"], "sniper": ["hood", "monocle"], "lightningelem": ["storm"], "drowner": ["weeds"], "tidecaller": ["cloud"], "tidalguard": ["helm"], "frost": ["icecrown"], "wishingwell": ["roof"], "conduit": ["terminals"], "volt": ["crown"], "queen": ["qcrown"], "bud": ["bud"], "bud0": ["bud0"], "bud1": ["bud1"], "bud2": ["bud2"], "bud3": ["bud3"], "leech": ["fangs"], "hunter": ["ears", "fangs"], "shade": ["voidcrown"], "shade_fire": ["flamecrown"], "shade_ice": ["frostspikes"], "shade_lightning": ["boltcrown"], "wraith": ["wisps"], "diver": ["goggles"], "ceo": ["tophat"], "healer": ["medic"], "anchor": ["anchorhat"], "cheer": ["bow"]},
+ "sets": {"ripplerunner": ["antennae"], "waverider": ["fin"], "lightningelem": ["storm"], "drowner": ["weeds"], "tidecaller": ["cloud"], "tidalguard": ["helm"], "frost": ["icecrown"], "wishingwell": ["roof"], "conduit": ["terminals"], "volt": ["crown"], "queen": ["qcrown"], "bud": ["bud"], "bud0": ["bud0"], "bud1": ["bud1"], "bud2": ["bud2"], "bud3": ["bud3"], "leech": ["fangs"], "hunter": ["ears", "fangs"], "shade": ["voidcrown"], "shade_fire": ["flamecrown"], "shade_ice": ["frostspikes"], "shade_lightning": ["boltcrown"], "wraith": ["wisps"], "diver": ["goggles"], "ceo": ["tophat"], "cheer": ["bow"]},
  "bits": {
   "star": {"pal": {"Y": "#ffe94a", "W": "#ffffff"}, "rows": [
     "...k...", "..kYk..", ".kkYkk.", "kYYWYYk", ".kkYkk.", "..kYk..", "...k..."]},
@@ -208,7 +166,7 @@ class CreatureFX {
     // Built once per game, from whichever scene asks first:
     //   cfx_face  32x32 frames laid over a slime frame: e_<mood>_<frame>_<look>, h_<set>_<frame>
     //   cfx_bits  the small sprites (stars, flakes, drops, chevrons, pickups...)
-    //   cfx_ice   the ice block, whole and cracked
+    //   (cfx_ice, the ice block whole and cracked, is a file of its own)
     static sheets(scene) {
         const tm = scene?.textures;
         const A = CreatureFX.art();
@@ -269,63 +227,7 @@ class CreatureFX {
             bits.add(name, 0, X, Y, w, h);
         }
         bits.refresh();
-
-        // the ice block, whole (a hard freeze) and cracked (a brittle cube)
-        const IW = 26, IH = 21;
-        const ice = tm.createCanvas('cfx_ice', IW * 2, IH);
-        const ictx = ice.getContext();
-        CreatureFX.paintIce(ictx, 0, 0, IW, IH, false);
-        CreatureFX.paintIce(ictx, IW, 0, IW, IH, true);
-        ice.add('ice', 0, 0, 0, IW, IH);
-        ice.add('ice_cracked', 0, IW, 0, IW, IH);
-        ice.refresh();
-        return true;
-    }
-
-    // A block of ice, pixel by pixel: cut corners, a bright rim on the lit (top-left) edges and
-    // a deeper one on the others, frosted toward the rim and clear in the middle so the slime
-    // shows through, a slanted shine, a couple of faint facets. Cracked: white cracks with a
-    // dark edge running in from three sides.
-    static paintIce(ctx, X, Y, W, H, cracked) {
-        const put = (x, y, rgb, a) => { ctx.fillStyle = `rgba(${rgb},${a})`; ctx.fillRect(X + x, Y + y, 1, 1); };
-        const CUT = 3;
-        for (let y = 0; y < H; y++) {
-            for (let x = 0; x < W; x++) {
-                const ex = Math.min(x, W - 1 - x), ey = Math.min(y, H - 1 - y);
-                if (ex + ey < CUT) continue;                           // the cut corners
-                const edge = Math.min(ex, ey, ex + ey - CUT);          // 0 on the outline
-                const lit = x + y * 1.2 < (W + H * 1.2) * 0.45;
-                let rgb, a;
-                if (edge === 0) { rgb = lit ? '236,252,255' : '96,170,214'; a = 0.95; }
-                else if (edge === 1) { rgb = lit ? '196,238,255' : '140,206,240'; a = 0.7; }
-                else if (edge === 2) { rgb = '150,214,246'; a = 0.42; }
-                else { rgb = '120,196,238'; a = 0.26; }
-                const band = x - y * 0.9;                              // the shine, top left
-                if (edge > 0 && band > W * 0.14 && band < W * 0.14 + 2.4 && y < H * 0.62) { rgb = '246,253,255'; a = 0.8; }
-                const band2 = x - y * 0.9;                             // a thinner one beside it
-                if (edge > 1 && band2 > W * 0.32 && band2 < W * 0.32 + 1 && y < H * 0.45) { rgb = '236,250,255'; a = 0.55; }
-                put(x, y, rgb, a);
-            }
-        }
-        // facets: two faint lines from the corners in
-        ctx.fillStyle = 'rgba(220,246,255,0.35)';
-        for (let i = 3; i < 9; i++) { ctx.fillRect(X + W - 1 - i, Y + H - 4 - Math.floor(i * 0.6), 1, 1); }
-        if (!cracked) return;
-        const crack = pts => {
-            for (let i = 0; i < pts.length - 1; i++) {
-                let [x0, y0] = pts[i]; const [x1, y1] = pts[i + 1];
-                const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-                for (let k = 0; k <= n; k++) {
-                    const x = Math.round(x0 + (x1 - x0) * k / n), y = Math.round(y0 + (y1 - y0) * k / n);
-                    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(X + x, Y + y, 1, 1);
-                    ctx.fillStyle = 'rgba(40,80,120,0.55)'; ctx.fillRect(X + x + 1, Y + y, 1, 1);
-                }
-            }
-        };
-        crack([[2, 7], [6, 9], [8, 13], [12, 14]]);
-        crack([[W - 3, 4], [W - 7, 7], [W - 9, 6]]);
-        crack([[W - 6, H - 2], [W - 8, H - 6], [W - 12, H - 7]]);
-        crack([[11, 2], [12, 5], [10, 7]]);
+        return true;   // (the ice block, whole and cracked, is its own file: cfx_ice)
     }
 
     // Stops a game object drawing without touching anything the game reads or writes on it:
@@ -365,6 +267,8 @@ class CreatureFX {
     static ultArmor(scene, el, ms, target = null) {
         const p = target || scene.player, part = !!target, holder = part ? target : scene;
         if (!p?.active || !['fire', 'ice', 'lightning', ...(part ? ['cosmic'] : [])].includes(el)) return;
+        if (el === 'lightning' && typeof Fork !== 'undefined') return Fork.armour(scene, ms, target);   // the Lightning God is hand-drawn (Fork.js)
+        if ((el === 'fire' || el === 'ice') && typeof ElementSystem !== 'undefined') return ElementSystem.armour(scene, el, ms, target);   // the Magma Armor and the Ice King are hand-drawn (ElementSystem.armour)
         holder._ultArmor?.end?.();
         const ADD = Phaser.BlendModes.ADD;
         const K = { fire: { tint: 0x1e100c, a: 0.9, rim: 0xff7a2a, ra: 0.5, floor: 0xff5a1a }, ice: { tint: 0x9ad8ff, a: 0.55, rim: 0xffffff, ra: 0.5, floor: 0x9ad8ff }, cosmic: { tint: 0x1a0a2e, a: 0.85, rim: 0xb47cff, ra: 0.55, floor: 0x9966ff }, lightning: { tint: 0x1a1a34, a: 0.82, rim: 0xffe14a, ra: 0.55, floor: 0xffe14a } }[el];
@@ -546,8 +450,19 @@ class CreatureFX {
             flame_sword: blade, void_blade: blade,
             magma_staff: staff, barrier_staff: staff, singularity_staff: staff,
             ignition: { type: 'gun', s: 0.6, art: 0, ox: 0.28, oy: 0.55 }, icicle_cannon: wand, orb_emitter: wand, conductor: staff,
+            ember_scythe: { type: 'staff', s: 0.95, art: -Math.PI / 4, ox: 0.26, oy: 0.7, mirror: true },   // (held mirrored: the blade hangs out in front, a reaper's)
+            thunder_glaive: { type: 'staff', s: 0.9, art: -Math.PI / 4, ox: 0.3, oy: 0.7 },   // (a polearm, stood at your side, the blade up)
+            rimeguard: { type: 'blade', s: 0.66, art: -Math.PI / 4, ox: 0.3, oy: 0.72 },   // (the maul swings; the shield's face is Rimeguard.look's)
+            boreal_trident: { type: 'staff', s: 0.92, art: -Math.PI / 4, ox: 0.26, oy: 0.74, mirror: true },   // (a polearm at your side, the tines up and out in front)
             ball_lightning: { type: 'orb', s: 0.48 }, astrolabe: { type: 'orb', s: 0.52, spin: 0.0012 }, fractal_shard: { type: 'orb', s: 0.52 },
+            pendulum: { type: 'orb', s: 0.6, fps: 4 },   // (the Reliquary held up beside you, never turned: it sways a pixel by its own frames, its sparkles twinkling)
         });
+    }
+    // As high as the weapon in your hand can reach however it leans (world y), or null: a meter a weapon keeps over you sits above it
+    static gearTop(scene) {
+        const M = scene._cfxGearState?.main;
+        if (!M?.active || !M.visible) return null;
+        return M.y - Math.hypot(Math.max(M.originX, 1 - M.originX) * Math.abs(M.displayWidth), Math.max(M.originY, 1 - M.originY) * Math.abs(M.displayHeight));
     }
     // The far end of the weapon in your hand (a staff's head), in world space, or null: where a cast leaves from.
     static gearTip(scene) {
@@ -563,7 +478,7 @@ class CreatureFX {
         const id = scene.equippedWeapons?.[scene.currentElement];
         const def = CreatureFX.GEAR()[id];
         const key = def && typeof MenuArt !== 'undefined' ? MenuArt.iconSheet(scene, id) : null;
-        const show = !!(p?.active && key && p.visible !== false && (p.alpha ?? 1) > 0.05 && !scene._deathScreenActive && !(scene._iceShellUntil > scene.time.now) && !scene._tutFalling);   // (hidden while the ice ult encases you)
+        const show = !!(p?.active && key && p.visible !== false && (p.alpha ?? 1) > 0.05 && !scene._deathScreenActive && !(scene._iceShellUntil > scene.time.now) && !scene._tutFalling && !(scene._scytheSpinUntil > scene.time.now) && !(id === 'pendulum' && scene._cs?.away));   // (hidden while the ice ult encases you)
         if (!show) { if (G) { G.main.setVisible(false); G.off.setVisible(false); } return; }
         if (!G) {
             const mk = () => scene.add.sprite(p.x, p.y, key, '0');
@@ -571,7 +486,7 @@ class CreatureFX {
         }
         if (G.id !== id) {
             G.id = id; G.swapAt = now; G.ang = null;
-            for (const o of [G.main, G.off]) { o.setTexture(key, '0'); o.play(key); o.setRotation(0).setFlip(false, false).setOrigin(0.5, 0.5); }
+            for (const o of [G.main, G.off]) { o.setTexture(key, '0'); o.play(def.fps ? { key, frameRate: def.fps } : key); o.setRotation(0).setFlip(false, false).setOrigin(0.5, 0.5); }
         }
         // where you aim, and the kick: each time the weapon actually attacks (the attack marks
         // scene._gearFiredAt once its own cooldown lets it through), so the motion runs at that
@@ -593,9 +508,9 @@ class CreatureFX {
         const turn = (from, to, f) => from == null ? to : from + (Math.atan2(Math.sin(to - from), Math.cos(to - from))) * f;
         // point the art (direction `def.art`) along angle `a`; on your left it is mirrored, so it reads the same way up
         const aim = (o, a, x, y) => {
-            const art = def.art ?? 0;
-            o.setFlip(!right, false).setOrigin(right ? def.ox : 1 - def.ox, def.oy);
-            o.setRotation(right ? a - art : a - (Math.PI - art)).setPosition(x, y);
+            const art = def.art ?? 0, r = def.mirror ? !right : right;   // (mirror: the art held the other way round)
+            o.setFlip(!r, false).setOrigin(r ? def.ox : 1 - def.ox, def.oy);
+            o.setRotation(r ? a - art : a - (Math.PI - art)).setPosition(x, y);
         };
         M.setVisible(true).setAlpha(al).setScale(S); O.setAlpha(al).setScale(S);
         if (def.type === 'fists' || def.type === 'punch') {
@@ -769,7 +684,7 @@ class CreatureFX {
     // The eyes an enemy wears, by what it does: carers look kind, the stubborn ones calm, the sneaky ones sly, the rest angry
     static MOODS = { healer: 'kind', tidecaller: 'kind', wishingwell: 'kind', cheer: 'kind',
         armored: 'calm', encased: 'calm', gem: 'calm', anchor: 'calm', shade: 'calm', frost: 'calm', tidalguard: 'calm', conduit: 'calm',
-        wraith: 'sly', leech: 'angry', hunter: 'sly', drowner: 'sly', voidsniper: 'sly', ceo: 'sly' };
+        wraith: 'sly', leech: 'angry', hunter: 'sly', drowner: 'sly', voidsniper: 'sly', sniper: 'sly', ceo: 'sly', blinder: 'sly' };
     static moodOf(key) { return CreatureFX.MOODS[key] || 'angry'; }
 
     // Changes what an existing face wears (or its eye colour).
@@ -864,15 +779,17 @@ class CreatureFX {
             // What each enemy type wears (a set in art().sets), the colour its eyes glow, and the
             // old floating marks the hat replaces (those stop drawing; the game still owns them).
             TYPES: {
-                berserker:     { hat: 'berserker' },
+                // (top: how high the gear drawn on its own body reaches, a frame row, for its health bar)
+                berserker:     { hat: null, top: 16 },
                 ranged:        { hat: null, mute: ['_rangedMark'] },
-                rooter:        { hat: 'rooter', mute: ['_rooterMark'] },
+                rooter:        { hat: null, top: 17, mute: ['_rooterMark'] },
                 splitter:      { hat: null, mute: ['_splitterMark'] },
-                mortar:        { hat: null, mute: ['_mortarGfx'] },
-                voidsniper:    { hat: 'voidsniper', eye: 0xff8cff, mute: ['_sniperMark'] },
+                mortar:        { hat: null, top: 21, mute: ['_mortarGfx'] },
+                voidsniper:    { hat: null, eye: 0xff8cff, mute: ['_sniperMark', '_voidMark'] },
+                sniper:        { hat: null, top: 15, eye: 0xffcf4a, mute: ['_sniperMark', '_voidMark'] },   // the Bankshot (Sniper.js): hooded, a brass scope over one eye, eyes the scope's gold
                 lightningelem: { hat: 'lightningelem', eye: 0xfff6a0, mute: ['_lightningMark'] },
                 singularity:   { hat: null, eye: 0xff8cff },
-                drowner:       { hat: 'drowner' },
+                drowner:       { hat: 'drowner', mute: ['_cisternMark'] },
                 ripplerunner:  { hat: null, mute: ['_cisternMark'] },
                 tidecaller:    { hat: 'tidecaller', mute: ['_cisternMark', '_rangedMark'] },
                 waverider:     { hat: null, mute: ['_cisternMark'] },
@@ -887,14 +804,15 @@ class CreatureFX {
                 shade_ice:     { hat: 'shade_ice', eye: 0x0a2a44 },
                 shade_lightning: { hat: 'shade_lightning', eye: 0x3a2a00 },
                 wraith:        { hat: 'wraith', eye: 0x9fe8ff },
-                diver:         { hat: 'diver', eye: 0xbff0ff },
+                diver:         { hat: 'diver', top: 15, eye: 0xbff0ff },   // (its tank reaches row 15)
                 leech:         { hat: 'leech', eye: 0xff4aff },   // its eyes take its colour (LevelManager._leechPick)
                 ceo:           { hat: 'ceo', eye: 0xffd84a },
                 gem:           {},
-                healer:        { hat: 'healer', eye: 0xc8ffd8 },
-                anchor:        { hat: 'anchor', eye: 0xc8dcf0 },
+                healer:        { hat: null, top: 18, eye: 0xc8ffd8 },
+                anchor:        { hat: null, top: 14, eye: 0xc8dcf0 },
                 hunter:        { hat: 'hunter', eye: 0xffe8d0 },   // red when it frenzies (LevelManager._hunterFrenzy)
                 cheer:         { hat: 'cheer', eye: 0xffd0ec },
+                blinder:       { hat: null, top: 17, eye: 0xe8dcff },   // (the wisp off its crown reaches row 17)
             },
             // The warnings that fade in over a head ("!") keep their timing; only the drawing
             // changes. Field -> colour (null: read it off the game's own text).
@@ -1021,9 +939,8 @@ class CreatureFX {
         }
         e._cfxSeed = Math.random() * 100;
         const key = this._enemyTypeKey?.(e) || 'slime';
-        const T = this._cfxCfg().TYPES[key] || {};
+        const T = this._cfxCfg().TYPES[e._upgradedSniper ? 'sniper' : key] || {};
         let set = T.hat || null;
-        if (e._upgradedSniper) set = 'sniper';
         e._cfxType = key; e._cfxMute = T.mute || [];
         const u = e.sprite._cfx || CreatureFX.face(this, e.sprite, { mood: CreatureFX.moodOf(key) });
         if (!u) return;
@@ -1033,7 +950,7 @@ class CreatureFX {
         // the health bar sits on the sprite's centre (frame row 16); a hat reaching higher than
         // row 18 would run into it, so the bar moves up by the difference
         const parts = set ? CreatureFX.art().sets[set] || [] : [];
-        let top = 22;
+        let top = T.top ?? 22;
         for (const n of parts) { const h = CreatureFX.art().hats[n]; if (h) top = Math.min(top, h.y); }
         const lift = Math.max(0, (18.5 - top) * Math.abs(e.sprite.scaleY || 1.2));
         if (lift > 0) e._hpBarYOff = (e._hpBarYOff || 0) - Math.round(lift);
@@ -1123,7 +1040,7 @@ class CreatureFX {
         if (fv) { CreatureFX.mute(fv.iceBlock); CreatureFX.mute(fv.iceBorder); for (const l of fv._extraLayers || []) CreatureFX.mute(l); }
 
         const frozen = !!(e.isFrozen || e._iceCube);
-        const stunned = !!e.isStunned && !(e.stunnedUntil > 0 && now > e.stunnedUntil + 100);
+        const stunned = !!e.isStunned && !(e.stunnedUntil > 0 && now > e.stunnedUntil + 100) && !e._tlock;   // (in a Time Lock it's only stopped time: no stars)
         // the eyes: squeezed after a hit, X's while stunned, a fixed stare in the ice
         if (u) u.expr = now - (e._vfxHitAt ?? -1e9) < C.WINCE_MS ? 'wince' : stunned ? 'x' : frozen ? 'c' : null;
 
@@ -1205,23 +1122,44 @@ class CreatureFX {
             });
         } else drop('stars');
 
-        // ── amped: sparks crackling over it ──
+        // ── amped: sparks crackling over it, and its mark at the left end of the health bar (the burn pips and the frost
+        // bar have the space over it), blinking as it runs out ──
         if (e.isSuperConducted && shown) {
             if (!fx.arcAt || now - fx.arcAt > C.ARC.EVERY) { fx.arcAt = now; fx.arcSeed = Math.random() * 1000; }
             this._cfxSparks(B, fx.arcSeed);
-        }
+            const hb = e.healthBarBg, left = (e.superConductUntil || 0) - now;
+            const [m] = imgs('amp', 1, 'fx_storm', 'amp', null);
+            m.setPosition(Math.round(hb?.visible ? hb.x - hb.displayWidth / 2 - 7 : B.x - 19), Math.round(hb?.visible ? hb.y : B.over + 3))
+             .setAlpha(left < 900 && Math.floor(now / 90) % 2 ? 0.35 : 1);
+            dep(m, 4.62);
+        } else drop('amp');
+        // ── taunted (the Rimeguard's swing): an ice-blue "!" at the right end of the health bar, blinking as it runs out ──
+        const tauntLeft = (e._rgTauntUntil || 0) - now;
+        if (tauntLeft > 0 && shown) {
+            const hb = e.healthBarBg, [m] = imgs('taunt', 1, 'cfx_bits', 'alert', o => o.setTint(0x9fe4ff));
+            m.setPosition(Math.round(hb?.visible ? hb.x + hb.displayWidth / 2 + 5 : B.x + 17), Math.round((hb?.visible ? hb.y : B.over + 3) - 1 + Math.sin(now * 0.02)))
+             .setAlpha(tauntLeft < 600 && Math.floor(now / 90) % 2 ? 0.35 : 1);
+            dep(m, 4.62);
+        } else drop('taunt');
+        // ── Frostbite (the Boreal Trident): a violet snowflake at the frost bar's right end, pulsing, blinking as it runs out ──
+        const biteLeft = (e._tbUntil || 0) - now;
+        if (biteLeft > 0 && shown && !frozen) {
+            const [m] = imgs('bite', 1, 'fx_trident', 'bite_0', null);
+            m.setFrame(Math.floor(now / 260) % 2 ? 'bite_1' : 'bite_0').setPosition(Math.round(B.x + 15), Math.round(B.over - 5)).setAlpha(biteLeft < 900 && Math.floor(now / 90) % 2 ? 0.35 : 1);
+            dep(m, 4.62);
+        } else drop('bite');
 
         // ── Hex, cosmic's mark: one mote per stack orbiting it, pink, magenta, violet; they blink as it runs out ──
         const hexLeft = (e._csHexUntil || 0) - now, marks = shown && hexLeft > 0 ? Math.min(3, e._csHexStacks || 1) : 0;
         if (marks > 0) {
             const HUE = [0xff7ad8, 0xd86aff, 0x9a5aff], blink = hexLeft < 900 && Math.floor(now / 90) % 2 ? 0.35 : 1;
-            const mo = imgs('motes', marks, 'cfx_bits', 'mote', null);
+            const mo = imgs('motes', marks, 'fx_cosmic', 'hex_0', null);   // (hand-drawn little stars, turning by their own frames)
             const gl = imgs('moteGlow', marks, 'vfx_glow', null, o => o.setBlendMode(Phaser.BlendModes.ADD));
             const rx = B.hw * 1.3, ry = 4 * B.k, cy = B.mid - 1;
             mo.forEach((o, i) => {
                 const a = now * C.MOTE.SPIN * (1 + marks * 0.25) + i * Math.PI * 2 / marks, sn = Math.sin(a);   // spinning faster the deeper the Hex
                 const x = B.x + Math.cos(a) * rx, y = cy + sn * ry, dz = sn > 0 ? d + 0.006 : d - 0.003;
-                dep(o.setPosition(x, y).setTintFill(HUE[i]).setScale(2.1 + 0.4 * sn).setAlpha(blink), dz);
+                dep(o.setFrame('hex_' + ((Math.floor(now / 110) + i) % 4)).setPosition(Math.round(x), Math.round(y)).setTint(HUE[i]).setScale(1.7 + 0.3 * sn).setAlpha(blink), dz);
                 dep(gl[i].setPosition(x, y).setTint(HUE[i]).setScale(0.3).setAlpha((0.6 + 0.3 * sn) * blink), dz - 0.0005);
             });
         } else { drop('motes'); drop('moteGlow'); }
@@ -1260,23 +1198,13 @@ class CreatureFX {
 
     // A few short jagged arcs jumping between points on the body, redrawn every few frames.
     _cfxSparks(B, seed) {
-        const g = this._cfxArcs, C = this._cfxCfg().ARC;
+        const g = this._cfxArcs;
         if (!g) return;
         const R = VisualFX.prototype._vfxRng ? VisualFX.prototype._vfxRng(Math.floor(seed * 1000)) : Math.random;
-        for (let n = 0; n < 2; n++) {
+        for (let n = 0; n < 2; n++) {   // two thin bolts jumping across its skin (the hand-drawn pieces, WeaponSystem.bolt)
             const a0 = R() * Math.PI * 2, a1 = a0 + (0.6 + R() * 1.2) * (R() < 0.5 ? -1 : 1);
             const px = a => B.x + Math.cos(a) * B.hw * 1.05, py = a => B.mid + Math.sin(a) * (B.bot - B.top) * 0.62;
-            const pts = [];
-            for (let i = 0; i <= 4; i++) {
-                const a = a0 + (a1 - a0) * i / 4, j = i === 0 || i === 4 ? 0 : (R() - 0.5) * 5;
-                pts.push([px(a) + j, py(a) + j * 0.6 - (i === 2 ? 3 : 0)]);
-            }
-            for (const [w, col, al] of [[2.2, C.COLOR, 0.35], [1, 0xffffff, 0.95]]) {
-                g.lineStyle(w, col, al);
-                g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
-                for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
-                g.strokePath();
-            }
+            WeaponSystem.bolt(this, px(a0), py(a0), px(a1), py(a1) - 3, n ? 'w' : 'y', { thin: true, br: 0, a: 0.95, d: g.depth, glow: false });
         }
     }
 
@@ -1488,11 +1416,6 @@ class CreatureFX {
     // hat and glaring, instead of a flat disc.
     _cfxPortrait(panel, portrait, key, entry) {
         if (!panel || !portrait || !CreatureFX.sheets(this)) return;
-        portrait.clear();
-        portrait.fillStyle(0x000000, 0.45); portrait.fillCircle(0, 0, 36);
-        portrait.fillStyle(entry.tint, 0.16); portrait.fillCircle(0, 0, 33);
-        portrait.lineStyle(2, entry.tint, 0.75); portrait.strokeCircle(0, 0, 36);
-        portrait.lineStyle(1, 0xffffff, 0.18); portrait.strokeCircle(0, 0, 31);
         const L = LevelManager.look(this, key);   // its body, as the game draws it (LevelManager.LOOKS)
         if (!this.textures.exists(L.tex)) return;
         const spr = this.make.sprite({ x: portrait.x, y: portrait.y - 22, key: L.tex, frame: 0 }, false).setScale(3.4);

@@ -164,10 +164,11 @@ const Transitions = {
 
         const wall = pin(scene.add.graphics().setDepth(D));
         wall.fillStyle(P.bgDeep, 1).fillRect(0, 0, W, H);
-        UIKit.brickWall(wall, 0, 0, W, H);
-        wall.fillStyle(0x000000, 0.62).fillRect(0, 0, W, H);
-        UIKit.softGlow(wall, -60, -60, 120, 120, P.torch, { spread: 300, peak: 0.035, radius: 60 });
-        UIKit.softGlow(wall, W - 60, -60, 120, 120, P.torch, { spread: 300, peak: 0.035, radius: 60 });
+        pin(scene.add.image(0, 0, UIKit.bricks(scene, W, H)).setOrigin(0).setDepth(D));
+        const dim = pin(scene.add.graphics().setDepth(D));
+        dim.fillStyle(0x000000, 0.62).fillRect(0, 0, W, H);
+        UIKit.softGlow(dim, -60, -60, 120, 120, P.torch, { spread: 300, peak: 0.035, radius: 60 });
+        UIKit.softGlow(dim, W - 60, -60, 120, 120, P.torch, { spread: 300, peak: 0.035, radius: 60 });
         if (scene.textures.exists('mn_px2')) pin(scene.add.particles(0, 0, 'mn_px2', {
             x: { min: 0, max: W }, y: H + 6, lifespan: 4000, speedY: { min: -70, max: -30 }, speedX: { min: -10, max: 10 },
             scale: { start: 1.4, end: 0 }, alpha: { start: 0.8, end: 0 }, tint: [accent, MenuArt.mix(accent, 0xffffff, 0.5)],
@@ -185,8 +186,7 @@ const Transitions = {
             art.add(MenuArt.diorama(scene, o.art, W / 2, ay + ah / 2, aw, ah, { live: true }).objs);
             const m = scene.make.graphics({}, false); m.fillRect(ax, ay, aw, ah); track(m);
             art.setMask(m.createGeometryMask());
-            const rim = pin(scene.add.graphics().setDepth(D + 3));
-            UIKit.ironFrame(rim, ax - 4, ay - 4, aw + 8, ah + 8, { accent, body: false, shadow: false, courses: false });
+            const rim = pin(UIKit.nineImage(scene, 'panel', 'panel_a', ax - 4, ay - 4, aw + 8, ah + 8, accent).setDepth(D + 1.9));   // (the slab under the painting: its band frames it)
             for (const ob of [frame, art, rim]) { ob.setAlpha(0); scene.tweens.add({ targets: ob, alpha: 1, duration: 320, ease: 'Quad.easeOut' }); }
             ty = ay + ah + 70;
         }
@@ -200,11 +200,8 @@ const Transitions = {
         const ws = { w: 0 };
         scene.tweens.add({ targets: ws, w: title.width + 40, duration: 420, delay: 120, ease: 'Cubic.easeOut',
             onUpdate: () => wipe.clear().fillStyle(0xffffff, 1).fillRect(W / 2 - ws.w / 2, ty - 40, ws.w, 80) });
-        const rule = pin(scene.add.graphics().setDepth(D + 4).setPosition(W / 2, ty + 36));
-        rule.fillStyle(P.accentGold, 0.9).fillRect(-140, 0, 280, 2);
-        rule.fillStyle(P.accentGold, 1).fillPoints([{ x: 0, y: -4 }, { x: 5, y: 1 }, { x: 0, y: 6 }, { x: -5, y: 1 }], true);
-        rule.setScale(0, 1);
-        scene.tweens.add({ targets: rule, scaleX: 1, duration: 380, delay: 300, ease: 'Cubic.easeOut' });
+        const rule = pin(scene.add.image(W / 2, ty + 37, 'mn_card_rule').setOrigin(0.5).setDepth(D + 4).setScale(0, 2));   // (assets/art, at 2x)
+        scene.tweens.add({ targets: rule, scaleX: 2, duration: 380, delay: 300, ease: 'Cubic.easeOut' });
         if (o.tag) {
             const tag = pin(scene.add.text(W / 2, ty + 58, o.tag, { fontSize: '17px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: UIKit._hex(accent) })
                 .setOrigin(0.5).setDepth(D + 4).setAlpha(0));

@@ -412,24 +412,8 @@ class TutorialManager {
     }
 
     _buildGlorpContainer(worldX, worldY, value) {
+        // what you see is CreatureFX's glorp (cfx_bits), its glow, shadow and value; the container carries the bounce and the pickup
         const glorp = this.add.container(worldX, worldY).setDepth(2);
-
-        const shadow = this.add.ellipse(0, 10, 18, 6, 0x000000, 0.35);
-        const aura = this.add.graphics();
-        aura.lineStyle(2, 0x00ffaa, 0.35); aura.strokeCircle(0, 0, 13);
-        const bodyGlow = this.add.graphics();
-        bodyGlow.fillStyle(0x00ff88, 0.22); bodyGlow.fillCircle(0, 0, 11);
-        const bodyMid = this.add.graphics();
-        bodyMid.fillStyle(0x00ffaa, 0.75); bodyMid.fillCircle(0, 0, 8);
-        const bodyCore = this.add.graphics();
-        bodyCore.fillStyle(0xaaffdd, 1); bodyCore.fillCircle(0, 0, 5);
-        const sparkle = this.add.graphics();
-        sparkle.fillStyle(0xffffff, 0.9); sparkle.fillCircle(-3, -3, 2);
-        const label = this.add.text(0, 14, `✦${value}`, {
-            fontSize: '9px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#7dffc8', resolution: 2,
-            stroke: '#000000', strokeThickness: 2
-        }).setOrigin(0.5, 0);
-        glorp.add([shadow, aura, bodyGlow, bodyMid, bodyCore, sparkle, label]);
 
         const baseY = worldY;
         const bobHeight = 18, riseTime = 700, fallTime = 420;
@@ -445,9 +429,6 @@ class TutorialManager {
             this.tweens.add({ targets: glorp, y: baseY - bobHeight, duration: riseTime, ease: 'Cubic.easeOut', onComplete: bobDown });
         };
         bobUp();
-
-        this.tweens.add({ targets: shadow, scaleX: 0.55, alpha: 0.15, duration: riseTime, ease: 'Cubic.easeOut', yoyo: true, repeat: -1, repeatDelay: fallTime + 60 });
-        this.tweens.add({ targets: aura, alpha: 0.7, scaleX: 1.15, scaleY: 1.15, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
         glorp.setData('isGlorp', true);
         glorp.setData('value', value);
@@ -660,40 +641,16 @@ class TutorialManager {
         const pitPx = pitX * this.TILE_SIZE + this.TILE_SIZE / 2;
         const pitPy = pitY * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // A void rift torn in the floor (it was three plain circles): a rim of broken stone with violet cracks running out of it,
-        // a dark vortex inside turning slowly (a spiral in a container squashed flat, so it lies on the floor), motes drawn in.
+        // A void rift torn in the floor: a rim of broken stone with violet cracks running out of it (assets/art/tut_rift_rim),
+        // the vortex inside it turning by frames (tut_rift_core: drawn as it lies on the floor, 15 degrees a frame), motes drawn in.
         const T = this.TILE_SIZE;
-        const rimKey = MenuArt.tex(this, 'tut_rift_rim', 72, 44, P => {
-            const R = MenuArt.rng(77), cx = 36, cy = 22;
-            for (let y = 0; y < 44; y++) for (let x = 0; x < 72; x++) {
-                const d = Math.hypot((x + 0.5 - cx) / 30, (y + 0.5 - cy) / 17);
-                if (d < 0.82 || d > 1.06) continue;
-                if (R() < 0.18) continue;   // broken, not a clean ring
-                P.put(x, y, d < 0.9 ? 0x1a1024 : R() < 0.5 ? 0x4a4058 : 0x6a5e78);
-            }
-            for (let k = 0; k < 9; k++) {   // cracks, glowing violet, running out across the floor
-                let a = k / 9 * Math.PI * 2 + R() * 0.4, r = 0.95, x = cx + Math.cos(a) * 30 * r, y = cy + Math.sin(a) * 17 * r;
-                for (let j = 0; j < 6 + R() * 6; j++) { a += (R() - 0.5) * 0.7; x += Math.cos(a) * 1.4; y += Math.sin(a) * 0.8; P.put(x, y, j < 3 ? 0xc07cff : 0x6a3aa8); }
-            }
-        });
-        const coreKey = MenuArt.tex(this, 'tut_rift_core', 56, 56, P => {
-            for (let y = 0; y < 56; y++) for (let x = 0; x < 56; x++) {
-                const dx = x + 0.5 - 28, dy = y + 0.5 - 28, d = Math.hypot(dx, dy) / 27;
-                if (d > 1) continue;
-                const arm = Math.sin(Math.atan2(dy, dx) * 3 + d * 9);   // three spiral arms
-                const c = d < 0.22 ? 0x000000 : arm > 0.55 ? (d < 0.6 ? 0xd8a8ff : 0x9a5cf0) : arm > 0.1 ? 0x4a1a8a : d > 0.92 ? 0x2a0a4a : 0x12041e;
-                P.put(x, y, c);
-            }
-            for (const [x, y] of [[12, 20], [40, 14], [44, 38], [18, 42], [28, 8]]) P.put(x, y, 0xffffff);   // stars caught in it
-        });
-        const floorY = 0.6;
-        const holder = this.add.container(pitPx, pitPy).setDepth(0.85).setScale(1.25, 1.25 * floorY);
-        const core = this.add.image(0, 0, coreKey).setScale(T / 20);
+        if (!this.anims.exists('tut_rift_spin')) this.anims.create({ key: 'tut_rift_spin', frames: this.anims.generateFrameNames('tut_rift_core', { start: 0, end: 7 }), frameRate: 24 / 7, repeat: -1 });   // (a turn in 7s, as it turned before)
+        const holder = this.add.container(pitPx, pitPy).setDepth(0.85);
+        const core = this.add.sprite(0, 0, 'tut_rift_core', '0').setScale(T / 20).play('tut_rift_spin');
         holder.add(core);
-        this.tweens.add({ targets: core, angle: -360, duration: 7000, repeat: -1 });
         const glow = this.textures.exists('vfx_glow') ? this.add.image(pitPx, pitPy, 'vfx_glow').setTint(0x9a5cf0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.9, 0.55).setAlpha(0.55).setDepth(0.86) : null;
         if (glow) this.tweens.add({ targets: glow, alpha: 0.25, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        const rim = this.add.image(pitPx, pitPy, rimKey).setScale(T / 20).setDepth(0.87);
+        const rim = this.add.image(pitPx, pitPy, 'tut_rift_rim').setScale(T / 20).setDepth(0.87);
         const motes = this.add.particles(0, 0, this.textures.exists('vfx_dot') ? 'vfx_dot' : 'mn_px2', {   // (mn_px2 is a menu texture: a level has vfx_dot)
             emitZone: { type: 'edge', source: new Phaser.Geom.Ellipse(pitPx, pitPy, T * 4.4, T * 2.6), quantity: 24 },
             moveToX: pitPx, moveToY: pitPy, lifespan: 900, scale: { start: 0.6, end: 0.1 }, alpha: { start: 0.9, end: 0 },
@@ -746,8 +703,8 @@ class TutorialManager {
                 p.setVisible(false);
                 Sfx.play(this, 'portal', { close: true });
                 this._vfxFlash?.(cx, cy, T * 3, 0xc07cff, 360, 0.9);
-                const core = P.ring1?.list?.[0];   // the vortex spins up as it swallows you
-                if (core) { this.tweens.killTweensOf(core); this.tweens.add({ targets: core, angle: core.angle - 720, duration: 900, ease: 'Cubic.easeOut' }); }
+                const core = P.ring1?.list?.[0];   // the vortex spins up as it swallows you (its frames run fast, then settle)
+                if (core?.anims) this.tweens.add({ targets: core.anims, timeScale: { from: 12, to: 1 }, duration: 900, ease: 'Cubic.easeOut' });
                 if (P.ring1) this.tweens.add({ targets: P.ring1, scaleX: P.ring1.scaleX * 1.25, scaleY: P.ring1.scaleY * 1.25, duration: 160, yoyo: true, ease: 'Quad.easeOut' });
             } });
         } });
@@ -1198,11 +1155,7 @@ class TutorialManager {
         const pulse = this.time.addEvent({ delay: 2600, loop: true, callback: () => { if (enemy.sprite?.active) VisualFX.ripple(this, enemy.sprite.x, enemy.sprite.y, r * 0.3, r, col, { depth: 0.82, duration: 1400, alpha: 0.5 }); } });
         const ring = field;   // (what the rest of the game moves and destroys as _inhibitRing; the rim and the ripples go with it)
         field.once('destroy', () => { if (rim.active) rim.destroy(); pulse.remove(); });
-        const key = ShopScene.icon(this, absorb ? 'fx_ultblock_drain' : 'fx_ultblock_ban', 12, { G: absorb ? '#c48aff' : '#9fe8ff', g: absorb ? '#7a3ad8' : '#4aa8d8', r: '#ff3a2a' }, m => {
-            m.poly([[6, 1], [10, 6], [6, 11], [2, 6]], 'G'); m.poly([[6, 1], [10, 6], [6, 11]], 'g'); m.set(5, 4, 'W');
-            if (absorb) { m.set(6, 0, 'g'); m.set(3, 2, 'g'); m.set(9, 2, 'g'); } else m.line(1, 10, 10, 1, 'r');
-        });
-        const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 24, key).setDepth(4.4);
+        const mark = this.add.image(enemy.sprite.x, enemy.sprite.y - 24, absorb ? 'fx_ultblock_drain' : 'fx_ultblock_ban', '0').setDepth(4.4);   // (assets/art)
         this.tweens.add({ targets: mark, scale: 1.15, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         enemy._inhibitRing = ring; enemy._inhibitMark = mark;
         const follow = () => {

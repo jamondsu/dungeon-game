@@ -172,6 +172,7 @@ class CombatSystem {
             return null;
         }
         this._noteUltHit(enemy, el);     // which gem this hit charges, and whether it reacted
+        enemy._lastEl = el;   // what killed it, for the achievements and bounties (damageEnemy notes its own; the hits resolved here went uncounted)
         if (res.mult > 0 && res.mult < 1 && res.profile !== ElementResist.TABLE.none && el !== 'cosmic'   // (cosmic is the same on everything: nothing resists it)
             && enemy.sprite?.active) {
             this._showResistShield(enemy, res);
@@ -455,22 +456,8 @@ class CombatSystem {
         Sfx.play(this, 'clink');
         const col = res.color && res.color !== '#ffffff' ? res.color : '#b388ff';
         const tint = parseInt(col.replace('#', ''), 16);
-        // a dome of hexagonal facets lighting up round the body, brightest at the middle
-        const g = this.add.graphics().setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
-        g.x = enemy.sprite.x; g.y = enemy.sprite.y + 10;   // round the body, low in its frame
-        const hex = (cx, cy, r, a) => {
-            const pts = [];
-            for (let k = 0; k < 6; k++) { const t = k / 6 * Math.PI * 2 + Math.PI / 6; pts.push({ x: cx + Math.cos(t) * r, y: cy + Math.sin(t) * r }); }
-            g.fillStyle(tint, a * 0.35); g.fillPoints(pts, true);
-            g.lineStyle(1.2, tint, a); g.strokePoints(pts, true);
-        };
-        const r = 5.5, dx = r * Math.sqrt(3), dy = r * 1.5;
-        for (let row = -3; row <= 3; row++) for (let q = -3; q <= 3; q++) {
-            const cx = q * dx + (row % 2 ? dx / 2 : 0), cy = row * dy * 0.8, d = Math.hypot(cx, cy / 0.8);
-            if (d > 22) continue;
-            hex(cx, cy, r - 0.8, 1 - d / 26);
-        }
-        g.setScale(0.8);
+        // a dome of hexagonal facets lighting up round the body, brightest at the middle (ui_kit 'dome'), low in its frame
+        const g = this.add.image(enemy.sprite.x, enemy.sprite.y + 10, 'ui_kit', 'dome').setDepth(6).setBlendMode(Phaser.BlendModes.ADD).setTint(tint).setScale(0.8);
         this.tweens.add({ targets: g, scaleX: 1.12, scaleY: 1.12, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
         this.showStatusText(enemy.sprite.x, enemy.sprite.y - 28, '−' + Math.round((1 - res.mult) * 100) + '%', col);
     }
@@ -639,10 +626,23 @@ class CombatSystem {
             enemy.health -= actualDamage * 0.5;
         }
 
-        const flashColor = _atkElement === 'ice' ? 0x9ff0ff : 0xffffff;
-        if (!this._noFlash) enemy.sprite.setTintFill(flashColor);   // a real flash (setTint(0xffffff) changed nothing); steady ticks skip it
-        this._vfxHit?.(enemy, actualDamage, _atkElement);
-        if (!this._noFlash) this.time.delayedCall(70, () => {
+        CombatSystem.hitFlash(this, enemy, actualDamage, _atkElement);
+
+        this.updateEnemyHealthBar(enemy);
+
+        if (enemy.health <= 0) {
+            this.killEnemy(enemy);
+        }
+    }
+
+    // A hit landing on enemy: it flashes and its tint comes back, the hit's sound, its sparks (_vfxHit). `own`: a weapon that draws
+    // its own hits (the Boreal Trident, Fractal Shard, Thunder Glaive, Rimeguard, which skip damageEnemy): the flash, the sound and
+    // the flinch (_vfxHitAt: the wince, and what breaks a Blinder's or a Sniper's aim), not the sparks
+    static hitFlash(S, enemy, dmg, el, own = false) {
+        if (!S._noFlash && enemy.sprite?.active) enemy.sprite.setTintFill(el === 'ice' ? 0x9ff0ff : 0xffffff);   // a real flash (setTint(0xffffff) changed nothing); steady ticks skip it
+        if (own) { Sfx.play(S, 'hit', { el }); enemy._vfxHitAt = S.time.now; }
+        else S._vfxHit?.(enemy, dmg, el);
+        if (!S._noFlash) S.time.delayedCall(70, () => {
             if (enemy.sprite && enemy.sprite.active) {
                 if (enemy.isFrozen) {
                     enemy.sprite.setTint(0x88ccff);
@@ -653,12 +653,6 @@ class CombatSystem {
                 }
             }
         });
-
-        this.updateEnemyHealthBar(enemy);
-
-        if (enemy.health <= 0) {
-            this.killEnemy(enemy);
-        }
     }
 
     killEnemy(enemy) {
@@ -670,7 +664,7 @@ class CombatSystem {
         if (enemy?._isLeech) this._leechDie(enemy);   // what it stole comes back
         if (enemy?._isCheer) this._cheerEnd(enemy, true);   // her stage folds away, and her cheer with it
         if (enemy && !enemy._achCounted) { enemy._achCounted = true; Achievements.onKill(this, enemy); }
-        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_plateArmor', '_leechRing', '_leechMark', '_diverTell', '_leechIcon', '_leechGlow', '_tideAura', '_tideFx', '_cheerFx', '_discFx', '_pomL', '_pomR', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
+        if (enemy) for (const k of ['_budRing', '_armorGfx', '_huntMark', '_shadeAura', '_plateBar', '_plateArmor', '_leechRing', '_leechMark', '_dvTank', '_leechIcon', '_leechGlow', '_tideAura', '_tideFx', '_cheerFx', '_discFx', '_pomL', '_pomR', '_gemBody', '_gemGlow']) { if (enemy[k]?.active) { this.tweens.killTweensOf(enemy[k]); enemy[k].destroy(); } enemy[k] = null; }   // what the newer slimes draw round themselves
         const _leech = this._mods?.leech;   // relics and Tower boons: kills heal
         const _con = Enchants.n(this.equippedWeapons?.[this.currentElement], 'contagion') / 100;   // Contagion: its burn and chill move on
         if (_con && enemy && !enemy._spread && ((enemy.burnStacks || 0) > 0 || (enemy.chillStacks || 0) > 0) && this.enemies) {
@@ -699,7 +693,7 @@ class CombatSystem {
                 if (enemy.sprite) this.showStatusText(enemy.sprite.x, enemy.sprite.y - 26, `+${g.toUpperCase()} SHARD`, '#d8b8ff');
             }
         }
-        // shortcut: the enchants read the weapon you hold, not the one that landed the kill (close enough: you mostly kill with what you hold)
+        // The enchants read the weapon you hold, not the one that landed the kill (close enough: you mostly kill with what you hold)
         const _held = this.equippedWeapons?.[this.currentElement], _vamp = Enchants.leech(_held), _boom = Enchants.volatile(_held) + (this._mods?.boom || 0);
         if ((_leech || _vamp) && enemy && !enemy._leeched) { enemy._leeched = true; this.health = Math.min(this.maxHealth, this.health + (_leech || 0) + _vamp); }
         if (_boom && enemy?.sprite && enemy.health <= 0 && !enemy._burst) {   // Volatile: the kill bursts on what's close (and can chain)
@@ -952,12 +946,14 @@ class CombatSystem {
     }
 
     // ── ALLIES AND TAUNT ─────────────────────────────────────────────────────
-    // Allies (the Decoy Slime now; voidlets and wisps later) pull the
-    // regular enemies within their `taunt` radius onto themselves; everyone else keeps
-    // chasing you, and bosses ignore allies. The regular enemies' turn (EnemyManager.
-    // moveEnemies) runs between _tauntBegin and _tauntEnd: for that one enemy, the nearest
-    // ally pulling it stands in for you (playerX/playerY), and takeDamage lands on the ally.
-    // An ally: { x, y (tiles), hp, taunt (tiles), until (ms), hurt(amount), onEnd() }.
+    // Allies (the Decoy, the voidlets, Riyal, the Frostkin) pull the regular enemies within their `taunt` radius onto
+    // themselves; everyone else keeps chasing you, and bosses ignore allies. A pulled enemy's own code runs with the
+    // nearest ally pulling it standing in for you (tauntTo): its turn (moveEnemies, between _tauntBegin and _tauntEnd),
+    // its tick (the Spitter's, the Cistern kinds', the Hunter's, the Encased's, the Diver's, the CEO's, the Blinder's,
+    // the Sniper's), the strike that lands after its tell (tauntKeep) and its shots in flight (updateEnemyProjectiles).
+    // So it uses its real attacks on the ally: they aim at it and land on it. An area it strikes catches you too if
+    // you're in it (tauntBoth); what a hit does besides the damage (a hold, a slow, poison, blindness, a shove) is
+    // yours alone, never an ally's. An ally: { x, y (tiles), hp, taunt (tiles), until (ms), hurt(amount), onEnd() }.
     _addAlly(a) {
         if (!this.allies) this.allies = [];
         const ally = Object.assign({ alive: true }, a);
@@ -965,25 +961,64 @@ class CombatSystem {
         return ally;
     }
     _tauntBegin(enemy) {
-        const A = this.allies;
-        if (!A?.length || !enemy || enemy.isBoss) return null;
+        const a = CombatSystem.tauntOf(this, enemy);
+        if (!a) return null;
+        const was = { a: this._tauntAlly || null };
+        CombatSystem.tauntTo(this, a);
+        return was;
+    }
+    _tauntEnd(was) { if (was) CombatSystem.tauntTo(this, was.a); }
+    // The ally pulling enemy e (the nearest, if more than one does), or null
+    static tauntOf(S, e) {
+        const A = S.allies;
+        if (!A?.length || !e || e.isBoss || (e._rgTauntUntil || 0) > S.time.now) return null;   // (taunted by the Rimeguard: it wants you)
         let best = null, bd = Infinity;
         for (const a of A) {
             if (!a.alive) continue;
-            const d = Math.hypot(enemy.x - a.x, enemy.y - a.y);
+            const d = Math.hypot(e.x - a.x, e.y - a.y);
             if (d <= a.taunt && d < bd) { bd = d; best = a; }
         }
-        if (!best) return null;
-        const real = { x: this.playerX, y: this.playerY };
-        this._tauntReal = real;
-        this._tauntAlly = best;
-        this.playerX = best.x; this.playerY = best.y;
-        return real;
+        return best;
     }
-    _tauntEnd(real) {
-        if (!real) return;
-        this.playerX = real.x; this.playerY = real.y;
-        this._tauntReal = null; this._tauntAlly = null;
+    // Ally a stands in for you from here (null: you again): your tile, your body (a stand-in on its tile: what's done to
+    // a body there goes nowhere), your hits (takeDamage), and the hit cooldown and dash an enemy's code checks, its own
+    static tauntTo(S, a) {
+        const cur = S._tauntAlly || null;
+        if (cur === a) return;
+        if (cur) cur._hitAt = S.lastPlayerDamageTime;
+        else S._tauntReal = { x: S.playerX, y: S.playerY, player: S.player, hitAt: S.lastPlayerDamageTime, dash: S._dashInvulnUntil };
+        const r = S._tauntReal;
+        if (a) { S.playerX = a.x; S.playerY = a.y; S.player = CombatSystem._stand(S, a, r.player); S.lastPlayerDamageTime = a._hitAt || 0; S._dashInvulnUntil = 0; }
+        else { S.playerX = r.x; S.playerY = r.y; S.player = r.player; S.lastPlayerDamageTime = r.hitAt; S._dashInvulnUntil = r.dash; S._tauntReal = null; }
+        S._tauntAlly = a;
+    }
+    // Your sprite as an ally's stand-in: x and y where yours would be on its tile, the rest yours to read; calls and writes do nothing
+    static _stand(S, a, p) {
+        if (!p) return p;
+        if (a._standOf !== p) {
+            const T = S.TILE_SIZE, nop = function () { return this; };
+            a._standOf = p;
+            a._stand = new Proxy(p, { get: (t, k) => k === 'x' ? (a.x + 0.5) * T : k === 'y' ? (a.y + 0.5) * T + (S.SLIME_Y_OFFSET || 0) : typeof t[k] === 'function' ? nop : t[k], set: () => true });
+        }
+        return a._stand;
+    }
+    // fn with ally a standing in for you (null: as you), then back to whoever was
+    static tauntAs(S, a, fn) {
+        const was = S._tauntAlly || null;
+        if (a === was) return fn();
+        CombatSystem.tauntTo(S, a);
+        try { return fn(); } finally { CombatSystem.tauntTo(S, was); }
+    }
+    // A strike on an area: on ally a (the one standing in now) if it's in it, and on you if you are
+    static tauntBoth(S, fn, a = S._tauntAlly) {
+        if (a?.alive) CombatSystem.tauntAs(S, a, fn);
+        CombatSystem.tauntAs(S, null, fn);
+    }
+    // A callback (a timer, a tween's) for what an enemy aims at the ally standing in now: it lands on that ally, or on
+    // you if it's gone by then
+    static tauntKeep(S, fn) {
+        const a = S._tauntAlly;
+        return a ? (...v) => CombatSystem.tauntAs(S, a.alive ? a : null, () => fn(...v)) : fn;
     }
     // While an enemy is taunted, your real tile is still occupied.
     _tauntBlocks(x, y) { return !!this._tauntReal && x === this._tauntReal.x && y === this._tauntReal.y; }
@@ -1002,27 +1037,72 @@ class CombatSystem {
     // The Icicle Cannon's Frost Shield (5s, raised with a full charge on R): 35% less damage,
     // and every hit you take chills back whoever dealt it, or everything within 2 tiles when
     // the hit came from range. No cooldown beyond the 28 hits that charge it.
-    // The Frost Shield, seen: a dome of ice around you while it lasts. Hexagonal facets in a ring, a pale
-    // shell with a bright rim catching the light, frost motes drifting off it. A hit flashes it and cracks it a
-    // little; it flickers in its last second and shatters into shards when it ends.
+    // The Frost Shield, seen: a dome of clear ice round you while it lasts (hand-drawn: its rim catching the light, a
+    // window of light top left, faint facets), frost glinting round its rim and flakes drifting off it. A hit flashes it,
+    // glints where it struck and cracks it a little more; it flickers in its last second and shatters into chips at the end.
+    // The Frost Shield (the Icicle Cannon's, and the Boreal Trident's full combo's): a FORCE FIELD, a bubble of ice round you sitting on
+    // the ground (fx_trident ff_*: typed): its inside one faint cool fill, its edge bright, facets shimmering across it in slow waves
+    // (ff_cells_0..1 in turn), a band of frost motes circling its middle, a soft glow and a soft ring where it meets the ground. Struck:
+    // a ripple spreading from the spot across it, the spot flashing, a crack left there (they gather). Its last second it flickers;
+    // at the end it shatters into big shards with a cold flash.
     _frostShieldFx() {
-        this._frostShieldG?.destroy();
-        const g = this._frostShieldG = this.add.graphics(), T0 = this.time.now;
+        this._frostShieldG?.destroy(); this._frostShieldFxEnd?.();
+        const ADD = Phaser.BlendModes.ADD, T0 = this.time.now, K = 1.7;
+        const glow = this.add.image(0, 0, 'vfx_glow').setTint(0x7fd0ff).setBlendMode(ADD).setAlpha(0.22).setScale(0.75);
+        const ground = this.add.image(0, 0, 'vfx_glow').setTint(0x9fe4ff).setBlendMode(ADD).setAlpha(0.35).setScale(0.6, 0.16);
+        const body = this.add.image(0, 0, 'fx_trident', 'ff_body').setScale(K).setAlpha(0.13);
+        const cells = [0, 1].map(k => this.add.image(0, 0, 'fx_trident', 'ff_cells_' + k).setScale(K).setBlendMode(ADD).setAlpha(0));
+        const rim = this.add.image(0, 0, 'fx_trident', 'ff_rim').setScale(K).setBlendMode(ADD).setAlpha(0.9);
+        const motes = Array.from({ length: 8 }, (_, k) => this.add.image(0, 0, 'fx_trident', k % 2 ? 'mote_1' : 'glint_0').setBlendMode(ADD));
+        const ripple = this.add.graphics();
+        const cracks = [], c = this._frostShieldG = this.add.container(0, 0, [ground, glow, body, ...cells, rim, ripple]);
+        // fitted to the slime: the drawn body of its frame (its opaque pixels, found once a frame name), the bubble round it with an
+        // even MARGIN, sized by its resting scale (so it doesn't wobble with its hops), centred where the body is drawn this frame
+        const MARGIN = 4, box = this._slimeBoxes ||= {};
+        const bodyOf = sp => {
+            const k = sp.texture.key + ':' + sp.frame.name;
+            if (!box[k]) { const fw = sp.frame.width, fh = sp.frame.height; let x0 = fw, y0 = fh, x1 = -1, y1 = -1;
+                for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) if ((this.textures.getPixel(x, y, sp.texture.key, sp.frame.name)?.alpha || 0) > 40) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+                box[k] = x1 < 0 ? { cx: 0, cy: 0, w: fw, h: fh } : { cx: (x0 + x1 + 1) / 2 - fw / 2, cy: (y0 + y1 + 1) / 2 - fh / 2, w: x1 - x0 + 1, h: y1 - y0 + 1 }; }
+            return box[k];
+        };
         this._frostShieldHits = 0;
+        let flashed = 0;
+        const end = this._frostShieldFxEnd = () => { this.events.off('postupdate', tick); this._frostShieldFxEnd = null; for (const m of [...motes, ...cracks]) m.destroy(); };
         const tick = () => {
             const p = this.player, left = (this._frostShieldUntil || 0) - this.time.now;
-            if (!p?.active || !g.active || left <= 0) {
-                this.events.off('update', tick);
-                if (g.active) { const x = g.x, y = g.y; g.destroy(); if (p?.active) for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, s = this.add.triangle(x, y, 0, 6, 2, 0, 4, 6, 0xd8f4ff).setDepth(p.depth + 0.1); this.tweens.add({ targets: s, x: x + Math.cos(a) * 30, y: y + Math.sin(a) * 22 + 10, angle: 200, alpha: 0, duration: 450, onComplete: () => s.destroy() }); } Sfx.play(this, 'shatter'); }
+            if (!p?.active || !c.active || left <= 0) {   // over: it shatters, big shards and a cold flash
+                const x = c.x, y = c.y; end(); if (c.active) c.destroy();
+                if (p?.active) {
+                    this._vfxFlash?.(x, y - 10, 44, 0xd8fff4, 200, 0.5);
+                    for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2 + Math.random() * 0.4, sh = this.add.image(x + Math.cos(a) * 20, y - 10 + Math.sin(a) * 18, 'fx_rimeguard', 'shard_' + (k % 3)).setScale(1.5 + Math.random() * 0.5).setDepth((p.depth ?? 3) + 0.1).setFlipX(Math.random() < 0.5);
+                        this.tweens.add({ targets: sh, x: sh.x + Math.cos(a) * 30, y: sh.y + Math.sin(a) * 24 + 10, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => sh.destroy() }); }
+                    WeaponSystem.iceChips?.(this, x, y, 8, 30);
+                }
+                Sfx.play(this, 'shatter');
                 return;
             }
-            const t = this.time.now, R = this.TILE_SIZE * 0.95, fade = Math.min(1, (t - T0) / 160) * (left < 1000 ? 0.45 + 0.55 * (Math.floor(t / 90) % 2) : 1), hit = Math.max(0, 1 - (t - (this._frostShieldHitAt || 0)) / 260);
-            g.setPosition(p.x, p.y + this.TILE_SIZE * 0.12).setDepth(p.depth + 0.05).clear().setBlendMode(Phaser.BlendModes.ADD);
-            VisualFX.forceField(g, { col: 0x3a98e8, rim: 0x9ad8ff, R, t: t - T0, fade, hit, hitA: this._frostShieldHitA ?? -Math.PI / 2 });
-            for (let c = 0; c < Math.min(4, this._frostShieldHits); c++) { const a = c * 1.9 + 0.4; g.lineStyle(1.2, 0xffffff, 0.6 * fade); g.lineBetween(Math.cos(a) * R * 0.95, Math.sin(a) * R * 0.8, Math.cos(a + 0.3) * R * 0.6, Math.sin(a + 0.3) * R * 0.5); }   // cracks, one a hit
-            if (Math.random() < 0.15) { const a = Math.random() * Math.PI * 2, m = this.add.rectangle(p.x + Math.cos(a) * R, p.y + Math.sin(a) * R * 0.85, 2, 2, 0xffffff).setDepth(p.depth + 0.1); this.tweens.add({ targets: m, y: m.y - 10, alpha: 0, duration: 600, onComplete: () => m.destroy() }); }   // frost motes
+            const t = this.time.now, u = t - T0, fade = Math.min(1, u / 160) * (left < 1000 ? 0.45 + 0.55 * (Math.floor(t / 90) % 2) : 1), hit = Math.max(0, 1 - (t - (this._frostShieldHitAt || 0)) / 300);
+            const b0 = bodyOf(p), base = this.SLIME_SCALE || Math.abs(p.scaleX), W = b0.w * base + 2 * MARGIN, H = b0.h * base + 2 * MARGIN;
+            const D = (p.depth ?? 3) + 0.05, cx = p.x + (p.flipX ? -1 : 1) * b0.cx * p.scaleX + (0.5 - p.originX) * p.displayWidth, cy = p.y + b0.cy * p.scaleY + (0.5 - p.originY) * p.displayHeight;
+            c.setPosition(cx, cy).setDepth(D).setAlpha(fade);
+            for (const im of [body, ...cells]) im.setScale(W / 30, H / 28);
+            ground.setPosition(0, H / 2 - 2).setScale(W / 64 * 0.9, 0.12).setAlpha(0.3 + 0.1 * Math.sin(u * 0.003));   // (its ring on the ground, at the slime's feet)
+            glow.setAlpha(0.18 + 0.06 * Math.sin(u * 0.004) + 0.3 * hit);
+            rim.setAlpha(0.8 + 0.15 * Math.sin(u * 0.005) + 0.2 * hit).setScale(W / 30 * (1 + 0.05 * hit), H / 28 * (1 + 0.05 * hit));
+            body.setAlpha(0.12 + 0.08 * hit);
+            cells[0].setAlpha(0.1 * Math.max(0, Math.sin(u * 0.0025))); cells[1].setAlpha(0.1 * Math.max(0, Math.sin(u * 0.0025 + Math.PI)));   // (the facets shimmering in slow waves)
+            motes.forEach((m, k) => { const a = u * 0.0018 + k / motes.length * Math.PI * 2, front = Math.sin(a) > 0; m.setPosition(cx + Math.cos(a) * W / 2, cy + Math.sin(a) * H * 0.12).setDepth(front ? D + 0.02 : D - 0.1).setAlpha(fade * (front ? 0.85 : 0.35)); });
+            ripple.clear();   // the ripple from where it was struck, spreading across it
+            if (hit > 0) { const a = this._frostShieldHitA ?? -Math.PI / 2, hx = Math.cos(a) * W / 2, hy = Math.sin(a) * H / 2, r = (1 - hit) * W; ripple.lineStyle(2, 0xe8fbff, 0.7 * hit); ripple.strokeEllipse(hx * (1 - (1 - hit) * 0.6), hy * (1 - (1 - hit) * 0.6), r * 1.1, r); }
+            if ((this._frostShieldHitAt || 0) > flashed) {   // the spot it was struck: a flash, and a crack left there (they gather)
+                flashed = this._frostShieldHitAt; const a = this._frostShieldHitA ?? -Math.PI / 2;
+                if (cracks.length < 5) cracks.push(this.add.image(0, 0, 'fx_trident', 'crk_' + (cracks.length % 2)).setScale(1.4).setBlendMode(ADD).setAlpha(0.8)); cracks[cracks.length - 1]._a = a;
+                this._vfxFlash?.(cx + Math.cos(a) * W / 2, cy + Math.sin(a) * H / 2, 16, 0xffffff, 120, 0.6);
+            }
+            for (const k of cracks) k.setPosition(cx + Math.cos(k._a) * W * 0.4, cy + Math.sin(k._a) * H * 0.4).setDepth(D + 0.03).setAlpha(fade * 0.8);
         };
-        this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));
+        this.events.on('postupdate', tick); this.events.once('shutdown', () => this.events.off('postupdate', tick));
         tick();
     }
     _frostShieldHit(amount) {
@@ -1035,7 +1115,7 @@ class CombatSystem {
         return amount * 0.65;
     }
 
-    takeDamage(amount) {
+    takeDamage(amount, src) {   // src: what hit you, for the run's record (a name, or the enemy; else _hitBy)
         // A taunted enemy's hit lands on the ally it's attacking, not you (_tauntBegin).
         if (this._tauntAlly) { this._tauntAlly.hurt?.(amount); return; }
         this._lastCombatAt = this.time.now;   // being hit is fighting too (combat time, _tickRunStats)
@@ -1063,6 +1143,10 @@ class CombatSystem {
         // Then the armor talents (Stats.js): Aegis can absorb it outright.
         if (this.time.now < (this._iceFrostUntil || 0)) boosted(this._iceFrostCfg?.().TAKEN ?? 2, '#bff4ff');   // the ice ult: this cold, you're fragile
         if (this.time.now < (this._absHexUntil || 0)) boosted(1.5, '#ff5fd2');   // an Ult Absorber's Hex
+        amount = typeof Scythe !== 'undefined' ? Scythe.absorb(this, amount) : amount;   // the Ember Scythe's slide shield takes what it can first
+        amount = typeof Trident !== 'undefined' ? Trident.shell(this, amount) : amount;   // then the Boreal Trident's Frostkin shell
+        amount = typeof Rimeguard !== 'undefined' ? Rimeguard.guard(this, amount) : amount;   // the Rimeguard stores it as Rime, and blocks it from the front
+        if (!(amount > 0)) return;
         const actualDamage = PlayerStats.hurt(this, amount * this.damageReductionMultiplier * (this.statTakenMult ?? 1) * Enchants.taken(this.equippedWeapons?.[this.currentElement]));   // Bulwark: the weapon you hold
         if (actualDamage <= 0) return;
         if (this.player && this._vfxDamageNumber) {   // what the hit took, in red, and the share the boosts added beside it
@@ -1107,7 +1191,7 @@ class CombatSystem {
         }
 
         this.health -= actualDamage;
-        Telemetry.hurt(this, actualDamage);
+        Telemetry.hurt(this, actualDamage, src ?? this._hitBy);
         this._csOnHurt?.(actualDamage);   // Cosmic.js: Retribution hexes everything close
 
         if (blockedDamage > 0) {
@@ -1285,7 +1369,6 @@ class CombatSystem {
             amt *= (C.WEAPON_MULT[this.equippedWeapons?.[el]] ?? 1) * C.CHARGE_SCALE;
             const reacted = reaction !== null ? (reaction === 'residue' ? 'residue' : reaction ? 'full' : null) : hit && hit.el === el ? hit.reaction : null;
             amt *= (this._mods?.ult ?? 1) * Enchants.ult(this.equippedWeapons?.[el]);   // relics and Tower boons; the weapon's enchants
-            if (el === 'ice' && this._fracMode?.kind === 'fan' && this._fracMode.until > now) amt *= this._fractalCfg?.().STORM_ULT ?? 1;   // the Fractal Shard's Shard Storm
             if (reacted) {
                 amt *= (reacted === 'residue' ? C.RESIDUE_MULT : C.REACTION_MULT) * (this._mods?.react ?? 1) * Enchants.react(this.equippedWeapons?.[el]);
                 (this._ultReactKind ||= {})[el] = reacted;
@@ -1345,7 +1428,7 @@ class CombatSystem {
             });
         }
         if (enemy._csAstral) this._csAstralPop?.(enemy);   // Cosmic.js: a hit pops an Astrolabe mark
-        if (other) this._ultReactionSpark(enemy, el, other);
+        if (other) { this._ultReactionSpark(enemy, el, other); if (typeof Bounties !== 'undefined') Bounties.onReaction(this, enemy, el); }   // (a reaction, for the run's bounties)
         else if (residue) this._ultReactionSpark(enemy, el, lh.el, true);
         return other ? 'full' : residue ? 'residue' : false;
     }
@@ -1548,7 +1631,7 @@ class CombatSystem {
         // the burn its meteors leave on you: a stack is 1 damage a second
         if (this._pBurnUntil) {
             if (time >= this._pBurnUntil || this._deathScreenActive) { this._pBurnUntil = 0; this._pBurn = 0; }
-            else if (time - this._pBurnAt >= 1000) { this._pBurnAt = time; this._hitBy = null; this.takeDamage(this._pBurn * (this.enemyDamageScale || 1)); }
+            else if (time - this._pBurnAt >= 1000) { this._pBurnAt = time; this._hitBy = null; this.takeDamage(this._pBurn * (this.enemyDamageScale || 1), 'burn'); }
         }
 
         const COLS = this._ultCfg().COLORS, T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
@@ -1629,7 +1712,7 @@ class CombatSystem {
         const T = this.TILE_SIZE, S = this.enemyDamageScale || 1, ADD = Phaser.BlendModes.ADD, src = enemy.sprite;
         const px = tx => tx * T + T / 2;
         const safe = () => !this.player?.active || this._deathScreenActive || this.time.now < (this._dashInvulnUntil || 0);
-        const hurt = d => { this._hitBy = null; this.takeDamage(d * S); };
+        const hurt = d => { this._hitBy = null; this.takeDamage(d * S, 'absorber'); };
         const near = (tx, ty, r) => Math.hypot(this.playerX - tx, this.playerY - ty) <= r;
         const mark = (x, y, r, col, ms) => {   // where it lands: a soft ring on the floor closing in, its glow filling
             const ring = this.add.ellipse(x, y + 2, r * 2, r * 1.1).setStrokeStyle(2, col, 0.9).setBlendMode(ADD).setDepth(0.95).setScale(1.5).setAlpha(0);
@@ -1675,17 +1758,14 @@ class CombatSystem {
                 if (held) this._staggerUntil = Math.max(this._staggerUntil || 0, this.time.now + 1000);
                 this.showStatusText(this.player.x, this.player.y - 34, held ? 'FROZEN' : 'CHILLED', '#88eeff');
                 // the ice ult's own shell, your shape in thick ice; it shatters a second later
-                const p = this.player, shell = this.add.image(p.x, p.y, this._iceShellTex(p)).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setDepth(p.depth + 0.02).setAlpha(0);
-                shell.setDisplayOrigin(p.displayOriginX + 6, p.displayOriginY + 6);
+                const p = this.player, shell = this.add.image(p.x, p.y, 'fx_ult_fi', 'shell').setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX).setDepth(p.depth + 0.02).setAlpha(0);
                 this.tweens.add({ targets: shell, alpha: 0.92, duration: 160 });
                 Sfx.play(this, 'freeze');
                 this.time.delayedCall(1000, () => {
                     const x = shell.x, y = shell.y; shell.destroy();
                     Sfx.play(this, 'shatter'); this.cameras.main.shake(90, 0.004);
                     this._vfxFlash?.(x, y, 40, 0xd8f4ff, 260, 0.6);
-                    const glit = this.add.particles(x, y - 6, 'vfx_dot', { lifespan: { min: 400, max: 800 }, speedX: { min: -50, max: 50 }, speedY: { min: -80, max: -10 }, gravityY: 180, scale: { start: 0.5, end: 0 },
-                        alpha: { start: 1, end: 0 }, tint: [0xffffff, 0xcff4ff, 0x8ad8ff], blendMode: 'ADD', emitting: false }).setDepth(4.7);
-                    glit.explode(16); this.time.delayedCall(900, () => glit.destroy());
+                    WeaponSystem.iceChips(this, x, y + 6, 10, 26);   // (the ice ult shell's own break)
                     if (this.player?.active && !this._deathScreenActive) { hurt(5); this.showStatusText(this.player.x, this.player.y - 34, 'SHATTER', '#dff6ff'); }
                 });
             });
@@ -2694,7 +2774,7 @@ class CombatSystem {
         const existing = this.ignitionPierceTrails.find(t => t.tileX === tileX && t.tileY === tileY);
         if (existing) {
             const newDur = duration ?? this.ignitionTrailDuration;
-            if (opts.superBurn) { existing.superUntil = this.time.now + newDur; existing.visuals[2]?.setTint?.(0xfff0c0); }
+            if (opts.superBurn) { existing.superUntil = this.time.now + newDur; existing.visuals[2]?.setTint?.(0xffc060); }
             const existingDur = existing.customDuration ?? this.ignitionTrailDuration;
             const timeLeft = existingDur - (this.time.now - existing.createdAt);
             if (newDur > timeLeft) {
@@ -2717,7 +2797,7 @@ class CombatSystem {
             this.tweens.add({ targets: core, alpha: 0.7, scaleX: 0.85, scaleY: 0.85, duration: 130, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 60 });
         }
 
-        if (opts.superBurn) { glow.setTint?.(0xff8a2a); core.setTint?.(0xfff0c0); }   // white-hot
+        if (opts.superBurn) { glow.setTint?.(0xff7a24); core.setTint?.(0xffc060); }   // white-hot (pale yellow at most: whiter, a pool of it hid what stood in it)
         this.ignitionPierceTrails.push({
             visuals: [base, glow, core],
             createdAt: this.time.now,
@@ -2733,7 +2813,7 @@ class CombatSystem {
         if (this.ignitionPierceTrails.length && time - (this._lavaSfxAt || 0) > 150) {
             this._lavaSfxAt = time;
             const n = this.ignitionPierceTrails.filter(t => Math.abs(t.tileX - this.playerX) <= 12 && Math.abs(t.tileY - this.playerY) <= 8).length;
-            if (n) { Sfx.sustain(this, 'lava', 320, Math.min(1, 0.35 + n / 12)); if (Math.random() < 0.25) Sfx.play(this, 'lava_pop'); else if (Math.random() < 0.1) Sfx.play(this, 'sear'); }
+            if (n) { Sfx.sustain(this, 'lava', 320, 0.25 + Math.min(0.2, n / 40)); if (Math.random() < 0.12) Sfx.play(this, 'lava_pop'); }   // (soft, however much: a lane of it at full volume was deafening)
         }
         for (let i = this.ignitionPierceTrails.length - 1; i >= 0; i--) {
             const t = this.ignitionPierceTrails[i];

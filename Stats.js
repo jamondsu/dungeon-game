@@ -200,7 +200,7 @@ const PlayerStats = {
 // ═══════════════════════════════════════════════════════════════════════════
 const WeaponLevels = {
     PER: 0.08, DMG_COST: 60, DMG_GROWTH: 1.15,
-    // [key, name, cap, first cost, growth, what level p does]
+    // [key, name, cap, first cost, growth, what level p does, (what it needs first: { perk key: owned level })]
     PERKS: {
         flame_fists:       [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
         flame_sword:       [['arc', 'Wide Arc', 3, 180, 1.8, p => `about ${2 * p} more tiles per swing, reaching further`]],
@@ -210,12 +210,29 @@ const WeaponLevels = {
                             ['spray', 'Wide Spray', 3, 200, 1.8, p => `a ${15 * p}% wider fan`],
                             ['mix', 'Hot Mix', 3, 200, 1.8, p => `+${4 * p}% burn chance a tick`],
                             ['burst', 'Long Flame', 3, 180, 1.8, p => `Blue Flame lasts ${p}s longer`]],   // (key kept from Hair Trigger, the old burst chance, for saves)
+        ember_scythe:      [['kindling', 'Kindling', 3, 300, 1.9, p => `embers +${10 * p}% Super Burn`],   // (the T5: the strong ones cost the most)
+                            ['march', 'Long March', 3, 220, 1.8, p => `Heat Wave +${2 * p} tiles`],
+                            ['slide', 'Long Slide', 3, 200, 1.7, p => `slide +${p} tile${p === 1 ? '' : 's'}`],
+                            ['reach', 'Wide Sweep', 3, 500, 2, p => `reach +${(0.5 * p).toFixed(1)} tiles`],
+                            ['embers', 'Wildfire', 4, 450, 2, p => `${1 + p} embers a swing`],
+                            ['souls', 'Soul Harvest', 1, 4000, 1, () => '2 souls per enemy cut'],
+                            ['whirl', "Reaper's Whirl", 2, 4000, 1.5, p => `a ${p === 1 ? '2nd' : '3rd'} spin a swing`]],   // (expensive: the base swing is one turn)
         ice_fists:         [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
         icicle_cannon:     [['pellets', 'Spread Shot', 3, 200, 3.5, p => p >= 3 ? 'DOUBLE BARREL: two volleys a shot' : `+${p} icicle${p === 1 ? '' : 's'} a shot`],
                             ['choke', 'Tight Choke', 3, 160, 1.7, p => `${20 * p}% tighter, +${1.5 * p} tiles`]],
-        fractal_shard:     [['shards', 'Splinter', 2, 220, 2, p => `the spikes hit ${20 * p}% harder`],
-                            ['fan', 'Burst Fan', 3, 200, 1.8, p => `+${2 * p} shards in the burst`],
-                            ['speed', 'Rapid Facets', 3, 200, 1.8, p => `${8 * p}% faster, both strikes`]],
+        fractal_shard:     [['shards', 'Splinter', 2, 220, 2, p => `branches hit ${25 * p}% harder`],
+                            ['fan', 'Burst Fan', 3, 200, 1.8, p => `the first split makes ${2 + p} branches`],
+                            ['speed', 'Rapid Facets', 3, 200, 1.8, p => `${8 * p}% faster shots`]],
+        rimeguard:         [['block', 'Thick Ice', 3, 300, 1.9, p => `the shield blocks ${70 + 8 * p}%`],   // (the T5: priced like the scythe's)
+                            ['rime', 'Deep Rime', 3, 300, 1.9, p => `Shatterback x${Math.pow(1.2, p).toFixed(2)}`],
+                            ['snap', 'Cold Snap', 2, 500, 2, p => `Shatterback +${(0.5 * p).toFixed(1)} tiles`]],
+        boreal_trident:    [['bite', 'Deep Frostbite', 3, 300, 1.9, p => `Frostbite grows ${20 * p}% faster`],   // (the T5: priced like the scythe's)
+                            ['hurl', 'Long Hurl', 3, 220, 1.8, p => `the hurl flies +${p} tile${p === 1 ? '' : 's'}`],
+                            ['recall', 'Swift Recall', 5, 250, 1.7, p => `the hurl is ready again in ${(7 - 0.6 * p).toFixed(1)}s`],
+                            ['aura', 'Wider Aura', 2, 500, 2, p => `the aura reaches ${3.5 + 0.5 * p} tiles`],
+                            ['pack', 'Frostkin Pack', 2, 500, 2, p => `${3 + p} Frostkin a call (one of each kind${['', ', and a hail one', ', a hail one and a Squall'][p]})`],
+                            ['tide', 'Glacial Tide', 1, 4000, 1, () => 'the slam\'s Frostbite lasts twice as long'],
+                            ['riptide', 'Riptide', 1, 4000, 1, () => 'click again while the hurl flies to ride its wake behind it', { hurl: 3 }]],
         lightning_fists:   [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],
         orb_emitter:       [['forks', 'Long Forks', 3, 200, 1.8, p => `+${0.5 * p} tiles fork range`]],
         ball_lightning:    [['life', 'Long Charge', 3, 200, 1.8, p => `orbs last ${20 * p}% longer`],
@@ -223,6 +240,10 @@ const WeaponLevels = {
                             ['swarm', 'Swarm', 3, 200, 1.8, p => `+${20 * p} seekers on burst`]],   // capped: each seeker is a live object
         conductor:         [['reach', 'Long Lines', 3, 220, 1.8, p => `wires reach ${p} tile${p > 1 ? 's' : ''} further`],
                             ['wires', 'Extra Line', 1, 400, 2, p => `${3 + p} wires at once`]],
+        thunder_glaive:    [['reach', 'Long Pivot', 3, 300, 1.9, p => `pivots from ${5 + p} tiles`],   // (the T5: priced like the scythe's)
+                            ['thick', 'Thick Ropes', 3, 300, 1.9, p => `the network reaches +${(0.25 * p).toFixed(2)} tiles`],
+                            ['front', 'Storm Front', 2, 500, 2, p => `the current jumps +${0.5 * p} tiles, chains +${5 * p}% an enemy, to x${(1.5 + 0.15 * p).toFixed(2)}`],
+                            ['over', 'Overcharge', 1, 4000, 1, () => 'a kill keeps the streak open longer']],
         cosmic_fists:      [['momentum', 'Deep Momentum', 2, 300, 2, p => `${3 + p} Momentum at most`]],
         barrier_staff:     [['wards', 'More Wards', 6, 220, 1.6, p => `${4 + p} wards`],
                             ['cd', 'Quick Recast', 3, 200, 1.8, p => `${10 * p}% shorter cooldown`]],
@@ -236,18 +257,37 @@ const WeaponLevels = {
         void_blade:        [['charge', 'Quick Draw', 3, 200, 1.8, p => `charges ${15 * p}% faster`],
                             ['stun', 'Deep Stun', 3, 220, 1.8, p => `stun up to ${(3.5 + 2.5 * p / 3).toFixed(1)}s`],
                             ['fan', 'Fan Cut', 3, 240, 1.8, p => p >= 3 ? 'a full fan' : p ? 'fans out wider' : 'a thin line']],
+        pendulum:          [['hold', 'Long Lock', 2, 260, 1.8, p => `Time Lock lasts ${(4 + 0.5 * p).toFixed(1)}s`],
+                            ['cd', 'Quick Lock', 3, 220, 1.8, p => `Time Lock's cooldown ${(12 * (1 - 0.1 * p)).toFixed(1)}s`],
+                            ['echo', 'Quick Rewind', 3, 220, 1.8, p => `Rewind's cooldown ${(30 * (1 - 0.1 * p)).toFixed(1)}s`]],   // (the two share one cooldown: each sets it to its own)
     },
     // Cosmic weapons are buffs you cast: no Power levels.
-    NO_POWER: ['cosmic_fists', 'barrier_staff', 'astrolabe', 'singularity_staff', 'void_blade'],
+    NO_POWER: ['cosmic_fists', 'barrier_staff', 'astrolabe', 'singularity_staff', 'void_blade', 'pendulum'],
     _int(k) { try { return Math.max(0, parseInt(localStorage.getItem(k) || '0', 10) || 0); } catch (e) { return 0; } },
     _put(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} },
     _def(id, key) { return (this.PERKS[id] || []).find(d => d[0] === key) || null; },
-    level(id) { return this._int('wlv_' + id); },
-    setLevel(id, n) { this._put('wlv_' + id, n); },
-    perk(id, key) { const d = this._def(id, key); return d ? Math.min(d[2], this._int(`wpk_${id}_${key}`)) : 0; },
-    setPerk(id, key, n) { this._put(`wpk_${id}_${key}`, n); },
+    // What you've bought (owned) and what you've chosen to use (level, perk): you can turn any upgrade down, even off,
+    // and back up to what you own (useLevel / usePerk; null uses all of it). Buying a level uses everything you own again.
+    _cap(k) { try { const v = localStorage.getItem(k); return v == null ? Infinity : Math.max(0, parseInt(v, 10) || 0); } catch (e) { return Infinity; } },
+    _uncap(k) { try { localStorage.removeItem(k); } catch (e) {} },
+    ownedLevel(id) { return this._int('wlv_' + id); },
+    level(id) { return Math.min(this.ownedLevel(id), this._cap('wlv_on_' + id)); },
+    setLevel(id, n) { this._put('wlv_' + id, n); this._uncap('wlv_on_' + id); },
+    useLevel(id, n) { if (n == null || n >= this.ownedLevel(id)) this._uncap('wlv_on_' + id); else this._put('wlv_on_' + id, Math.max(0, n)); },
+    ownedPerk(id, key) { const d = this._def(id, key); return d ? Math.min(d[2], this._int(`wpk_${id}_${key}`)) : 0; },
+    perk(id, key) { return Math.min(this.ownedPerk(id, key), this._cap(`wpk_on_${id}_${key}`)); },
+    setPerk(id, key, n) { this._put(`wpk_${id}_${key}`, n); this._uncap(`wpk_on_${id}_${key}`); },
+    usePerk(id, key, n) { if (n == null || n >= this.ownedPerk(id, key)) this._uncap(`wpk_on_${id}_${key}`); else this._put(`wpk_on_${id}_${key}`, Math.max(0, n)); },
     dmgMult(id) { return id && !this.NO_POWER.includes(id) ? 1 + this.PER * this.level(id) : 1; },
     cdMult(id, key = 'speed') { return 1 - 0.08 * this.perk(id, key); },   // the Quick Jabs family
-    dmgCost(id) { return Math.round(this.DMG_COST * Math.pow(this.DMG_GROWTH, this.level(id))); },
-    perkCost(id, key) { const d = this._def(id, key), p = this.perk(id, key); return !d || p >= d[2] ? null : Math.round(d[3] * Math.pow(d[4], p)); },
+    dmgCost(id) { return Math.round(this.DMG_COST * Math.pow(this.DMG_GROWTH, this.ownedLevel(id))); },
+    perkCost(id, key) { const d = this._def(id, key), p = this.ownedPerk(id, key); return !d || p >= d[2] || this.needs(id, key) ? null : Math.round(d[3] * Math.pow(d[4], p)); },
+    // what a perk still needs before it can be bought ('max Long Hurl first'), or null
+    needs(id, key) {
+        for (const [k, n] of Object.entries(this._def(id, key)?.[6] || {})) {
+            const d = this._def(id, k);
+            if (this.ownedPerk(id, k) < n) return d && n >= d[2] ? `max ${d[1]} first` : `${d?.[1] || k} ${n} first`;
+        }
+        return null;
+    },
 };

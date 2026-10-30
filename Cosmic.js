@@ -21,13 +21,19 @@
 //                  longer you held (3-7 tiles, 1-3 wide, 0.6-1.8s). Retribution, 10s: when
 //                  you're hit, everything within 3 tiles is Hexed for 5s (up to +45%
 //                  taken, -40% speed, a mark)                                        (12s)
+//   Pendulum       no attack: a click flings it onto the cursor (6 tiles at most) and it lays a
+//                  TIME LOCK (a 7x7 with its corners cut, 4s): time stops in it for all but you;
+//                  hits on what's in it are stored and land at once when it ends; shots stop at its
+//                  edge. R: REWIND, back along your path to 3s ago, the HP and the ailments since
+//                  undone. One cooldown: 12s after the lock, 30s after Rewind
 //   Ascend (ult)   10s: +25% max HP, free switching, fluid blasts, trail and waves, your boon at full
 //                  strength, then a supernova that cashes every mark in reach in as damage
 //   Stage 2        two layers; tap V for Ascend (-20% damage taken), hold V to transform:
-//                  rift drop, Twin Collapse, two voidlets (the STAGE 2 section)
+//                  rift drop (its slam a Big Crunch: what's Hexed near is pulled in and its
+//                  Hex cashed in as damage), Twin Collapse, two voidlets (the STAGE 2 section)
 //   Stage 3        the full transformation: untouchable while turning, regenerating, a
-//                  dazing slam, four-object collapses (the pair and its mirror) through
-//                  walls that drag and Hex, four voidlets (TF3)
+//                  dazing Big Crunch, the constellation (eight-object collapses through walls
+//                  that drag, each landing cashing in the Hex on what it lands on), voidlets (TF3)
 //
 // The cosmic gem fills from every hit you land, whatever element dealt it: each hit's ult
 // charge (CombatSystem.gainUltCharge) also goes to cosmic at CHARGE_SHARE, overflowing into
@@ -92,8 +98,11 @@ class CosmicSystem {
             // COLLAPSE_ACC tiles/s², so the full throw lands in about 0.6s.
             // The charge bar (V held with 2+ layers): ms to halfway, to 80%, and the last stretch.
             CHARGE:  { HALF_MS: 700, MID_MS: 500, END_MS: 1700 },
-            TF:      { LAUNCH_MS: 250, PICK_MS: 5000, TURN_MS: 1500, AIM_MS: 3000, AIM_RANGE: 14, DROP_MS: 1000,
+            TF:      { LAUNCH_MS: 250, PICK_MS: 5000, TURN_MS: 1000, AIM_MS: 3000, AIM_RANGE: 14, DROP_MS: 1000,
                        SLAM_R: 2.5, SLAM_DMG: 20, SLAM_SLOW: 1.5, SLAM_SLOW_MS: 2000,
+                       // the Big Crunch: the slam pulls what's Hexed within CRUNCH_R tiles CRUNCH_PULL tiles in, then cashes
+                       // every Hex stack on it in: CASH + CASH_PCT of its max HP a stack (CASH_BOSS for a boss), the stacks gone
+                       CRUNCH_R: 6, CRUNCH_PULL: 3, CASH: 12, CASH_PCT: 0.06, CASH_BOSS: 0.015,
                        FORM_MS: 9000, FORM_MAX_MS: 16000, EXTEND_1: 500, EXTEND_3: 1000,
                        // every throw is four objects (your pair and its mirror at ROT°), landing MULT ×
                        // a pair's hit in COLLAPSE_R tiles, and pulling what's within PULL_R in PULL tiles first
@@ -113,17 +122,30 @@ class CosmicSystem {
             // regeneration (REGEN of max HP every REGEN_MS, 1.6%/s) the whole time. Each throw
             // is eight objects, a star of four pairs crashing into the centre (MULT × a pair's
             // hit, in a wider COLLAPSE_R; each pierces at PIERCE_SHARE). They
-            // pass through walls, drag what they pierce along, and Hex what they land on
-            // (Void Blade's Hex: up to +45% damage taken, slowed). A longer form than the partial
+            // pass through walls and drag what they pierce along; where they land they cash in the
+            // Hex on what's there (as the Big Crunch does), or Hex it if it had none. A longer form than the partial
             // one's, so spending the third layer is always worth it.
-            TF3:     { SLAM_R: 3, SLAM_DMG: 30, DAZE_MS: 1500, FORM_MS: 11000, FORM_MAX_MS: 18000,
+            TF3:     { SLAM_R: 3, SLAM_DMG: 30, DAZE_MS: 1500, CRUNCH_R: 8, FORM_MS: 11000, FORM_MAX_MS: 18000,
                        REGEN: 0.0008, REGEN_MS: 50,
                        // eight objects: the pair and three more pairs turned 45°, 90° and 135°
                        COLLAPSE_R: 2.6, MULT: 2.4, ROT: [45, 90, 135], PIERCE_SHARE: 0.6,
                        DRAG_STEP_MS: 60, VOIDLET_HP: 70, VOIDLETS: ['warrior', 'beam', 'warrior', 'beam', 'warrior'] },
+            // The Pendulum, a support tool with no attack. A click lays its field, Time Lock, at the cursor, RANGE tiles at
+            // most: MASK round it (a 7x7 with its corners cut: rows of 3, 5, 7, 7, 7, 5, 3).
+            // Rewind (R): BACK_MS back along your path in PULL_MS; under MIN_MS of past, nothing to rewind. The two share one
+            // cooldown: Stasis sets it to STASIS_CD, Rewind to REWIND_CD (it was the stronger one alone).
+            // TLOCK: the field's Time Lock: MS long (4s, +0.5s a level of Long Lock); what's stored lands x REL_MUL; a boss's time runs BOSS_SLOW slower in it.
+            // THROW (ms): the wind-up; the fling and the bounces, each [how far along the way it lands, ms, its height]; the float; the
+            // growth; the drop. About 1.45s from the click to the thud.
+            // HANG_UP: how far above the field's middle the big one's bob hangs (px); FADE: its alpha while anything's under it
+            PEND:    { RANGE: 6, HANG_UP: 48, FADE: 0.55, THROW: { WIND: 180, HOPS: [[0.55, 340, 1], [0.82, 180, 0.45], [0.95, 130, 0.2], [1, 90, 0.08]], FLOAT: 160, GROW: 260, DROP: 110 },
+                       MASK: ['..###..', '.#####.', '#######', '#######', '#######', '.#####.', '..###..'],
+                       TLOCK: { MS: 4000 + 500 * WeaponLevels.perk('pendulum', 'hold'), REL_MUL: 1, BOSS_SLOW: 0.8 },
+                       STASIS_CD: 12000 * (1 - 0.1 * WeaponLevels.perk('pendulum', 'cd')),
+                       BACK_MS: 3000, REWIND_CD: 30000 * (1 - 0.1 * WeaponLevels.perk('pendulum', 'echo')), PULL_MS: 420, MIN_MS: 400 },
             COL:     { violet: 0xb47cff, lilac: 0xe2c8ff, deep: 0x5a24a8, gold: 0xffd060, hex: 0xff5fd2 },
             NAMES:   { cosmic_fists: 'VOID FISTS', barrier_staff: 'BARRIER', astrolabe: 'ASTROLABE',
-                       singularity_staff: 'SINGULARITY', void_blade: 'VOID BLADE' },
+                       singularity_staff: 'SINGULARITY', void_blade: 'VOID BLADE', pendulum: 'PENDULUM' },
         });
     }
 
@@ -244,96 +266,79 @@ class CosmicSystem {
         }
     }
 
-    // A Twin Collapse object: a 16px little nebula, two spiral arms turning round a white
-    // core, sparks thrown off it (4 frames). Violet for your pair, gold for the full form's
-    // mirror pair.
-    static orbKey(scene, gold = false) {
-        const key = gold ? 'cs_orb_gold' : 'cs_orb';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return null;
-        const pal = gold ? { k: '#2a1a04', n: '#6a4208', m: '#d89a1a', l: '#ffe08a', w: '#ffffff', g: '#ffd060' }
-                         : { k: '#0c0420', n: '#2a1060', m: '#7a3ad8', l: '#d4b0ff', w: '#ffffff', g: '#b47cff' };
-        return ShopScene.icon(scene, key, 16, pal, (m, f) => {
-            m.disc(8, 8, 6.2, 'n');
-            for (let k = 0; k < 2; k++) for (let t = 0; t <= 1.001; t += 0.07) {
-                const a = f * Math.PI / 4 + k * Math.PI + t * 2.6, r = 1.2 + t * 4.6;
-                m.set(8 + Math.cos(a) * r, 8 + Math.sin(a) * r, t < 0.45 ? 'l' : 'm');
-            }
-            m.set(5, 4, 'l'); m.set(4, 5, 'l'); m.set(6, 3, 'm');          // a rim catching light
-            m.disc(8, 8, 1.8, 'l'); m.set(8, 8, 'w'); m.set(7, 7, 'w');
-            for (let k = 0; k < 3; k++) {                                   // sparks circling it
-                const a = f * Math.PI / 2 + k * Math.PI * 2 / 3;
-                m.set(8 + Math.cos(a) * 7.4, 8 + Math.sin(a) * 7.4, 'g');
-            }
-        }, 4);
+    // ── THE ULT'S ART ────────────────────────────────────────────────────────
+    // assets/art/fx_cosmic_ult, typed by hand: Ascend's halo, a burst of light (violet, and gold for the full form), eight
+    // runes and the eight-point star the rune circles are made of, the rift, the Twin Collapse objects, the two voidlets,
+    // the voidbeam's lock and the little marks. Spinning things turn by frames; nothing is turned. The animations, and a
+    // mint emitter for the full form's regeneration, are made the first time.
+    static ultFx(S) {
+        if (S._csUltE?.heal?.active) return S._csUltE;
+        CosmicSystem.fx(S);
+        const A = S.anims, K = 'fx_cosmic_ult', n = (b, k) => Array.from({ length: k }, (_, i) => b + i);
+        const anim = (key, frames, frameRate, repeat = -1) => { if (!A.exists(key)) A.create({ key, frames: frames.map(frame => ({ key: K, frame })), frameRate, repeat }); };
+        anim('csu_halo', n('halo_', 4), 6); anim('csu_sigil', n('sigil_', 4), 8); anim('csu_portal', n('portal_', 4), 10);
+        anim('csu_orb', n('orb_', 4), 12); anim('csu_orbg', n('orbg_', 4), 12); anim('csu_vw', n('vw_', 4), 7); anim('csu_vb', n('vb_', 4), 6);
+        anim('csu_reticle', n('reticle_', 4), 14); anim('csu_pin', n('pin_', 4), 8); anim('csu_twinkle', ['twinkle_0', 'twinkle_1', 'twinkle_0', 'twinkle_2', 'twinkle_3'], 7);
+        anim('csu_crack', ['crack_0', 'crack_1'], 9); anim('csu_nova', n('nova_', 4), 16, 0); anim('csu_novag', n('novag_', 4), 16, 0);
+        const heal = S.add.particles(0, 0, 'fx_cosmic', { frame: ['p_0', 'p_3', 'p_4', 'p_6', 'p_7'], emitting: false, blendMode: Phaser.BlendModes.ADD,
+            lifespan: { min: 450, max: 750 }, speedY: { min: -40, max: -20 }, speedX: { min: -6, max: 6 }, scale: { start: 1.1, end: 0.6 },
+            alpha: { start: 0.9, end: 0 }, color: [0xffffff, 0xd8ffe0, 0x7dff9a, 0x2a9a4a], colorEase: 'quad.out' }).setDepth(4.55);
+        return (S._csUltE = { heal });
     }
-    // The voidlets, 20px, 4 frames. Warrior: a void slime with small horns, gold eyes, a star
-    // or two inside it, a lilac blade it swings. Voidbeam: a floating crystal with an eye at
-    // its heart, shards circling it.
-    static voidletKey(scene, kind) {
-        const key = 'cs_voidlet_' + kind;
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return null;
-        if (kind === 'warrior') return ShopScene.icon(scene, key, 20, { k: '#0a0418', b: '#2a1060', d: '#1a0a40', l: '#6a3ad0', e: '#ffd060', w: '#ffffff', s: '#d4b0ff', h: '#4a2a90', g: '#b47cff' }, (m, f) => {
-            const bob = [0, -1, 0, 1][f], sq = f % 2;
-            m.disc(10, 13 + bob, 6.5 + sq * 0.3, 'b'); m.rect(4, 13 + bob, 13, 5, 'b'); m.rect(4, 17 + bob, 13, 1, 'd');
-            m.rect(6, 9 + bob, 6, 1, 'l'); m.set(5, 10 + bob, 'l');
-            m.set(6, 6 + bob, 'h'); m.set(7, 7 + bob, 'h'); m.set(14, 6 + bob, 'h'); m.set(13, 7 + bob, 'h');   // horns
-            m.set(8, 12 + bob, 'e'); m.set(12, 12 + bob, 'e');                                               // eyes
-            m.set(7, 15 + bob, 'w'); m.set(13, 14 + bob, 'g');                                               // stars inside
-            const ba = [-0.9, -0.4, 0.1, -0.4][f];                                                           // the blade, swinging
-            m.line(16, 13 + bob, 16 + Math.cos(ba) * 4, 13 + bob + Math.sin(ba) * 4, 's');
-            m.set(16 + Math.cos(ba) * 4.6, 13 + bob + Math.sin(ba) * 4.6, 'w');
-        }, 4);
-        return ShopScene.icon(scene, key, 20, { k: '#0a0418', c: '#3a1880', l: '#9a6aff', p: '#d4b0ff', e: '#ff5fd2', w: '#ffffff', g: '#ff8ce0' }, (m, f) => {
-            const bob = [0, -1, -1, 0][f];
-            m.poly([[10, 2 + bob], [16, 9 + bob], [10, 17 + bob], [4, 9 + bob]], 'c');
-            m.poly([[10, 2 + bob], [16, 9 + bob], [10, 9 + bob]], 'l');
-            m.line(10, 3 + bob, 10, 16 + bob, 'p');
-            m.disc(10, 9 + bob, 2.4, f === 2 ? 'g' : 'e'); m.set(10, 9 + bob, 'w');                         // the eye, pulsing
-            for (let k = 0; k < 3; k++) { const a = f * Math.PI / 2 + k * 2.09; m.set(10 + Math.cos(a) * 8, 10 + Math.sin(a) * 4 + bob, 'g'); }
-        }, 4);
+    // A burst of light at (x, y) (gold or violet), sc its size (whole numbers keep its pixels even), played once
+    static nova(S, x, y, sc = 1, gold = false, depth = 4.7) {
+        CosmicSystem.ultFx(S);
+        const o = S.add.sprite(Math.round(x), Math.round(y), 'fx_cosmic_ult', gold ? 'novag_0' : 'nova_0').setScale(sc).setDepth(depth);
+        o.play(gold ? 'csu_novag' : 'csu_nova'); o.once('animationcomplete', () => o.destroy());
+        return o;
     }
-
-    // Cosmic fluid, one 16px floor tile, 4 frames: deep violet liquid, a swirl of lighter
-    // current turning through it, stars glinting in it.
-    static fluidKey(scene) {
-        const key = 'cs_fluid2';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 16, { d: '#1c0a3c', b: '#2c1258', m: '#5a2aa8', l: '#b47cff', w: '#ffffff', p: '#ff8ce0' }, (m, f) => {
-            m.rect(0, 0, 16, 16, 'b');                     // edge to edge, so a run of tiles reads as one pool
-            m.set((f * 5) % 16, 15 - f, 'd'); m.set(14 - f * 3, (f * 7) % 16, 'd');
-            for (let t = 0; t <= 1.001; t += 0.06) {
-                const a = f * Math.PI / 2 + t * 4.4, r = 1 + t * 6;
-                m.set(8 + Math.cos(a) * r, 8 + Math.sin(a) * r, t < 0.5 ? 'l' : 'm');
-            }
-            m.set(3 + f, 3, 'w'); m.set(12, 11 - f, 'w'); m.set(5, 12, f % 2 ? 'p' : 'l'); m.set(11, 4, f % 2 ? 'l' : 'p');
-        }, 4);
-    }
-
-    // A rune circle, white, 128px: two rings, ticks between, an eight-point star, a hub, and
-    // eight rune dots. Tinted and turned for the aim and impact previews.
-    static sigilKey(scene) {
-        const key = 'cs_sigil';
-        if (scene.textures.exists(key)) return key;
-        const N = 128, c = scene.textures.createCanvas(key, N, N), x = c.getContext(), h = N / 2;
-        x.strokeStyle = '#fff'; x.fillStyle = '#fff';
-        const ring = (r, w, a = 1) => { x.globalAlpha = a; x.lineWidth = w; x.beginPath(); x.arc(h, h, r, 0, Math.PI * 2); x.stroke(); };
-        ring(61, 2.5); ring(53, 1, 0.7); ring(23, 1.5, 0.9);
-        for (let i = 0; i < 32; i++) {
-            const a = i / 32 * Math.PI * 2, long = i % 4 === 0;
-            x.globalAlpha = long ? 1 : 0.6; x.lineWidth = long ? 2 : 1;
-            x.beginPath(); x.moveTo(h + Math.cos(a) * 53, h + Math.sin(a) * 53); x.lineTo(h + Math.cos(a) * (long ? 61 : 58), h + Math.sin(a) * (long ? 61 : 58)); x.stroke();
+    // n particles from a ring of radius r round (cx, cy) (flattened by sq), drawn in to the middle over ms
+    static inward(E, cx, cy, r, ms, n, sq = 1) {
+        for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2, rr = r * (0.85 + Math.random() * 0.3), x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr * sq;
+            const p = E.emitParticleAt(x, y, 1);
+            if (!p) continue;
+            const t = ms * (0.8 + Math.random() * 0.4) / 1000;
+            p.velocityX = (cx - x) / t; p.velocityY = (cy - y) / t; p.life = p.lifeCurrent = t * 1000;
         }
-        x.globalAlpha = 0.85; x.lineWidth = 1.5;
-        for (const off of [0, Math.PI / 4]) {                              // two squares: the star
-            x.beginPath();
-            for (let i = 0; i <= 4; i++) { const a = off + i * Math.PI / 2; const px = h + Math.cos(a) * 46, py = h + Math.sin(a) * 46; i ? x.lineTo(px, py) : x.moveTo(px, py); }
-            x.stroke();
+    }
+    // Particles laid along (x0, y0)→(x1, y1), one every `step` px, drifting off it at up to v px a second (ms: how long they live)
+    static along(E, x0, y0, x1, y1, step, ms, v = 10) {
+        const L = Math.hypot(x1 - x0, y1 - y0), k = Math.max(1, Math.round(L / step));
+        for (let i = 0; i <= k; i++) {
+            const f = (i + Math.random() * 0.6) / k, p = E.emitParticleAt(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, 1);
+            if (!p) continue;
+            const a = Math.random() * Math.PI * 2;
+            p.velocityX = Math.cos(a) * v * Math.random(); p.velocityY = Math.sin(a) * v * Math.random();
+            if (ms) p.life = p.lifeCurrent = ms * (0.75 + Math.random() * 0.5);
         }
-        x.globalAlpha = 1;
-        for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + Math.PI / 8; x.beginPath(); x.arc(h + Math.cos(a) * 57, h + Math.sin(a) * 57, 2.2, 0, Math.PI * 2); x.fill(); }
-        x.beginPath(); x.arc(h, h, 3, 0, Math.PI * 2); x.fill();
-        c.refresh();
-        return key;
+    }
+    // A rune circle stamped down at (x, y) and thrown off: the circle swelling out to r and fading, its runes flung past it
+    static stamp(S, x, y, r, tint, depth = 4.65) {
+        CosmicSystem.ultFx(S);
+        const ring = S.add.image(x, y, 'fx_cosmic_ult', 'ring_l').setTint(tint).setDepth(depth).setScale(r * 0.45 / 28);
+        S.tweens.add({ targets: ring, scale: r * 1.2 / 28, alpha: 0, duration: 520, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+        const runes = CosmicSystem.runes(S, 8, tint, depth).place(x, y, r * 0.4, Math.random() * 6);
+        runes.imgs.forEach(im => S.tweens.add({ targets: im, x: x + (im.x - x) * 3.4, y: y + (im.y - y) * 3.4, alpha: 0, duration: 520, ease: 'Cubic.easeOut', onComplete: () => im.destroy() }));
+    }
+    // A rune circle: n of the eight runes (each upright, never turned), set round a circle that turns by moving them. place()
+    // each frame: centre, radius, the angle it has turned to, how many are lit (the rest dark), its alpha, how flat it lies
+    static runes(S, n, tint, depth = 0.96, sc = 1) {
+        CosmicSystem.ultFx(S);
+        const imgs = Array.from({ length: n }, (_, i) => S.add.image(0, 0, 'fx_cosmic_ult', 'rune_' + ((i * 3) % 8)).setDepth(depth).setScale(sc));
+        const R = { imgs, tint,
+            place(cx, cy, r, a0, lit = n, alpha = 1, sq = 1) {
+                imgs.forEach((im, i) => {
+                    const a = a0 + i * Math.PI * 2 / n, on = i < lit;
+                    im.setPosition(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r * sq)).setTint(on ? R.tint : 0x2a1a4a).setAlpha(alpha * (on ? 1 : 0.55)).setVisible(true);
+                });
+                return R;
+            },
+            setVisible(v) { imgs.forEach(im => im.setVisible(v)); return R; },
+            hide() { return R.setVisible(false); },
+            destroy() { imgs.forEach(im => im.destroy()); },
+        };
+        return R;
     }
 
     static sheets(scene) {
@@ -360,6 +365,85 @@ class CosmicSystem {
         CosmicSystem.paintRing(ctx, 117, y0 + 19, 20, '255,208,96', 0); t.add('ring_gold', 0, 117, y0 + 19, 20, 20);
         t.refresh();
         return true;
+    }
+
+    // ── THE WEAPONS' ART ─────────────────────────────────────────────────────
+    // assets/art/fx_cosmic, typed by hand: the fist's burst, the wards, the stars and marks, the seed and the well's heart,
+    // the Hex motes, the Event Horizon's shell, the blade, its cut, its fluid and Retribution's thorns. What has a direction is drawn east and
+    // north-east (south and south-east are those a quarter turn round) and flipped for the other four, never turned.
+    // The scene's animations and particle emitters, made the first time: dust (ten hand-drawn motes, stars and wisps,
+    // white as they're born, then violet, then deep purple as they go), finer dust for trails, gold for the stars, pink
+    // for the Hex, and a soft glow under them; all light, added, so where they crowd they burn white
+    static fx(S) {
+        if (S._csFxE?.dust?.active) return S._csFxE;
+        const A = S.anims, K = 'fx_cosmic', ADD = Phaser.BlendModes.ADD;
+        const n = (b, k) => Array.from({ length: k }, (_, i) => b + i);
+        const anim = (key, frames, frameRate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: frames.map(frame => ({ key: K, frame })), frameRate, repeat }); };
+        for (const d of ['e', 's']) anim('csw_punch_' + d, n(`punch_${d}_`, 4), 22);
+        anim('csw_ward', n('ward_', 4), 8, -1); anim('csw_wardpop', n('wardpop_', 4), 18);
+        anim('csw_comet', n('comet_', 2), 12, -1); anim('csw_star', ['star_0', 'star_1', 'star_0', 'star_2'], 6, -1);
+        anim('csw_mark', n('mark_', 4), 8, -1); anim('csw_pop', n('pop_', 5), 20);
+        anim('csw_seed', n('seed_', 4), 14, -1); anim('csw_core', n('core_', 4), 7, -1);
+        anim('csw_thorns', ['thorns_0', 'thorns_1', 'thorns_0', 'thorns_2'], 6, -1); anim('csw_shell', n('shell_', 4), 8, -1);
+        // (each its own size, shrinking as it goes: a stream of them, never one shape stamped over and over)
+        const size = (lo, hi, k = 0.6) => ({ scaleX: { onEmit: p => (p._s = lo + Math.random() * (hi - lo)), onUpdate: (p, key, t) => (p._s || lo) * (1 - k * t) },
+                                             scaleY: { onEmit: p => p._s || lo, onUpdate: (p, key, t) => (p._s || lo) * (1 - k * t) } });
+        const mk = (frames, cfg, depth) => S.add.particles(0, 0, K, { frame: frames, emitting: false, blendMode: ADD, angle: { min: 0, max: 360 }, ...cfg }).setDepth(depth);
+        const VIOLET = [0xf4ecff, 0xd8bcff, 0xa874f8, 0x6a32c8, 0x2a1060];
+        const dust = mk(n('p_', 10), { lifespan: { min: 300, max: 650 }, speed: { min: 10, max: 50 }, gravityY: -20, ...size(0.8, 1.6),
+            alpha: { start: 0.9, end: 0 }, color: VIOLET, colorEase: 'quad.out' }, 4.5);
+        const fine = mk(['p_0', 'p_3', 'p_4', 'p_6', 'p_9'], { lifespan: { min: 250, max: 480 }, speed: { min: 0, max: 14 }, gravityY: -12, ...size(0.8, 1.2),
+            alpha: { start: 0.9, end: 0 }, color: VIOLET, colorEase: 'quad.out' }, 4.5);
+        const gold = mk(['p_0', 'p_1', 'p_2', 'p_3', 'p_6', 'p_7'], { lifespan: { min: 300, max: 700 }, speed: { min: 10, max: 60 }, gravityY: 40, ...size(0.8, 1.5),
+            alpha: { start: 1, end: 0 }, color: [0xffffff, 0xfff0b0, 0xffd060, 0xc88a20, 0x5a3a08], colorEase: 'quad.out' }, 4.55);
+        const pink = mk(n('p_', 10), { lifespan: { min: 300, max: 650 }, speed: { min: 6, max: 40 }, gravityY: -30, ...size(0.8, 1.5),
+            alpha: { start: 0.9, end: 0 }, color: [0xfff0fa, 0xffc8f0, 0xff5fd2, 0xa0207a, 0x3a0a30], colorEase: 'quad.out' }, 4.5);
+        const glow = S.add.particles(0, 0, 'vfx_glow', { emitting: false, lifespan: { min: 220, max: 420 }, speed: { min: 0, max: 18 },
+            scale: { start: 0.3, end: 0.08 }, alpha: { start: 0.22, end: 0 }, color: [0xe2c8ff, 0x9a5cf0, 0x3a1470], blendMode: ADD }).setDepth(4.45);
+        return (S._csFxE = { dust, fine, gold, pink, glow });
+    }
+    // n particles from emitter E at (x, y), thrown out at v0..v1 px a second within `spread` of angle a (Math.PI: all
+    // round); ms, if given, how long they live
+    static puff(E, x, y, n, a = 0, spread = Math.PI, v0 = 20, v1 = 80, ms = 0) {
+        for (let i = 0; i < n; i++) {
+            const p = E.emitParticleAt(x + (n > 2 ? (Math.random() - 0.5) * 6 : 0), y + (n > 2 ? (Math.random() - 0.5) * 6 : 0), 1);   // (a few px apart, never all on one spot)
+            if (!p) continue;
+            const b = a + (Math.random() * 2 - 1) * spread, v = v0 + Math.random() * (v1 - v0);
+            p.velocityX = Math.cos(b) * v; p.velocityY = Math.sin(b) * v;
+            if (ms) p.life = p.lifeCurrent = ms * (0.8 + Math.random() * 0.4);
+        }
+    }
+    // A ring of n particles flung out from (x, y) to reach radius r as they die, ms on (r0: how far out they start, so a
+    // big ring isn't one white-hot spot at its birth)
+    static ring(E, x, y, r, ms, n, r0 = 3) {
+        for (let i = 0; i < n; i++) {
+            const a = (i + Math.random() * 0.7) / n * Math.PI * 2, p = E.emitParticleAt(x + Math.cos(a) * r0, y + Math.sin(a) * r0, 1);
+            if (!p) continue;
+            const v = (r - r0) / (ms / 1000) * (0.8 + Math.random() * 0.35);
+            p.velocityX = Math.cos(a) * v; p.velocityY = Math.sin(a) * v; p.life = p.lifeCurrent = ms;
+        }
+    }
+    // The nearest of the eight ways to angle a, as the frame drawn for it and whether it's flipped both ways
+    static way(a) { return [['e', 0], ['se', 0], ['s', 0], ['ne', 1], ['e', 1], ['se', 1], ['s', 1], ['ne', 0]][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8]; }
+    // A well's swirl at (cx, cy): its own emitter, the dust it's given wheeling in round the heart (flattened, it lies on
+    // the floor), quicker and tighter the nearer it gets, hotter, whiter as it falls, swallowed at the middle
+    static swirl(S, cx, cy) {
+        const E = S.add.particles(0, 0, 'fx_cosmic', { frame: Array.from({ length: 10 }, (_, i) => 'p_' + i), emitting: false, blendMode: Phaser.BlendModes.ADD,
+            lifespan: 1500, speed: 0,
+            scaleX: { onEmit: p => (p._s = 0.7 + Math.random() * 0.7), onUpdate: (p, k, t) => (p._s || 1) * (1 - 0.45 * t) },
+            scaleY: { onEmit: p => p._s || 1, onUpdate: (p, k, t) => (p._s || 1) * (1 - 0.45 * t) },
+            alpha: { onEmit: () => 0.4, onUpdate: (p, k, t) => 0.4 + 0.5 * Math.min(1, t * 5) },   // (seen from the moment it's drawn in: the dust marks the well's reach)
+            color: [0x4a22a0, 0x8a52e8, 0xc8a0ff, 0xf0e4ff, 0xffffff], colorEase: 'quad.in' }).setDepth(0.975);
+        const pr = new Phaser.GameObjects.Particles.ParticleProcessor(cx, cy, true), SQ = 0.6;
+        pr.update = (p, delta, step) => {
+            const dx = p.x - cx, dy = (p.y - cy) / SQ, r = Math.hypot(dx, dy);
+            if (r < 5) { p.lifeCurrent = 0; return; }   // swallowed
+            const a = Math.atan2(dy, dx) + step * (1.4 + 90 / r), nr = r - step * (14 + 1100 / r);
+            p.x = cx + Math.cos(a) * nr; p.y = cy + Math.sin(a) * nr * SQ;
+            p.velocityX = p.velocityY = 0;
+        };
+        E.addParticleProcessor(pr);
+        return E;
     }
 
     // ── SETUP ────────────────────────────────────────────────────────────────
@@ -392,13 +476,15 @@ class CosmicSystem {
         for (const [, o] of S.astral) o?.destroy?.();
         S.blade?.g?.destroy(); S.blade?.big?.destroy(); S.blade?.halo?.destroy();
         for (const t of S.fluid || []) t.img?.destroy();
-        if (S.tf) { S.tf.g?.destroy(); S.tf.portal?.glow?.destroy(); S.tf.portal?.destroy(); this._csSkinDrop(S.tf.skin); }
+        if (S.tf) { S.tf.portal?.glow?.destroy(); S.tf.portal?.destroy(); this._csSkinDrop(S.tf.skin); }
         if (S.charge) { S.charge.edge?.destroy(); for (const o of S.charge.ui || []) o?.destroy?.(); }
         S.charge?.snd?.stop(); S.blade?.snd?.stop(); Music.duck(false);   // never leave a drone or silent music behind
         for (const c of S.collapses || []) for (const o of c.objs) { o.glow?.destroy(); o.core?.destroy(); }
         for (const v of S.voidlets || []) [v.spr, v.glow, v.eye, v.bar, v.reticle].forEach(o => o?.destroy());
         if (S.well) this._csWellEnd(true);
         if (S.wellBeam) { S.wellBeam.g?.destroy(); S.wellBeam = null; }
+        if (S.stasis) this._csStasisEnd('gone');   // (the scene's going: nothing stored lands)
+        S.fly?.spr?.destroy(); S.fly?.shadow?.destroy(); S.fly?.ghost?.forEach(o => o.destroy());
         for (const k in S.fx) S.fx[k]?.destroy?.();
         for (const [, o] of S.hexFx) o?.destroy?.();
         this._cs = null;
@@ -545,11 +631,12 @@ class CosmicSystem {
         S.wards.forEach((w, i) => { const d = Math.hypot(w.img.x - x, w.img.y - y); if (d < bd) { bd = d; best = i; } });
         const w = S.wards[best];
         const C = this._csCfg().COL;
-        // the ward lunges onto the shot and both go in a flash
-        const zap = this.add.graphics().setDepth(4.6).setBlendMode(Phaser.BlendModes.ADD);
-        zap.lineStyle(2, C.lilac, 0.9); zap.lineBetween(w.img.x, w.img.y, x, y);
-        this.tweens.add({ targets: zap, alpha: 0, duration: 160, onComplete: () => zap.destroy() });
-        this._csBurst(x, y, 16, C.violet, 220);
+        // the ward lunges onto the shot, a streak of dust behind it, and both go: the ward shatters, its light thrown out
+        const F = CosmicSystem.fx(this);
+        for (let k = 0; k <= 6; k++) CosmicSystem.puff(F.fine, w.img.x + (x - w.img.x) * k / 6, w.img.y + (y - w.img.y) * k / 6, 1, 0, Math.PI, 4, 22);
+        const pop = this.add.sprite(x, y, 'fx_cosmic', 'wardpop_0').setScale(1.6).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6).play('csw_wardpop');
+        pop.once('animationcomplete', () => pop.destroy());
+        CosmicSystem.puff(F.dust, x, y, 9, 0, Math.PI, 30, 110);
         this._vfxFlash?.(x, y, 50, C.violet, 200, 0.7);
         const keep = this._csAscending() && this._csWeapon() === 'barrier_staff';   // Ascend: wards hold
         if (!keep) {
@@ -566,7 +653,7 @@ class CosmicSystem {
     // knocked SHOVE tiles straight away from you, stopping early at walls and other enemies.
     // Things rooted to the spot (mortars, totems, anchors) stay put; bosses aren't shoved.
     _csWardShove() {
-        const C = this._csCfg().BARRIER, col = this._csCfg().COL, T = this.TILE_SIZE, px = this.playerX, py = this.playerY;
+        const C = this._csCfg().BARRIER, T = this.TILE_SIZE, px = this.playerX, py = this.playerY;
         const blocked = (x, y) => this.world?.[x]?.[y] !== this.FLOOR || this.getEnemyAt(x, y) || (x === px && y === py) || this.isInLockedRoom?.(x, y);
         let n = 0;
         for (const e of this.enemies || []) {
@@ -585,7 +672,7 @@ class CosmicSystem {
             this.tweens.add({ targets: e.sprite, x: e.x * T + T / 2, y: e.y * T + T / 2 + (this.SLIME_Y_OFFSET || 0),
                               duration: 140 + 40 * k, ease: 'Quad.easeOut', onUpdate: () => this.updateEnemyHealthBar?.(e) });
         }
-        if (n && this.player?.active) VisualFX.ripple(this, this.player.x, this.player.y, 10, (C.SHOVE_R + 1) * T, col.lilac, { depth: 4.5, duration: 320 });
+        if (n && this.player?.active) CosmicSystem.ring(CosmicSystem.fx(this).dust, this.player.x, this.player.y + 2, (C.SHOVE_R + 1) * T, 320, 30);   // the pulse: a ring of dust thrown out
     }
 
     // ── THE WEAPONS ──────────────────────────────────────────────────────────
@@ -596,9 +683,11 @@ class CosmicSystem {
         if (weapon === 'cosmic_fists') { this._csPunch(tx, ty); return; }
         const C = this._csCfg(), now = this.time.now;
         if (now < S.cdUntil) {
-            if (now - (this._csClickAt ?? -1e9) < 60 && now - (S.notReadyAt || -1e9) > 500) {
+            // a fresh click, made after the last cast (the click that cast is still held the frames after it: that's no refusal)
+            if (now - (this._csClickAt ?? -1e9) < 60 && this._csClickAt > S.castAt && now - (S.notReadyAt || -1e9) > 500) {
                 S.notReadyAt = now;
                 this.showStatusText(this.player.x, this.player.y - 28, `${((S.cdUntil - now) / 1000).toFixed(1)}s`, '#9a8cb8');
+                Sfx.play(this, 'deny');
             }
             return;
         }
@@ -608,8 +697,9 @@ class CosmicSystem {
         else if (weapon === 'astrolabe')         { ok = this._csAstrolabe(wx, wy); cd = C.ASTRO.CD; }
         else if (weapon === 'singularity_staff') { ok = this._csWell(wx, wy);    cd = C.WELL.CD; }
         else if (weapon === 'void_blade')        { this._csBladeCharge(); return; }   // fires on release (_csRelease)
+        else if (weapon === 'pendulum')          { ok = this._csStasisCast(wx, wy); cd = C.PEND.STASIS_CD; }
         if (!ok) return;
-        S.cdUntil = now + cd;
+        S.cdUntil = now + cd; S.cdMs = cd;
         this._gearFiredAt = now;   // the held weapon swings now (Creatures.gear)
         S.castAt = now;
     }
@@ -639,20 +729,19 @@ class CosmicSystem {
         const portal = this.getPortalAt?.(tile.x, tile.y);
         if (portal) { this.damagePortal(portal, dmg); hit = true; }
         if (this.damageBossAtTile(tile.x, tile.y, dmg, undefined, 'cosmic')) hit = true;
-        // a violet knuckle-burst on the tile, bigger when it connects
-        const col = this._csCfg().COL;
-        const ring = this.add.image(hx, hy, 'vfx_ring').setTint(hit ? col.lilac : col.violet)
-            .setBlendMode(Phaser.BlendModes.ADD).setDepth(3.4).setScale(0.12).setAlpha(0.95);
-        this.tweens.add({ targets: ring, scale: hit ? 0.62 : 0.4, alpha: 0, duration: 230, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
-        const n = hit ? 6 : 3;
-        for (let i = 0; i < n; i++) {
-            const a = Math.atan2(fy, fx) + (i - (n - 1) / 2) * 0.5 + (Math.random() - 0.5) * 0.3;
-            const s = this.add.image(hx, hy, 'cs_sheet', 'mote').setDepth(3.5).setBlendMode(Phaser.BlendModes.ADD)
-                .setTint(i % 2 ? col.gold : col.lilac);
-            this.tweens.add({ targets: s, x: hx + Math.cos(a) * 16, y: hy + Math.sin(a) * 16, alpha: 0, scale: 0.4,
-                              duration: 200 + Math.random() * 90, ease: 'Quad.easeOut', onComplete: () => s.destroy() });
+        // the knuckle burst (hand-drawn, the way you punched) on the tile, void dust thrown on through it; it connects: bigger,
+        // brighter, gold sparks off it
+        const col = this._csCfg().COL, F = CosmicSystem.fx(this), [d, fl] = CosmicSystem.way(Math.atan2(fy, fx)), a = Math.atan2(fy, fx);
+        const bx = hx - fx * 2, by = hy - fy * 2 - 3;
+        const b = this.add.sprite(bx, by, 'fx_cosmic', `punch_${d}_0`).setFlip(!!fl, !!fl).setScale(hit ? 1.6 : 1.1).setAlpha(hit ? 1 : 0.7)
+            .setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6).play('csw_punch_' + d);
+        b.once('animationcomplete', () => b.destroy());
+        CosmicSystem.puff(F.dust, bx - fx * 6, by - fy * 6, hit ? 12 : 4, a, 0.7, 40, hit ? 170 : 90);
+        if (hit) {
+            CosmicSystem.puff(F.gold, bx, by, 4, a, 1, 50, 140);
+            F.glow.emitParticleAt(bx, by, 2);
+            this._vfxFlash?.(hx, hy, 56, col.violet, 160, 0.6); this._csAddMomentum();
         }
-        if (hit) { this._vfxFlash?.(hx, hy, 56, col.violet, 160, 0.6); this._csAddMomentum(); }
         this.cameras.main.shake(hit ? 50 : 25, hit ? 0.003 : 0.0015);
     }
 
@@ -665,11 +754,12 @@ class CosmicSystem {
     _csRaiseWards(ms) {
         const S = this._cs, C = this._csCfg().BARRIER, col = this._csCfg().COL;
         S.wardsUntil = Math.max(S.wardsUntil, this.time.now + ms);
-        while (S.wards.length < C.WARDS) {
-            const img = this.add.image(this.player.x, this.player.y, 'cs_sheet', 'ward').setDepth(this.player.depth + 0.01).setScale(0);
+        CosmicSystem.fx(this);
+        while (S.wards.length < C.WARDS) {   // (each a crystal turning, by its own frames, out of step with the others)
+            const img = this.add.sprite(this.player.x, this.player.y, 'fx_cosmic', 'ward_0').setDepth(this.player.depth + 0.01).setScale(0).play({ key: 'csw_ward', startFrame: S.wards.length % 4 });
             const glow = this.add.image(this.player.x, this.player.y, 'vfx_glow').setTint(col.violet)
                 .setBlendMode(Phaser.BlendModes.ADD).setDepth(0.9).setScale(0).setAlpha(0.55);
-            this.tweens.add({ targets: img, scale: 1, duration: 220, ease: 'Back.easeOut' });
+            this.tweens.add({ targets: img, scale: 1.3, duration: 220, ease: 'Back.easeOut' });
             this.tweens.add({ targets: glow, scale: 0.16, duration: 220 });
             S.wards.push({ img, glow });
         }
@@ -721,18 +811,19 @@ class CosmicSystem {
         const S = this._cs;
         if (!S?.astro) return;
         const C = this._csCfg().ASTRO, col = this._csCfg().COL, T = this.TILE_SIZE;
-        const x = tx * T + T / 2, y = ty * T + T / 2, sx = x - 120 + Math.random() * 60, sy = y - 260;
-        const img = this.add.image(sx, sy, 'cs_sheet', 'star').setDepth(4.6).setScale(1.4).setRotation(Math.atan2(y - sy, x - sx));
+        // (always the one slant, two down to one across, the way the star is drawn falling; a shower of them falls parallel)
+        const x = tx * T + T / 2, y = ty * T + T / 2, sx = x - 130, sy = y - 260, F = CosmicSystem.fx(this), back = Math.atan2(sy - y, sx - x);
+        const img = this.add.sprite(sx, sy, 'fx_cosmic', 'comet_0').setOrigin(11.5 / 16, 19.5 / 26).setDepth(4.6).setScale(1.5).play('csw_comet');
         const glow = this.add.image(sx, sy, 'vfx_glow').setTint(col.gold).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.5).setScale(0.3).setAlpha(0.9);
-        const trail = this.time.addEvent({ delay: 30, loop: true, callback: () => {
-            if (!img.active) return;
-            const m = this.add.image(img.x, img.y, 'cs_sheet', 'mote').setTint(Math.random() < 0.5 ? col.gold : 0xffffff).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.4);
-            this.tweens.add({ targets: m, alpha: 0, scale: 0.2, duration: 300, onComplete: () => m.destroy() });
-        } });
-        this.tweens.add({ targets: [img, glow], x, y, duration: C.FALL_MS, ease: 'Quad.easeIn', onComplete: () => {
-            trail.remove();
+        this.tweens.add({ targets: img, x, y, duration: C.FALL_MS, ease: 'Quad.easeIn',
+            onUpdate: () => { glow.setPosition(img.x, img.y); CosmicSystem.puff(F.gold, img.x, img.y, 2, back, 0.35, 20, 70); },   // gold shed off its tail
+            onComplete: () => {
+            glow.setPosition(x, y);
             if (!this._cs?.astro) { img.destroy(); glow.destroy(); return; }
-            // impact: a flash, a ring, and everything close is dazed (no damage)
+            // impact: it bursts on the floor, sparks bounce off it, a flash, and everything close is dazed (no damage)
+            const b = this.add.sprite(x, y, 'fx_cosmic', 'pop_0').setScale(1.4).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6).play('csw_pop');
+            b.once('animationcomplete', () => b.destroy());
+            CosmicSystem.puff(F.gold, x, y, 10, -Math.PI / 2, 1.3, 40, 130);
             this._csBurst(x, y, C.DAZE_R * T, col.gold, 320);
             this._vfxFlash?.(x, y, 80, col.gold, 260, 0.8);
             this.cameras.main.shake(40, 0.002);
@@ -745,7 +836,7 @@ class CosmicSystem {
                 this.showStatusText(e.sprite.x, e.sprite.y - 12, 'DAZED', '#ffe08a');
             }
             // the fallen star, lying there to be picked up
-            img.setRotation(0).setScale(1.1).setDepth(0.95);
+            img.setOrigin(0.5).setScale(1.3).setDepth(0.95).play({ key: 'csw_star', startFrame: Math.floor(Math.random() * 4) });
             glow.setScale(0.22).setDepth(0.94).setAlpha(0.7);
             this.tweens.add({ targets: img, y: y - 3, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             this._cs.astro.pickups.push({ tx, ty, img, glow, taken: false });
@@ -766,6 +857,7 @@ class CosmicSystem {
             Sfx.play(this, 'pickup');
             this._csGainCharge(this.ultChargeMax * C.STAR_CHARGE / this._csCfg().CHARGE_SHARE);   // a star caught: cosmic charge
             this.tweens.killTweensOf(p.img);
+            CosmicSystem.puff(CosmicSystem.fx(this).gold, p.img.x, p.img.y, 7, -Math.PI / 2, Math.PI, 20, 90);   // it lifts off in a puff of gold
             this.tweens.add({ targets: [p.img, p.glow], x: this.player.x, y: this.player.y - 10, scale: 0.4, duration: 220, ease: 'Quad.easeIn',
                               onComplete: () => { p.img.destroy(); p.glow.destroy(); } });
             this.showStatusText(this.player.x, this.player.y - 30, `★ ${A.got}`, '#ffe08a');
@@ -792,17 +884,18 @@ class CosmicSystem {
     _csSpendStars(got, area) {
         const S = this._cs, C = this._csCfg().ASTRO, col = this._csCfg().COL, now = this.time.now;
         if (!got || !this.player?.active) { if (this.player) this.showStatusText(this.player.x, this.player.y - 30, 'NO STARS', '#9a8cb8'); return; }
-        const px = this.player.x, py = this.player.y - 8;
+        const px = this.player.x, py = this.player.y - 8, F = CosmicSystem.fx(this);
         const orbit = [];
         for (let i = 0; i < got; i++) {
-            const s = this.add.image(px, py, 'cs_sheet', 'star').setDepth(4.7).setBlendMode(Phaser.BlendModes.ADD);
+            const s = this.add.sprite(px, py, 'fx_cosmic', 'star_0').setDepth(4.7).setBlendMode(Phaser.BlendModes.ADD).play({ key: 'csw_star', startFrame: i % 4 });
             orbit.push(s);
         }
         const spin = { t: 0 };
         this.tweens.add({ targets: spin, t: 1, duration: 650, ease: 'Cubic.easeIn',
-            onUpdate: () => orbit.forEach((s, i) => {
+            onUpdate: () => orbit.forEach((s, i) => {   // (each sheds gold as it goes round)
                 const a = spin.t * Math.PI * 4 + i / got * Math.PI * 2, r = 34 * (1 - spin.t) + 4;
-                s.setPosition(this.player.x + Math.cos(a) * r, this.player.y - 8 + Math.sin(a) * r * 0.6).setScale(1 + spin.t * 0.6);
+                s.setPosition(this.player.x + Math.cos(a) * r, this.player.y - 8 + Math.sin(a) * r * 0.6).setScale(1.2 + spin.t * 0.5);
+                if (Math.random() < 0.6) CosmicSystem.puff(F.gold, s.x, s.y, 1, 0, Math.PI, 2, 14);
             }),
             onComplete: () => {
                 orbit.forEach(s => s.destroy());
@@ -813,13 +906,14 @@ class CosmicSystem {
                 const pool = this._csAstroFoes(area);
                 pool.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
                 const n = Math.min(pool.length, got * C.MARKS_PER, C.MAX_MARKS);
-                pool.slice(0, n).forEach((t, i) => {
+                CosmicSystem.puff(F.gold, cx, cy, 14, 0, Math.PI, 40, 140);
+                pool.slice(0, n).forEach(t => {
                     t.e._csAstral = true;
-                    const beam = this.add.graphics().setDepth(4.6).setBlendMode(Phaser.BlendModes.ADD);
-                    beam.lineStyle(3, col.gold, 0.9); beam.lineBetween(cx, cy, t.x, t.y);
-                    beam.lineStyle(1, 0xffffff, 1); beam.lineBetween(cx, cy, t.x, t.y);
-                    this.tweens.add({ targets: beam, alpha: 0, duration: 380, delay: i * 30, onComplete: () => beam.destroy() });
-                    this._csBurst(t.x, t.y, 18, col.gold, 260);
+                    // a shooting star from you to it, shedding gold all the way, bursting where it strikes (its mark grows there)
+                    const s = this.add.sprite(cx, cy, 'fx_cosmic', 'star_2').setBlendMode(Phaser.BlendModes.ADD).setDepth(4.7).setScale(1.3);
+                    this.tweens.add({ targets: s, x: t.x, y: t.y - 18, duration: 200, ease: 'Quad.easeIn',
+                        onUpdate: () => CosmicSystem.puff(F.gold, s.x, s.y, 2, 0, Math.PI, 4, 26),
+                        onComplete: () => { s.destroy(); this._csBurst(t.x, t.y - 18, 18, col.gold, 260); } });
                 });
                 this.showStatusText(cx, cy - 26, `ASTRAL ×${n}`, '#ffd060');
             } });
@@ -844,29 +938,18 @@ class CosmicSystem {
         this._csPopFx(x, y, Math.min(1.6, 1 + S.popN * 0.08));
         // its ring flies off spinning, instead of vanishing
         const r = S.astral?.get(enemy);
-        if (r?.active) { S.astral.delete(enemy); this.tweens.add({ targets: r, scale: 2.4, alpha: 0, rotation: r.rotation + 4, duration: 320, ease: 'Quad.easeOut', onComplete: () => r.destroy() }); }
+        if (r?.active) { S.astral.delete(enemy); r.anims.timeScale = 3; this.tweens.add({ targets: r, scale: r.scale * 2.2, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => r.destroy() }); }
         this.showStatusText(x, y - 14, `+${Math.round(C.POP_CUR * 100 * k)}%`, '#ffd060');
     }
 
-    // The pop: a white flash and a gold star bursting out (eight rays, the long four turning), a ring, sparks
-    // thrown out and falling, and three motes of gold that fly up to the fire, ice and lightning gems and flash them.
+    // The pop: the hand-drawn gold star bursting open and breaking into sparks, gold thrown out and falling, a flash,
+    // and three motes of gold that fly up to the fire, ice and lightning gems and flash them.
     _csPopFx(x, y, s = 1) {
-        const ADD = Phaser.BlendModes.ADD, col = this._csCfg().COL, g = this.add.graphics().setPosition(x, y).setDepth(4.5).setBlendMode(ADD);
-        for (let k = 0; k < 8; k++) {
-            const a = k * Math.PI / 4, L = (k % 2 ? 9 : 18) * s, w = k % 2 ? 1.6 : 2.6, c = Math.cos(a), sn = Math.sin(a);
-            g.fillStyle(col.gold, 0.95); g.fillTriangle(c * L, sn * L, -sn * w, c * w, sn * w, -c * w);
-            g.fillStyle(0xffffff, 1); g.fillTriangle(c * L * 0.6, sn * L * 0.6, -sn * w * 0.4, c * w * 0.4, sn * w * 0.4, -c * w * 0.4);
-        }
-        g.fillStyle(0xffffff, 1); g.fillCircle(0, 0, 3.5 * s);
-        g.setScale(0.3);
-        this.tweens.add({ targets: g, scale: 1.25, rotation: 0.5, duration: 160, ease: 'Back.easeOut' });
-        this.tweens.add({ targets: g, alpha: 0, scale: 1.6, delay: 140, duration: 260, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
-        const ring = this.add.circle(x, y, 6, 0, 0).setStrokeStyle(2, col.gold, 1).setDepth(4.45).setBlendMode(ADD);
-        this.tweens.add({ targets: ring, scale: 4 * s, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-        for (let k = 0; k < 12; k++) {
-            const a = Math.random() * Math.PI * 2, d = (14 + Math.random() * 18) * s, sp = this.add.rectangle(x, y, 2, 2, k % 3 ? col.gold : 0xffffff).setDepth(4.46).setBlendMode(ADD);
-            this.tweens.add({ targets: sp, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d + 10, alpha: 0, duration: 420 + Math.random() * 260, ease: 'Quad.easeOut', onComplete: () => sp.destroy() });
-        }
+        const ADD = Phaser.BlendModes.ADD, col = this._csCfg().COL, F = CosmicSystem.fx(this);
+        const b = this.add.sprite(x, y, 'fx_cosmic', 'pop_0').setScale(1.6 * s).setBlendMode(ADD).setDepth(4.5).play('csw_pop');
+        b.once('animationcomplete', () => b.destroy());
+        CosmicSystem.puff(F.gold, x, y, Math.round(14 * s), 0, Math.PI, 40, 120 * s);
+        F.glow.emitParticleAt(x, y, 2);
         this._vfxFlash?.(x, y, 60 * s, col.gold, 260, 0.8);
         this.cameras.main.shake(40, 0.0015 * s);
         // the charge it gives, flying to the gems (they're on the HUD camera, so the motes start where the pop is on screen)
@@ -881,7 +964,7 @@ class CosmicSystem {
         }
     }
 
-    // The astral marks: a gold ring turning over each marked enemy until it's popped.
+    // The astral marks: a gold star turning (by its own frames) over each marked enemy until it's popped.
     _csUpdateAstral(now) {
         const S = this._cs;
         const live = new Set();
@@ -890,26 +973,19 @@ class CosmicSystem {
             live.add(e);
             let r = S.astral.get(e);
             if (!r || !r.active) {
-                // the mark lands: a star streaks down onto it with a chime, and a ring flashes open where it strikes
-                r = this.add.graphics().setDepth(4.3).setBlendMode(Phaser.BlendModes.ADD); r._born = now; S.astral.set(e, r);
-                const st = this.add.image(x + 30, y - 90, 'cs_sheet', 'mote').setTint(0xffd060).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.35).setScale(1.6);
-                this.tweens.add({ targets: st, x, y: y - 18, duration: 220, ease: 'Quad.easeIn', onComplete: () => {
-                    st.destroy(); this._csBurst?.(x, y - 18, 10, 0xffd060, 200);
-                    const ring = this.add.circle(x, y - 18, 4, 0, 0).setStrokeStyle(2, 0xffe08a, 1).setDepth(4.35).setBlendMode(Phaser.BlendModes.ADD);
-                    this.tweens.add({ targets: ring, scale: 4, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-                } });
+                // the mark lands (its shooting star strikes as it grows) with a chime; a soft gold light under it
+                CosmicSystem.fx(this);
+                r = this.add.sprite(x, y - 18, 'fx_cosmic', 'mark_0').setDepth(4.3).setScale(0).play({ key: 'csw_mark', startFrame: Math.floor(Math.random() * 4) });
+                r._born = now; S.astral.set(e, r);
+                const gl = this.add.image(x, y - 18, 'vfx_glow').setTint(0xffd060).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.29).setScale(0).setAlpha(0.5);
+                r._glow = gl; r.once('destroy', () => gl.destroy());
                 Sfx.play(this, 'csplace', { gold: true });
             }
-            // the mark: a four-point gold star turning over it, pulsing, a soft glow, a mote orbiting
-            const age = now - r._born, grow = Math.min(1, Math.max(0, (age - 200) / 160)), p = 0.85 + 0.15 * Math.sin(now * 0.008), R = 9 * grow * p, rot = now * 0.002;
-            r.clear().setPosition(x, y - 18);
-            if (grow > 0) {
-                r.fillStyle(0xffd060, 0.18); r.fillCircle(0, 0, R * 1.6);
-                for (let k = 0; k < 4; k++) { const a = rot + k * Math.PI / 2, c = Math.cos(a), sn = Math.sin(a), w = 2.4; r.fillStyle(0xffd060, 0.95); r.fillTriangle(c * R, sn * R, -sn * w, c * w, sn * w, -c * w); r.fillStyle(0xffffff, 1); r.fillTriangle(c * R * 0.55, sn * R * 0.55, -sn * w * 0.4, c * w * 0.4, sn * w * 0.4, -c * w * 0.4); }
-                for (let k = 0; k < 4; k++) { const a = rot + Math.PI / 4 + k * Math.PI / 2; r.fillStyle(0xffe8a0, 0.7); r.fillCircle(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5, 1); }
-                r.fillStyle(0xffffff, 1); r.fillCircle(0, 0, 1.8);
-                const oa = -now * 0.005; r.fillStyle(0xfff0c0, 0.9); r.fillCircle(Math.cos(oa) * R * 1.4, Math.sin(oa) * R * 0.6, 1.3);
-            }
+            // the mark: pulsing, now and then a glint of gold falling off it
+            const age = now - r._born, grow = Math.min(1, Math.max(0, (age - 200) / 160)), p = 0.92 + 0.08 * Math.sin(now * 0.008);
+            r.setPosition(Math.round(x), Math.round(y - 18)).setScale(1.5 * grow * p);
+            r._glow.setPosition(x, y - 18).setScale(0.16 * grow * p);
+            if (grow >= 1 && Math.random() < 0.03) CosmicSystem.fx(this).gold.emitParticleAt(x + (Math.random() - 0.5) * 10, y - 18 + (Math.random() - 0.5) * 8, 1);
         };
         for (const e of this.enemies || []) if (e.sprite?.active) each(e, e.sprite.x, e.sprite.y);
         for (const b of [this.voltslimeBoss, this.voidSovereignBoss, this.fractureCore]) if (b?.active && b.container) each(b, b.container.x, b.container.y - 20);
@@ -935,8 +1011,12 @@ class CosmicSystem {
         if (S.wellBeam) S.wellBeam.g?.destroy();
         const tip = typeof CreatureFX !== 'undefined' ? CreatureFX.gearTip?.(this) : null;   // it leaves from the staff's head
         const x0 = tip?.x ?? this.player.x, y0 = tip?.y ?? this.player.y - 6, x1 = end.x * T + T / 2, y1 = end.y * T + T / 2;
-        S.wellBeam = { x0, y0, x1, y1, tx: end.x, ty: end.y, t0: now, dur: Math.max(260, Math.hypot(x1 - x0, y1 - y0) / (C.BEAM_SPEED * T) * 1000 * 1.7), hit: new Set(), ang: 0,
-                       g: this.add.graphics().setDepth(3.4).setBlendMode(Phaser.BlendModes.ADD) };
+        // the seed: a little black hole, its disk turning (hand-drawn frames), a violet light round it
+        CosmicSystem.fx(this);
+        const seed = this.add.sprite(x0, y0, 'fx_cosmic', 'seed_0').setDepth(3.4).setScale(1.3).play('csw_seed');
+        const glow = this.add.image(x0, y0, 'vfx_glow').setTint(this._csCfg().COL.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(3.39).setScale(0.22).setAlpha(0.75);
+        seed.once('destroy', () => glow.destroy());
+        S.wellBeam = { x0, y0, x1, y1, tx: end.x, ty: end.y, t0: now, dur: Math.max(260, Math.hypot(x1 - x0, y1 - y0) / (C.BEAM_SPEED * T) * 1000 * 1.7), hit: new Set(), g: seed, glow };
         this._csBurst?.(x0, y0, 10, this._csCfg().COL.lilac, 200);   // a flare at the staff's head as it lets go
         Sfx.play(this, 'csbeam');
         return true;
@@ -944,30 +1024,24 @@ class CosmicSystem {
     _csUpdateWellBeam(now) {
         const S = this._cs, B = S.wellBeam;
         if (!B) return;
-        const C = this._csCfg().WELL, col = this._csCfg().COL, T = this.TILE_SIZE, u = Math.min(1, (now - B.t0) / B.dur);
-        // a seed of the well: it leaves the staff slowly and accelerates in (eased by u^2.4), dragging a short trail
+        const C = this._csCfg().WELL, T = this.TILE_SIZE, u = Math.min(1, (now - B.t0) / B.dur);
+        // a seed of the well: it leaves the staff slowly and accelerates in (eased by u^2.4), shedding a trail of dust
+        // that streams longer as it gathers speed, motes falling into it from round about
         const at = v => { const e = Math.pow(Math.max(0, v), 2.4); return [B.x0 + (B.x1 - B.x0) * e, B.y0 + (B.y1 - B.y0) * e]; };
-        const [hx, hy] = at(u), g = B.g; g.clear();
-        const L = Math.hypot(B.x1 - B.x0, B.y1 - B.y0) || 1, nx = (B.x1 - B.x0) / L, ny = (B.y1 - B.y0) / L;
-        const speed = 2.4 * Math.pow(u, 1.4), trail = Math.min(T * 1.4, 6 + speed * T * 0.9);   // longer as it gathers speed, never long
-        for (let k = 0; k < 8; k++) {
-            const f = k / 8, x = hx - nx * trail * f, y = hy - ny * trail * f, w = (7 - k * 0.8) * (0.6 + 0.4 * Math.min(1, speed));
-            g.fillStyle(k < 2 ? 0xffffff : k < 4 ? col.lilac : col.violet, (1 - f) * 0.8); g.fillCircle(x + (Math.random() - 0.5) * k * 0.6, y + (Math.random() - 0.5) * k * 0.6, Math.max(0.6, w * 0.5));
-        }
-        B.ang += 0.25 + speed * 0.35;
-        g.lineStyle(1.5, col.lilac, 0.9); g.strokeEllipse(hx, hy, 18, 7);   // its accretion ring, turning
-        for (let k = 0; k < 3; k++) { const a = B.ang + k * 2.094; g.fillStyle(k ? col.lilac : 0xffffff, 1); g.fillCircle(hx + Math.cos(a) * 9, hy + Math.sin(a) * 3.5, 1.3); }
-        g.fillStyle(col.violet, 0.45); g.fillCircle(hx, hy, 8);
-        g.fillStyle(0x0a0418, 1); g.fillCircle(hx, hy, 4);        // the dark heart
-        g.lineStyle(1.2, 0xffffff, 0.9); g.strokeCircle(hx, hy, 4.2);   // its event horizon, a hairline of light
-        if (Math.random() < 0.5) { const a = Math.random() * Math.PI * 2, m = this.add.rectangle(hx + Math.cos(a) * 14, hy + Math.sin(a) * 14, 2, 2, col.lilac).setDepth(3.41).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: m, x: hx, y: hy, alpha: 0.2, duration: 160, onComplete: () => m.destroy() }); }   // motes falling in
+        const [hx, hy] = at(u), F = CosmicSystem.fx(this);
+        const L = Math.hypot(B.x1 - B.x0, B.y1 - B.y0) || 1, nx = (B.x1 - B.x0) / L, ny = (B.y1 - B.y0) / L, back = Math.atan2(-ny, -nx);
+        const speed = 2.4 * Math.pow(u, 1.4);
+        B.g.setPosition(Math.round(hx), Math.round(hy)); B.glow.setPosition(hx, hy);
+        CosmicSystem.puff(F.dust, hx - nx * 5, hy - ny * 5, 1 + Math.round(speed), back, 0.3, 10 + 40 * speed, 30 + 90 * speed, 260);
+        CosmicSystem.puff(F.fine, hx, hy, 1, back, Math.PI, 4, 20);
+        if (Math.random() < 0.5) { const a = Math.random() * Math.PI * 2; CosmicSystem.puff(F.fine, hx + Math.cos(a) * 14, hy + Math.sin(a) * 14, 1, a + Math.PI, 0.05, 80, 90, 160); }
         for (const e of this.enemies || []) {
             if (this._phasedOut?.(e)) continue;
             if (!e.sprite?.active || e.health <= 0 || B.hit.has(e)) continue;
             if (Math.hypot(e.sprite.x - hx, e.sprite.y - hy) > T * 0.75) continue;
             B.hit.add(e); this._csHex(e, C.BEAM_HEX_MS);
         }
-        if (u >= 1) { g.destroy(); S.wellBeam = null; this._csWellOpen(B.tx, B.ty); }
+        if (u >= 1) { B.g.destroy(); S.wellBeam = null; this._csWellOpen(B.tx, B.ty); }
     }
     _csWellOpen(tx, ty) {
         const S = this._cs, C = this._csCfg().WELL, col = this._csCfg().COL, now = this.time.now, T = this.TILE_SIZE;
@@ -975,11 +1049,13 @@ class CosmicSystem {
         const x = tx * T + T / 2, y = ty * T + T / 2;
         const shade = this.add.image(x, y, 'vfx_glow').setTint(0x000000).setDepth(0.95).setScale(0.75).setAlpha(0.7);
         const glow = this.add.image(x, y, 'vfx_glow').setTint(col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.96).setScale(0).setAlpha(0.7);
-        const disk = this.add.image(x, y, 'cs_sheet', 'well').setDepth(0.97).setScale(0.1);
-        const ring = this.add.image(x, y, 'cs_sheet', 'horizon').setDepth(0.98).setScale(C.RADIUS * T * 2 / 36).setAlpha(0.35);
-        this.tweens.add({ targets: disk, scale: 1.25, duration: 320, ease: 'Back.easeOut' });
+        // its heart (hand-drawn: black, its photon ring shimmering), and the swirl of dust wheeling into it from its reach
+        CosmicSystem.fx(this);
+        const disk = this.add.sprite(x, y, 'fx_cosmic', 'core_0').setDepth(0.985).setScale(0.1).play('csw_core');
+        const ring = CosmicSystem.swirl(this, x, y);
+        this.tweens.add({ targets: disk, scale: 1.4, duration: 320, ease: 'Back.easeOut' });
         this.tweens.add({ targets: glow, scale: 0.85, duration: 320 });
-        S.well = { tx, ty, x, y, t0: now, until: now + C.MS, tickAt: now + 250, moteAt: 0, shade, glow, disk, ring, r: C.RADIUS * C.GROW_FROM };
+        S.well = { tx, ty, x, y, t0: now, until: now + C.MS, tickAt: now + 250, shade, glow, disk, ring, r: C.RADIUS * C.GROW_FROM };
         S.horizonUntil = Math.max(S.horizonUntil, now + C.MS + C.AFTER);
         this._csCastFx('EVENT HORIZON', col.violet);
         this.cameras.main.shake(70, 0.003);
@@ -990,15 +1066,22 @@ class CosmicSystem {
         const S = this._cs, W = S?.well;
         if (!W) return;
         S.well = null;
-        const parts = [W.shade, W.glow, W.disk, W.ring];
-        if (quiet) { parts.forEach(o => o?.destroy()); return; }
-        this.tweens.add({ targets: W.disk, scale: 0, angle: W.disk.angle - 180, duration: 260, ease: 'Back.easeIn' });
-        this.tweens.add({ targets: [W.shade, W.glow, W.ring], alpha: 0, duration: 300, onComplete: () => parts.forEach(o => o?.destroy()) });
-        this._csBurst(W.x, W.y, 26, this._csCfg().COL.lilac, 260);
-        // it collapses: a ring snaps inward and everything still inside is dazed for a moment
-        const C = this._csCfg().WELL, T = this.TILE_SIZE, now = this.time.now;
-        const ring = this.add.circle(W.x, W.y, W.r * T, 0, 0).setStrokeStyle(3, this._csCfg().COL.lilac, 1).setDepth(3.4).setBlendMode(Phaser.BlendModes.ADD);
-        this.tweens.add({ targets: ring, scale: 0.05, alpha: 0.2, duration: 240, ease: 'Quad.easeIn', onComplete: () => { ring.destroy(); this._vfxFlash?.(W.x, W.y, W.r * T, this._csCfg().COL.violet, 300, 0.8); } });
+        const parts = [W.shade, W.glow, W.disk];
+        if (quiet) { parts.forEach(o => o?.destroy()); W.ring?.destroy(); return; }
+        this.tweens.add({ targets: W.disk, scale: 0, duration: 260, ease: 'Back.easeIn' });
+        this.tweens.add({ targets: [W.shade, W.glow], alpha: 0, duration: 300, onComplete: () => parts.forEach(o => o?.destroy()) });
+        this.time.delayedCall(1600, () => W.ring?.destroy());   // (the swirl's last dust falls in first)
+        // it collapses: dust from all round its reach snaps into the heart, it bursts, and everything still inside is dazed for a moment
+        const C = this._csCfg().WELL, T = this.TILE_SIZE, now = this.time.now, F = CosmicSystem.fx(this), R = W.r * T;
+        for (let i = 0; i < 32; i++) {
+            const a = (i + Math.random() * 0.5) / 32 * Math.PI * 2, p = F.dust.emitParticleAt(W.x + Math.cos(a) * R, W.y + Math.sin(a) * R * 0.6, 1);
+            if (p) { p.velocityX = -Math.cos(a) * R / 0.24; p.velocityY = -Math.sin(a) * R * 0.6 / 0.24; p.life = p.lifeCurrent = 240; }
+        }
+        this.time.delayedCall(240, () => {
+            this._vfxFlash?.(W.x, W.y, R, this._csCfg().COL.violet, 300, 0.8);
+            CosmicSystem.puff(F.dust, W.x, W.y, 16, 0, Math.PI, 30, 130);
+            CosmicSystem.puff(F.fine, W.x, W.y, 10, 0, Math.PI, 10, 60);
+        });
         this.cameras.main.shake(90, 0.004);
         for (const e of this.enemies || []) {
             if (this._phasedOut?.(e)) continue;
@@ -1018,10 +1101,12 @@ class CosmicSystem {
     _csBladeCharge() {
         const S = this._cs;
         if (S.blade) return;
-        const key = typeof MenuArt !== 'undefined' ? MenuArt.iconSheet?.(this, 'void_blade') : null;
-        const big = key ? this.add.sprite(this.player.x, this.player.y, key, '0').setDepth(this.player.depth + 0.05) : null;
-        const halo = key ? this.add.sprite(this.player.x, this.player.y, key, '0').setTintFill(this._csCfg().COL.hex).setBlendMode(Phaser.BlendModes.ADD).setDepth(this.player.depth + 0.04) : null;
-        S.blade = { start: this.time.now, g: this.add.graphics().setDepth(1.2), z0: this.cameras.main.zoom, big, halo, snd: Sfx.charge(this, 'blade') };
+        // the blade in your hand, growing (hand-drawn, pointed the nearest of eight ways), a Hex-pink glow round it; the
+        // preview's tile markers (g)
+        CosmicSystem.fx(this);
+        const big = this.add.sprite(this.player.x, this.player.y, 'fx_cosmic', 'blade_e').setDepth(this.player.depth + 0.05);
+        const halo = this.add.sprite(this.player.x, this.player.y, 'fx_cosmic', 'blade_e').setTintFill(this._csCfg().COL.hex).setBlendMode(Phaser.BlendModes.ADD).setDepth(this.player.depth + 0.04);
+        S.blade = { start: this.time.now, g: this.add.container(0, 0).setDepth(1.2), z0: this.cameras.main.zoom, big, halo, snd: Sfx.charge(this, 'blade') };
         Music.duck(true);   // the music drops out while it builds
     }
     _csBladeF(now) { return Math.min(1, (now - this._cs.blade.start) / this._csCfg().BLADE.HOLD_MAX); }
@@ -1068,22 +1153,27 @@ class CosmicSystem {
         const C = this._csCfg().BLADE, col = this._csCfg().COL, T = this.TILE_SIZE, cam = this.cameras.main, p = this.player;
         const f = this._csBladeF(now), ap = this._aim(this.input.activePointer);
         const { tiles, dx, dy } = this._csBladeTiles(ap.x + cam.scrollX, ap.y + cam.scrollY, f);
-        B.g.clear();
-        for (const t of tiles) {
-            const a = 0.1 + 0.2 * f + 0.1 * Math.sin(now * 0.01 - t.d * 0.8);
-            B.g.fillStyle(col.hex, a); B.g.fillRect(t.x * T + 1, t.y * T + 1, T - 2, T - 2);
-        }
-        B.g.lineStyle(1, f >= 1 ? 0xffffff : col.hex, f >= 1 ? 0.9 : 0.55);
-        for (const t of tiles) B.g.strokeRect(t.x * T + 1, t.y * T + 1, T - 2, T - 2);
+        // the preview: a marker on every tile the cut will take, pulsing out along it, white at a full charge
+        while (B.g.list.length < tiles.length) B.g.add(this.add.image(0, 0, 'fx_cosmic', 'aim_0').setBlendMode(Phaser.BlendModes.ADD));
+        B.g.list.forEach((m, i) => {
+            const t = tiles[i];
+            if (!t) { m.setVisible(false); return; }
+            m.setVisible(true).setFrame(f >= 1 ? 'aim_1' : 'aim_0').setPosition(t.x * T + T / 2, t.y * T + T / 2).setScale(T / 24)
+             .setAlpha(0.3 + 0.35 * f + 0.25 * Math.sin(now * 0.01 - t.d * 0.8));
+        });
         cam.setZoom(B.z0 * (1 + C.ZOOM * f));
         B.snd?.set(f);
-        const ang = Math.atan2(dy, dx), sc = 1.4 + 3.6 * f;
-        for (const [s, k] of [[B.big, 1], [B.halo, 1.15]]) s?.setPosition(p.x + dx * 10 * (1 + f), p.y - 6 + dy * 10 * (1 + f)).setRotation(ang + Math.PI / 4).setScale(sc * k);
+        // the blade: its grip in your hand, pointed the nearest of the eight ways to your aim
+        const ang = Math.atan2(dy, dx), sc = 1.2 + 1.1 * f, [d, fl] = CosmicSystem.way(ang), snap = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+        const ux = Math.cos(snap), uy = Math.sin(snap), bx = p.x + ux * (6 + 11 * sc), by = p.y + 4 + uy * (6 + 11 * sc);
+        for (const [s, k] of [[B.big, 1], [B.halo, 1.15]]) s?.setFrame('blade_' + d).setFlip(!!fl, !!fl).setPosition(Math.round(bx), Math.round(by)).setScale(sc * k);
         B.halo?.setAlpha(0.25 + 0.35 * f + 0.15 * Math.sin(now * 0.02));
-        if (Math.random() < 0.2 + 0.6 * f) {
-            const m = this.add.image(p.x + (Math.random() - 0.5) * 40, p.y + (Math.random() - 0.5) * 30, 'cs_sheet', 'mote').setTint(col.hex).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6);
-            this.tweens.add({ targets: m, x: B.big?.x ?? p.x, y: B.big?.y ?? p.y, alpha: 0, duration: 300, onComplete: () => m.destroy() });
+        const F = CosmicSystem.fx(this);
+        if (Math.random() < 0.3 + 0.7 * f) {   // the void drawn in to it
+            const a = Math.random() * Math.PI * 2, r = 26 + Math.random() * 24, sx = bx + Math.cos(a) * r, sy = by + Math.sin(a) * r, q = F.pink.emitParticleAt(sx, sy, 1);
+            if (q) { q.velocityX = (bx - sx) / 0.3; q.velocityY = (by - sy) / 0.3; q.life = q.lifeCurrent = 300; }
         }
+        if (Math.random() < f) { const k = (Math.random() * 2 - 1) * 11 * sc; F.fine.emitParticleAt(bx + ux * k, by + uy * k - 2, 1); }   // and glittering along its edge
         if (f >= 1 && !B.full) { B.full = true; this._vfxFlash?.(p.x, p.y, 70, col.hex, 200, 0.7); Sfx.play(this, 'ready'); }
     }
     _csBladeDrop() {
@@ -1137,26 +1227,29 @@ class CosmicSystem {
         for (const t of tiles) S.fluid.push({ x: t.x, y: t.y, t0: now + t.d * C.CASCADE_MS, t1: now + t.d * C.CASCADE_MS + life, img: null, hexMs });
         // the tray's bar: from now until the last tile dries
         S.fluidSpan = { from: now, to: Math.max(S.fluidSpan?.to || 0, ...S.fluid.map(t => t.t1)) };
-        // the cut: a crescent sweeping out along the line, an afterimage of you at its head
-        const ang = Math.atan2(dy, dx), L = Math.max(1, len) * T, wide = 1 + sh.hw * 1.6;
-        const fan = Math.atan(C.FAN);
-        if (fan > 0.01) {   // Fan Cut: the blade sweeps across the whole fan, side to side, at full reach
-            const sw = this.add.graphics().setDepth(4.4).setBlendMode(Phaser.BlendModes.ADD), sweep = { u: 0 };
+        // the cut: the hand-drawn crescent sweeping out along the line (the nearest of eight ways), two fainter ones after
+        // it, shedding void dust across the cut's whole width and Hex sparks behind it; an afterimage of you at its head
+        const ang = Math.atan2(dy, dx), L = Math.max(1, len) * T, wide = 1 + sh.hw * 1.6, ADD = Phaser.BlendModes.ADD;
+        const fan = Math.atan(C.FAN), F = CosmicSystem.fx(this), [d, fl] = CosmicSystem.way(ang), nx = -dy, ny = dx, half = (0.5 + sh.hw) * T;
+        if (fan > 0.01) {   // Fan Cut: the blade sweeps across the whole fan, side to side, at full reach, dust off its edge
+            const sweep = { u: 0 };
             this.tweens.add({ targets: sweep, u: 1, duration: 260 + 4 * len, ease: 'Cubic.easeOut', onUpdate: () => {
-                sw.clear();
-                const a0 = ang - fan, a1 = ang - fan + 2 * fan * sweep.u;
-                for (const [r, wd, al] of [[L, 10, 0.85], [L * 0.8, 6, 0.5], [L * 0.55, 4, 0.3]]) {
-                    sw.lineStyle(wd, col.hex, al); sw.beginPath(); sw.arc(px, py - 4, r, a0, a1); sw.strokePath();
-                }
-                sw.lineStyle(3, 0xffffff, 0.9); sw.beginPath(); sw.arc(px, py - 4, L, Math.max(a0, a1 - 0.25), a1); sw.strokePath();
-                sw.lineStyle(4, col.hex, 0.7); sw.lineBetween(px, py - 4, px + Math.cos(a1) * L, py - 4 + Math.sin(a1) * L);   // the blade edge itself
-            }, onComplete: () => this.tweens.add({ targets: sw, alpha: 0, duration: 220, onComplete: () => sw.destroy() }) });
+                const a1 = ang - fan + 2 * fan * sweep.u, c = Math.cos(a1), sn = Math.sin(a1);
+                for (let k = 0; k < 5; k++) { const r = L * (0.3 + Math.random() * 0.7); CosmicSystem.puff(F.dust, px + c * r, py - 4 + sn * r, 1, a1 + Math.PI / 2, 0.5, 10, 50); }
+                CosmicSystem.puff(F.pink, px + c * L, py - 4 + sn * L, 2, a1, 0.6, 20, 70);
+            } });
         }
         for (let i = 0; i < 3; i++) {
-            const s = this.add.image(px, py - 4, 'cs_sheet', 'slash').setRotation(ang).setDepth(4.4)
-                .setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.95 - i * 0.25).setScale(0.6, (1.1 - i * 0.15) * wide);
-            this.tweens.add({ targets: s, x: px + dx * L, y: py - 4 + dy * L, scaleX: 1.15, delay: i * 35, duration: 150 + 6 * len,
-                              ease: 'Cubic.easeOut', onComplete: () => this.tweens.add({ targets: s, alpha: 0, duration: 160, onComplete: () => s.destroy() }) });
+            const s = this.add.sprite(px, py - 4, 'fx_cosmic', `slash_${d}_0`).setFlip(!!fl, !!fl).setBlendMode(ADD).setDepth(4.4)
+                .setAlpha(0.95 - i * 0.3).setScale((1.2 + 0.5 * wide) * (1 - i * 0.12));
+            this.tweens.add({ targets: s, x: px + dx * L, y: py - 4 + dy * L, delay: i * 35, duration: 150 + 6 * len, ease: 'Cubic.easeOut',
+                onUpdate: tw => {
+                    s.setFrame(`slash_${d}_${tw.progress < 0.1 ? 0 : tw.progress < 0.75 ? 1 : 2}`);
+                    if (i) return;
+                    for (let k = 0; k < 3; k++) { const o = (Math.random() * 2 - 1) * half; CosmicSystem.puff(F.dust, s.x + nx * o, s.y + ny * o, 1, ang, 0.5, 10, 70); }
+                    if (Math.random() < 0.7) { const o = (Math.random() * 2 - 1) * half * 0.7; CosmicSystem.puff(F.pink, s.x + nx * o, s.y + ny * o, 1, ang + Math.PI, 0.6, 10, 40); }
+                },
+                onComplete: () => { s.setFrame(`slash_${d}_3`); this.tweens.add({ targets: s, alpha: 0, duration: 160, onComplete: () => s.destroy() }); } });
         }
         if (this.player?.active) {
             const ghost = this.add.image(this.player.x, this.player.y, this.player.texture.key, this.player.frame.name)
@@ -1174,7 +1267,9 @@ class CosmicSystem {
     _csUpdateFluid(now) {
         const S = this._cs, F = S.fluid;
         if (!F?.length) return;
-        const C = this._csCfg().BLADE, T = this.TILE_SIZE, key = CosmicSystem.fluidKey(this);
+        // (two hand-drawn tiles, one mirrored now and then, their stars twinkling all in step so a pool reads as one;
+        // now and then a bubble of void rising off it)
+        const C = this._csCfg().BLADE, T = this.TILE_SIZE, tw = Math.floor(now / 170) % 4, FX = CosmicSystem.fx(this);
         const wet = new Map();   // tile → its Hex length
         for (let i = F.length - 1; i >= 0; i--) {
             const t = F[i];
@@ -1184,11 +1279,15 @@ class CosmicSystem {
             }
             if (now < t.t0) continue;
             if (!t.img) {
-                t.img = this.add.sprite(t.x * T + T / 2, t.y * T + T / 2, key, '0').setDisplaySize(T, T).setDepth(0.92).setAlpha(0);
-                if (this.anims.exists(key)) t.img.play({ key, startFrame: (t.x + t.y) % 4 });
+                const h = Math.imul(t.x * 73 + 11, 0x9e3779b1) ^ Math.imul(t.y * 151 + 7, 0x85ebca6b);   // (which tile, mirrored or not, scrambled per tile: never a checkerboard)
+                t.v = (h >>> 7) & 1 ? 'b' : 'a';
+                t.img = this.add.image(t.x * T + T / 2, t.y * T + T / 2, 'fx_cosmic', `fluid_${t.v}_${tw}`).setFlipX(!!((h >>> 11) & 1)).setScale(T / 24).setDepth(0.92).setAlpha(0);
+                t.tw = tw;
                 this.tweens.add({ targets: t.img, alpha: 0.92, duration: 140 });
                 if (Math.random() < 0.35) this._csBurst(t.x * T + T / 2, t.y * T + T / 2, 10, this._csCfg().COL.hex, 200);
             }
+            if (t.tw !== tw && t.img.active) { t.tw = tw; t.img.setFrame(`fluid_${t.v}_${tw}`); }
+            if (Math.random() < 0.006) CosmicSystem.puff(FX.pink, t.x * T + 3 + Math.random() * (T - 6), t.y * T + 3 + Math.random() * (T - 6), 1, -Math.PI / 2, 0.4, 8, 26);
             wet.set(t.x + ',' + t.y, t.hexMs);
         }
         for (const e of this.enemies || []) {
@@ -1221,9 +1320,11 @@ class CosmicSystem {
             const d = Math.hypot(dx, dy); if (d > R + 0.4) continue;
             this._csFluidTile(px + dx, py + dy, now + d * C.CASCADE, C.FLUID_MS, C.HEX_MS);
         }
-        const col = this._csCfg().COL, T = this.TILE_SIZE, x = this.player.x, y = this.player.y;
-        const ring = this.add.circle(x, y, T * 0.5).setStrokeStyle(6, col.hex, 0.9).setDepth(4.6).setBlendMode(Phaser.BlendModes.ADD);
-        this.tweens.add({ targets: ring, radius: R * T, alpha: 0, duration: R * C.CASCADE + 200, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+        // the wave front: a ring of Hex-pink dust riding the cascade out, violet dust a step behind it, a little gold
+        const T = this.TILE_SIZE, x = this.player.x, y = this.player.y + 4, ms = R * C.CASCADE + 200, F = CosmicSystem.fx(this);
+        CosmicSystem.ring(F.pink, x, y, R * T, ms, 84);
+        CosmicSystem.ring(F.dust, x, y, R * T * 0.8, ms, 52);
+        CosmicSystem.ring(F.gold, x, y, R * T * 0.55, ms * 0.8, 14);
         this.cameras.main.shake(180, 0.007); Sfx.play(this, 'whoosh');
     }
     // Every WAVE_EVERY while ascended: a WAVE_W-tile-wide wave of fluid rolls toward the crosshair, WAVE_LEN tiles,
@@ -1243,6 +1344,409 @@ class CosmicSystem {
         }
         this._csBurst(this.player.x + dx * T, this.player.y + dy * T, 50, this._csCfg().COL.hex, 260);
         Sfx.play(this, 'whoosh'); this.cameras.main.shake(90, 0.004);
+    }
+
+    // ── THE PENDULUM: THE CAST ───────────────────────────────────────────────
+    // A click lays the Time Lock at the cursor (RANGE tiles at most, along the line out from you: the last open floor before a wall,
+    // a sealed room or the edge of the view, so never through one). You fling the pendulum (assets/art/fx_pendulum): small,
+    // its bob whirling on its chain (fly_0..15), on a curve onto the spot; there it rises a little and grows (grow_0, grow_1,
+    // the big hang frames: typed bigger, never scaled), then drops onto the spot with a heavy thud, and the field snaps on.
+    _csStasisCast(wx, wy) {
+        const S = this._cs, C = this._csCfg().PEND, now = this.time.now, T = this.TILE_SIZE, px = this.playerX, py = this.playerY;
+        if (S.fly) return false;
+        let tx = Math.floor(wx / T), ty = Math.floor(wy / T);
+        const d = Math.hypot(tx - px, ty - py);
+        if (d > C.RANGE) { tx = Math.round(px + (tx - px) * C.RANGE / d); ty = Math.round(py + (ty - py) * C.RANGE / d); }
+        const view = this.cameras.main.worldView, n = Math.max(1, Math.ceil(Math.hypot(tx - px, ty - py) * 3));
+        let end = { x: px, y: py };
+        for (let k = 1; k <= n; k++) {
+            const x = Math.round(px + (tx - px) * k / n), y = Math.round(py + (ty - py) * k / n);
+            if (this.world?.[x]?.[y] !== this.FLOOR || this.isInLockedRoom?.(x, y) || !view.contains(x * T + T / 2, y * T + T / 2)) break;
+            end = { x, y };
+        }
+        const M = this._cfxGearState?.main, x0 = M?.visible ? M.x : this.player.x, y0 = M?.visible ? M.y : this.player.y - 10;
+        const x1 = end.x * T + T / 2, y1 = end.y * T + T / 2, L = Math.hypot(x1 - x0, y1 - y0);
+        const spr = this.add.sprite(x0, y0, 'fx_pendulum', 'fly_0').setDepth(4.6).setScale(1.5);
+        const shadow = this.add.image(x0, y0 + 10, 'vfx_shadow').setDepth(0.97).setAlpha(0.45).setScale(0.16, 0.07);
+        // where it'll land: the field's edge, faint, pulsing, from the click till the thud
+        const T2 = this.TILE_SIZE, tiles = this._csStasisTiles(end.x, end.y), ghost = [];
+        for (const k of tiles) {
+            const [cx, cy] = k.split(',').map(Number), X = cx * T2 + T2 / 2, Y = cy * T2 + T2 / 2;
+            for (const [dx, dy, side, ox, oy] of [[0, -1, 'n', 0, -10], [0, 1, 's', 0, 10], [-1, 0, 'w', -10, 0], [1, 0, 'e', 10, 0]])
+                if (!tiles.has((cx + dx) + ',' + (cy + dy))) ghost.push(this.add.image(X + ox, Y + oy, 'fx_pendulum', 'edge_' + side).setDepth(0.945).setAlpha(0.25));
+        }
+        S.fly = { x0, y0, x1, y1, tx: end.x, ty: end.y, t0: now, spr, shadow, ghost, phase: 'wind', L };
+        S.away = true;   // (the one in your hand is out there now: CreatureFX.gear hides it till it's back)
+        return true;
+    }
+    // Where the bob's middle is below the pivot in each hanging frame (px, before the 1.5 it's drawn at)
+    static BOB_AT = { grow_0: 7, grow_1: 16, hang: 48 };   // (the Reliquary's orb: its middle in grow_0, grow_1 and the big hanging frames)
+    // THE THROW (PEND.THROW): a wind-up at your hand (it whirls faster and draws back), the fling on an arc that lands short
+    // of the spot, bounces along the line to it (each lower and shorter, a puff and a tick where it touches), then it floats
+    // up off the spot, grows (typed bigger frame by frame, never scaled) and drops with a heavy thud: the field opens then.
+    _csFlyTick(now) {
+        const S = this._cs, F = S.fly;
+        if (!F) return;
+        const B = CosmicSystem.BOB_AT, spr = F.spr, C = this._csCfg().PEND.THROW, t = now - F.t0;
+        const at = f => [F.x0 + (F.x1 - F.x0) * f, F.y0 + (F.y1 - F.y0) * f];
+        for (const g of F.ghost) g.setAlpha(0.18 + 0.12 * Math.sin(now / 120));
+        let hopEnd = C.WIND;
+        for (const [, ms] of C.HOPS) hopEnd += ms;
+        if (t < C.WIND) {   // the wind-up: drawn back from the target, whirling ever faster
+            const u = t / C.WIND, [bx, by] = at(-0.12 * u);
+            spr.setPosition(Math.round(bx), Math.round(by - 4 * u)).setFrame('fly_' + (Math.floor(t * (1 + 2 * u) / 45) % 16));
+            F.shadow.setPosition(bx, by + 10);
+            return;
+        }
+        if (t < hopEnd) {   // the fling and its bounces: hop k from f0 to f1, its height h x the first
+            let t0 = C.WIND, f0 = -0.12;
+            for (const [f1, ms, h] of C.HOPS) {
+                if (t < t0 + ms) {
+                    const u = (t - t0) / ms, [gx, gy] = at(f0 + (f1 - f0) * u), H = h * Math.max(26, F.L * 0.35);
+                    spr.setPosition(Math.round(gx), Math.round(gy - H * 4 * u * (1 - u))).setFrame('fly_' + (Math.floor(t / 35) % 16));
+                    F.shadow.setPosition(gx, gy + 10).setScale(0.16 * (1 - 0.4 * 4 * u * (1 - u) * h), 0.07 * (1 - 0.4 * 4 * u * (1 - u) * h));
+                    if (Math.random() < 0.6) CosmicSystem.pendFx(this).haze.emitParticleAt(spr.x, spr.y, 1);
+                    break;
+                }
+                if (F.hop !== f1) {   // (it touched down: a puff of dust and a tick, once a landing)
+                    F.hop = f1;
+                    const [lx, ly] = at(f1);
+                    CosmicSystem.puff(CosmicSystem.fx(this).dust, lx, ly + 6, 4 + Math.round(6 * h), 0, Math.PI, 15, 50);
+                    Sfx.play(this, 'ptick');
+                }
+                t0 += ms; f0 = f1;
+            }
+            return;
+        }
+        // on the spot: it floats up (FLOAT), grows a frame at a time as it rises a little more (GROW), then drops (DROP)
+        if (!F.landed) { F.landed = true; spr.setOrigin(0.5, 0); F.shadow.destroy(); }
+        const u = t - hopEnd, RISE = 14, MORE = 6;
+        let r, frame;
+        if (u < C.FLOAT) { const k = u / C.FLOAT; r = RISE * (1 - (1 - k) * (1 - k)); frame = 'grow_0'; }
+        else if (u < C.FLOAT + C.GROW) { const k = (u - C.FLOAT) / C.GROW; r = RISE + MORE * k; frame = k < 0.5 ? 'grow_1' : 'hang_2'; }
+        else { const k = Math.min(1, (u - C.FLOAT - C.GROW) / C.DROP); r = (RISE + MORE) * (1 - k * k); frame = 'hang_2'; }
+        spr.setFrame(frame).setPosition(Math.round(F.x1), Math.round(F.y1 - this._csCfg().PEND.HANG_UP * Math.min(1, u / (C.FLOAT + C.GROW)) - r - (B[frame] ?? B.hang) * 1.5));   // (rising to where it hangs, over the field's upper rows)
+        if (u < C.FLOAT + C.GROW + C.DROP) return;
+        S.fly = null;
+        F.ghost.forEach(o => o.destroy());
+        this._csStasisOpen(F.tx, F.ty, spr);
+    }
+    // The pendulum's light in flight: soft pieces of haze with no outline (fx_fractal's), lilac to deep violet, that run
+    // together where they crowd into one smear behind it
+    static pendFx(S) {
+        if (S._csPendFx?.haze?.active) return S._csPendFx;
+        const haze = S.add.particles(0, 0, 'fx_fractal', { frame: ['haze_0', 'haze_1', 'haze_2', 'haze_3', 'haze_4', 'haze_5'], emitting: false, blendMode: Phaser.BlendModes.ADD,
+            lifespan: { min: 220, max: 380 }, speed: { min: 0, max: 12 }, scale: { start: 1.8, end: 0.9 }, alpha: { start: 0.5, end: 0 },
+            color: [0xf0e4ff, 0xc8a0ff, 0x8a52e8, 0x3a1470], colorEase: 'quad.out' }).setDepth(4.55);
+        return (S._csPendFx = { haze });
+    }
+
+    // ── THE PENDULUM: TIME LOCK ──────────────────────────────────────────────
+    // The field (in the code still "stasis"), for TLOCK.MS: the tiles of a 7x7 with its corners cut (MASK) that can be
+    // reached from the middle over open floor (a wall cuts it off), each lit (tile_0) with its edge drawn round them, the
+    // big pendulum hanging over the middle swinging slowly and ticking. Inside it time stops for everything but you: what
+    // stands on it is locked (_csLockOn, _csFieldAct), your shots and theirs stop where they reach it (_csLockShots), and
+    // when it ends everything stored is let go at once (_csFieldRelease).
+    _csStasisTiles(tx, ty) {
+        const M = this._csCfg().PEND.MASK, h = (M.length - 1) / 2, inMask = (x, y) => M[y - ty + h]?.[x - tx + h] === '#', tiles = new Set([tx + ',' + ty]), q = [[tx, ty]];
+        while (q.length) {
+            const [x, y] = q.shift();
+            for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+                const k = nx + ',' + ny;
+                if (tiles.has(k) || !inMask(nx, ny) || this.world?.[nx]?.[ny] !== this.FLOOR || this.isInLockedRoom?.(nx, ny)) continue;
+                tiles.add(k); q.push([nx, ny]);
+            }
+        }
+        return tiles;
+    }
+    _csStasisOpen(tx, ty, big = null) {
+        const S = this._cs, C = this._csCfg().PEND, col = this._csCfg().COL, now = this.time.now, T = this.TILE_SIZE;
+        if (S.stasis) this._csStasisEnd(true);
+        const x = tx * T + T / 2, y = ty * T + T / 2, tiles = this._csStasisTiles(tx, ty), parts = [];
+        for (const k of tiles) {
+            const [cx, cy] = k.split(',').map(Number), X = cx * T + T / 2, Y = cy * T + T / 2;
+            parts.push(this.add.image(X, Y, 'fx_pendulum', 'tile_0').setDepth(0.94).setFlip(Math.random() < 0.5, Math.random() < 0.5));
+            for (const [dx, dy, side, ox, oy] of [[0, -1, 'n', 0, -10], [0, 1, 's', 0, 10], [-1, 0, 'w', -10, 0], [1, 0, 'e', 10, 0]])
+                if (!tiles.has((cx + dx) + ',' + (cy + dy))) parts.push(this.add.image(X + ox, Y + oy, 'fx_pendulum', 'edge_' + side).setDepth(0.945));
+        }
+        const glow = this.add.image(x, y, 'vfx_glow').setTint(col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.93).setScale(1.75).setAlpha(0.3);
+        if (!big) big = this.add.sprite(x, 0, 'fx_pendulum', 'hang_2').setOrigin(0.5, 0).setDepth(4.6).setScale(1.5);
+        big.setPosition(Math.round(x), Math.round(y - C.HANG_UP - CosmicSystem.BOB_AT.hang * 1.5)).setAlpha(0.9);
+        if (!this.anims.exists('csw_pend')) this.anims.create({ key: 'csw_pend', frames: [0, 1, 2, 3, 4, 3, 2, 1].map(i => ({ key: 'fx_pendulum', frame: 'hang_' + i })), frameRate: 5, repeat: -1 });
+        big.play({ key: 'csw_pend', startFrame: 2 });
+        big.on('animationupdate', (a, fr) => { if (fr.textureFrame === 'hang_0' || fr.textureFrame === 'hang_4') Sfx.play(this, 'ptick'); });   // a tick at each end of its swing
+        // the dust in it hangs where it is: motes that neither fall nor drift, only glint and go out
+        const motes = this.add.particles(x, y, 'fx_cosmic', { frame: ['p_0', 'p_3', 'p_4', 'p_6', 'p_7', 'p_9'], blendMode: Phaser.BlendModes.ADD,
+            emitZone: { type: 'random', source: new Phaser.Geom.Rectangle(-80, -82, 160, 160) }, frequency: 18, lifespan: { min: 700, max: 1500 }, speed: 0,
+            alpha: { onEmit: () => 0, onUpdate: (p, k, t) => Math.sin(t * Math.PI) * 0.85 }, scale: 1.2, tint: [0xfff0b0, 0xe2c8ff, 0xffffff] }).setDepth(4.4);
+        S.stasis = { tx, ty, x, y, tiles, t0: now, at: now, until: now + C.TLOCK.MS, parts, glow, big, motes, locked: new Map(), shots: [] };
+        // the thud: the ground shakes, time ripples out from it (Rewind's ring thrown wide, soft haze, the dust kicked up)
+        this.showStatusText(x, y - 64, 'TIME LOCK', '#ffe08a');
+        this._vfxFlash?.(x, y, 90, col.gold, 240, 0.55);
+        const ring = this.add.image(x, y, 'fx_pendulum', 'rw_ring').setDepth(4.5).setScale(1).setAlpha(0.9);
+        this.tweens.add({ targets: ring, scale: 5.8, alpha: 0, duration: 460, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+        CosmicSystem.ring(CosmicSystem.pendFx(this).haze, x, y, T * 3.6, 420, 40, 18);
+        CosmicSystem.ring(CosmicSystem.fx(this).dust, x, y + 6, T * 3.2, 360, 32, 8);
+        this.cameras.main.shake(140, 0.006);
+        Sfx.play(this, 'stasis');
+    }
+    // Every frame while it lies: whatever stands on it is locked (once locked it stays so till the end: it can't move off),
+    // what it does to each, the shots it stops; in its last moments it flickers
+    _csStasisTick(now) {
+        const S = this._cs, F = S.stasis;
+        if (!F) return;
+        if (now >= F.until) { this._csStasisEnd(); return; }
+        const dt = Math.max(0, now - F.at);
+        F.at = now;
+        for (const e of this.enemies || []) if (!F.locked.has(e) && e.sprite?.active && e.health > 0 && !this._phasedOut?.(e) && this._csInField(e)) this._csLockOn(e);
+        for (const [e, L] of F.locked) this._csFieldAct(e, L, now, dt);
+        this._csLockShots(now, dt);
+        this._csBigFade(F);
+        const a = F.until - now < 600 && Math.floor(now / 90) % 2 ? 0.5 : 1;
+        if (a !== F.alpha) { F.alpha = a; for (const o of F.parts) o.setAlpha(a); }
+    }
+    // The big pendulum fades to FADE while you, an enemy or a shot is under it (its bob and its rod), so it never hides one
+    _csBigFade(F) {
+        const B = F.big, C = this._csCfg().PEND;
+        if (!B?.active) return;
+        const s = B.scaleY, top = B.y, bob = top + (CosmicSystem.BOB_AT.hang - 12) * s, bot = top + (CosmicSystem.BOB_AT.hang + 12) * s, x = B.x;
+        const under = (px, py) => py > top && py < bot + 8 && Math.abs(px - x) < (py > bob - 4 ? 20 : 5) * s;
+        let hit = this.player?.active && under(this.player.x, this.player.y);
+        for (const e of this.enemies || []) if (!hit && e.sprite?.active && under(e.sprite.x, e.sprite.y)) hit = true;
+        for (const list of [this.fireballs, this.iceShards, this.ballLightnings, this.ballSeekers, this.lightningOrbs, this.enemyProjectiles])
+            for (const o of list || []) { const p = o.gfx || o.sprite; if (!hit && p?.active && under(p.x, p.y)) hit = true; }
+        const want = hit ? C.FADE : 0.9;
+        B.setAlpha(B.alpha + (want - B.alpha) * 0.25);
+    }
+    // Is e (an enemy, or a story boss by any tile of its 3x3) on the field?
+    _csInField(e) {
+        const F = this._cs?.stasis;
+        if (!F || !e) return false;
+        if (e.sprite || !e.container) return F.tiles.has(e.x + ',' + e.y);
+        const T = this.TILE_SIZE, bx = Math.floor(e.container.x / T), by = Math.floor(e.container.y / T);
+        return [-1, 0, 1].some(dx => [-1, 0, 1].some(dy => F.tiles.has((bx + dx) + ',' + (by + dy))));
+    }
+    // e steps into stopped time. Its health (and, unless it's a boss, its tile) can't be changed any more: what lowers it is
+    // STORED (every hit, from anything), what raises it still lands; what moves it moves nothing. A boss isn't frozen solid:
+    // its time only slows (TLOCK.BOSS_SLOW). Over it, the tally of what's stored.
+    _csLockOn(e) {
+        const F = this._cs.stasis, C = this._csCfg().PEND.TLOCK, now = this.time.now;
+        const L = { boss: !!e.isBoss, h: e.health, stored: 0, stun: Math.max(0, (e.stunnedUntil || 0) - now), tw: this.tweens.getTweensOf(e.sprite) };
+        Object.defineProperty(e, 'health', { configurable: true, enumerable: true, get: () => L.h, set: v => { if (v < L.h) L.stored += L.h - v; else L.h = v; } });
+        if (L.boss) L.tw.forEach(t => { t.timeScale = 1 - C.BOSS_SLOW; });
+        else {
+            L.x = e.x; L.y = e.y; L.sx = e.sprite.x; L.sy = e.sprite.y;
+            for (const k of ['x', 'y']) Object.defineProperty(e, k, { configurable: true, enumerable: true, get: () => L[k], set: () => {} });
+            L.tw = L.tw.filter(t => t.isPlaying?.()); L.tw.forEach(t => t.pause());
+            e.sprite.anims?.pause();
+            e._tlock = L;   // (CreatureFX: no stun stars on it; its stun is only stopped time)
+        }
+        L.txt = this.add.text(e.sprite.x, e.sprite.y - 40, '', { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ffe08a', stroke: '#1c1728', strokeThickness: 3 })
+            .setOrigin(0.5).setDepth(5.6).setVisible(false);
+        // its mark in the row of status pips over it (HUD._stackStatusIcons places the row): the stopped clock, its hand twitching
+        if (!this.anims.exists('csw_tmark')) this.anims.create({ key: 'csw_tmark', frames: ['tmark_0', 'tmark_1'].map(frame => ({ key: 'fx_pendulum', frame })), frameRate: 3, repeat: -1 });
+        L.mark = this.add.sprite(e.sprite.x, e.sprite.y - 30, 'fx_pendulum', 'tmark_0').setDepth(4.62).play('csw_tmark');
+        e._tlMark = L.mark; e._tlTally = L.txt;
+        F.locked.set(e, L);
+    }
+    // WHAT THE FIELD DOES to one locked enemy, each frame, for the dt that passed. The one place its effect lives: swap this
+    // (and _csLockOn, _csFieldRelease) to change what the field is. Now: TIME LOCK. Every clock on it stands still (each of
+    // its times, ...Until, ...At, ...Time, pushed on by dt; a boss's by BOSS_SLOW of it), so its ailments don't run down
+    // (what they tick is stored like any hit) and whatever you put on it waits for time to start again; it holds still where
+    // it was, stunned while time's stopped (no acting, casting or summoning); the tally shows.
+    static HELD_SINCE = ['lastChillTime', '_csMarkAt', '_tbAt', 'lastBurnStackTime'];   // (chill's hold, cosmic marks, Frostbite's growth, Burn's last stack)
+    _csFieldAct(e, L, now, dt) {
+        const k = L.boss ? this._csCfg().PEND.TLOCK.BOSS_SLOW : 1, lo = now - 120000, hi = now + 600000;
+        for (const key in e) {
+            if (key === 'x' || key === 'y' || key === 'health') continue;
+            const v = e[key];
+            if (typeof v !== 'number') continue;
+            // what's still to come waits (its ailments' ends, its stun, its own next move); a status counted from when it last
+            // came holds its count (HELD_SINCE). A past "last hit at" is left alone: that's your weapon's, and it keeps hitting
+            if ((v > now && v < hi && /(Until|At|Time)$/.test(key)) || (v > lo && v <= now && CosmicSystem.HELD_SINCE.includes(key))) e[key] = v + dt * k;
+        }
+        if (!L.boss && e.sprite?.active) {
+            e.isStunned = true;
+            if (!(e.stunnedUntil > now + 100)) e.stunnedUntil = now + 100;
+            e.sprite.setPosition(L.sx, L.sy);
+        }
+        if (e.sprite?.active) L.mark.setX(Math.round(e.sprite.x));   // (its height: the status row, HUD._stackStatusIcons)
+        if (L.stored > 0 && e.sprite?.active) {
+            const n = String(Math.round(L.stored));
+            if (L.txt.text !== n) { L.txt.setText(n).setVisible(true).setScale(1.35); this.tweens.add({ targets: L.txt, scale: 1, duration: 140 }); }
+            L.txt.setX(Math.round(e.sprite.x));
+        }
+    }
+    // Shots in flight (yours, and theirs) stop where they reach the field and hang there, their clocks stopped too; they go
+    // on at the speed they had when it ends
+    _csLockShots(now, dt) {
+        const F = this._cs.stasis, T = this.TILE_SIZE, lo = now - 120000, hi = now + 600000;
+        for (const list of [this.fireballs, this.iceShards, this.ballLightnings, this.ballSeekers, this.lightningOrbs, this.enemyProjectiles]) for (const o of list || []) {
+            const p = o.gfx || o.sprite || o;
+            if (typeof o.vx !== 'number' || !p || p.active === false) continue;
+            if (!o.__tl) {
+                if (!F.tiles.has(Math.floor(p.x / T) + ',' + Math.floor(p.y / T))) continue;
+                o.__tl = { vx: o.vx, vy: o.vy }; o.vx = o.vy = 0; F.shots.push(o);
+            }
+            for (const key in o) { const v = o[key]; if (/(Until|At|Time|born|t0)$/.test(key) && typeof v === 'number' && v > lo && v < hi) o[key] = v + dt; }
+        }
+    }
+    // The field ends: time starts again. Every locked enemy gets its health and tile back, then all it stored lands at once
+    // (x REL_MUL: its tally bursting, the number, a kill, a split or a drop happening now), then what was put on it runs on
+    // (its clocks were only held), then the stopped shots fly on. quiet: no show (the scene's going)
+    _csFieldRelease(F, quiet) {
+        const C = this._csCfg().PEND.TLOCK, now = this.time.now, Fx = quiet ? null : CosmicSystem.fx(this);
+        for (const [e, L] of F.locked) {
+            L.mark.destroy(); e._tlMark = e._tlTally = null;
+            delete e.health; e.health = L.h;
+            if (L.boss) L.tw.forEach(t => { t.timeScale = 1; });
+            else {
+                delete e.x; delete e.y; e.x = L.x; e.y = L.y; e._tlock = null;
+                if (e.sprite?.active) { e.sprite.setPosition(L.sx, L.sy); e.sprite.anims?.resume(); }
+                L.tw.forEach(t => t.isPaused?.() && t.resume());
+                if (!(e.stunnedUntil - now > 150) && L.stun <= 150) { e.isStunned = false; e.stunnedUntil = now; }   // (the stun was only stopped time)
+            }
+        }
+        for (const [e, L] of F.locked) {
+            const d = L.stored * C.REL_MUL;
+            if (!quiet && L.txt.visible) { this.tweens.add({ targets: L.txt, scale: 1.9, alpha: 0, y: L.txt.y - 10, duration: 320, ease: 'Quad.easeOut', onComplete: () => L.txt.destroy() }); }
+            else L.txt.destroy();
+            if (!(d > 0) || !e.sprite?.active || quiet === 'gone') continue;
+            e.health -= d;
+            if (!quiet) {
+                this.showDamageNumber?.(e.sprite.x, e.sprite.y - 12, d, '#ffe08a');
+                CosmicSystem.puff(Fx.gold, e.sprite.x, e.sprite.y - 4, 10, 0, Math.PI, 40, 160);
+                this._vfxFlash?.(e.sprite.x, e.sprite.y, 40, 0xffe08a, 200, 0.6);
+            }
+            this.updateEnemyHealthBar?.(e);
+            if (e.health <= 0) this.killEnemy(e);
+        }
+        for (const o of F.shots) if (o.__tl) { o.vx = o.__tl.vx; o.vy = o.__tl.vy; o.__tl = null; }
+        F.locked.clear(); F.shots.length = 0;
+    }
+    _csStasisEnd(quiet) {
+        const S = this._cs, F = S?.stasis;
+        if (!F) return;
+        S.stasis = null;
+        this._csFieldRelease(F, quiet);
+        F.motes.stop();
+        const B = F.big;
+        B.off('animationupdate');
+        if (quiet) { [...F.parts, F.glow, B].forEach(o => o.destroy()); F.motes.destroy(); if (S && !S.fly) S.away = false; return; }
+        this.tweens.add({ targets: [...F.parts, F.glow], alpha: 0, duration: 260, onComplete: () => [...F.parts, F.glow].forEach(o => o.destroy()) });
+        this.time.delayedCall(1600, () => F.motes.destroy());
+        CosmicSystem.puff(CosmicSystem.fx(this).fine, F.x, F.y, 14, 0, Math.PI, 10, 50);   // time going again: the hanging dust let go
+        // the release: time cracks open across the field (fx_fractal's cracks of light, lilac), the clock's ring spun backwards
+        for (let i = 0; i < 6; i++) {
+            const [way, fx, fy] = [['e', 0, 0], ['ne', 0, 0], ['s', 0, 0], ['se', 0, 0], ['e', 1, 0], ['ne', 1, 1]][i], a = i / 6 * Math.PI * 2 + Math.random() * 0.4;
+            const c = this.add.image(F.x + Math.cos(a) * 16, F.y + Math.sin(a) * 16, 'fx_fractal', 'crack_' + way).setFlip(!!fx, !!fy).setTint(0xe2c8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.96).setScale(1.5);
+            this.tweens.add({ targets: c, alpha: 0, duration: 520, delay: 80, onComplete: () => c.destroy() });
+        }
+        this._csRewindRing(F.x, F.y, true).setScale(3);
+        this._vfxFlash?.(F.x, F.y, 110, 0xffe08a, 260, 0.7);
+        this.cameras.main.shake(160, 0.007);
+        Sfx.play(this, 'shatter'); Sfx.play(this, 'rewind');
+        // it shrinks back the way it grew, then flies home to your hand, whirling
+        B.stop();
+        const up = this._csCfg().PEND.HANG_UP, at = fr => B.setFrame(fr).setY(Math.round(F.y - up - CosmicSystem.BOB_AT[fr] * 1.5));
+        at('grow_1');
+        this.time.delayedCall(90, () => B.active && at('grow_0'));
+        this.time.delayedCall(180, () => {
+            if (!B.active) return;
+            B.setOrigin(0.5).setFrame('fly_0').setY(F.y - up);
+            const t0 = this.time.now, p = this.player;
+            this.tweens.add({ targets: B, x: () => p?.x ?? B.x, y: () => (p?.y ?? B.y) - 10, duration: 260, ease: 'Quad.easeIn',
+                onUpdate: () => B.setFrame('fly_' + (15 - Math.floor((this.time.now - t0) / 35) % 16)), onComplete: () => { B.destroy(); if (this._cs && !this._cs.fly) this._cs.away = false; } });
+        });
+    }
+
+    // ── THE PENDULUM: REWIND (R) ─────────────────────────────────────────────
+    // Every 50ms: where you are, your HP and which ailments are on you (FieldKit._playerAilments), kept for BACK_MS. A new
+    // room (through a door, sealed or not), a lift or a fall starts it afresh: you can't rewind through one.
+    _csRewindRecord(now) {
+        const S = this._cs, C = this._csCfg().PEND, R = S.rw || (S.rw = { buf: [], room: null, pull: null });
+        if (R.pull || !this.player?.active) return;
+        const room = this.getCurrentPlayerRoom?.() ?? -1;
+        if (room !== R.room || this._lifting || this._tutFalling || this._deathScreenActive) { R.buf.length = 0; R.room = room; }
+        const last = R.buf[R.buf.length - 1];
+        if (last && now - last.t < 50) return;
+        const ail = (this._playerAilments?.() || []).filter(a => a[1](now)).map(a => a[0]);
+        R.buf.push({ t: now, x: this.playerX, y: this.playerY, px: this.player.x, py: this.player.y, hp: this.health, ail });
+        while (R.buf.length > 1 && now - R.buf[0].t > C.BACK_MS) R.buf.shift();
+    }
+    // R, holding the Pendulum: back to the furthest moment kept whose tile is still open, pulled back along the way you came
+    // (afterimages of you strung out behind, a clock ring ticking backwards). The HP you've lost since comes back (a heal
+    // since is never taken away) and every ailment you've picked up since goes. Ults, gadgets and stamina stay spent.
+    _csRewind() {
+        const S = this._cs, p = this.player;
+        if (!S || this._csWeapon() !== 'pendulum' || !p?.active || this._deathScreenActive) return;
+        const C = this._csCfg().PEND, now = this.time.now, R = S.rw;
+        if (!R || R.pull) return;
+        const say = (t, c = '#9a8cb8') => this.showStatusText(p.x, p.y - 30, t, c);
+        if (now < S.cdUntil) { say(`${((S.cdUntil - now) / 1000).toFixed(1)}s`); Sfx.play(this, 'deny'); return; }   // (the cooldown the Time Lock shares)
+        // what holds your dash holds this (a lift, the ice ult's shell, a story beat), except a root or a Glu: picked up since, it undoes them
+        const L = this._actLocks || {};
+        if (Object.entries(L).some(([id, k]) => id !== '#glued' && id !== '#rooted' && (k.until == null || now < k.until) && k.kinds.includes('dash'))) return this._actionDenied?.('dash');
+        if (this._lifting || this._csTf() || this._iceShellUntil > now) { Sfx.play(this, 'deny'); return; }
+        const free = s => this.world?.[s.x]?.[s.y] === this.FLOOR && !this.isInLockedRoom?.(s.x, s.y) && (!this.getEnemyAt?.(s.x, s.y) || (s.x === this.playerX && s.y === this.playerY));
+        let i = 0;
+        while (i < R.buf.length && !free(R.buf[i])) i++;
+        const to = R.buf[i];
+        if (!to || now - to.t < C.MIN_MS) { say('NOTHING TO REWIND'); Sfx.play(this, 'deny'); return; }
+        S.cdUntil = now + C.REWIND_CD; S.cdMs = C.REWIND_CD; S.castAt = now;
+        const path = [[p.x, p.y], ...R.buf.slice(i).reverse().map(s => [s.px, s.py])];
+        const back = Math.min(this.maxHealth, Math.max(this.health, to.hp)) - this.health;
+        this.health += back;
+        for (const [k, on, clear] of this._playerAilments?.() || []) if (on(now) && !to.ail.includes(k)) clear(now);
+        this.updateHUD?.();
+        // your tile at once (what's after you has lost you), your body pulled back to it; nothing touches you on the way
+        this.playerX = to.x; this.playerY = to.y; this._step = null; this._glide = null;
+        this._glideUntil = Math.max(this._glideUntil || 0, now + C.PULL_MS);
+        this._dashInvulnUntil = Math.max(this._dashInvulnUntil || 0, now + C.PULL_MS);
+        R.buf.length = 0;
+        R.pull = { path, t0: now, ms: C.PULL_MS, to, ghostAt: 0 };
+        this._csRewindRing(p.x, p.y, true);
+        say('REWIND', '#e2c8ff');
+        if (back >= 1) this.showStatusText(p.x, p.y - 44, `+${Math.round(back)}`, '#9af0a8');
+        Sfx.play(this, 'rewind');
+    }
+    _csRewindTick(now) {
+        const R = this._cs.rw, P = R?.pull, p = this.player;
+        if (!P) return;
+        if (!p?.active) { R.pull = null; return; }
+        if (this.playerX !== P.to.x || this.playerY !== P.to.y) {   // something else moved you on the way (a knock, a pull): it has you now
+            R.pull = null;
+            // ...but never leave your body where the pull had got to: back on your tile, unless a step or a dash is carrying it there
+            if (!this._glide && !this._step) p.setPosition(this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2, this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2 + (this.SLIME_Y_OFFSET || 0));
+            return;
+        }
+        const T = this.TILE_SIZE, u = Math.min(1, (now - P.t0) / P.ms), e = 1 - (1 - u) * (1 - u);   // fast away, easing in
+        const k = e * (P.path.length - 1), i = Math.floor(k), f = k - i, a = P.path[i], b = P.path[Math.min(P.path.length - 1, i + 1)];
+        p.setPosition(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f);
+        if (now >= P.ghostAt) {   // you, left behind on the way, fading
+            P.ghostAt = now + 28;
+            const g = this.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX)
+                .setTintFill(0xc8a8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth((p.depth ?? 2) - 0.01).setAlpha(0.5);
+            this.tweens.add({ targets: g, alpha: 0, duration: 340, onComplete: () => g.destroy() });
+        }
+        if (u < 1) return;
+        R.pull = null;
+        p.setPosition(P.to.x * T + T / 2, P.to.y * T + T / 2 + (this.SLIME_Y_OFFSET || 0));
+        this._csRewindRing(p.x, p.y, false);
+        this._vfxFlash?.(p.x, p.y, 60, this._csCfg().COL.lilac, 220, 0.6);
+        CosmicSystem.puff(CosmicSystem.fx(this).dust, p.x, p.y + 2, 12, 0, Math.PI, 20, 90);
+    }
+    // Rewind's clock round you: its ring, and a glint ticking round it backwards (twelve ticks, from twelve o'clock)
+    _csRewindRing(x, y, depart) {
+        const ring = this.add.image(x, y + 2, 'fx_pendulum', 'rw_ring').setDepth(4.55).setScale(depart ? 1.5 : 0.7).setAlpha(0.95);
+        this.tweens.add({ targets: ring, scale: depart ? 1.2 : 1.5, alpha: 0, duration: depart ? 520 : 420, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+        const E = CosmicSystem.fx(this).gold;
+        for (let i = 0; i < 12; i++) this.time.delayedCall(i * 30, () => {
+            if (!ring.active) return;
+            const a = -Math.PI / 2 - i * Math.PI / 6, r = 13 * ring.scaleX, q = E.emitParticleAt(ring.x + Math.cos(a) * r, ring.y + Math.sin(a) * r, 1);
+            if (q) { q.velocityX = q.velocityY = 0; q.life = q.lifeCurrent = 260; }
+        });
+        return ring;
     }
 
     // ── THE ULT ──────────────────────────────────────────────────────────────
@@ -1268,8 +1772,15 @@ class CosmicSystem {
         this._csHpBoost('ascend', C.ASCEND.HP);
         this._csAscendBlast();
         if (this.player?.active) {
-            this._csBurst(this.player.x, this.player.y, 90, C.COL.lilac, 420);
-            this._vfxFlash?.(this.player.x, this.player.y, 260, C.COL.violet, 600, 1);
+            // a burst of light on you, and a column of stardust going up off you (the halo comes down: _csDrawFx)
+            const x = this.player.x, y = this.player.y, F = CosmicSystem.fx(this);
+            CosmicSystem.nova(this, x, y - 2, 1);
+            CosmicSystem.ring(F.dust, x, y + 4, 90, 420, 24, 14);
+            for (let i = 0; i < 28; i++) {   // (born up and down the column, not all on one spot)
+                const E = i % 3 === 0 ? F.gold : i % 3 === 1 ? F.fine : F.dust;
+                CosmicSystem.puff(E, x + (Math.random() - 0.5) * 16, y + 6 - Math.random() * 30, 1, -Math.PI / 2, 0.15, 70, 240, 500 + Math.random() * 300);
+            }
+            this._vfxFlash?.(x, y, 220, C.COL.violet, 600, 0.75);
         }
         this.cameras.main.shake(140, 0.006);
     }
@@ -1298,16 +1809,22 @@ class CosmicSystem {
             this.damageBossAtTile(Math.floor(bx / T), Math.floor(by / T), (C.NOVA_BASE + C.NOVA_PER_MARK * marks) * ds, 'nova', 'cosmic');
         }
         S.nova = false;
-        // an implosion, then the blast
-        const core = this.add.image(cx, cy, 'vfx_glow').setTint(col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.7).setScale(1.2).setAlpha(0.4);
-        this.tweens.add({ targets: core, scale: 0.15, alpha: 1, duration: 140, ease: 'Quad.easeIn', onComplete: () => {
+        // an implosion (the dust drawn in, the light pinched), then the blast: a burst of light, a rune circle thrown off,
+        // rings of dust to its reach
+        const F = CosmicSystem.fx(this);
+        CosmicSystem.inward(F.dust, cx, cy, R * 0.8, 140, 26);
+        const core = this.add.image(cx, cy, 'vfx_glow').setTint(col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.7).setScale(0.9).setAlpha(0.3);
+        this.tweens.add({ targets: core, scale: 0.15, alpha: 0.9, duration: 140, ease: 'Quad.easeIn', onComplete: () => {
             core.destroy();
-            this._csBurst(cx, cy, R, col.violet, 520);
-            this._csBurst(cx, cy, R * 0.6, col.gold, 380);
-            const flash = this.add.image(cx, cy, 'vfx_glow').setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.8).setScale(0.4);
-            this.tweens.add({ targets: flash, scale: R / 40, alpha: 0, duration: 360, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
+            if (!this._cs) return;
+            CosmicSystem.nova(this, cx, cy, 2);
+            CosmicSystem.stamp(this, cx, cy, R, col.lilac);
+            CosmicSystem.ring(F.dust, cx, cy, R, 520, 44, R * 0.25);
+            CosmicSystem.ring(F.pink, cx, cy, R * 0.85, 460, 30, R * 0.2);
+            CosmicSystem.ring(F.gold, cx, cy, R * 0.6, 380, 18, R * 0.15);
+            CosmicSystem.puff(F.fine, cx, cy, 16, 0, Math.PI, 30, 120, 500);
         } });
-        this._vfxFlash?.(cx, cy, R * 1.6, col.lilac, 600, 1);
+        this._vfxFlash?.(cx, cy, R * 1.6, col.lilac, 600, 0.8);
         this.cameras.main.shake(160, 0.008);
         this.showStatusText(cx, cy - 34, 'SUPERNOVA', '#f0dcff');
     }
@@ -1378,7 +1895,7 @@ class CosmicSystem {
     // one, so only its own release ends the charge
     _csVDown(key) {
         const S = this._cs;
-        if (!S || this._csStage() < 2) return false;
+        if (!S || this._csStage() < 2 || this.actionLocked?.('ult_cosmic')) return false;   // (locked: castUlt refuses it)
         if (S.tf || S.charge) return true;
         const n = this._csLayers();
         if (n < 2) return false;
@@ -1411,11 +1928,9 @@ class CosmicSystem {
         ch.snd?.set(ch.p);
         if (!ch.half && ch.p >= 0.5) { ch.half = true; Sfx.play(this, 'ready'); this._csBurst(p.x, p.y, 26, col.lilac, 260); }
         // void energy pouring in, faster the fuller it gets
-        if (p?.active && Math.random() < dt / (60 - 40 * ch.p)) {
-            const a = Math.random() * Math.PI * 2, r = 40 + Math.random() * 40;
-            const m = this.add.image(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.7, 'cs_sheet', 'mote')
-                .setTint(ch.p > 0.8 ? (Math.random() < 0.5 ? col.gold : 0xffffff) : col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6);
-            this.tweens.add({ targets: m, x: p.x, y: p.y, alpha: 0.2, scale: 0.3, duration: 420 - 200 * ch.p, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+        if (p?.active && Math.random() < dt / (30 - 20 * ch.p)) {
+            const F = CosmicSystem.fx(this);
+            CosmicSystem.inward(ch.p > 0.8 && Math.random() < 0.5 ? F.gold : F.dust, p.x, p.y, 40 + Math.random() * 40, 420 - 200 * ch.p, 1, 0.7);
         }
         // the last stretch: the world leans in, darkens and shakes
         if (ch.cap >= 1 && ch.p > 0.8) {
@@ -1428,8 +1943,14 @@ class CosmicSystem {
                 ch.edge = ch.edge || this.add.image(W / 2, H / 2, 'vfx_edge').setDisplaySize(W, H).setScrollFactor(0).setDepth(28).setTint(0x1a0830);
                 ch.edge.setAlpha(0.35 + 0.6 * k);
             }
-            if (ch.p >= 1) {   // the flash, and the full transformation
-                cam.flash(260, 255, 255, 255);
+            if (ch.p >= 1) {   // the burst, and the full transformation: gold light breaking out of you, its circle thrown wide
+                if (p?.active) {
+                    const F = CosmicSystem.fx(this);
+                    CosmicSystem.nova(this, p.x, p.y - 2, 2, true);
+                    CosmicSystem.stamp(this, p.x, p.y + 4, 90, col.gold);
+                    CosmicSystem.ring(F.gold, p.x, p.y + 4, 120, 520, 40, 16);
+                    this._vfxFlash?.(p.x, p.y, 200, col.gold, 500, 0.8);
+                }
                 Sfx.play(this, 'boom', { big: true });
                 this._csChargeEnd();
                 this._csTfBegin(true);
@@ -1479,20 +2000,27 @@ class CosmicSystem {
     // the void, speckled with stars. The full form wears all of it, rimmed in gold with a
     // halo; the partial form only some, its edge cracked open with light leaking through.
     _csSkinBuild(full) {
-        const p = this.player, col = this._csCfg().COL;
+        const p = this.player, col = this._csCfg().COL, ADD = Phaser.BlendModes.ADD;
+        CosmicSystem.ultFx(this);
         const armor = this.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(full ? 0x1c0b3e : 0x2a1458);
-        const rim = this.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(full ? col.gold : col.lilac).setBlendMode(Phaser.BlendModes.ADD);
-        const g = this.add.graphics();
-        const halo = full ? this.add.image(p.x, p.y, 'cs_sheet', 'halo').setTint(col.gold) : null;
-        // fixed star points across the body, in frame coordinates
+        const rim = this.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(full ? col.gold : col.lilac).setBlendMode(ADD);
+        const halo = full ? this.add.sprite(p.x, p.y, 'fx_cosmic_ult', 'halo_0').play('csu_halo') : null;
+        // the partial form's break: light leaking through a jagged crack
+        const crack = full ? null : this.add.sprite(p.x, p.y, 'fx_cosmic_ult', 'crack_0').setBlendMode(ADD).play('csu_crack');
+        // fixed star points across the body, in frame coordinates, each twinkling in its own time
         const fw = p.frame.width, fh = p.frame.height, stars = [];
-        for (let i = 0; i < (full ? 9 : 5); i++) stars.push({ u: 0.22 + Math.random() * (full ? 0.56 : 0.33), v: 0.74 + Math.random() * 0.2, ph: Math.random() * 6 });
-        return { full, armor, rim, g, halo, stars, fw, fh, CUT: 0.58 };
+        for (let i = 0; i < (full ? 9 : 5); i++) {
+            const st = { u: 0.22 + Math.random() * (full ? 0.56 : 0.33), v: 0.74 + Math.random() * 0.2, ph: Math.random() * 6 };
+            st.img = this.add.sprite(p.x, p.y, 'fx_cosmic_ult', 'twinkle_0').setBlendMode(ADD).setTint(full && st.ph > 3 ? col.gold : 0xffffff);
+            st.img.play({ key: 'csu_twinkle', startFrame: i % 5, delay: Math.random() * 400 });
+            stars.push(st);
+        }
+        return { full, armor, rim, halo, crack, stars, fw, fh, CUT: 0.58 };
     }
     _csSkinSync(sk, now) {
         const p = this.player;
         if (!p?.active) return;
-        const col = this._csCfg().COL, d = p.depth ?? 1, al = p.alpha ?? 1, sx = p.scaleX, sy = p.scaleY;
+        const d = p.depth ?? 1, al = p.alpha ?? 1, sx = p.scaleX, sy = p.scaleY;
         // the armour sits just under the eyes (CreatureFX.face draws at +0.001)
         for (const [s, ds, a, k] of [[sk.armor, 0.0004, sk.full ? 0.88 : 0.82, 1], [sk.rim, -0.01, (sk.full ? 0.4 : 0.25) * (0.75 + 0.25 * Math.sin(now * 0.01)), 1.12]]) {
             s.setTexture(p.texture.key, p.frame.name).setPosition(p.x, p.y).setOrigin(p.originX, p.originY)
@@ -1503,31 +2031,22 @@ class CosmicSystem {
         if (!sk.full) sk.armor.setCrop(0, 0, fw * sk.CUT, fh);
         const wx = u => p.flipX ? p.x + (ox - u * fw) * Math.abs(sx) : p.x + (u * fw - ox) * Math.abs(sx);
         const wy = v => p.y + (v * fh - oy) * Math.abs(sy);
-        const g = sk.g.clear().setDepth(d + 0.0007).setAlpha(al).setVisible(p.visible);
-        if (!sk.full) {
-            const pts = [];
-            for (let i = 0; i <= 6; i++) pts.push({ x: wx(sk.CUT + (i % 2 ? 0.04 : -0.02)), y: wy(0.66 + 0.32 * i / 6) });   // the body is the frame's lower third
-            g.lineStyle(3, col.lilac, 0.35 + 0.25 * Math.sin(now * 0.012)); g.strokePoints(pts);
-            g.lineStyle(1, 0xffffff, 0.9); g.strokePoints(pts);
-            if (Math.random() < 0.08) {   // shards of light flaking off the break
-                const q = pts[1 + Math.floor(Math.random() * 5)];
-                const m = this.add.image(q.x, q.y, 'cs_sheet', 'mote').setTint(col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(d + 0.02);
-                this.tweens.add({ targets: m, x: q.x + (p.flipX ? -10 : 10), y: q.y - 8, alpha: 0, duration: 380, onComplete: () => m.destroy() });
-            }
+        if (sk.crack) {   // the body is the frame's lower third
+            const k = 0.32 * fh * Math.abs(sy) / 16, cx = wx(sk.CUT), cy = wy(0.82);
+            sk.crack.setPosition(Math.round(cx), Math.round(cy)).setScale(k).setFlipX(p.flipX).setDepth(d + 0.0007).setAlpha(al * (0.75 + 0.25 * Math.sin(now * 0.012))).setVisible(p.visible);
+            if (Math.random() < 0.08) CosmicSystem.puff(CosmicSystem.fx(this).fine, cx, cy + (Math.random() - 0.5) * 12 * k, 1, p.flipX ? Math.PI * 1.15 : -Math.PI * 0.15, 0.4, 20, 40, 380);   // shards of light flaking off the break
         }
-        for (const st of sk.stars) {
-            const tw = 0.4 + 0.6 * Math.max(0, Math.sin(now * 0.006 + st.ph));
-            g.fillStyle(sk.full && st.ph > 3 ? col.gold : 0xffffff, tw); g.fillRect(wx(st.u) - 1, wy(st.v) - 1, 2, 2);
-        }
-        if (sk.halo) sk.halo.setPosition(p.x, wy(0.6) + Math.sin(now * 0.006) * 1.5).setDepth(d + 0.03).setAlpha(al).setVisible(p.visible);
+        for (const st of sk.stars) st.img.setPosition(Math.round(wx(st.u)), Math.round(wy(st.v))).setDepth(d + 0.0007).setAlpha(al).setVisible(p.visible);
+        if (sk.halo) sk.halo.setPosition(Math.round(p.x), Math.round(wy(0.6) - 2 + Math.sin(now * 0.006) * 1.5)).setDepth(d + 0.03).setAlpha(al).setVisible(p.visible);
     }
     _csSkinDrop(sk) {
         if (!sk) return;
-        for (const o of [sk.armor, sk.rim, sk.g, sk.halo]) o?.destroy?.();
+        for (const o of [sk.armor, sk.rim, sk.halo, sk.crack, ...sk.stars.map(s => s.img)]) o?.destroy?.();
     }
 
     // full: the full transformation (three layers), else the partial one (two).
     _csTfBegin(full = false) {
+        if (this.actionLocked?.('ult_cosmic')) return this._actionDenied('ult_cosmic');   // locked since the charge began: its layers stay
         const S = this._cs, C = this._csCfg().TF, col = this._csCfg().COL, now = this.time.now;
         // the ult blockers stop this too
         for (const e of this.enemies || []) {
@@ -1540,7 +2059,7 @@ class CosmicSystem {
         this._csSetLayers(this._csLayers() - (full ? 3 : 2));
         this._ultCastAt.cosmic = now;
         this.isPointerDown = false;
-        S.tf = { phase: 'turn', at: now, until: now + C.TURN_MS, g: this.add.graphics().setDepth(4.6), full };
+        S.tf = { phase: 'turn', at: now, until: now + C.TURN_MS, full };
         S.tf.skin = this._csSkinBuild(full);
         // stage 3: nothing touches you from here to the slam (_csTfSlam lets go)
         if (S.tf.full) this._dashInvulnUntil = Math.max(this._dashInvulnUntil || 0, now + C.TURN_MS + C.AIM_MS + C.DROP_MS + 400);
@@ -1574,8 +2093,7 @@ class CosmicSystem {
     _csTfUpdate(now, dt) {
         const S = this._cs, tf = S.tf;
         if (!tf) return;
-        const C = this._csCfg().TF, col = this._csCfg().COL, T = this.TILE_SIZE, p = this.player, g = tf.g;
-        g.clear();
+        const C = this._csCfg().TF, col = this._csCfg().COL, T = this.TILE_SIZE, p = this.player, F = CosmicSystem.fx(this);
         if (tf.skin) this._csSkinSync(tf.skin, now);
         const Dm = S.domain;
         if (Dm && tf.phase === 'form' && !tf.full && now >= Dm.waveAt) { Dm.waveAt = now + C.WAVE_EVERY; this._csDomainTide(); }
@@ -1584,24 +2102,16 @@ class CosmicSystem {
             const C3 = this._csCfg().TF3, max = this.maxHealth || 100;
             tf.regenAcc = (tf.regenAcc || 0) + dt;
             while (tf.regenAcc >= C3.REGEN_MS) { tf.regenAcc -= C3.REGEN_MS; this.health = Math.min(max, this.health + max * C3.REGEN); }
-            if (this.health < max && Math.random() < dt / 160) {
-                const m = this.add.image(p.x + (Math.random() - 0.5) * 22, p.y + 6, 'cs_sheet', 'mote').setTint(0x9dffb0).setBlendMode(Phaser.BlendModes.ADD).setDepth(p.depth + 0.02);
-                this.tweens.add({ targets: m, y: m.y - 22, alpha: 0, duration: 600, onComplete: () => m.destroy() });
-            }
+            if (this.health < max && Math.random() < dt / 160) CosmicSystem.ultFx(this).heal.emitParticleAt(p.x + (Math.random() - 0.5) * 22, p.y + 6, 1);
         }
         if (tf.phase === 'turn') {
-            // the turn: motes pour in, a ring tightens, you flicker white and violet
-            const k = (now - tf.at) / C.TURN_MS;
+            // the turn: dust pours in, a circle of runes closes round you, you flicker white and violet
+            const k = Math.min(1, (now - tf.at) / C.TURN_MS), e = 1 - (1 - k) * (1 - k);
             p.setTint(Math.floor(now / 90) % 2 ? (tf.full ? col.gold : col.lilac) : col.violet);
-            if (tf.full) { g.lineStyle(2, col.gold, 0.5 + 0.4 * Math.sin(now * 0.02)); g.strokeCircle(p.x, p.y - 4, 20 + 3 * Math.sin(now * 0.015)); }
-            if (Math.random() < dt / 22) {
-                const a = Math.random() * Math.PI * 2, r = 46 + Math.random() * 20;
-                const m = this.add.image(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.6, 'cs_sheet', 'mote')
-                    .setTint(Math.random() < 0.3 ? col.gold : col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6);
-                this.tweens.add({ targets: m, x: p.x, y: p.y, alpha: 0.2, scale: 0.3, duration: 380, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
-            }
-            g.lineStyle(2, col.violet, 0.3 + 0.6 * k); g.strokeEllipse(p.x, p.y + 6, 70 * (1 - k) + 22, (70 * (1 - k) + 22) * 0.5);
-            if (now >= tf.until) { tf.phase = 'aim'; tf.until = now + C.AIM_MS; this.showStatusText(p.x, p.y - 30, 'CHOOSE WHERE', '#e2c8ff'); }
+            if (Math.random() < dt / 22) CosmicSystem.inward(Math.random() < 0.3 ? F.gold : F.dust, p.x, p.y, 46 + Math.random() * 20, 380, 1, 0.6);
+            tf.turnFx ||= CosmicSystem.runes(this, 10, tf.full ? col.gold : col.lilac);
+            tf.turnFx.place(p.x, p.y + 6, 70 * (1 - e) + 16, now * 0.004, 10, 0.3 + 0.7 * k, 0.55);
+            if (now >= tf.until) { tf.turnFx.destroy(); tf.turnFx = null; tf.phase = 'aim'; tf.until = now + C.AIM_MS; this.showStatusText(p.x, p.y - 30, 'CHOOSE WHERE', '#e2c8ff'); }
             return;
         }
         if (tf.phase === 'aim') {
@@ -1610,31 +2120,29 @@ class CosmicSystem {
             const cam = this.cameras.main, ap = this._aim(this.input.activePointer);
             tf.target = this._csTfTarget(ap.x + cam.scrollX, ap.y + cam.scrollY);
             const cx = tf.target.x * T + T / 2, cy = tf.target.y * T + T / 2, R = (tf.full ? this._csCfg().TF3.SLAM_R : C.SLAM_R) * T;
-            const left = (tf.until - now) / C.AIM_MS, tint = tf.full ? col.gold : col.lilac;
-            // the landing: a rune circle turning over a glow, a smaller one turning against it,
-            // motes drawn down into it, and the time left as a gold sweep
+            const left = Math.max(0, (tf.until - now) / C.AIM_MS), tint = tf.full ? col.gold : col.lilac;
+            // the landing: a rune circle the size of the slam over a glow, its runes going round in it (one goes dark for
+            // every twelfth of the time gone), a few more turning against them, the star at its heart, dust drawn down into it
+            const rs = R / 28;   // (ring_l's outer line is 28 px out)
             if (!tf.aimFx) {
-                const sk = CosmicSystem.sigilKey(this);
+                CosmicSystem.ultFx(this);
                 tf.aimFx = [VisualFX.aura(this, cx, cy, R * 1.15, tf.full ? col.gold : col.violet, { depth: 0.9, alpha: 0.9 }),
-                            this.add.image(cx, cy, sk).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.55),
-                            this.add.image(cx, cy, sk).setTint(col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.55)];
+                            CosmicSystem.runes(this, 12, tint, 0.961, 2), CosmicSystem.runes(this, 6, col.violet),
+                            this.add.sprite(cx, cy, 'fx_cosmic_ult', 'sigil_0').setTint(tint).setDepth(0.96).setScale(2).play('csu_sigil'),
+                            this.add.image(cx, cy, 'fx_cosmic_ult', 'ring_l').setTint(tint).setDepth(0.96).setScale(rs)];
             }
-            const [au, s1, s2] = tf.aimFx;
+            const [au, r1, r2, sig, ring] = tf.aimFx;
             au.setPosition(cx, cy);
-            s1.setPosition(cx, cy).setDisplaySize(R * 2, R * 2).setRotation(now * 0.0012).setAlpha(0.75 + 0.2 * Math.sin(now * 0.008));
-            s2.setPosition(cx, cy).setDisplaySize(R * 1.1, R * 1.1).setRotation(-now * 0.002).setAlpha(0.6);
-            if (Math.random() < dt / 40) {
-                const a = Math.random() * Math.PI * 2;
-                const m = this.add.image(cx + Math.cos(a) * R, cy + Math.sin(a) * R, 'cs_sheet', 'mote').setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.56);
-                this.tweens.add({ targets: m, x: cx, y: cy, alpha: 0.2, scale: 0.4, duration: 500, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
-            }
-            g.lineStyle(3, col.gold, 0.85); g.beginPath(); g.arc(cx, cy, R + 6, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); g.strokePath();
-            // the way there: a stream of dots flowing from you to it
-            const L = Math.hypot(cx - p.x, cy - p.y), n = Math.floor(L / 10), off = (now * 0.06) % 10;
-            for (let i = 0; i < n; i++) {
-                const d = i * 10 + off, f = d / L;
-                if (f > 1) break;
-                g.fillStyle(tint, 0.25 + 0.6 * f); g.fillRect(p.x + (cx - p.x) * f - 1, p.y + (cy - p.y) * f - 1, 2, 2);
+            ring.setPosition(cx, cy).setAlpha(0.8 + 0.2 * Math.sin(now * 0.008));
+            r1.place(cx, cy, 24.5 * rs, now * 0.0008, Math.ceil(left * 12), 1);
+            r2.place(cx, cy, R * 0.5, -now * 0.0014, 6, 0.8);
+            sig.setPosition(cx, cy);
+            if (Math.random() < dt / 30) { const a = Math.random() * Math.PI * 2; F.fine.emitParticleAt(cx + Math.cos(a) * R, cy + Math.sin(a) * R, 1); }   // the circle's line, glittering
+            if (Math.random() < dt / 40) CosmicSystem.inward(tf.full ? F.gold : F.dust, cx, cy, R, 500, 1);
+            // the way there: dust flowing from you to it
+            if (Math.random() < dt / 18) {
+                const f = Math.random(), a = Math.atan2(cy - p.y, cx - p.x);
+                CosmicSystem.puff(tf.full ? F.gold : F.fine, p.x + (cx - p.x) * f, p.y + (cy - p.y) * f, 1, a, 0.06, 110, 170, 320);
             }
             p.setTint(col.lilac);
             if (now >= tf.until) this._csTfDrop();
@@ -1642,14 +2150,14 @@ class CosmicSystem {
         }
         if (tf.phase === 'drop') {
             const P = tf.portal;
-            if (P) { P.rotation += dt * 0.008; P.glow.setAlpha(0.6 + 0.3 * Math.sin(now * 0.02)); }
+            if (P) P.glow.setAlpha(0.6 + 0.3 * Math.sin(now * 0.02));
             return;
         }
         // the form: a violet aura, the time left on the tray
         if (now >= tf.until) { this._csTfEnd(); return; }
         p.setTint(tf.full ? col.gold : col.lilac);
         if (S.drag && !S.drag.anchored && now - S.drag.at > C.PICK_MS) S.drag = null;   // a first point left too long lapses
-        if (S.drag) this._csCollapsePreview(g, S.drag); else this._csHidePreview();
+        if (S.drag) this._csCollapsePreview(S.drag); else this._csHidePreview();
     }
 
     // Aim chosen (a click, or the time ran out): the rift drop.
@@ -1669,15 +2177,17 @@ class CosmicSystem {
         }
         tf.phase = 'drop'; tf.at = now; tf.land = land;
         Sfx.play(this, 'csrift');
-        tf.g.clear();
         this._dashInvulnUntil = Math.max(this._dashInvulnUntil || 0, now + C.DROP_MS + 150);   // untargetable while gone
         const cx = land.x * T + T / 2, cy = land.y * T + T / 2;
-        // the portal
+        // the portal: a rift opening in the floor, the dark in it turning, dust thrown up off its lip
         const glow = this.add.image(cx, cy, 'vfx_glow').setTint(col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.9).setScale(0.1);
-        const portal = this.add.image(cx, cy, 'cs_sheet', 'horizon').setDepth(0.95).setScale(0.1);
+        CosmicSystem.ultFx(this);
+        const portal = this.add.sprite(cx, cy, 'fx_cosmic_ult', 'portal_0').setDepth(0.95).setScale(0.1).play('csu_portal');
         portal.glow = glow; tf.portal = portal;
-        this.tweens.add({ targets: portal, scaleX: 1.6, scaleY: 0.9, duration: 300, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: portal, scale: 1.5, duration: 300, ease: 'Back.easeOut' });
         this.tweens.add({ targets: glow, scale: 1.1, duration: 300 });
+        const F = CosmicSystem.fx(this);
+        this.time.delayedCall(120, () => { if (!this._cs) return; CosmicSystem.ring(F.dust, cx, cy, T * 1.6, 360, 18); CosmicSystem.puff(F.fine, cx, cy - 2, 10, -Math.PI / 2, 0.5, 30, 90, 500); });
         // you fade out where you stand
         this._csBurst(p.x, p.y, 30, col.lilac, 260);
         this.tweens.add({ targets: p, alpha: 0, scaleY: p.scaleY * 1.6, scaleX: p.scaleX * 0.4, duration: 220, ease: 'Quad.easeIn' });
@@ -1700,6 +2210,10 @@ class CosmicSystem {
         const cx = tf.land.x * T + T / 2, cy = tf.land.y * T + T / 2, ds = this.damageScaling || 1;
         const SR = tf.full ? C3.SLAM_R : C.SLAM_R, SD = tf.full ? C3.SLAM_DMG : C.SLAM_DMG;
         if (tf.full) this._dashInvulnUntil = Math.min(this._dashInvulnUntil || 0, now + 150);   // touchable again
+        // the Big Crunch: what's Hexed in reach is pulled in first (the slam lands on it), then its Hex is cashed in
+        const CR = tf.full ? C3.CRUNCH_R : C.CRUNCH_R, hexed = e => (e._csHexUntil || 0) > now && e._csHexStacks > 0;
+        const crunch = (this.enemies || []).filter(e => e.sprite?.active && e.health > 0 && !this._phasedOut?.(e) && hexed(e) && Math.hypot(e.x - tf.land.x, e.y - tf.land.y) <= CR);
+        for (const e of crunch) if (!e.isMortar && !e.isHealerTotem && !e.isAnchor && !e.isBoss) for (let k = 0; k < C.CRUNCH_PULL; k++) { e._csDragAt = 0; this._csDragToward(e, tf.land.x, tf.land.y, now); }
         for (const e of [...(this.enemies || [])]) {
             if (!e.sprite?.active || e.health <= 0) continue;
             if (Math.hypot(e.x - tf.land.x, e.y - tf.land.y) > SR) continue;
@@ -1712,10 +2226,23 @@ class CosmicSystem {
             }
         }
         this._csHitBosses(cx, cy, SR * T, SD * ds);
+        let cashed = this._csHitBosses(cx, cy, CR * T, 0, true);
+        for (const e of crunch) if (e.health > 0 && e.sprite?.active && this._csCashHex(e)) cashed++;
+        if (cashed) {
+            CosmicSystem.inward(CosmicSystem.fx(this).pink, cx, cy, CR * T * 0.8, 180, 30);
+            this.showStatusText(cx, cy - 48, 'BIG CRUNCH', '#ff8ce0');
+            this.cameras.main.shake(260, 0.016);
+        }
         Sfx.play(this, 'cslam', { gold: tf.full });
+        // a burst of light where you land, the aim's circle stamped down and thrown off, dust flung out over the slam's reach
+        // and a ring of it riding past
+        const F = CosmicSystem.fx(this);
+        CosmicSystem.nova(this, cx, cy - 2, 2, tf.full);
+        CosmicSystem.stamp(this, cx, cy, SR * T, tf.full ? col.gold : col.lilac, 0.97);
         this._csBurst(cx, cy, SR * T, col.violet, 460);
         this._csBurst(cx, cy, SR * T * 0.5, col.gold, 300);
-        VisualFX.ripple(this, cx, cy, 10, SR * T * 1.3, tf.full ? col.gold : col.lilac, { depth: 4.5, duration: 500 });
+        CosmicSystem.ring(tf.full ? F.gold : F.pink, cx, cy, SR * T * 1.3, 500, 36, SR * T * 0.3);
+        CosmicSystem.puff(F.fine, cx, cy, 14, -Math.PI / 2, 0.9, 40, 140, 600);
         this._vfxFlash?.(cx, cy, SR * T * 1.8, tf.full ? col.gold : col.lilac, 500, 1);
         this.cameras.main.shake(220, 0.012);
         const P = tf.portal;
@@ -1731,7 +2258,7 @@ class CosmicSystem {
     _csTfEnd() {
         const S = this._cs, tf = S?.tf;
         if (!tf) return;
-        tf.g?.destroy(); tf.portal?.glow?.destroy(); tf.portal?.destroy();
+        tf.portal?.glow?.destroy(); tf.portal?.destroy(); tf.turnFx?.destroy();
         this._csSkinDrop(tf.skin);
         S.tf = null; S.drag = null;
         // a throw still gathering when the form ends never launches (ones already flying finish)
@@ -1743,18 +2270,34 @@ class CosmicSystem {
         if (this.player?.active) { this.player.clearTint(); this.player.setAlpha(1); this._csBurst(this.player.x, this.player.y, 40, this._csCfg().COL.lilac, 300); }
     }
 
-    // The bosses in reach of (cx, cy) take `dmg` (bosses aren't in this.enemies).
-    _csHitBosses(cx, cy, R, dmg) {
+    // The bosses in reach of (cx, cy) take `dmg` (bosses aren't in this.enemies); `cash`: their Hex is cashed in too.
+    _csHitBosses(cx, cy, R, dmg, cash = false) {
         const T = this.TILE_SIZE, vb = this.voltslimeBoss, vs = this.voidSovereignBoss;
         const list = [];
-        if (vb?.active && vb.container) list.push([vb.container.x, vb.container.y]);
-        if (vs?.active && vs.container) list.push([vs.container.x, vs.container.y + (this.SLIME_Y_OFFSET || 0)]);
+        if (vb?.active && vb.container) list.push([vb, vb.container.x, vb.container.y]);
+        if (vs?.active && vs.container) list.push([vs, vs.container.x, vs.container.y + (this.SLIME_Y_OFFSET || 0)]);
         let n = 0;
-        for (const [bx, by] of list) {
+        for (const [b, bx, by] of list) {
             if (Math.hypot(bx - cx, by - cy) > R + T * 1.5) continue;
-            this.damageBossAtTile(Math.floor(bx / T), Math.floor(by / T), dmg, 'collapse', 'cosmic');
-            n++;
+            if (dmg > 0) { this.damageBossAtTile(Math.floor(bx / T), Math.floor(by / T), dmg, 'collapse', 'cosmic'); n++; }
+            if (cash && this._csCashHex(b, bx, by) && !(dmg > 0)) n++;
         }
+        return n;
+    }
+    // Every Hex stack on e (an enemy, or a story boss at bx, by) cashed in at once: CASH + CASH_PCT of its max HP a stack
+    // (CASH_BOSS for a boss), the stacks gone after the hit (it lands at their +damage taken). The stacks it had, 0 for none.
+    _csCashHex(e, bx, by) {
+        const C = this._csCfg().TF, col = this._csCfg().COL, T = this.TILE_SIZE, now = this.time.now;
+        const n = (e._csHexUntil || 0) > now ? Math.min(3, e._csHexStacks || 0) : 0;
+        if (!n) return 0;
+        const story = !e.sprite, pct = story || e.isBoss ? C.CASH_BOSS : C.CASH_PCT;
+        const dmg = (C.CASH + pct * ((story ? e.maxHp : e.maxHealth) || 0)) * n * (this.damageScaling || 1);
+        const x = story ? bx : e.sprite.x, y = story ? by : e.sprite.y;
+        if (story) this.damageBossAtTile(Math.floor(bx / T), Math.floor(by / T), dmg, 'collapse', 'cosmic');
+        else this.damageEnemy(e, dmg, 'cosmic');
+        e._csHexStacks = 0; e._csHexUntil = 0;
+        this._csBurst(x, y, 12 + 8 * n, col.hex, 300);
+        CosmicSystem.puff(CosmicSystem.fx(this).pink, x, y, 4 + 3 * n, 0, Math.PI, 30, 110, 420);
         return n;
     }
 
@@ -1885,61 +2428,61 @@ class CosmicSystem {
     }
 
     // While you choose the second point: the first object already waiting where you put it,
-    // a ghost of the second under the cursor, each one's path as a stream of motes flowing
+    // a ghost of the second under the cursor, each one's path as a stream of dust flowing
     // to where they'll meet, an X where a wall stops one, and at the meeting point a rune
-    // circle that grows and turns gold the harder it will hit, ringed with a pip per fifth
+    // circle that grows and turns gold the harder it will hit, a pip lit over it per fifth
     // of the full power.
-    _csCollapsePreview(g, drag) {
+    _csCollapsePreview(drag) {
         const tf = this._cs.tf, col = this._csCfg().COL, T = this.TILE_SIZE, R = (tf.full ? this._csCfg().TF3 : this._csCfg().TF).COLLAPSE_R * T, now = this.time.now;
-        const plan = this._csCollapsePlan(drag.a, drag.b);
+        const plan = this._csCollapsePlan(drag.a, drag.b), F = CosmicSystem.fx(this), K = 'fx_cosmic_ult';
         if (!tf.pvFx) {
-            const ok = CosmicSystem.orbKey(this, false), sk = CosmicSystem.sigilKey(this);
-            const orb = () => { const o = this.add.sprite(0, 0, ok, '0').setScale(1.4).setDepth(4.56).setAlpha(0.85); if (this.anims.exists(ok)) o.play(ok); return o; };
-            tf.pvFx = [orb(), orb().setAlpha(0.45), this.add.image(0, 0, sk).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.55),
-                       VisualFX.aura(this, 0, 0, R * 1.2, col.violet, { depth: 0.9, alpha: 0.8 })];
+            CosmicSystem.ultFx(this);
+            const orb = () => this.add.sprite(0, 0, K, 'orb_0').setScale(1.4).setDepth(4.56).setAlpha(0.85).play('csu_orb');
+            const nope = () => this.add.image(0, 0, K, 'nope').setScale(1.5).setDepth(4.57);
+            tf.pvFx = [orb(), orb().setAlpha(0.45), CosmicSystem.runes(this, 8, col.violet, 0.961), this.add.sprite(0, 0, K, 'sigil_0').setDepth(0.96).play('csu_sigil'),
+                       VisualFX.aura(this, 0, 0, R * 1.2, col.violet, { depth: 0.9, alpha: 0.8 }), CosmicSystem.runes(this, 6, col.lilac), nope(), nope(), nope(),
+                       ...Array.from({ length: 5 }, () => this.add.image(0, 0, K, 'pip_0').setDepth(4.57)),
+                       ...Array.from({ length: 6 }, () => this.add.sprite(0, 0, K, 'pin_0').setBlendMode(Phaser.BlendModes.ADD).setDepth(4.56).play('csu_pin')),
+                       this.add.image(0, 0, K, 'ring_m').setDepth(0.96).setScale(2)];
         }
-        const [oa, ob, sig, au] = tf.pvFx;
-        oa.setPosition(drag.a.x, drag.a.y).setVisible(true);
+        const [oa, ob, ring, sig, au, ring2, nA, nB, nC] = tf.pvFx, pips = tf.pvFx.slice(9, 14), pins = tf.pvFx.slice(14, 20), circle = tf.pvFx[20];
+        for (const o of [ring2, nA, nB, nC, ...pins]) o.setVisible(false);
+        oa.setPosition(Math.round(drag.a.x), Math.round(drag.a.y)).setVisible(true);
         if (!plan) {
-            ob.setVisible(false); sig.setVisible(false); au.setVisible(false);
-            g.lineStyle(2, 0xff5a5a, 0.7); g.strokeCircle(drag.b.x, drag.b.y, 8);
-            g.lineBetween(drag.b.x - 5, drag.b.y - 5, drag.b.x + 5, drag.b.y + 5); g.lineBetween(drag.b.x - 5, drag.b.y + 5, drag.b.x + 5, drag.b.y - 5);
+            for (const o of [ob, ring, sig, au, circle, ...pips]) o.setVisible(false);
+            nC.setVisible(true).setPosition(Math.round(drag.b.x), Math.round(drag.b.y)).setScale(2);
             return;
         }
-        ob.setPosition(plan.b.x, plan.b.y).setVisible(true);
-        const stream = (p, q, c) => {
+        ob.setPosition(Math.round(plan.b.x), Math.round(plan.b.y)).setVisible(true);
+        const stream = (p, q, E) => {   // a grain now and then, flowing along the path, gone where it ends
             const L = Math.hypot(q.x - p.x, q.y - p.y);
-            if (L < 2) return;
-            const off = (now * 0.08) % 9;
-            for (let d = off; d < L; d += 9) {
-                const f = d / L, s = 1 + f * 1.5;
-                g.fillStyle(c, 0.25 + 0.65 * f);
-                g.fillPoints([{ x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f - s }, { x: p.x + (q.x - p.x) * f + s, y: p.y + (q.y - p.y) * f },
-                              { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f + s }, { x: p.x + (q.x - p.x) * f - s, y: p.y + (q.y - p.y) * f }], true);
-            }
+            if (L < 6 || Math.random() < 0.4) return;
+            const f = Math.random() * 0.85, v = 90 + 60 * f, pt = E.emitParticleAt(p.x + (q.x - p.x) * f, p.y + (q.y - p.y) * f, 1);
+            if (!pt) return;
+            pt.velocityX = (q.x - p.x) / L * v; pt.velocityY = (q.y - p.y) / L * v; pt.life = pt.lifeCurrent = Math.min(500, (1 - f) * L / v * 1000);
         };
-        stream(plan.a, plan.endA, col.lilac); stream(plan.b, plan.endB, col.lilac);
+        stream(plan.a, plan.endA, F.fine); stream(plan.b, plan.endB, F.fine);
+        let pi = 0;
         for (const M of plan.mirrors || []) {
-            const c2 = tf.full ? col.gold : col.violet;
-            stream(M.a, M.end, c2); stream(M.b, M.end, c2);
-            for (const q of [M.a, M.b]) { g.lineStyle(1.5, c2, 0.8); g.strokeCircle(q.x, q.y, 5 + Math.sin(now * 0.01)); }
+            const E2 = tf.full ? F.gold : F.dust;
+            stream(M.a, M.end, E2); stream(M.b, M.end, E2);
+            for (const q of [M.a, M.b]) if (pi < pins.length) pins[pi++].setVisible(true).setPosition(Math.round(q.x), Math.round(q.y)).setTint(tf.full ? col.gold : col.violet);
         }
-        for (const [f, q] of [[plan.fizzA, plan.endA], [plan.fizzB, plan.endB]]) if (f) {
-            g.lineStyle(2.5, 0xff7a7a, 0.95); g.lineBetween(q.x - 5, q.y - 5, q.x + 5, q.y + 5); g.lineBetween(q.x - 5, q.y + 5, q.x + 5, q.y - 5);
-        }
+        [[plan.fizzA, plan.endA, nA], [plan.fizzB, plan.endB, nB]].forEach(([f, q, n]) => { if (f) n.setVisible(true).setPosition(Math.round(q.x), Math.round(q.y)).setScale(1.5); });
         const im = plan.impacts.reduce((m, i) => (i.dmg > m.dmg ? i : m), plan.impacts[0]);
         const top = (this._csCfg().TF.COLLAPSE_BASE + this._csCfg().TF.COLLAPSE_PER * 50) * (tf.full ? this._csCfg().TF3.MULT : this._csCfg().TF.MULT);
         const k = Math.min(1, im.dmg / top), tint = k > 0.66 ? col.gold : k > 0.33 ? col.lilac : col.violet;
-        sig.setVisible(true).setPosition(im.p.x, im.p.y).setTint(tint).setRotation(now * (0.001 + 0.003 * k))
-           .setDisplaySize(R * (1.4 + 0.8 * k), R * (1.4 + 0.8 * k)).setAlpha(0.55 + 0.35 * k);
+        const big = k >= 0.5, band = big ? 49 : 35;   // (the band between the circle's lines, at its size of 2)
+        circle.setVisible(true).setFrame(big ? 'ring_l' : 'ring_m').setPosition(Math.round(im.p.x), Math.round(im.p.y)).setTint(tint).setAlpha(0.6 + 0.4 * k);
+        ring.tint = tint; ring.place(im.p.x, im.p.y, band, now * (0.001 + 0.003 * k), 8, 0.65 + 0.35 * k);
+        sig.setVisible(true).setPosition(Math.round(im.p.x), Math.round(im.p.y)).setTint(tint).setScale(Math.round((1 + k) * 2) / 2).setAlpha(0.6 + 0.4 * k);
         au.setVisible(true).setPosition(im.p.x, im.p.y).setTint(tint);
-        const pips = Math.max(1, Math.ceil(k * 5)), pr = R * (0.8 + 0.4 * k) + 8;
-        for (let i = 0; i < 5; i++) {
-            const a = -Math.PI / 2 + (i - 2) * 0.28, x = im.p.x + Math.cos(a) * pr, y = im.p.y + Math.sin(a) * pr;
-            g.fillStyle(i < pips ? col.gold : 0x2b2540, i < pips ? 1 : 0.8);
-            g.fillPoints([{ x, y: y - 3 }, { x: x + 3, y }, { x, y: y + 3 }, { x: x - 3, y }], true);
-        }
-        for (const extra of plan.impacts) if (extra !== im) { g.lineStyle(2, col.lilac, 0.7); g.strokeCircle(extra.p.x, extra.p.y, R); }
+        const lit = Math.max(1, Math.ceil(k * 5)), pr = (big ? 56 : 40) + 9;
+        pips.forEach((o, i) => {
+            const a = -Math.PI / 2 + (i - 2) * 0.28;
+            o.setVisible(true).setFrame(i < lit ? 'pip_1' : 'pip_0').setPosition(Math.round(im.p.x + Math.cos(a) * pr), Math.round(im.p.y + Math.sin(a) * pr));
+        });
+        for (const extra of plan.impacts) if (extra !== im) ring2.place(extra.p.x, extra.p.y, R, -now * 0.002, 6, 0.7);
     }
     _csHidePreview() {
         for (const o of this._cs?.tf?.pvFx || []) o?.setVisible?.(false);
@@ -1949,11 +2492,9 @@ class CosmicSystem {
     _csCollapseFire(plan, wait = 0) {
         const S = this._cs, col = this._csCfg().COL, now = this.time.now;
         const mk = (from, to, d, fizz, gold = false) => {
-            const glow = this.add.image(from.x, from.y, 'vfx_glow').setTint(gold ? col.gold : col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.55).setScale(0.35);
-            const ok = CosmicSystem.orbKey(this, gold);
-            const core = ok ? this.add.sprite(from.x, from.y, ok, '0').setDepth(4.56).setScale(1.6)
-                            : this.add.image(from.x, from.y, 'cs_sheet', 'mote').setTint(col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.56).setScale(2.2);
-            if (ok && this.anims.exists(ok)) core.play(ok);
+            const glow = this.add.image(from.x, from.y, 'vfx_glow').setTint(gold ? col.gold : col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.55).setScale(0.35).setAlpha(0.6);
+            CosmicSystem.ultFx(this);
+            const core = this.add.sprite(from.x, from.y, 'fx_cosmic_ult', gold ? 'orbg_0' : 'orb_0').setDepth(4.56).setScale(1.6).play(gold ? 'csu_orbg' : 'csu_orb');
             core._csGold = gold;
             return { from, to, d, fizz, glow, core, hit: new Set(), done: d < 0.05, drag: S.tf?.full ? [] : null };
         };
@@ -1987,11 +2528,8 @@ class CosmicSystem {
                 const s = Math.min(o.d, 0.5 * C.COLLAPSE_ACC * t * t), f = o.d > 0 ? s / o.d : 1;
                 const x = o.from.x + (o.to.x - o.from.x) * f, y = o.from.y + (o.to.y - o.from.y) * f;
                 o.glow.setPosition(x, y).setScale(0.3 + 0.25 * f); o.core.setPosition(x, y).setScale(1.6 + 0.6 * f);
-                // a tail of motes, longer the faster it's going
-                if (Math.random() < 0.4 + 0.6 * f) {
-                    const m = this.add.image(x, y, 'cs_sheet', 'mote').setTint(o.core._csGold ? col.gold : col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.54);
-                    this.tweens.add({ targets: m, alpha: 0, scale: 0.2, duration: 260 + 200 * f, onComplete: () => m.destroy() });
-                }
+                // a tail of dust, longer the faster it's going
+                if (Math.random() < 0.4 + 0.6 * f) { const FX = CosmicSystem.fx(this); CosmicSystem.puff(o.core._csGold ? FX.gold : (Math.random() < 0.5 ? FX.fine : FX.dust), x, y, 1, 0, Math.PI, 0, 12, 260 + 200 * f); }
                 // pierce: everything it passes, once
                 const tx = Math.floor(x / T), ty = Math.floor(y / T);
                 for (const e of this.enemies || []) {
@@ -2043,9 +2581,9 @@ class CosmicSystem {
             if (!e.sprite?.active || e.health <= 0) continue;
             if (Math.hypot(e.x - tx, e.y - ty) > R + 0.01) continue;
             this.damageEnemy(e, dmg, 'cosmic'); n++;
-            if (tf?.full && e.health > 0 && e.sprite?.active) this._csHex(e);
+            if (tf?.full && e.health > 0 && e.sprite?.active && !this._csCashHex(e)) this._csHex(e);   // the constellation cashes its Hex in (none: Hexed for the next)
         }
-        n += this._csHitBosses(x, y, R * T, dmg);
+        n += this._csHitBosses(x, y, R * T, dmg, !!tf?.full);
         Sfx.play(this, 'collapse', { big: dmg > 14 * (this.damageScaling || 1), gold: !!tf?.full });
         // the form lasts longer for collapses that land
         if (tf?.phase === 'form' && n > 0) {
@@ -2053,35 +2591,28 @@ class CosmicSystem {
             tf.until = Math.min(tf.cap, tf.until + add);
             this.showStatusText(this.player.x, this.player.y - 30, `+${(add / 1000).toFixed(1)}s`, '#ffe08a');
         }
-        // The impact: everything pulled in for a beat (an implosion), then a white core, a rune
-        // circle stamped and thrown off, three shock rings, rays, debris flung out, a scar of
+        // The impact: everything pulled in for a beat (an implosion), then a burst of light, the runes
+        // of a circle thrown off, three rings of dust, streaks of light, debris flung out, a scar of
         // void left on the floor, and the camera punched in.
-        const big = dmg > 14 * (this.damageScaling || 1), hue = tf?.full ? col.gold : col.lilac, RR = R * T;
-        const core = this.add.image(x, y, 'vfx_glow').setTint(hue).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.7).setScale(1.1);
-        this.tweens.add({ targets: core, scale: 0.08, duration: 110, ease: 'Quad.easeIn', onComplete: () => {
+        const big = dmg > 14 * (this.damageScaling || 1), hue = tf?.full ? col.gold : col.lilac, RR = R * T, F = CosmicSystem.fx(this), HE = tf?.full ? F.gold : F.dust;
+        CosmicSystem.inward(F.fine, x, y, RR * 0.9, 110, 10);
+        const core = this.add.image(x, y, 'vfx_glow').setTint(hue).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.7).setScale(0.7).setAlpha(0.6);
+        this.tweens.add({ targets: core, scale: 0.08, alpha: 1, duration: 110, ease: 'Quad.easeIn', onComplete: () => {
             core.destroy();
-            const flash = this.add.image(x, y, 'vfx_glow').setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.8).setScale(0.3);
-            this.tweens.add({ targets: flash, scale: RR / 30, alpha: 0, duration: 260, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
-            const sig = this.add.image(x, y, CosmicSystem.sigilKey(this)).setTint(hue).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.65).setDisplaySize(RR, RR);
-            this.tweens.add({ targets: sig, scaleX: sig.scaleX * 2.6, scaleY: sig.scaleY * 2.6, rotation: 1.2, alpha: 0, duration: 520, ease: 'Cubic.easeOut', onComplete: () => sig.destroy() });
-            [[0xffffff, 1.1, 260], [hue, 1.6, 420], [col.violet, 2.3, 600]].forEach(([c, s, ms], i) =>
-                this.time.delayedCall(i * 60, () => VisualFX.ripple(this, x, y, 6, RR * s * (big ? 1.25 : 1), c, { depth: 4.6, duration: ms })));
-            const rays = this.add.graphics().setDepth(4.66).setBlendMode(Phaser.BlendModes.ADD).setPosition(x, y);
-            for (let i = 0; i < 12; i++) {
+            if (!this._cs) return;
+            CosmicSystem.nova(this, x, y, 1, !!tf?.full);   // (small: these land again and again, and the pack under them must show)
+            CosmicSystem.stamp(this, x, y, RR * 1.1, hue);
+            [[F.fine, 1.1, 260, 18], [HE, 1.6, 420, 24], [F.dust, 2.3, 600, 28]].forEach(([E, sc, ms, n], i) =>
+                this.time.delayedCall(i * 60, () => this._cs && CosmicSystem.ring(E, x, y, RR * sc * (big ? 1.25 : 1), ms, n, RR * 0.35)));
+            for (let i = 0; i < 12; i++) {   // streaks: a few grains thrown along one line at different speeds
                 const a = i * Math.PI / 6 + Math.random() * 0.2, l = RR * (1.3 + Math.random() * 0.8);
-                rays.lineStyle(i % 2 ? 1.5 : 3, i % 3 ? hue : 0xffffff, 0.9); rays.lineBetween(Math.cos(a) * 6, Math.sin(a) * 6, Math.cos(a) * l, Math.sin(a) * l);
+                CosmicSystem.puff(i % 3 ? HE : F.fine, x + Math.cos(a) * RR * 0.35, y + Math.sin(a) * RR * 0.35, 2, a, 0.03, l * 1.4, l * 3, 300);
             }
-            rays.setScale(0.3);
-            this.tweens.add({ targets: rays, scale: 1, alpha: 0, duration: 340, ease: 'Quad.easeOut', onComplete: () => rays.destroy() });
-            for (let i = 0; i < (big ? 22 : 14); i++) {
-                const a = Math.random() * Math.PI * 2, d = RR * (0.8 + Math.random() * 1.4);
-                const m = this.add.image(x, y, 'cs_sheet', 'mote').setTint(Math.random() < 0.4 ? 0xffffff : hue).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.64).setScale(1 + Math.random());
-                this.tweens.add({ targets: m, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, alpha: 0, scale: 0.2, duration: 380 + Math.random() * 300, ease: 'Cubic.easeOut', onComplete: () => m.destroy() });
-            }
+            CosmicSystem.puff(Math.random() < 0.5 ? HE : F.dust, x, y, big ? 12 : 8, 0, Math.PI, RR * 1.4, RR * 3.6, 560);
             const scar = VisualFX.aura(this, x, y, RR * 1.1, col.violet, { breathe: false, alpha: 1 });
             this.tweens.add({ targets: scar, alpha: 0, duration: 1400, ease: 'Quad.easeIn', onComplete: () => scar.destroy() });
             this._csBurst(x, y, RR, col.violet, 420);
-            this._vfxFlash?.(x, y, RR * 2.4, hue, 320, 0.9);
+            this._vfxFlash?.(x, y, RR * 2.4, hue, 320, 0.55);
             const cam = this.cameras.main;
             if (!S.charge && !cam._csPunch) {
                 const z0 = cam.zoom; cam._csPunch = true;
@@ -2094,8 +2625,8 @@ class CosmicSystem {
 
     // A voidbeam from (x0, y0) through (x1, y1), world px: it travels BEAM_LEN tiles, bouncing
     // off walls (the axis it hit flips), and hits every enemy within BEAM_W tiles of its path,
-    // once each. Drawn as a wide beam: a magenta haze, a lilac body, a white core, sparks at
-    // every bounce, fading as it goes.
+    // once each. Drawn in light along its path: a magenta haze, a white core, sparks at every
+    // bounce, fading as it goes.
     _csVoidbeam(x0, y0, x1, y1) {
         const C = this._csCfg().TF, col = this._csCfg().COL, T = this.TILE_SIZE, ds = this.damageScaling || 1;
         const wall = (x, y) => this.world?.[Math.floor(x / T)]?.[Math.floor(y / T)] !== this.FLOOR;
@@ -2130,16 +2661,16 @@ class CosmicSystem {
         }
         for (const e of hit) { this.damageEnemy(e, C.BEAM_DMG * ds, 'cosmic'); if (e.sprite?.active) this._csBurst(e.sprite.x, e.sprite.y, 10, col.hex, 160); }
         Sfx.play(this, 'csbeam');
-        const g = this.add.graphics().setDepth(4.5).setBlendMode(Phaser.BlendModes.ADD);
-        for (const [w, c, a] of [[16, col.hex, 0.22], [9, col.lilac, 0.55], [3, 0xffffff, 0.95]]) { g.lineStyle(w, c, a); g.strokePoints(pts); }
-        for (let i = 1; i < pts.length; i++) {   // a few motes shed along it
-            for (let k = 0; k < 4; k++) {
-                const f = Math.random(), mx = pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, my = pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f;
-                const m = this.add.image(mx, my, 'cs_sheet', 'mote').setTint(col.hex).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.55);
-                this.tweens.add({ targets: m, y: my - 10, alpha: 0, duration: 380, onComplete: () => m.destroy() });
-            }
+        // the beam, laid in light along its path: a Hex-pink haze, a white core, motes shed off it; a flare where it leaves
+        const F = CosmicSystem.fx(this);
+        for (let i = 1; i < pts.length; i++) {
+            const a = pts[i - 1], b = pts[i];
+            CosmicSystem.along(F.pink, a.x, a.y, b.x, b.y, 3, 420, 14);
+            CosmicSystem.along(F.fine, a.x, a.y, b.x, b.y, 2, 260, 3);
+            CosmicSystem.along(F.dust, a.x, a.y, b.x, b.y, 22, 460, 30);
         }
-        this.tweens.add({ targets: g, alpha: 0, duration: 320, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
+        CosmicSystem.puff(F.pink, x0, y0, 8, Math.atan2(y1 - y0, x1 - x0), 0.5, 40, 120, 260);
+        this._vfxFlash?.(x0, y0, 40, col.hex, 260, 0.8);
         return hit.size;
     }
 
@@ -2172,11 +2703,12 @@ class CosmicSystem {
         const full = !!S.tf?.full, HP = full ? this._csCfg().TF3.VOIDLET_HP : C.VOIDLET_HP;
         for (const kind of (full ? this._csCfg().TF3.VOIDLETS : ['warrior', 'beam'])) {
             const at = spot(), px = at.x * T + T / 2, py = at.y * T + T / 2;
-            const vk = CosmicSystem.voidletKey(this, kind), SC = kind === 'warrior' ? 1.7 : 1.5;
+            const vk = kind === 'warrior' ? 'csu_vw' : 'csu_vb', SC = 1.5;
             // on the ground beside you (the crystal hovers a touch): VY lines their feet up with a slime's
             const VY = kind === 'warrior' ? 6 : 3;
-            const spr = this.add.sprite(px, py + (this.SLIME_Y_OFFSET || 0) + VY, vk, '0').setScale(SC).setDepth(this.player.depth - 0.01);
-            if (this.anims.exists(vk)) spr.play(vk);
+            CosmicSystem.ultFx(this);
+            const spr = this.add.sprite(px, py + (this.SLIME_Y_OFFSET || 0) + VY, 'fx_cosmic_ult', kind === 'warrior' ? 'vw_0' : 'vb_0').setScale(SC).setDepth(this.player.depth - 0.01).play(vk);
+            CosmicSystem.puff(CosmicSystem.fx(this).dust, px, py, 10, -Math.PI / 2, 0.8, 20, 70, 450);   // stepping out of the dark
             const glow = this.add.image(px, py, 'vfx_glow').setTint(kind === 'warrior' ? col.violet : col.hex).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.9).setScale(0.35).setAlpha(0.7);
             const eye = this.add.image(px, py, 'cs_sheet', 'mote').setVisible(false);   // (the sprite has its own eyes)
             const bar = this.add.graphics().setDepth(5);
@@ -2267,14 +2799,14 @@ class CosmicSystem {
                     const e = nearest(a.x, a.y, C.BEAM_RANGE);
                     if (e) {
                         v.lock = { e, at: now };
-                        v.reticle = v.reticle || this.add.image(0, 0, CosmicSystem.sigilKey(this)).setTint(col.hex).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6);
+                        v.reticle = v.reticle || this.add.sprite(0, 0, 'fx_cosmic_ult', 'reticle_0').setBlendMode(Phaser.BlendModes.ADD).setDepth(4.6).play('csu_reticle');
                     }
                 }
                 if (v.lock) {
                     const e = v.lock.e, k = Math.min(1, (now - v.lock.at) / C.BEAM_LOCK_MS);
                     if (!e.sprite?.active || e.health <= 0) { v.lock = null; v.reticle?.setVisible(false); }
                     else {
-                        v.reticle.setVisible(true).setPosition(e.sprite.x, e.sprite.y).setDisplaySize(60 - 36 * k, 60 - 36 * k).setRotation(now * 0.008).setAlpha(0.4 + 0.6 * k);
+                        v.reticle.setVisible(true).setPosition(e.sprite.x, e.sprite.y).setScale((60 - 36 * k) / 15).setAlpha(0.4 + 0.6 * k);
                         if (k >= 1) {
                             v.reticle.setVisible(false);
                             this._csVoidbeam(ex, ey - 4, e.sprite.x, e.sprite.y);
@@ -2319,6 +2851,10 @@ class CosmicSystem {
         this._csUpdateFluid(now);
         this._csUpdateWellBeam(now);
         this._csUpdateWell(now, dt);
+        this._csFlyTick(now);
+        this._csStasisTick(now);
+        this._csRewindRecord(now);
+        this._csRewindTick(now);
         this._csUpdateMarks(now);
         this.damageReductionMultiplier = this._csTakenMult();
         this._csDrawFx(now, dt);
@@ -2337,12 +2873,6 @@ class CosmicSystem {
             const p = ep[i], x = p.isRopeTendril ? p._tipX : p.gfx?.x, y = p.isRopeTendril ? p._tipY : p.gfx?.y;
             if (x === undefined || !near(x, y)) continue;
             this._csWardEat(x, y, p); this._destroyEnemyProjectile?.(p); ep.splice(i, 1);
-        }
-        const vb = this._voidSniperBolts;
-        if (vb) for (let i = vb.length - 1; i >= 0; i--) {
-            const b = vb[i];
-            if (!b.gfx?.active || !near(b.gfx.x, b.gfx.y)) continue;
-            this._csWardEat(b.gfx.x, b.gfx.y, b); b.gfx.destroy(); vb.splice(i, 1);
         }
         for (const b of [...(this._cavs || [])]) {   // cavitation bubbles (LevelManager._cavBubble)
             if (!near(b.x, b.y)) continue;
@@ -2368,20 +2898,18 @@ class CosmicSystem {
     _csUpdateWell(now, dt) {
         const S = this._cs, W = S.well;
         if (!W) return;
-        const C = this._csCfg().WELL, col = this._csCfg().COL, T = this.TILE_SIZE;
-        W.disk.rotation -= dt * 0.004;
-        W.ring.rotation += dt * 0.0012;
+        const C = this._csCfg().WELL, T = this.TILE_SIZE;
         W.glow.setAlpha(0.55 + 0.15 * Math.sin(now * 0.008));
         // it grows as it feeds: its reach from GROW_FROM to GROW_TO of RADIUS over its life
         W.r = C.RADIUS * (C.GROW_FROM + (C.GROW_TO - C.GROW_FROM) * Math.min(1, (now - W.t0) / C.MS));
-        W.ring.setScale(W.r * T * 2 / 36); W.glow.setScale(0.85 * W.r / C.RADIUS);
-        // motes spiralling in
-        if (now - W.moteAt > 70) {
-            W.moteAt = now;
-            const a = Math.random() * Math.PI * 2, r = W.r * T * (0.6 + Math.random() * 0.4);
-            const m = this.add.image(W.x + Math.cos(a) * r, W.y + Math.sin(a) * r, 'cs_sheet', 'mote')
-                .setTint(Math.random() < 0.3 ? col.gold : col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(1.05);
-            this.tweens.add({ targets: m, x: W.x, y: W.y, scale: 0.2, alpha: 0.2, duration: 520, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+        W.glow.setScale(0.85 * W.r / C.RADIUS);
+        // dust drawn in from its edge in three arms (the swirl winds them into a spiral), a little scattered between, so
+        // its reach is where the dust begins
+        const arm = now * 0.0016;
+        for (let i = Math.round(dt / 6 + Math.random()); i > 0; i--) {
+            const a = Math.random() < 0.7 ? arm + Math.floor(Math.random() * 3) * Math.PI * 2 / 3 + (Math.random() - 0.5) * 0.35 : Math.random() * Math.PI * 2;
+            const r = W.r * T * (0.92 + Math.random() * 0.08);
+            W.ring.emitParticleAt(W.x + Math.cos(a) * r, W.y + Math.sin(a) * r * 0.6, 1);
         }
         if (now >= W.tickAt) {
             W.tickAt = now + C.TICK;
@@ -2398,6 +2926,13 @@ class CosmicSystem {
                 const live = (e._csHexUntil || 0) > now ? (e._csHexStacks || 0) : 0;
                 if (live < want) this._csHex(e, C.HEX_AFTER);
                 else e._csHexUntil = Math.max(e._csHexUntil || 0, now + C.HEX_AFTER);
+            }
+            // a boss in its reach (bosses aren't in this.enemies) takes the tick too, its Hex with it (damageBossAtTile); too big to pull
+            for (const b of [this.voltslimeBoss, this.voidSovereignBoss]) {
+                if (!b?.active || !b.container) continue;
+                const bx = b.container.x, by = b.container.y + (b === this.voidSovereignBoss ? (this.SLIME_Y_OFFSET || 0) : 0);
+                if (Math.hypot(bx - W.x, by - W.y) > (W.r + 1.5) * T) continue;
+                this.damageBossAtTile(Math.floor(bx / T), Math.floor(by / T), dmg, 'well', 'cosmic');
             }
         }
         if (now >= W.until) this._csWellEnd(false);
@@ -2459,33 +2994,36 @@ class CosmicSystem {
                 const x = cx + Math.cos(a) * R, y = cy + sn * R * 0.55;
                 w.img.setPosition(Math.round(x), Math.round(y - 4)).setDepth(sn > 0 ? d + 0.01 : d - 0.01);
                 w.glow.setPosition(x, y - 4);
+                if (Math.random() < dt / 110) CosmicSystem.fx(this).fine.emitParticleAt(x + (Math.random() - 0.5) * 4, y - 4 + (Math.random() - 0.5) * 6, 1);   // a glitter left behind it
                 const left = S.wardsUntil - now;
                 w.img.setAlpha(left < 1200 && !this._csAscending() ? (Math.floor(now / 100) % 2 ? 0.4 : 1) : 1);
             });
         }
-        // Event Horizon: a dark violet shell
-        // Event Horizon: a force field of the dark between stars round you (VisualFX.forceField), stars caught in it
+        // Event Horizon: a shell of the dark between stars round you (hand-drawn, a glint going round its rim), a deep
+        // violet light in it, stars glinting in it; struck, it flares and swells for a moment
         if (now < S.horizonUntil) {
-            const g = keep('horizon', () => this.add.graphics().setBlendMode(Phaser.BlendModes.ADD));
+            const F = CosmicSystem.fx(this);
+            const sh = keep('horizon', () => this.add.sprite(cx, cy, 'fx_cosmic', 'shell_0').setBlendMode(Phaser.BlendModes.ADD).play('csw_shell'));
+            const gl = keep('horizonGlow', () => this.add.image(cx, cy, 'vfx_glow').setTint(0x6a2ac8).setBlendMode(Phaser.BlendModes.ADD));
             const left = S.horizonUntil - now, fade = Math.min(1, (now - (S.horizonAt ??= now)) / 200) * (left < 1200 ? 0.45 + 0.55 * (Math.floor(now / 100) % 2) : 1);
-            const hit = Math.max(0, 1 - (now - (S.horizonHitAt || 0)) / 260), R = this.TILE_SIZE * 1.05;
-            g.clear().setPosition(cx, cy).setDepth(d + 0.02);
-            VisualFX.forceField(g, { col: 0x6a2ac8, rim: 0xd8a8ff, R, t: now - S.horizonAt, fade, hit, hitA: S.horizonHitA ?? -Math.PI / 2 });
-            for (let k = 0; k < 5; k++) { const a = now * 0.0007 * (k % 2 ? 1 : -1) + k * 1.3, rr = 0.45 + (k % 3) * 0.17; g.fillStyle(k % 2 ? 0xffffff : 0xffd060, 0.8 * fade); g.fillRect(Math.cos(a) * R * rr - 1, Math.sin(a) * R * 0.86 * rr - 1, 2, 2); }   // stars turning in it
-        } else { S.horizonAt = undefined; drop('horizon'); }
-        // Retribution: thorns, turning slowly, sharper for a moment after they bit
+            const hit = Math.max(0, 1 - (now - (S.horizonHitAt || 0)) / 260);
+            sh.setPosition(Math.round(cx), Math.round(cy)).setDepth(d + 0.02).setScale(1.3 * (1 + 0.1 * hit)).setAlpha(fade * (0.7 + 0.3 * hit));
+            gl.setPosition(cx, cy).setDepth(d - 0.03).setScale(0.55 + 0.1 * hit).setAlpha((0.3 + 0.3 * hit) * fade);
+            if (Math.random() < dt / 110) { const a = Math.random() * Math.PI * 2, r = Math.random() * 20; F.fine.emitParticleAt(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.8, 1); }
+        } else { S.horizonAt = undefined; drop('horizon'); drop('horizonGlow'); }
+        // Retribution: a crown of thorns round your feet (hand-drawn, its tips glinting), bigger for a moment after they bit
         if (now < S.retributionUntil) {
-            const t = keep('thorns', () => this.add.image(cx, cy, 'cs_sheet', 'thorns').setBlendMode(Phaser.BlendModes.ADD));
+            const t = keep('thorns', () => { CosmicSystem.fx(this); return this.add.sprite(cx, cy, 'fx_cosmic', 'thorns_0').setBlendMode(Phaser.BlendModes.ADD).play('csw_thorns'); });
             const bite = Math.max(0, 1 - (now - S.retAt) / 300);
-            t.setPosition(cx, cy).setDepth(d - 0.02).setRotation(t.rotation + dt * 0.0008)
-             .setScale(0.95 + 0.25 * bite).setAlpha((S.retributionUntil - now < 1200 ? 0.3 : 0.55) + 0.45 * bite);
+            t.setPosition(Math.round(cx), Math.round(cy + 5)).setDepth(d - 0.02)
+             .setScale(1.15 + 0.3 * bite).setAlpha((S.retributionUntil - now < 1200 ? 0.35 : 0.6) + 0.4 * bite);
         } else drop('thorns');
         // Starfall: while the window is open, a gold spark circles you per star you've picked up
         if (S.astro?.got) {
             for (let i = 0; i < 3; i++) {
                 const k = 'tail' + i;
                 if (i >= S.astro.got) { drop(k); continue; }
-                const s = keep(k, () => this.add.image(cx, cy, 'cs_sheet', 'mote').setBlendMode(Phaser.BlendModes.ADD).setTint(col.gold));
+                const s = keep(k, () => this.add.image(cx, cy, 'fx_cosmic', 'p_1').setBlendMode(Phaser.BlendModes.ADD).setTint(col.gold));
                 const a = now * 0.005 + i * Math.PI * 2 / 3, sn = Math.sin(a);
                 s.setPosition(cx + Math.cos(a) * 12, cy - 6 + sn * 5 - ((now * 0.02 + i * 7) % 10))
                  .setDepth(sn > 0 ? d + 0.01 : d - 0.01).setScale(1 + 0.3 * sn).setAlpha(0.9);
@@ -2504,12 +3042,13 @@ class CosmicSystem {
         if (this._csAscending()) {
             const gl = keep('aura', () => this.add.image(cx, cy, 'vfx_glow').setTint(col.violet).setBlendMode(Phaser.BlendModes.ADD));
             gl.setPosition(cx, cy).setDepth(0.9).setScale(0.75 + 0.08 * Math.sin(now * 0.012)).setAlpha(0.8);
-            const h = keep('halo', () => this.add.image(cx, cy, 'cs_sheet', 'halo'));
-            h.setPosition(Math.round(p.x), Math.round(p.y - 19 + Math.sin(now * 0.008) * 1.5)).setDepth(d + 0.03);
-            if (Math.random() < dt / 45) {
-                const m = this.add.image(p.x + (Math.random() - 0.5) * 18, p.y + 8, 'cs_sheet', 'mote')
-                    .setTint(Math.random() < 0.35 ? col.gold : col.lilac).setBlendMode(Phaser.BlendModes.ADD).setDepth(d + 0.02);
-                this.tweens.add({ targets: m, y: m.y - 26, alpha: 0, duration: 520 + Math.random() * 260, onComplete: () => m.destroy() });
+            // the halo comes down onto you as it starts, then floats there, a glint going round it
+            const h = keep('halo', () => { CosmicSystem.ultFx(this); return this.add.sprite(cx, cy, 'fx_cosmic_ult', 'halo_0').play('csu_halo'); });
+            const k = Math.min(1, (now - S.ascendAt) / 380);
+            h.setPosition(Math.round(p.x), Math.round(p.y - 15 - 26 * (1 - k) * (1 - k) + Math.sin(now * 0.008) * 1.5)).setDepth(d + 0.03).setAlpha(k);
+            if (Math.random() < dt / 30) {   // stardust rising off you
+                const F = CosmicSystem.fx(this);
+                CosmicSystem.puff(Math.random() < 0.35 ? F.gold : F.fine, p.x + (Math.random() - 0.5) * 18, p.y + 6, 1, -Math.PI / 2, 0.2, 25, 50, 650 + Math.random() * 250);
             }
             if (this.textures.exists('vfx_edge')) {
                 const W = this.scale.width, H = this.scale.height;
@@ -2537,7 +3076,7 @@ class CosmicSystem {
     // bar (the boon running down, or the cooldown filling).
     _csBuildTray() {
         this._csTrayG = this.add.graphics().setScrollFactor(0).setDepth(31);
-        this._csTrayIcon = this.add.image(0, 0, 'cs_sheet', 'i_' + this._csWeapon()).setScrollFactor(0).setDepth(32).setScale(2);
+        this._csTrayIcon = this.add.image(0, 0, ...this._csTrayArt(false)).setScrollFactor(0).setDepth(32).setScale(2);
         this._csTrayText = this.add.text(0, 0, '', {
             fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#e2d2ff', stroke: '#05060a', strokeThickness: 3,
         }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(32);
@@ -2560,14 +3099,17 @@ class CosmicSystem {
             : w === 'astrolabe' ? (S.astro ? [`STARFALL ★${S.astro.got}`, (S.astro.until - now) / C.ASTRO.WINDOW]
                 : S.astral.size ? [`ASTRAL ×${S.astral.size}`, 1] : null)
             : w === 'singularity_staff' ? (now < S.horizonUntil ? ['HORIZON -30%', (S.horizonUntil - now) / (C.WELL.MS + C.WELL.AFTER)] : null)
-            : w === 'void_blade' ? (S.fluid?.some(t => !t.dash) && S.fluidSpan ? ['COSMIC FLUID', (S.fluidSpan.to - now) / (S.fluidSpan.to - S.fluidSpan.from)] : now < S.retributionUntil ? ['RETRIBUTION', (S.retributionUntil - now) / C.BLADE.MS] : null) : null;
+            : w === 'void_blade' ? (S.fluid?.some(t => !t.dash) && S.fluidSpan ? ['COSMIC FLUID', (S.fluidSpan.to - now) / (S.fluidSpan.to - S.fluidSpan.from)] : now < S.retributionUntil ? ['RETRIBUTION', (S.retributionUntil - now) / C.BLADE.MS] : null)
+            : w === 'pendulum' ? (S.stasis ? [`TIME LOCK ${((S.stasis.until - now) / 1000).toFixed(1)}s`, (S.stasis.until - now) / C.PEND.TLOCK.MS] : null) : null;
         if (boon) return { label: boon[0], frac: boon[1], mode: 'boon', cd: now < S.cdUntil };
         if (now < S.cdUntil) {
-            const cd = { barrier_staff: C.BARRIER.CD, astrolabe: C.ASTRO.CD, singularity_staff: C.WELL.CD, void_blade: C.BLADE.CD }[w] || 12000;
+            const cd = { barrier_staff: C.BARRIER.CD, astrolabe: C.ASTRO.CD, singularity_staff: C.WELL.CD, void_blade: C.BLADE.CD, pendulum: S.cdMs || C.PEND.STASIS_CD }[w] || 12000;   // (the Pendulum's: whichever of its two set it)
             return { label: `${C.NAMES[w] || w}  ${Math.ceil((S.cdUntil - now) / 1000)}s`, frac: 1 - (S.cdUntil - now) / cd, mode: 'cd' };
         }
         return { label: `${C.NAMES[w] || w}  READY`, frac: 1, mode: 'ready' };
     }
+    // the tray's icon: cs_sheet's, the Pendulum's in its own sheet (fx_pendulum)
+    _csTrayArt(asc) { return asc ? ['cs_sheet', 'i_ascend'] : this._csWeapon() === 'pendulum' ? ['fx_pendulum', 'i_pendulum'] : ['cs_sheet', 'i_' + this._csWeapon()]; }
 
     _csDrawTray(now) {
         const g = this._csTrayG;
@@ -2581,7 +3123,7 @@ class CosmicSystem {
         const x0 = Math.round(W / 2 + 121), y = Math.round(H - 36), w = 140, h = 30;
         const st = this._csTrayState(now);
         const asc = st.mode === 'ascend', live = asc || st.mode === 'boon';
-        const accent = asc ? col.gold : st.mode === 'boon' ? (this._csWeapon() === 'void_blade' ? col.hex : this._csWeapon() === 'astrolabe' ? col.gold : col.violet)
+        const accent = asc ? col.gold : st.mode === 'boon' ? (this._csWeapon() === 'void_blade' ? col.hex : ['astrolabe', 'pendulum'].includes(this._csWeapon()) ? col.gold : col.violet)
                      : st.mode === 'ready' ? col.lilac : 0x6a6286;
         g.fillStyle(0x090b14, 0.82); g.fillRoundedRect(x0, y - h / 2, w, h, 8);
         g.lineStyle(1, live ? accent : 0x2b3256, live ? 0.9 : 0.9); g.strokeRoundedRect(x0 + 0.5, y - h / 2 + 0.5, w - 1, h - 1, 8);
@@ -2596,7 +3138,7 @@ class CosmicSystem {
             const k = 0.5 + 0.5 * Math.sin(now / 220);
             g.lineStyle(1.5, col.lilac, 0.25 + 0.35 * k); g.strokeCircle(x0 + 16, y, 14 + 2 * k);
         }
-        this._csTrayIcon.setFrame(asc ? 'i_ascend' : 'i_' + this._csWeapon()).setPosition(x0 + 16, y)
+        this._csTrayIcon.setTexture(...this._csTrayArt(asc)).setPosition(x0 + 16, y)
             .setAlpha(st.mode === 'cd' || st.mode === 'idle' ? 0.5 : 1);
         // label and bar
         const bx = x0 + 34, bw = w - 44, by = y + 6;
@@ -2623,10 +3165,11 @@ class CosmicSystem {
         this.showStatusText(p.x, p.y - 30, label, '#' + color.toString(16).padStart(6, '0'));
     }
 
-    // A ring going out from (x, y) to radius r.
+    // A burst going out from (x, y) to radius r over ms: a ring of hand-drawn dust flung out, gold, Hex pink or violet by colour
     _csBurst(x, y, r, color, ms) {
-        const ring = this.add.image(x, y, 'vfx_ring').setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.5).setScale(0.1).setAlpha(1);
-        this.tweens.add({ targets: ring, scale: Math.max(0.2, r / 30), alpha: 0, duration: ms, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+        const F = CosmicSystem.fx(this), C = this._csCfg().COL;
+        const E = color === C.gold || color === 0xffe08a ? F.gold : color === C.hex ? F.pink : F.dust;
+        CosmicSystem.ring(E, x, y, Math.max(6, r), ms, Math.max(6, Math.min(30, Math.round(r / 2.5))));
     }
 
     // The ult's name across the screen (Visuals.js draws the other three).
@@ -2677,8 +3220,14 @@ class CosmicSystem {
             objs.push(this.add.rectangle(x, y, w, h, 0x020008, 1).setOrigin(0).setDepth(6.5).setAlpha(0));
         // inside: the dusk of another place, and its stars
         objs.push(this.add.rectangle(x0, y0, x1 - x0, y1 - y0, 0x1a0638, 0.5).setOrigin(0).setDepth(0.95).setAlpha(0));
-        const rim = this.add.graphics().setDepth(6.6).setAlpha(0); rim.lineStyle(4, col.violet, 0.9); rim.strokeRect(x0, y0, x1 - x0, y1 - y0); rim.lineStyle(10, col.violet, 0.2); rim.strokeRect(x0 - 4, y0 - 4, x1 - x0 + 8, y1 - y0 + 8); objs.push(rim);
-        const stars = this.add.particles(0, 0, 'vfx_dot', { x: { min: x0, max: x1 }, y: { min: y0, max: y1 }, lifespan: 2600, speedY: { min: -10, max: -2 }, scale: { start: 0.5, end: 0 }, alpha: { start: 0.9, end: 0 },
+        // its edge: a line of light round the room, glowing outward, a star at each corner (typed pieces laid tile by tile)
+        const K = 'fx_cosmic_ult', ADD = Phaser.BlendModes.ADD, edge = [];
+        for (let x = x0; x < x1; x += T) edge.push(this.add.image(x, y0, K, 'rim_h').setOrigin(0, 0.5), this.add.image(x, y1, K, 'rim_h').setOrigin(0, 0.5).setFlipY(true));
+        for (let y = y0; y < y1; y += T) edge.push(this.add.image(x0, y, K, 'rim_v').setOrigin(0.5, 0).setFlipX(true), this.add.image(x1, y, K, 'rim_v').setOrigin(0.5, 0));
+        for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) edge.push(this.add.image(x, y, K, 'rim_c').setScale(2));
+        edge.forEach(o => o.setBlendMode(ADD).setScale(o.scaleX * T / 24, o.scaleY * T / 24));
+        const rim = this.add.container(0, 0, edge).setDepth(6.6).setAlpha(0); objs.push(rim);
+        const stars = this.add.particles(0, 0, 'fx_cosmic', { frame: ['p_0', 'p_1', 'p_6', 'p_7', 'p_9'], x: { min: x0, max: x1 }, y: { min: y0, max: y1 }, lifespan: 2600, speedY: { min: -10, max: -2 }, scale: { start: 1, end: 0.3 }, alpha: { start: 0.9, end: 0 },
             tint: [0xffffff, col.lilac, col.hex], blendMode: 'ADD', frequency: Math.max(20, 9000 / (R.w * R.h)) }).setDepth(5).setAlpha(0);
         objs.push(stars);
         objs.forEach(o => this.tweens.add({ targets: o, alpha: o === objs[4] ? 0.5 : 1, duration: C.DOMAIN_FADE }));

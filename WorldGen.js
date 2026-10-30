@@ -344,7 +344,7 @@ class WorldGen {
         this.tutorialRoomCleared[0] = true;
 
         const boss = this.rooms[this._storyRoom(6)];
-        const bare = this.rooms.map((r, i) => r.tpl === 'g_circuit' ? i : -1).filter(i => i >= 0);   // (the circuit's laid out by its own code)
+        const bare = this.rooms.map((r, i) => r.tpl === 'g_circuit' || r.tpl === 'g_run' ? i : -1).filter(i => i >= 0);   // (the circuit's laid out by its own code; the overload run kept clear to run)
         this._dressRooms(world, 'gauntlet', bare, boss ? [[boss.x + 12, boss.y + 10]] : []);   // the Voltslime's room left clear
         return world;
     }

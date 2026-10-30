@@ -16,8 +16,8 @@
 
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
-           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 90, sburn: 110,
-           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 120, sear: 120, blip: 60, bosshit: 70,
+           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
+           lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 400, sear: 450, blip: 60, bosshit: 70,
            tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
     _last: {},
     _noiseBuf: null,
@@ -631,6 +631,10 @@ const Sfx = {
             this._noise(ctx, t + 0.06, { filter: 'highpass', f0: 3000, f1: 5000, dur: 0.18, vol: 0.06 });
             this._tone(ctx, t, { type: 'sawtooth', f0: 300 * j, f1: 150, dur: 0.1, vol: 0.04 });
         },
+        w_ember_scythe(ctx, t, o, j) {     // a heavy blade whirled through the air, fire roaring after it
+            if (this._rec(ctx, t, { name: 'fire_whoosh', rate: 0.75 + Math.random() * 0.1, vol: o.soft ? 0.18 : 0.3 }, { name: 'sword', rate: 0.6, vol: o.soft ? 0.12 : 0.22 })) return;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 300 * j, f1: 1800 * j, q: 1.5, dur: 0.22, vol: o.soft ? 0.12 : 0.22, attack: 0.03 });
+        },
         w_magma_staff(ctx, t, o, j) {      // a glob of lava flung: it pulls free with a gloopy blorp, heat breathing off it, a bubble popping
             if (this._rec(ctx, t, { name: 'fire_whoosh', rate: 1.6 + Math.random() * 0.2, vol: 0.3 }, { name: Math.random() < 0.5 ? 'lava_pop1' : 'lava_pop2', rate: 1.15, vol: 0.2 })) return;   // a lava bubble popping off the staff and a rush of heat (a pitched-down splat sounded like retching)
             this._tone(ctx, t, { type: 'sine', f0: 70 * j, f1: 150 * j, dur: 0.07, vol: 0.28, attack: 0.008 });
@@ -660,11 +664,11 @@ const Sfx = {
             this._tone(ctx, t, { type, f0: f, f1: f * 0.97, dur: 0.045, vol, attack: 0.003 });
         },
         lava_pop(ctx, t, o, j) {           // a bubble bursting on the lava
-            if (this._sample(ctx, t, { name: Math.random() < 0.5 ? 'lava_pop1' : 'lava_pop2', rate: 0.85 + Math.random() * 0.3, vol: 0.32 })) return;
+            if (this._sample(ctx, t, { name: Math.random() < 0.5 ? 'lava_pop1' : 'lava_pop2', rate: 0.85 + Math.random() * 0.3, vol: 0.2 })) return;
             this._bubbles(ctx, t, { n: 2, spread: 0.08, f: 170, vol: 0.06 });
         },
         sear(ctx, t, o, j) {               // something standing in lava catching: a hot pop and a sizzle
-            if (this._sample(ctx, t, { name: 'sear', rate: j, vol: 0.4 })) return;
+            if (this._sample(ctx, t, { name: 'sear', rate: j, vol: 0.26 })) return;
             this._noise(ctx, t, { filter: 'bandpass', f0: 1400 * j, f1: 800, q: 1, dur: 0.25, vol: 0.24, attack: 0.01 });
             this._crackle(ctx, t, { n: 5, spread: 0.15, f: 900, vol: 0.14 });
         },
@@ -699,6 +703,11 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sine', f0: 2200 * j, f1: 1700, dur: 0.07, vol: 0.06 });
             this._tone(ctx, t, { type: 'triangle', f0: 200 * j, f1: 90, dur: 0.06, vol: 0.14 });
         },
+        tri_catch(ctx, t, o, j) {          // the Boreal Trident back in your hand: the shaft slapping into your palm, the tines ringing
+            if (this._rec(ctx, t, { name: 'punch', rate: 1.25, vol: 0.16 }, { name: 'sword', rate: 1.7, vol: 0.1, at: 0.02 })) return;
+            this._tone(ctx, t, { type: 'triangle', f0: 240 * j, f1: 140, dur: 0.05, vol: 0.12 });
+            this._tone(ctx, t + 0.02, { type: 'sine', f0: 2900 * j, f1: 2700, dur: 0.18, vol: 0.04 });
+        },
         w_icicle_cannon(ctx, t, o, j) {    // a hollow thunk and a whistle away
             this._tone(ctx, t, { type: 'square', f0: 110 * j, f1: 55, dur: 0.1, vol: 0.12 });
             this._noise(ctx, t, { filter: 'lowpass', f0: 1200, f1: 200, dur: 0.1, vol: 0.2 });
@@ -707,6 +716,21 @@ const Sfx = {
         w_fractal_shard(ctx, t, o, j) {    // a spray of glass chimes
             [1, 1.26, 1.5, 2].forEach((m, i) => this._tone(ctx, t + i * 0.025, { type: 'sine', f0: 1500 * m * j, dur: 0.18, vol: 0.045 }));
             this._noise(ctx, t, { filter: 'highpass', f0: 5000, dur: 0.08, vol: 0.06 });
+        },
+        w_rimeguard(ctx, t, o, j) {        // the maul hauled up and brought down: a heavy thud as the wind-up ends, ice cracking under it
+            const at = 0.13;   // (Rimeguard.CFG.WIND)
+            this._noise(ctx, t, { filter: 'bandpass', f0: 250 * j, f1: 700 * j, q: 1.2, dur: at, vol: 0.06, attack: 0.08 });
+            if (this._rec(ctx, t, { name: 'slam', rate: 0.85 + Math.random() * 0.1, vol: 0.3, lp: 2500, at }, { name: 'ice_crack', rate: 0.9 + Math.random() * 0.15, vol: 0.22, at: at + 0.02 })) return;
+            this._tone(ctx, t + at, { type: 'sine', f0: 85 * j, f1: 32, dur: 0.35, vol: 0.3 });
+            this._noise(ctx, t + at, { filter: 'lowpass', f0: 1500, f1: 120, dur: 0.3, vol: 0.22 });
+            this._crackle(ctx, t + at + 0.02, { n: 8, spread: 0.18, f: 2200, vol: 0.1, q: 1.5 });
+        },
+        w_boreal_trident(ctx, t, o, j) {   // a quick stab: steel driven through the air (a blade, pitched up), the ice on it cracking
+            if (this._rec(ctx, t, { name: 'sword', rate: 1.3 + Math.random() * 0.1, vol: 0.24 }, { name: 'ice_crack', rate: 1.5 + Math.random() * 0.15, vol: 0.12, at: 0.03 })) return;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 2600 * j, f1: 900, q: 1.5, dur: 0.09, vol: 0.12 });
+            this._tone(ctx, t + 0.04, { type: 'sine', f0: 3100 * j, f1: 2900, dur: 0.12, vol: 0.04 });
+            this._tone(ctx, t + 0.05, { type: 'triangle', f0: 1800 * j, f1: 1300, dur: 0.06, vol: 0.05 });
+            this._crackle(ctx, t + 0.05, { n: 3, spread: 0.06, f: 3200, vol: 0.05, q: 2 });
         },
         w_lightning_fists(ctx, t, o, j) {  // a jab with a spark on it
             if (this._rec(ctx, t, { name: 'punch', rate: 0.9 + Math.random() * 0.2, vol: 0.22 }, { name: 'zap', rate: 1 + Math.random() * 0.4, vol: 0.18 })) return;
@@ -741,6 +765,21 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sawtooth', f0: 80 * j, f1: 160, dur: 0.35, vol: 0.07, attack: 0.08 });
             for (let i = 0; i < 4; i++) this._noise(ctx, t + 0.05 + i * 0.06, { filter: 'bandpass', f0: 2500 + 1500 * Math.random(), q: 4, dur: 0.04, vol: 0.1 });
         },
+        glaive_boom(ctx, t, o, j) {        // a streak's ropes going off: a thunderclap, a crack over a deep boom and a spray of crackle (o.k, 0-1: how big)
+            const k = o.k ?? 0.5;
+            if (this._rec(ctx, t, { name: 'zap', rate: 0.45, vol: 0.28 }, { name: 'boom1', rate: 0.95 - 0.2 * k, vol: 0.22 + 0.14 * k, lp: 3000 }, { name: 'crackle', rate: 1.2, vol: 0.14 + 0.12 * k, at: 0.05 })) return;
+            this._noise(ctx, t, { filter: 'highpass', f0: 2000, f1: 5000, dur: 0.06, vol: 0.22 });
+            this._tone(ctx, t, { type: 'sine', f0: 120 * j, f1: 35, dur: 0.4 + 0.3 * k, vol: 0.25 + 0.1 * k });
+            this._noise(ctx, t + 0.02, { filter: 'lowpass', f0: 1800, f1: 200, dur: 0.5 + 0.4 * k, vol: 0.18 + 0.08 * k });
+            for (let i = 0; i < 6; i++) this._noise(ctx, t + 0.05 + i * 0.04 + Math.random() * 0.02, { filter: 'bandpass', f0: 2500 + Math.random() * 3000, q: 4, dur: 0.03, vol: 0.08 });
+        },
+        w_thunder_glaive(ctx, t, o, j) {   // a pivot strike: a crack of lightning as you go, the air ripping past, current sizzling off the blade
+            if (this._rec(ctx, t, { name: 'zap', rate: 0.6 + Math.random() * 0.1, vol: 0.26 }, { name: 'dash_whoosh', rate: 1.3 + Math.random() * 0.15, vol: 0.24 }, { name: 'crackle', rate: 1.4, vol: 0.14, at: 0.06 })) return;
+            this._noise(ctx, t, { filter: 'highpass', f0: 2500, f1: 6000, dur: 0.05, vol: 0.2 });
+            this._tone(ctx, t, { type: 'sawtooth', f0: 900 * j, f1: 120, dur: 0.12, vol: 0.06 });
+            this._noise(ctx, t + 0.03, { filter: 'bandpass', f0: 600 * j, f1: 2600 * j, q: 1.4, dur: 0.16, vol: 0.18, attack: 0.02 });
+            for (let i = 0; i < 4; i++) this._noise(ctx, t + 0.08 + i * 0.035 + Math.random() * 0.015, { filter: 'bandpass', f0: 3000 + Math.random() * 3000, q: 4, dur: 0.025, vol: 0.07 });
+        },
         w_cosmic_fists(ctx, t, o, j) {     // a deep thud with a shimmer
             if (this._rec(ctx, t, { name: 'punch', rate: 0.85 + Math.random() * 0.1, vol: 0.24 }, { name: 'magic_whoosh', rate: 1.6, vol: 0.12 })) return;
             this._tone(ctx, t, { type: 'sine', f0: 130 * j, f1: 55, dur: 0.14, vol: 0.26 });
@@ -762,6 +801,30 @@ const Sfx = {
             if (this._rec(ctx, t, { name: 'sword', rate: 0.75 + Math.random() * 0.1, vol: 0.42 }, { name: 'magic_whoosh', rate: 0.9, vol: 0.18 })) return;
             this._noise(ctx, t, { filter: 'bandpass', f0: 400 * j, f1: 2000, q: 1.5, dur: 0.2, vol: 0.28, attack: 0.02 });
             this._tone(ctx, t, { type: 'sawtooth', f0: 110 * j, f1: 55, dur: 0.22, vol: 0.06 });
+        },
+        w_pendulum(ctx, t, o, j) {         // the pendulum flung: its chain whirring round, a brass tick as it leaves your hand
+            this._tone(ctx, t, { type: 'triangle', f0: 1800 * j, dur: 0.03, vol: 0.04 });
+            for (let i = 0; i < 4; i++) this._noise(ctx, t + 0.03 + i * 0.07, { filter: 'bandpass', f0: 500 * j, f1: 1100 * j, q: 2, dur: 0.06, vol: 0.1 });
+        },
+        stasis(ctx, t, o, j) {             // the big pendulum landing: a heavy thud, then a deep tick... tock, the field humming on
+            this._tone(ctx, t, { type: 'sine', f0: 70, f1: 32, dur: 0.45, vol: 0.32 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 1400, f1: 120, dur: 0.3, vol: 0.24 });
+            this._tone(ctx, t + 0.16, { type: 'triangle', f0: 520, dur: 0.05, vol: 0.09 });
+            this._tone(ctx, t + 0.5, { type: 'triangle', f0: 390, dur: 0.06, vol: 0.09 });
+            this._tone(ctx, t + 0.1, { type: 'triangle', f0: 659, f1: 652, dur: 0.95, vol: 0.03, attack: 0.3 });
+        },
+        ptick(ctx, t, o, j) {              // the big pendulum at the end of its swing: a soft clock tick
+            this._tone(ctx, t, { type: 'triangle', f0: 1500 * j, dur: 0.025, vol: 0.025 });
+            this._noise(ctx, t, { filter: 'highpass', f0: 4000, dur: 0.015, vol: 0.03 });
+        },
+        rewind(ctx, t, o, j) {             // a sound played backwards (swelling, cut off), the clock ticking back fast
+            this._noise(ctx, t, { filter: 'bandpass', f0: 2600, f1: 300, q: 1.6, dur: 0.42, vol: 0.22, attack: 0.36 });
+            for (let i = 0; i < 8; i++) this._tone(ctx, t + i * 0.045, { type: 'square', f0: (2400 - i * 160) * j, dur: 0.018, vol: 0.035 });
+            this._tone(ctx, t + 0.4, { type: 'sine', f0: 440, f1: 880, dur: 0.12, vol: 0.06 });
+        },
+        bell(ctx, t, o, j) {               // the Cleansing Bell: a clear struck bell, its overtones dying away one after another
+            this._noise(ctx, t, { filter: 'highpass', f0: 4000, dur: 0.02, vol: 0.08 });
+            [[1, 0.09, 1.4], [2, 0.05, 1.0], [2.76, 0.04, 0.8], [5.4, 0.02, 0.4]].forEach(([r, v, d]) => this._tone(ctx, t, { type: 'sine', f0: 1046 * r, dur: d, vol: v }));
         },
         // ── THE FIGHT ──
         eshoot(ctx, t, o, j) {             // an enemy shot leaving: a low pew
@@ -1046,6 +1109,14 @@ const Sfx = {
         },
         whoosh(ctx, t, o, j) {             // a transition, a rift
             this._noise(ctx, t, { filter: 'bandpass', f0: 300, f1: 2500, q: 0.8, dur: 0.45, vol: 0.18, attack: 0.15 });
+        },
+        cloud_in(ctx, t, o, j) {           // clouds rolling in over everything: a long soft rush of air, rising, a low body under it
+            this._noise(ctx, t, { filter: 'bandpass', f0: 220 * j, f1: 900 * j, q: 0.6, dur: 0.95, vol: 0.15, attack: 0.5 });
+            this._noise(ctx, t + 0.05, { filter: 'lowpass', f0: 500, f1: 260, dur: 1.0, vol: 0.07, attack: 0.4 });
+        },
+        cloud_out(ctx, t, o, j) {          // and parting: softer, falling away
+            this._noise(ctx, t, { filter: 'bandpass', f0: 800 * j, f1: 240 * j, q: 0.6, dur: 0.9, vol: 0.09, attack: 0.12 });
+            this._noise(ctx, t, { filter: 'lowpass', f0: 420, f1: 200, dur: 0.8, vol: 0.04, attack: 0.1 });
         },
         // ── COSMIC: ethereal, ringing, and with weight under it ──
         fissure(ctx, t, o, j) {            // stone splitting: a dry crack, a crackle running off it, a low groan under

@@ -19,11 +19,16 @@ class BootScene extends Phaser.Scene {
         // the art the code used to paint, kept as files (assets/art) so it can be redrawn by hand: manifest.json lists them
         // (an atlas where a texture has named frames). The code that painted each one still paints it if its file is missing
         // (it only paints a texture that isn't there).
-        this.load.json('art_manifest', 'assets/art/manifest.json');
+        // Version tags, so a browser never mixes an old file with a new one after a release: on the site each file's own
+        // (`v` in the manifest, window.BUILD for the manifest, set when a release is stamped); played at home, always fresh.
+        // Only the art here is tagged (the music/sfx and a few scenes' own loads aren't); tag them if they change often.
+        const home = /^(localhost|127\.|0\.0\.0\.0|$)/.test(location.hostname), now = Date.now();
+        const q = v => `?v=${home ? now : (v || window.BUILD || '')}`;
+        this.load.json('art_manifest', 'assets/art/manifest.json' + q());
         this.load.once('filecomplete-json-art_manifest', (key, type, M) => {
             for (const f of M?.files || []) {
-                if (f.atlas) this.load.atlas(f.key, `assets/art/${f.key}.png`, `assets/art/${f.key}.json`);
-                else this.load.image(f.key, `assets/art/${f.key}.png`);
+                if (f.atlas) this.load.atlas(f.key, `assets/art/${f.key}.png${q(f.v)}`, `assets/art/${f.key}.json${q(f.v)}`);
+                else this.load.image(f.key, `assets/art/${f.key}.png${q(f.v)}`);
             }
         });
     }
@@ -118,11 +123,9 @@ class BootScene extends Phaser.Scene {
         const barX = W / 2 - barW / 2;
         const barY = landY + 60;
 
-        this.add.rectangle(barX, barY, barW, barH, 0x0a0e1c).setOrigin(0);
-        const barBorder = this.add.rectangle(barX, barY, barW, barH).setOrigin(0);
-        barBorder.setStrokeStyle(1, 0x5a7cff, 0.75);
-        const barFill = this.add.rectangle(barX + 2, barY + 2, 0, barH - 4, 0x6aa0ff).setOrigin(0);
-        const barSheen = this.add.rectangle(barX + 2, barY + 2, 0, 2, 0xe0ecff, 0.85).setOrigin(0);
+        // its frame and fill are typed pieces (assets/art ui_bootbar, ui_bootfill), at 2x: the fill is one column, drawn as wide as it's filled
+        this.add.nineslice(barX, barY, 'ui_bootbar', null, barW / 2, barH / 2, 1, 1, 1, 1).setOrigin(0).setScale(2);
+        const barFill = this.add.image(barX + 2, barY + 2, 'ui_bootfill').setOrigin(0).setScale(0, 2);
 
         const loadText = this.add.text(W / 2, barY + 26, 'Loading...', {
             fontSize: '12px', fontFamily: 'monospace', color: '#5a6a8a'
@@ -135,8 +138,7 @@ class BootScene extends Phaser.Scene {
             repeat: 49,
             callback: () => {
                 progress += 2;
-                barFill.width = (barW - 4) * (progress / 100);
-                barSheen.width = barFill.width;
+                barFill.scaleX = Math.round((barW - 4) / 2 * (progress / 100)) * 2;
                 if (progress >= 100) {
                     loadText.setText('Press any key to start');
                     loadText.setStyle({ color: '#cfe0ff', fontSize: '14px' });

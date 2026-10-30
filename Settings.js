@@ -143,7 +143,7 @@ const DevSave = {
         levels:   { name: 'Cleared levels',       keys: ['unlocked_lightning', 'unlocked_cosmic', 'unlocked_ice', 'iceTutorialComplete', 'fireTutorialComplete'], prefixes: ['cleared_', 'bossKilled_'] },
         glorps:   { name: 'Glorps',               keys: ['glorps'] },
         garden:   { name: 'Garden',               keys: ['garden2', 'slime_hat'] },
-        feats:    { name: 'Achievements',         keys: ['ach_stats', 'ach_done'] },
+        feats:    { name: 'Achievements',         keys: ['ach_stats', 'ach_done', 'bounties'] },
     },
     reset(part) {
         const P = this.PARTS[part];
@@ -161,7 +161,7 @@ const DevSave = {
     fragments(n) { this._add('ultFragments', n); },
     towerBest(n) { this._add('tower_best', n); },
     unlockWeapons() { if (typeof ShopScene !== 'undefined') localStorage.setItem('unlockedWeapons', JSON.stringify(ShopScene.CATALOGUE.map(w => w.id))); },
-    power(n) { if (typeof ShopScene !== 'undefined') for (const w of ShopScene.CATALOGUE) if (!WeaponLevels.NO_POWER.includes(w.id)) WeaponLevels.setLevel(w.id, Math.max(0, WeaponLevels.level(w.id) + n)); },
+    power(n) { if (typeof ShopScene !== 'undefined') for (const w of ShopScene.CATALOGUE) if (!WeaponLevels.NO_POWER.includes(w.id)) WeaponLevels.setLevel(w.id, Math.max(0, WeaponLevels.ownedLevel(w.id) + n)); },
     // every story level cleared (and the elements they give), so the whole map is open
     unlockLevels() {
         if (typeof Progress !== 'undefined') for (const id of Progress.ORDER) localStorage.setItem('cleared_' + id, '1');

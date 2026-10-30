@@ -37,7 +37,6 @@ class LevelManager {
     _pipeCfg() {
         return {
             REFILL_MS:   900,   // one tile restored per pipe per tick
-            ACCENT: { pool: 0xc47a3a, line: 0x3fb6e8 },   // copper valve vs steel main
         };
     }
 
@@ -103,59 +102,12 @@ class LevelManager {
         return out;
     }
 
+    // A pipe end coming out of the wall toward the room: a barrel lit down one side, a bolted flange at the mouth, a dark
+    // throat with water standing in it; mains are banded steel, valves copper with a handwheel (assets/art/pipe_<kind>_<dx>_<dy>,
+    // three tiles square round the mouth). An image each, so one of them can hide while the room it drains into is under fog.
     _drawPipeMouths() {
-        const TS = this.TILE_SIZE, ACC = this._pipeCfg().ACCENT;
-        this._pipeImgs = [];
-        for (const p of this._pipes) {
-            const g = this.add.graphics().setDepth(0.42);   // above water, below lava
-            const px = p.mx * TS + TS / 2, py = p.my * TS + TS / 2;
-            // Local frame: `a` runs along the drain direction, `c` across it, both scaled to
-            // the tile, so a mouth fills nearly the whole wall tile.
-            const ax = p.dx * TS, ay = p.dy * TS;
-            const qx = -p.dy * TS, qy = p.dx * TS;
-            const pt = (a, c) => ({ x: px + ax * a + qx * c, y: py + ay * a + qy * c });
-            const quad = (a0, a1, c0, c1) => [pt(a0, c0), pt(a1, c0), pt(a1, c1), pt(a0, c1)];
-            const accent = ACC[p.kind] ?? 0x3fb6e8;
-
-            // A pipe end coming out of the wall toward the room: a barrel shaded across its width
-            // (lit on one side), a flange with bolts at the mouth, a dark throat with water standing
-            // in it. Mains are square-cut steel with a
-            // grate; valves are copper with a wheel, so the two still read apart.
-            const steel = p.kind === 'line';
-            const PAL = steel ? [0x2a3138, 0x4a5560, 0x6f7d8a, 0x9aa8b4] : [0x3a2414, 0x6b4426, 0x9a6a3a, 0xc89058];
-            const W = steel ? 0.34 : 0.28;
-            const bands = [[-W, -W * 0.45, 1], [-W * 0.45, W * 0.15, 2], [W * 0.15, W * 0.55, 3], [W * 0.55, W, 1]];
-            g.fillStyle(0x000000, 0.35); g.fillPoints(quad(-0.5, 0.36, -W - 0.06, W + 0.06), true);            // its shadow on the wall
-            for (const [c0, c1, k] of bands) { g.fillStyle(PAL[k], 1); g.fillPoints(quad(-0.5, 0.24, c0, c1), true); }
-            g.fillStyle(PAL[0], 1); for (const a0 of [-0.3, -0.05]) g.fillPoints(quad(a0, a0 + 0.04, -W, W), true);   // seams
-            // the flange
-            const F = W + 0.1;
-            g.fillStyle(PAL[0], 1); g.fillPoints(quad(0.2, 0.4, -F - 0.02, F + 0.02), true);
-            g.fillStyle(PAL[2], 1); g.fillPoints(quad(0.22, 0.38, -F, F), true);
-            g.fillStyle(PAL[3], 1); g.fillPoints(quad(0.22, 0.27, -F, F), true);
-            for (const c of [-F + 0.07, F - 0.07]) { const b = pt(0.3, c); g.fillStyle(PAL[0], 1); g.fillCircle(b.x, b.y, 1.6); g.fillStyle(PAL[3], 1); g.fillCircle(b.x - 0.4, b.y - 0.4, 0.7); }
-            // the throat, water standing in it
-            g.fillStyle(0x05090c, 1); g.fillPoints(quad(0.38, 0.46, -W + 0.06, W - 0.06), true);
-            g.fillStyle(0x16506e, 0.95); g.fillPoints(quad(0.42, 0.46, -W + 0.08, W - 0.08), true);
-            if (steel) {
-                g.lineStyle(1.2, PAL[1], 1);
-                for (const c of [-0.12, 0, 0.12]) { const a0 = pt(0.38, c), a1 = pt(0.46, c); g.lineBetween(a0.x, a0.y, a1.x, a1.y); }
-            } else {
-                const w0 = pt(-0.2, 0);                                             // the wheel on top
-                g.lineStyle(2, PAL[0], 1); g.strokeCircle(w0.x, w0.y, TS * 0.2);
-                g.lineStyle(1.2, accent, 0.95); g.strokeCircle(w0.x, w0.y, TS * 0.2);
-                for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3 + 0.3; g.lineBetween(w0.x + Math.cos(a) * TS * 0.2, w0.y + Math.sin(a) * TS * 0.2, w0.x - Math.cos(a) * TS * 0.2, w0.y - Math.sin(a) * TS * 0.2); }
-                g.fillStyle(PAL[3], 1); g.fillCircle(w0.x, w0.y, 1.5);
-            }
-
-            // a bead of water in the lip, both kinds
-            const lip = pt(p.kind === 'line' ? 0.46 : 0.44, 0);
-            g.fillStyle(0x9fe8ff, 0.8);
-            g.fillCircle(lip.x, lip.y, 2.0);
-            // They never change: an image each (one texture per kind and facing), not ~300 commands tessellated every frame.
-            // One image of them all was hidden, every pipe at once, while the room at its middle still lay under fog.
-            this._pipeImgs.push(UIKit.bake(this, g, (p.mx - 1) * TS, (p.my - 1) * TS, TS * 3, TS * 3, `pipe_${p.kind}_${p.dx}_${p.dy}`));
-        }
+        const TS = this.TILE_SIZE;
+        this._pipeImgs = this._pipes.map(p => this.add.image((p.mx - 1) * TS, (p.my - 1) * TS, `pipe_${p.kind}_${p.dx}_${p.dy}`).setOrigin(0).setDepth(0.42));   // above water, below lava
     }
 
     // Water pouring out of every mouth, redrawn each frame (a pipe reads as running even when all its tiles are wet):
@@ -280,7 +232,7 @@ class LevelManager {
     }
 
     // The ward: a sigil on the ground under the enemy, in the colour of what it resists. A
-    // ring of runes turning slowly, three notches of the element's glyph, and one more inner
+    // ring of runes lighting in turn, three notches of the element's glyph, and one more inner
     // band per extra element (a rare double resistance reads as a harder problem before you
     // swing at it). It sits under the body, so it never hides a telegraph or a status. The
     // resisted hit itself is shown by the shield flash (CombatSystem._showResistShield).
@@ -306,39 +258,16 @@ class LevelManager {
         const grey = !!enemy._resistSuppressed;   // grounded (the Grounding Spike): the same ring, gone grey
         const COL = grey ? { fire: 0x6e6c72, ice: 0x6e6c72, lightning: 0x6e6c72 } : { fire: 0xff8844, ice: 0x88eeff, lightning: 0xffe14a };
         const base = COL[traits[0]] ?? 0xb388ff, R = 17;
-        // drawn flat, then squashed into the floor's perspective; drawn once per look and kept as a texture
-        const rkey = 'resist_ring_' + traits.join('_') + (grey ? '_g' : '');
-        const ring = this.make.graphics({}, false);
-        // one element: the whole ring its colour; two or three: the ring split into halves or thirds, each part
-        // in its element's colour with its glyph, so you can read a double resistance at a glance
-        const n = traits.length, span = Math.PI * 2 / n;
-        const arc = (r, w, a0, a1, col, al) => { ring.lineStyle(w, col, al); ring.beginPath(); ring.arc(0, 0, r, a0, a1); ring.strokePath(); };
-        traits.forEach((t, i) => {
-            const col = COL[t] ?? 0xb388ff, a0 = i * span - Math.PI / 2, a1 = a0 + span;
-            arc(R, 2, a0 + 0.04, a1 - 0.04, col, 0.85);
-            arc(R - 4, 1, a0 + 0.04, a1 - 0.04, col, 0.45);
-            for (let k = 0; k < 12 / n; k++) {             // rune ticks between the two rings
-                const a = a0 + (k + 0.5) / (12 / n) * span, big = k % 4 === 0;
-                ring.lineStyle(1.5, col, big ? 1 : 0.5);
-                ring.lineBetween(Math.cos(a) * (R - 3), Math.sin(a) * (R - 3), Math.cos(a) * (R - (big ? 0 : 1.5)), Math.sin(a) * (R - (big ? 0 : 1.5)));
-            }
-            for (let k = 0; k < (n === 1 ? 3 : 1); k++) {  // its glyph on the rim: three for one element, one per part otherwise
-                const a = n === 1 ? k / 3 * Math.PI * 2 - Math.PI / 2 : a0 + span / 2, x = Math.cos(a) * R, y = Math.sin(a) * R;
-                ring.fillStyle(0x0d0a08, 1); ring.fillCircle(x, y, 3.4);
-                ring.fillStyle(col, 1);
-                if (t === 'fire') ring.fillTriangle(x - 2, y + 2, x + 2, y + 2, x, y - 3);
-                else if (t === 'ice') { ring.fillRect(x - 0.5, y - 2.5, 1, 5); ring.fillRect(x - 2.5, y - 0.5, 5, 1); }
-                else ring.fillTriangle(x + 1, y - 3, x - 2, y + 1, x + 1, y + 0.5);
-            }
-        });
-        const ringImg = UIKit.bake(this, ring, -(R + 5), -(R + 5), 2 * (R + 5), 2 * (R + 5), rkey).setOrigin(0.5).setPosition(0, 0);
+        // the ring in the floor's perspective, a pair of its rune ticks lighting in turn (assets/art/fx_resist: a frame per look and step)
+        const rk = ['fire', 'ice', 'lightning'].filter(t => traits.includes(t)).join('_') + (grey ? '_g' : '');
+        if (!this.anims.exists('resist_' + rk)) this.anims.create({ key: 'resist_' + rk, frames: this.anims.generateFrameNames('fx_resist', { prefix: rk + '_', start: 0, end: 5 }), frameRate: 3, repeat: -1 });
+        const ringImg = this.add.sprite(0, 0, 'fx_resist', rk + '_0').play('resist_' + rk);
         const glow = this.add.graphics();
-        glow.fillStyle(base, 0.14); glow.fillCircle(0, 0, R + 2);
+        glow.fillStyle(base, 0.14); glow.fillEllipse(0, 0, 2 * (R + 2), R + 2);
         // at the feet: the slime fills only the bottom of its frame, ~20px below the sprite's origin
         // just under the slime (it stands in the ring rather than behind a sticker), still above
         // the water (0.4) and the darkness (0.3)
-        const c = this.add.container(enemy.sprite.x, enemy.sprite.y + 20, [glow, ringImg]).setDepth(Math.max(0.5, (enemy.sprite.depth ?? 1) - 0.04)).setScale(1, 0.5);
-        this.tweens.add({ targets: ringImg, angle: 360, duration: 9000, repeat: -1 });
+        const c = this.add.container(enemy.sprite.x, enemy.sprite.y + 20, [glow, ringImg]).setDepth(Math.max(0.5, (enemy.sprite.depth ?? 1) - 0.04));
         this.tweens.add({ targets: glow, alpha: 0.35, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         enemy._resistMark = c;
     }
@@ -764,6 +693,7 @@ class LevelManager {
             }
             const a = gfx.alpha, sf = [gfx.scrollFactorX, gfx.scrollFactorY], pos = [gfx.x, gfx.y];
             b.tex.context.clearRect(0, 0, w, h);
+            this._vfxWaterUnder?.(b.tex.context, name, gfx, px, py);   // the hand-drawn water (Visuals), under anything the Graphics adds
             gfx.setAlpha(1).setVisible(true).setScrollFactor(0).setPosition(gfx.x - px, gfx.y - py);   // (the texture's camera scrolls with the Graphics unless it ignores scroll: so shift it back by the corner)
             gfx.generateTexture(b.key, w, h);   // paints into the canvas and uploads it
             b.dirty = [];
@@ -812,13 +742,15 @@ class LevelManager {
     // The old version multiplied every step taken while on a wet tile, and at 30-46%
     // coverage that meant you were slowed nearly all the time -- which reads as the
     // level lowering your base speed rather than the water doing something to you.
-    _onPlayerStepWater(tx, ty, time) {
-        // Dripping first: the tile you just stepped onto becomes permanent water, and
-        // then the soak check below sees it, so moving while dripping compounds.
-        const now = time ?? this.time.now;
-        if (this._drippingUntil && now < this._drippingUntil
-            && this.world?.[tx]?.[ty] === this.FLOOR) {
-            this.addWater(tx, ty, 0);
+    _onPlayerStepWater(tx, ty, time, passed = null) {
+        // Dripping first: the tile you just stepped OFF becomes permanent water (and the ones a dash passed over), never the
+        // one you're on: standing still lays nothing, so a Drowner's lock finds your tile as dry as it was. _dripFrom: where
+        // you were (kept every frame by _updateDripping too, so a pull or a blink doesn't count as a step)
+        const now = time ?? this.time.now, from = this._dripFrom;
+        this._dripFrom = [tx, ty];
+        if (this._drippingUntil && now < this._drippingUntil) {
+            for (const [x, y] of [...(from ? [from] : []), ...(passed || [])])
+                if ((x !== tx || y !== ty) && this.world?.[x]?.[y] === this.FLOOR) this.addWater(x, y, 0);
         }
         if (!this.waterTiles || !this.waterTiles.size) return;
         if (!this.isWaterAt(tx, ty)) return;
@@ -839,10 +771,11 @@ class LevelManager {
     }
 
     getCurrentPlayerRoom() {
+        const px = this._tauntReal?.x ?? this.playerX, py = this._tauntReal?.y ?? this.playerY;   // (yours, even while an ally stands in for you: CombatSystem.tauntTo)
         for (let i = 0; i < this.rooms.length; i++) {
             const room = this.rooms[i];
-            if (this.playerX >= room.x && this.playerX < room.x + room.w &&
-                this.playerY >= room.y && this.playerY < room.y + room.h) {
+            if (px >= room.x && px < room.x + room.w &&
+                py >= room.y && py < room.y + room.h) {
                 return i;
             }
         }
@@ -912,11 +845,12 @@ class LevelManager {
                 if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
                 this.world[tx][ty] = this.WALL;
                 this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
+                const gate = this._gauntletGate(tx, ty, (a, b) => sealTiles.some(t => t.x === a && t.y === b));   // the Gauntlet: a steel door slides shut
+                if (gate) { this.lockedDoorSprites.push({ sprite: gate.img, roomIndex, gate }); continue; }
                 const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
                 const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const bar = this._vfxWard ? this._vfxWard(px, py, door.direction === 'east' || door.direction === 'west')
-                    : this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
-                this.tweens.add({ targets: bar, alpha: this._vfxWard ? 0.55 : 0.3, duration: 700, yoyo: true, repeat: -1 });
+                const bar = this._vfxWard(px, py, door.direction === 'east' || door.direction === 'west');   // the light curtain (Visuals.js)
+                this.tweens.add({ targets: bar, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
                 this.lockedDoorSprites.push({ sprite: bar, roomIndex });
             }
 
@@ -955,17 +889,28 @@ class LevelManager {
                         if (!this.world[tx] || this.world[tx][ty] !== this.FLOOR) continue;
                         this.world[tx][ty] = this.WALL;
                         this.lockedDoorTiles.push({ x: tx, y: ty, roomIndex });
+                        const gate = this._gauntletGate(tx, ty, (a, b) => cr.entranceTiles.some(t => t.x === a && t.y === b));
+                        if (gate) { this.lockedDoorSprites.push({ sprite: gate.img, roomIndex, gate }); continue; }
                         const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
                         const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
-                        const bar = this._vfxWard ? this._vfxWard(px, py)
-                            : this.add.rectangle(px, py, this.TILE_SIZE, this.TILE_SIZE, 0xff2200, 0.55).setDepth(0.9);
-                        this.tweens.add({ targets: bar, alpha: this._vfxWard ? 0.55 : 0.3, duration: 700, yoyo: true, repeat: -1 });
+                        const bar = this._vfxWard(px, py);
+                        this.tweens.add({ targets: bar, alpha: 0.55, duration: 700, yoyo: true, repeat: -1 });
                         this.lockedDoorSprites.push({ sprite: bar, roomIndex });
                     }
                 }
             }
         }
     }
+
+    // The Gauntlet's doors are sliding steel (Breakers.door), not a curtain of light: one sliding shut on the doorway tile (x, y),
+    // a clunk for the lot of them; null anywhere else
+    _gauntletGate(x, y, isDoor) {
+        if (this.currentLevelIndex !== 2 || typeof Breakers === 'undefined' || !this.textures.exists('gt_door')) return null;
+        const g = Breakers.door(this, x, y, 'red', isDoor);
+        g.snap(true); g.set(false); this._gateSfx('thud');
+        return g;
+    }
+    _gateSfx(name) { if (this.time.now - (this._gateSfxAt || -1e9) > 150) { this._gateSfxAt = this.time.now; Sfx.play(this, name); } }
 
     unlockTutorialDoors(roomIndex) {
         if (!this.lockedDoorTiles) return;
@@ -985,7 +930,8 @@ class LevelManager {
             for (let i = this.lockedDoorSprites.length - 1; i >= 0; i--) {
                 const doorSprite = this.lockedDoorSprites[i];
                 if (doorSprite.roomIndex === roomIndex) {
-                    doorSprite.sprite.destroy();
+                    const g = doorSprite.gate;
+                    if (g) { g.set(true, () => g.img.destroy()); this._gateSfx('whoosh'); } else doorSprite.sprite.destroy();   // (a steel door slides away into the wall)
                     this.lockedDoorSprites.splice(i, 1);
                 }
             }
@@ -1140,6 +1086,7 @@ class LevelManager {
                 this.tutorialDoorsLocked[0] = false;
                 this.unlockTutorialDoors(0);
             }
+            if (this.rooms[playerRoom]?.tpl === 'g_run') Pulse.overload(this, playerRoom);   // 2-3's run: the coils blow behind you
             // Boss room — activate Voltslime when player enters
             const bossRoomIndex = this._storyRoom(6);
             if (playerRoom === bossRoomIndex && this.voltslimeBoss && !this.voltslimeBoss._activated) {
@@ -1153,7 +1100,9 @@ class LevelManager {
         if (!this.tutorialRoomCleared[playerRoom]) {
             const roomEnemies = this.enemies.filter(e => e.tutorialRoomIndex === playerRoom);
             if (roomEnemies.length > 0) this._roomHadEnemies[playerRoom] = true;
-            if (roomEnemies.length === 0 && this._roomHadEnemies[playerRoom]) {
+            const W = this._roomWaves?.[playerRoom];
+            if (W?.length && !W.due && this._roomHadEnemies[playerRoom] && roomEnemies.length <= 1) { W.due = true; this.time.delayedCall(900, () => this._roomWave(playerRoom)); }
+            if (roomEnemies.length === 0 && this._roomHadEnemies[playerRoom] && !W?.due && !W?.length) {
                 const bossRoomIndex = this._storyRoom(6);
                 if (playerRoom === bossRoomIndex) {
                     if (!this.voltslimeBoss?.active) this._level2RoomClear(playerRoom);
@@ -1175,6 +1124,33 @@ class LevelManager {
                 }
             }
         }
+    }
+
+    // A room's next wave (_roomWaves): a ring closing in on each spot first, away from you, then they drop in
+    _roomWave(ri) {
+        const W = this._roomWaves[ri], make = W.shift(), r = this.rooms[ri], TS = this.TILE_SIZE, n = W.n - W.length;
+        const spots = [];
+        for (let tries = 0; tries < 400 && spots.length < make.length; tries++) {
+            const x = r.x + 1 + Math.floor(Math.random() * (r.w - 2)), y = r.y + 1 + Math.floor(Math.random() * (r.h - 2));
+            if (this.world[x]?.[y] !== this.FLOOR || this.getEnemyAt(x, y) || Math.hypot(x - this.playerX, y - this.playerY) < 5) continue;
+            if (spots.some(([ox, oy]) => Math.abs(ox - x) + Math.abs(oy - y) < (tries < 250 ? 3 : 1))) continue;
+            spots.push([x, y]);
+        }
+        Sfx.play(this, 'e_riser');
+        this.showStatusText?.((r.x + r.w / 2) * TS, (r.y + 2) * TS, `WAVE ${n} / ${W.n}`, '#bfeeff');
+        spots.forEach(([x, y], i) => {
+            const ring = this.add.image(x * TS + TS / 2, y * TS + TS / 2, VisualFX.auraTex(this, 'ring')).setTint(0x7fd8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.9).setDisplaySize(40, 40).setAlpha(0);
+            this.tweens.add({ targets: ring, alpha: 0.9, duration: 200 });
+            this.tweens.add({ targets: ring, scale: ring.scale * 0.45, duration: 900 + i * 70, ease: 'Quad.easeIn', onComplete: () => {
+                ring.destroy();
+                if (!this.player?.active) return;
+                const free = !this.getEnemyAt(x, y) && !(x === this.playerX && y === this.playerY);
+                const e = free && make[i](x, y, ri);
+                if (e) this._vfxSpawn?.(e);
+                if (i === spots.length - 1) W.due = false;
+            } });
+        });
+        if (!spots.length) W.due = false;
     }
 
     _level2RoomClear(roomIndex) {
@@ -1226,6 +1202,7 @@ class LevelManager {
         }
         this.time.delayedCall(n > 1 ? 1500 : 700, () => this._showRhythmSessionBanner(`${this.currentLevelIndex}-${n}  ·  ${F.name}`, '#ffe14a', `Floor ${n} of ${all}` + (need ? `  ·  find ${need} storm cells for the lift` : '')));
         if (n > 1) this._floorArriveFx();
+        if (this.isLevel2 && n === 1) this.time.delayedCall(2600, () => this._voltGate());   // the Voltslime meets you at the gate
         this._stormBegin();
     }
 
@@ -1239,7 +1216,7 @@ class LevelManager {
         this.time.delayedCall(2500 + Math.random() * 3000, () => this._stormFlash());
     }
     _stormFlash() {
-        const F = this._floorPlan(), k = F.storm, cam = this.cameras.main, v = cam.worldView, ADD = Phaser.BlendModes.ADD;
+        const F = this._floorPlan(), k = this._lightsOut ? Math.max(F.storm, 0.55) : F.storm, cam = this.cameras.main, v = cam.worldView, ADD = Phaser.BlendModes.ADD;   // (the power cut: the storm's flashes are the light)
         this.time.delayedCall((24000 - 19000 * k) * (0.7 + 0.6 * Math.random()), () => this._stormFlash());
         if (!this.player?.active || this._deathScreenActive) return;
         // the light: a cold wash over the floor and walls, twice, quick (over the dark: Visuals.js SHADE_DEPTH)
@@ -1286,9 +1263,57 @@ class LevelManager {
         else { Sfx.play(this, 'clink'); this.showStatusText?.(E.px, E.py - 56, 'THE LIFT HAS NO POWER', '#8fb8d8'); }
     }
 
+    // 2-1, the Storm Gate: the Voltslime meets you at the gate. It drops in on a bolt just ahead of you and mocks you; then it cuts the power: the floor's lamps die one by one, out from it, a few left glowing a
+    // dim emergency red, and it's gone up the tower in a flash, laughing. The floor stays dark (the storm's flashes, the
+    // red lamps, your own glow) till you get the lift running (_floorPower).
+    _voltGate() {
+        if (this._voltGateDone || this.trainingRun || this.towerRun || !this.player?.active || this._deathScreenActive) return;
+        this._voltGateDone = true;
+        const r = this.rooms[0], T = this.TILE_SIZE;   // (a few tiles above you: the talk's box covers the bottom of the screen)
+        let tx = this.playerX, ty = this.playerY - 3;
+        if (this.world[tx]?.[ty] !== this.FLOOR) { tx = Math.floor(r.x + r.w / 2); ty = r.y + 2; }
+        const px = tx * T + T / 2, py = ty * T + T / 2 + (this.SLIME_Y_OFFSET || 0), ADD = Phaser.BlendModes.ADD;
+        // in on a bolt
+        Sfx.play(this, 'e_thunder'); this.cameras.main.shake(220, 0.008); this.cameras.main.flash(120, 210, 240, 255);
+        this._vfxFlash?.(px, py, 120, 0x9fe8ff, 400, 1);
+        const body = this.add.sprite(px, py, 'slime_red', 0).setTint(0x88ffff).setScale(0).setDepth(3);
+        if (this.anims.exists('red_idle')) body.play('red_idle');
+        const glow = this.add.image(px, py, 'vfx_glow').setTint(0x6ae8ff).setBlendMode(ADD).setScale(1.2).setAlpha(0.5).setDepth(2.9);
+        this.tweens.add({ targets: body, scale: 3, duration: 260, ease: 'Back.easeOut' });
+        if (typeof CreatureFX !== 'undefined') CreatureFX.face(this, body, { mood: 'angry', hat: 'volt' });
+        const look = { key: 'slime_red', anim: 'red_idle', hue: 180, mood: 'angry' };
+        this.time.delayedCall(500, () => this.showTutorialDialogue('Well, well. The little traitor, come for my lightning? Climb my tower and take it, then. If you can see where you\'re going.', 'Voltslime', () => {
+            // lights out: it crackles, and the lamps go, nearest first
+            Sfx.play(this, 'surge'); this.cameras.main.shake(160, 0.005);
+            this.tweens.add({ targets: body, scaleY: 3.6, scaleX: 2.6, duration: 160, yoyo: true, ease: 'Quad.easeOut' });
+            this._lamps(false, px, py);
+            this.time.delayedCall(1100, () => {   // and it's off, laughing
+                Sfx.play(this, 'laugh'); Sfx.play(this, 'zap');
+                this._vfxFlash?.(px, py, 90, 0x9fe8ff, 300, 1);
+                this.tweens.add({ targets: [body, glow], y: py - 320, scaleX: 0.6, alpha: 0, duration: 360, ease: 'Quad.easeIn', onComplete: () => { body.destroy(); glow.destroy(); } });
+                this.showStatusText?.(this.player.x, this.player.y - 40, 'THE LIGHTS ARE OUT', '#ff7a6a');
+            });
+        }, null, look));
+    }
+    // The floor's lamps (Visuals.js _vfxTorches) going out (on false) or coming back (on true), one by one, out from
+    // (x, y); going out, every third is left a red emergency lamp
+    _lamps(on, x, y) {
+        const list = [...(this._vfxTorches || [])].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+        this._lightsOut = !on;
+        list.forEach((t, i) => this.time.delayedCall(Math.min(1400, i * 45), () => {
+            if (!t.flame?.active) return;
+            t.off = !on; t.red = !on && i % 3 === 0;
+            t.flame.setVisible(on || t.red).setTint(on ? this._vfxTheme().torch : 0xff3a1a).setAlpha(on ? 1 : 0.5);
+            t.core.setVisible(on);
+            if (i % 4 === 0 && Math.hypot(t.x - (this.player?.x ?? 0), t.y - (this.player?.y ?? 0)) < 500) Sfx.play(this, on ? 'switch' : 'zap', { soft: true });
+        }));
+        if (on) this.showStatusText?.(this.player.x, this.player.y - 40, 'THE POWER IS BACK', '#bfeeff');
+    }
+
     // The lift comes alive: charge in its coils, sparks, its glow (loud: you powered it just now)
     _floorPower(E, loud) {
         E.live = true;
+        if (this._lightsOut) this._lamps(true, E.px, E.py);   // the power's back on
         E.plat.clearTint(); E.cageImg.clearTint();
         E.caps.forEach(c => c.setAlpha(0.8));
         this.tweens.add({ targets: E.caps, alpha: 0.35, duration: 120, yoyo: true, repeat: -1, repeatDelay: 300 });
@@ -1506,7 +1531,7 @@ class LevelManager {
             for (let k = 0; k < spin; k++) { mask = turn(mask); rot++; }
             const [x, y] = tile(c, r), [px, py] = at(x, y);
             this.world[x][y] = this.WALL;
-            const img = this.add.image(px, py, 'junc_' + kind).setDepth(0.9).setAngle(rot * 90);
+            const img = this.add.image(px, py, 'junc_' + kind, String(rot)).setDepth(0.9);   // a frame per quarter turn: the pipes turn, the light stays
             const glow = this.add.image(px, py, 'vfx_glow').setTint(0x4fc3ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.91).setScale(0.3).setAlpha(0);
             Q.boxes.push({ c, r, x, y, px, py, mask, rot, img, glow });
         }
@@ -1530,7 +1555,7 @@ class LevelManager {
         // never solved before you've touched it
         this._circuitPower(true);
         if (Q.open || Q.boxes.every(b => !want[b.c + ',' + b.r] || b.mask === want[b.c + ',' + b.r])) {
-            const b = Q.box(...path[0]); b.mask = turn(b.mask); b.rot = (b.rot + 1) % 4; b.img.setAngle(b.rot * 90); Q.open = false; this._circuitPower(true);
+            const b = Q.box(...path[0]); b.mask = turn(b.mask); b.rot = (b.rot + 1) % 4; b.img.setFrame(String(b.rot)); Q.open = false; this._circuitPower(true);
         }
     }
 
@@ -1538,9 +1563,10 @@ class LevelManager {
     _circuitBump(x, y) {
         const Q = this._circuit, b = Q?.boxes.find(o => o.x === x && o.y === y);
         if (!b) return false;
-        b.mask = Q.turn(b.mask); b.rot++;
+        b.mask = Q.turn(b.mask); b.rot = (b.rot + 1) % 4;
         this.tweens.killTweensOf(b.img);
-        this.tweens.add({ targets: b.img, angle: b.rot * 90, duration: 120, ease: 'Back.easeOut', onComplete: () => { b.rot %= 4; b.img.setAngle(b.rot * 90); } });
+        b.img.setFrame(String(b.rot)).setScale(0.82);   // it clunks round: the next quarter's frame, knocked in
+        this.tweens.add({ targets: b.img, scale: 1, duration: 140, ease: 'Back.easeOut' });
         Sfx.play(this, 'switch');
         this._circuitPower();
         return true;
@@ -1587,7 +1613,7 @@ class LevelManager {
         if (Q.wires.some(w => w[4] === this.playerX && w[5] === this.playerY) && now - (Q.zapAt || 0) > C.ZAP_MS) {
             Q.zapAt = now;
             Sfx.play(this, 'zap'); this.cameras.main.shake(90, 0.004);
-            this.takeDamage(C.ZAP);
+            this.takeDamage(C.ZAP, 'circuit wire');
             this.showStatusText?.(this.player.x, this.player.y - 34, 'ZAP!', '#bfeeff');
         }
         const ch = Q.chest;
@@ -1638,6 +1664,31 @@ class LevelManager {
             absorber(2, 52, 47, 55);
         }
 
+        // 2-4, the Dynamo (new rooms: placed from each room's own corner): its floors are the fight; a few at a time with it
+        const in_ = (k, dx, dy) => [this.rooms[L(k)].x + dx, this.rooms[L(k)].y + dy];
+        const mobIn = (k, dx, dy, hp) => { const e = this.createEnemy(...in_(k, dx, dy), hp); e.tutorialRoomIndex = L(k); return e; };
+        if (here(7)) {   // the dancefloor
+            for (const [x, y] of [[4, 4], [13, 4], [4, 9], [13, 9]]) mobIn(7, x, y, 40);
+            this.createRangedEnemy(...in_(7, 9, 2), L(7));
+        }
+        if (here(8)) {   // the cascade hall
+            for (const [x, y] of [[8, 3], [14, 6], [20, 3]]) mobIn(8, x, y, 40);
+            for (const [x, y] of [[23, 2], [23, 7]]) this.createRangedEnemy(...in_(8, x, y), L(8));
+        }
+        if (here(9)) {   // the dynamo
+            for (const [x, y] of [[9, 3], [10, 12], [3, 8], [16, 8]]) mobIn(9, x, y, 45);
+            this._tagResist(mobIn(9, 10, 7, 60), 'fire');
+            this.createRangedEnemy(...in_(9, 10, 2), L(9));
+        }
+        // and their fights come in waves (a program wants time to run): two more after the first, each as the last is nearly beaten
+        this._roomWaves = {};
+        const mobs = (n, hp) => Array(n).fill((x, y, ri) => { const e = this.createEnemy(x, y, hp); e.tutorialRoomIndex = ri; return e; });
+        const ranged = (x, y, ri) => this.createRangedEnemy(x, y, ri), resist = (hp, el) => (x, y, ri) => this._tagResist(mobs(1, hp)[0](x, y, ri), el);
+        if (here(7)) this._roomWaves[L(7)] = [[...mobs(4, 45), ranged], [...mobs(4, 50), resist(60, 'ice'), ranged]];
+        if (here(8)) this._roomWaves[L(8)] = [[...mobs(3, 45), ranged, ranged], [...mobs(4, 50), ranged, ranged]];
+        if (here(9)) this._roomWaves[L(9)] = [[...mobs(4, 50), resist(60, 'ice'), ranged], [...mobs(4, 55), resist(65, 'fire'), ranged, ranged]];
+        for (const w of Object.values(this._roomWaves)) w.n = w.length + 1;   // (the first came with the room)
+
         // the side rooms: chests, and the elite den's guards
         this._spawnLevel2ChestRooms();
         this.rooms.forEach((r, ri) => {
@@ -1684,6 +1735,14 @@ class LevelManager {
             for (const [x, y] of [[2, 2], [15, 2], [2, 10], [15, 10]]) m(x, y, 42);
             for (const [x, y] of [[8, 4], [9, 8]]) this._tagResist(m(x, y, 50), Math.random() < 0.5 ? 'fire' : 'ice');
             this.createRangedEnemy(r.x + 9, r.y + 6, ci);
+        }
+
+        // the overload run: a few in its lanes, in your way (nothing to win there: they slow you down while it comes)
+        const ri = this.rooms.findIndex(r => r.tpl === 'g_run');
+        if (ri >= 0) {
+            const r = this.rooms[ri];
+            for (const [x, y] of [[6, 7], [11, 3], [12, 10], [16, 6]]) { const e = this.createEnemy(r.x + x, r.y + y, 35); e.tutorialRoomIndex = ri; }
+            this.createRangedEnemy(r.x + 21, r.y + 7, ri);
         }
 
         // the boss arena: guards, the Voltslime, its chest
@@ -1773,7 +1832,8 @@ class LevelManager {
         b._asleep = true;
         LevelManager.grey(b.body, true);
         const c = b.container;
-        b._floorCrown = this.add.image(c.x + 54, c.y + 6, LevelManager.voltCrownArt(this)).setDepth(2.9).setScale(3.6).setAngle(26);
+        b._floorCrown = BossFX.anims(this) ? this.add.sprite(c.x + 58, c.y + 6, 'boss_volt', 'crown').setOrigin(0.5, 1).setDepth(2.9).setScale(BossFX.VOLT_K)   // (its own, set down beside it)
+            : this.add.image(c.x + 54, c.y + 6, LevelManager.voltCrownArt(this)).setDepth(2.9).setScale(3.6).setAngle(26);
         b._sleepers = [];
         for (const [dx, dy] of [[-3, -1], [3, -2], [-2, 3], [3, 2], [0, 4], [-4, 1]]) {
             const x = b.tileX + dx, y = b.tileY + dy;
@@ -1843,19 +1903,19 @@ class LevelManager {
 
         // Wind-up squish
         this.tweens.killTweensOf(boss.body);
-        this.tweens.add({ targets:boss.body, scaleX:5.5, scaleY:3.2, duration:500, ease:'Power2' });
+        if (!boss._bfxArt) this.tweens.add({ targets:boss.body, scaleX:5.5, scaleY:3.2, duration:500, ease:'Power2' });   // (its own art squashes in its frames)
 
         this.time.delayedCall(700, () => {
             if (!boss.active) { if (onDone) onDone(); return; }
             this.tweens.killTweensOf(boss.body);
-            this.tweens.add({ targets:boss.body, scaleX:4.5, scaleY:4.5, duration:100, ease:'Bounce.easeOut' });
+            if (!boss._bfxArt) this.tweens.add({ targets:boss.body, scaleX:4.5, scaleY:4.5, duration:100, ease:'Bounce.easeOut' });
             Sfx.play(this, 'slam');
             this.cameras.main.shake(120, 0.009);
 
             // AoE damage in 2-tile radius — reduced from 3 tiles for melee viability
             const playerDist = Math.abs(this.playerX - boss.tileX) + Math.abs(this.playerY - boss.tileY);
             if (playerDist <= 2) {
-                this.takeDamage((12) * (this.enemyDamageScale || 1));
+                this.takeDamage((12) * (this.enemyDamageScale || 1), 'voltslime slam');
                 this.showStatusText(this.player.x, this.player.y - 20, 'SLAM!', '#ffff44');
             }
             this._damageTowersInTileRadius(boss.tileX, boss.tileY, 2, 12);
@@ -1931,7 +1991,7 @@ class LevelManager {
             if (Math.abs(rx - this.playerX) < 2 && Math.abs(ry - this.playerY) < 2) continue;
             const wpx = rx * this.TILE_SIZE + this.TILE_SIZE / 2;
             const wpy = ry * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const flash = this.add.circle(wpx, wpy, 10, 0x44ffff, 0.8).setDepth(4);
+            const flash = this.add.circle(wpx, wpy, 10, 0x44ffff, 0.8).setDepth(4).setVisible(!BossFX.voltCell(this, wpx, wpy));   // (Bosses.js: a storm cell opening)
             Sfx.play(this, 'portal');
             this.tweens.add({ targets:flash, radius:20, alpha:0, duration:300, onComplete:()=>flash.destroy() });
             this.time.delayedCall(300, () => {
@@ -1966,7 +2026,7 @@ class LevelManager {
                             }
                             // Micro-stun nearby player
                             const pd = Math.abs(e.x - this.playerX) + Math.abs(e.y - this.playerY);
-                            if (pd <= 1) this.takeDamage((5) * (this.enemyDamageScale || 1));
+                            if (pd <= 1) this.takeDamage((5) * (this.enemyDamageScale || 1), 'voltslime brood');
                             this._damageTowersInTileRadius(e.x, e.y, 1, 5);
                         }
                     });
@@ -2098,8 +2158,8 @@ class LevelManager {
         // Scatter/spiral projectiles
         for (let i = boss.projectiles.length - 1; i >= 0; i--) {
             const p = boss.projectiles[i];
-            p.g.x += p.vx * ds; p.g.y += p.vy * ds;
-            if (!p.g.clear) p.g.rotation += ds * 7;   // Bosses.js: a pixel spark, spinning
+            const sd = ds * Trident.slow(this, p.g.x, p.g.y); p.g.x += p.vx * sd; p.g.y += p.vy * sd;   // (the Boreal Trident's aura)
+            if (!p.g.clear) { if (!p.g.anims) p.g.rotation += ds * 7; }   // Bosses.js: a pixel spark, spinning (its own frames spin it)
             else {
                 p.g.clear();
                 // Ricochet projectiles are magenta, others cyan
@@ -2119,21 +2179,21 @@ class LevelManager {
             if (outOfBounds || hitWall) {
                 if (p.type === 'ricochet' && p.bounces < p.maxBounces) {
                     // Determine bounce axis
-                    const fromTx = Math.floor((p.g.x - p.vx * ds) / this.TILE_SIZE);
-                    const fromTy = Math.floor((p.g.y - p.vy * ds) / this.TILE_SIZE);
+                    const fromTx = Math.floor((p.g.x - p.vx * sd) / this.TILE_SIZE);   // (back the step it took: a slowed one's is shorter)
+                    const fromTy = Math.floor((p.g.y - p.vy * sd) / this.TILE_SIZE);
                     const wallOnX = !outOfBounds && this.world[tx]?.[fromTy] === this.WALL;
                     const wallOnY = !outOfBounds && this.world[fromTx]?.[ty] === this.WALL;
                     if (wallOnX && !wallOnY) p.vx = -p.vx;
                     else if (wallOnY && !wallOnX) p.vy = -p.vy;
                     else { p.vx = -p.vx; p.vy = -p.vy; }
                     p.bounces++;
-                    p.g.x += p.vx * ds * 3;
-                    p.g.y += p.vy * ds * 3;
+                    p.g.x += p.vx * sd * 3;
+                    p.g.y += p.vy * sd * 3;
                 } else {
                     p.g.destroy(); boss.projectiles.splice(i,1); continue;
                 }
             }
-            if (Math.abs(p.g.x-playerPx) < this.TILE_SIZE*0.7 && Math.abs(p.g.y-playerPy) < this.TILE_SIZE*0.7) { this.takeDamage(10 * (this.enemyDamageScale || 1)); p.g.destroy(); boss.projectiles.splice(i,1); continue; }
+            if (Math.abs(p.g.x-playerPx) < this.TILE_SIZE*0.7 && Math.abs(p.g.y-playerPy) < this.TILE_SIZE*0.7) { this.takeDamage(10 * (this.enemyDamageScale || 1), 'voltslime shot'); p.g.destroy(); boss.projectiles.splice(i,1); continue; }
             if (this.engineerTowers?.length) {
                 let towerHit = null;
                 for (const tower of this.engineerTowers) {
@@ -2147,19 +2207,19 @@ class LevelManager {
         // Homing projectiles
         for (let i = boss.homingProjectiles.length - 1; i >= 0; i--) {
             const p = boss.homingProjectiles[i];
-            const ddx = playerPx-p.g.x, ddy = playerPy-p.g.y;
+            const ddx = playerPx-p.g.x, ddy = playerPy-p.g.y, sd = ds * Trident.slow(this, p.g.x, p.g.y);   // (the Boreal Trident's aura: it turns slower too)
             if (Math.hypot(ddx,ddy) > 0) {
                 const TURN = 1.4, target = Math.atan2(ddy,ddx);   // 0.7, twice a frame
                 const cur = Math.atan2(p.vy,p.vx) || target;
                 let diff = target - cur;
                 while (diff > Math.PI) diff -= Math.PI*2;
                 while (diff < -Math.PI) diff += Math.PI*2;
-                const newA = cur + Math.sign(diff)*Math.min(Math.abs(diff), TURN*ds);
+                const newA = cur + Math.sign(diff)*Math.min(Math.abs(diff), TURN*sd);
                 p.vx = Math.cos(newA)*p.speed; p.vy = Math.sin(newA)*p.speed;
             }
-            p.g.x += p.vx*ds; p.g.y += p.vy*ds;
+            p.g.x += p.vx * sd; p.g.y += p.vy * sd;
             const pulse = 0.7 + Math.sin(time/120)*0.3;
-            if (!p.g.clear) { p.g.setScale(1.05 + 0.3 * pulse); p.g.rotation += ds * 2; }   // Bosses.js
+            if (!p.g.clear) { if (!p.g.anims) { p.g.setScale(1.05 + 0.3 * pulse); p.g.rotation += ds * 2; } }   // Bosses.js (its own frames crackle)
             else {
                 p.g.clear();
                 p.g.fillStyle(0xaa44ff, 0.9*pulse); p.g.fillCircle(0,0,10);
@@ -2170,7 +2230,7 @@ class LevelManager {
             const tx2 = Math.floor(p.g.x/this.TILE_SIZE), ty2 = Math.floor(p.g.y/this.TILE_SIZE);
             if (tx2 < 0 || tx2 >= this.WORLD_WIDTH || ty2 < 0 || ty2 >= this.WORLD_HEIGHT || this.world[tx2][ty2] === this.WALL) { p.g.destroy(); boss.homingProjectiles.splice(i,1); continue; }
             if (Math.abs(p.g.x-playerPx) < this.TILE_SIZE*0.9 && Math.abs(p.g.y-playerPy) < this.TILE_SIZE*0.9) {
-                this.takeDamage((p.damage) * (this.enemyDamageScale || 1));
+                this.takeDamage((p.damage) * (this.enemyDamageScale || 1), 'voltslime homing');
                 this.showStatusText(this.player.x, this.player.y-20, 'HOMING HIT!', '#aa44ff');
                 p.g.destroy(); boss.homingProjectiles.splice(i,1);
                 continue;
@@ -2515,7 +2575,7 @@ class LevelManager {
 
         const bpx = boss.container.x, bpy = boss.container.y;
         this._bfxVoltDeath?.(boss);   // Bosses.js: a discharge, a splash of its blue, its crown thrown up
-        const flash = this.add.circle(bpx, bpy, 20, 0xffffff, 1).setDepth(6);
+        const flash = this.add.circle(bpx, bpy, 20, 0xffffff, 1).setDepth(6).setVisible(!this._bfxOn);
         this.tweens.add({ targets:flash, radius:80, alpha:0, duration:500, ease:'Quad.easeOut', onComplete:()=>flash.destroy() });
         if (!this._bfxOn) for (let i = 0; i < 20; i++) {
             const a = (i/20)*Math.PI*2;
@@ -2542,29 +2602,23 @@ class LevelManager {
         const cy = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
         // Loot.js: the gold chest. It rises off the floor and floats there; its shadow stays down.
         const { container, body, lid, glow, shadow, kind } = LootFX.chest(this, cx, cy, 'gold', { hover: true, depth: 3 });
-        const crackleGfx = this.add.graphics().setDepth(3.5);
-        const crackCol = { lightning: 0xffe14a, cosmic: 0xc99cff, fire: 0xff7a30, ice: 0x8fe6ff }[elementToUnlock] ?? 0xffe14a;
+        const crackPal = { lightning: 'y', cosmic: 'w', fire: 'o', ice: 'c' }[elementToUnlock] ?? 'y';
         const hoverY = cy - 22;
         this.tweens.add({ targets:container, y:hoverY, duration:900, ease:'Sine.easeOut' });
         this.tweens.add({ targets:shadow, y:9 + 22, scaleX:0.26, alpha:0.4, duration:900, ease:'Sine.easeOut' });
 
-        const crackleTimer = this.time.addEvent({ delay:80, loop:true, callback:() => {
-            if (!crackleGfx.active) return;
-            crackleGfx.clear();
+        // the power in it crackling off it: little bolts laid from the typed pieces (WeaponSystem.bolt), in the element's colour
+        const crackleTimer = this.time.addEvent({ delay:120, loop:true, callback:() => {
+            if (!container.active) return;
             const bx = container.x, by = container.y;
-            for (let i = 0; i < 5; i++) {
-                const a = Math.random()*Math.PI*2, r1 = 14+Math.random()*4, r2 = 22+Math.random()*10, ma = a+(Math.random()-0.5)*0.8;
-                crackleGfx.lineStyle(1, crackCol, 0.5+Math.random()*0.5);
-                crackleGfx.beginPath();
-                crackleGfx.moveTo(bx+Math.cos(a)*r1, by+Math.sin(a)*r1);
-                crackleGfx.lineTo(bx+Math.cos(ma)*((r1+r2)/2), by+Math.sin(ma)*((r1+r2)/2));
-                crackleGfx.lineTo(bx+Math.cos(a)*r2, by+Math.sin(a)*r2);
-                crackleGfx.strokePath();
+            for (let i = 0; i < 3; i++) {
+                const a = Math.random()*Math.PI*2, r1 = 14+Math.random()*4, r2 = 24+Math.random()*10;
+                WeaponSystem.bolt(this, bx+Math.cos(a)*r1, by+Math.sin(a)*r1, bx+Math.cos(a)*r2, by+Math.sin(a)*r2, crackPal, { life: 140, thin: true, br: 0, d: 3.5, glow: false, a: 0.85 });
             }
         }});
 
         if (!this.tutorialChests) this.tutorialChests = [];
-        this.tutorialChests.push({ tileX, tileY, roomIndex:-1, container, lid, body, glow, shadow, kind, crackleGfx, crackleTimer, opened:false, isFinalChest:true, elementToUnlock });
+        this.tutorialChests.push({ tileX, tileY, roomIndex:-1, container, lid, body, glow, shadow, kind, crackleTimer, opened:false, isFinalChest:true, elementToUnlock });
     }
 
     openFinalLevelChest(chest) {
@@ -2575,7 +2629,6 @@ class LevelManager {
         this._firstClear = _clr.first;
         Progress.announce(this, _clr.frags);
         if (chest.crackleTimer) chest.crackleTimer.remove();
-        if (chest.crackleGfx) { this.tweens.add({ targets:chest.crackleGfx, alpha:0, duration:200, onComplete:()=>chest.crackleGfx.destroy() }); }
         LootFX.open(this, chest, { spill: 18, keep: 650 });
         this.cameras.main.shake(80, 0.006);
 
@@ -2616,33 +2669,18 @@ class LevelManager {
             for (let k = 0; k < 14; k++) { const a = k / 14 * Math.PI * 2, w = 0.07; rays.fillStyle(col, 0.07); rays.fillTriangle(0, 0, Math.cos(a - w) * R * 4, Math.sin(a - w) * R * 4, Math.cos(a + w) * R * 4, Math.sin(a + w) * R * 4); }
             this.tweens.add({ targets: rays, alpha: 1, duration: 900 });
             this.tweens.add({ targets: rays, angle: 360, duration: 40000, repeat: -1 });
-            // the crest: a dark disc, a rune ring that turns, a bright rim, the glyph
-            const ring = keep(this.add.graphics().setPosition(sx, sy).setDepth(D + 2));
-            ring.lineStyle(2, col, 0.7); ring.strokeCircle(0, 0, R * 1.18);
-            for (let k = 0; k < 36; k++) { const a = k / 36 * Math.PI * 2, l = k % 3 ? 4 : 9; ring.lineStyle(k % 3 ? 1.5 : 2.5, col, k % 3 ? 0.5 : 0.9); ring.lineBetween(Math.cos(a) * R * 1.18, Math.sin(a) * R * 1.18, Math.cos(a) * (R * 1.18 + l), Math.sin(a) * (R * 1.18 + l)); }
-            for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4; ring.fillStyle(col, 1); ring.fillTriangle(Math.cos(a) * R * 1.32, Math.sin(a) * R * 1.32, Math.cos(a + 0.06) * R * 1.18, Math.sin(a + 0.06) * R * 1.18, Math.cos(a - 0.06) * R * 1.18, Math.sin(a - 0.06) * R * 1.18); }
-            this.tweens.add({ targets: ring, angle: -360, duration: 30000, repeat: -1 });
-            const crest = keep(this.add.graphics().setPosition(sx, sy).setDepth(D + 3));
-            for (let k = 8; k >= 0; k--) { crest.fillStyle(MenuArt.mix(0x0a0810, col, (1 - k / 8) * 0.35), 1); crest.fillCircle(0, 0, R * (0.55 + k * 0.05)); }   // a dark disc, warmer toward the middle
-            crest.lineStyle(4, 0x000000, 0.5); crest.strokeCircle(0, 0, R); crest.lineStyle(2.5, col, 1); crest.strokeCircle(0, 0, R - 1);
-            crest.lineStyle(1, 0xffffff, 0.35); crest.beginPath(); crest.arc(0, 0, R - 5, Math.PI * 1.05, Math.PI * 1.6); crest.strokePath();
-            const s = R / 9, P = pts => pts.map(([x, y]) => ({ x: x * s, y: y * s }));
-            const glyph = (c, a) => {
-                crest.fillStyle(c, a); crest.lineStyle(1.8 * s / 2, c, a);
-                if (element === 'fire') { crest.fillPoints(P([[0, -8], [3, -3], [5.5, 1], [5, 4.5], [2.5, 7], [0, 7.5], [-2.5, 7], [-5, 4.5], [-5.5, 1], [-3.5, -1], [-2.2, -4.5]]), true); }
-                else if (element === 'ice') for (let k = 0; k < 3; k++) {
-                    const an = Math.PI / 2 + k * Math.PI / 3, cs = Math.cos(an) * s, sn = Math.sin(an) * s;
-                    crest.lineBetween(-cs * 7.5, -sn * 7.5, cs * 7.5, sn * 7.5);
-                    for (const d of [-1, 1]) { const bx = d * cs * 4.4, by = d * sn * 4.4, out = an + (d < 0 ? Math.PI : 0); for (const t of [-0.8, 0.8]) crest.lineBetween(bx, by, bx + Math.cos(out + t) * 2.6 * s, by + Math.sin(out + t) * 2.6 * s); }
-                }
-                else if (element === 'lightning') crest.fillPoints(P([[2, -8], [-4, 1.5], [-0.5, 1.5], [-2.5, 8], [4.5, -1.5], [1, -1.5], [3.5, -8]]), true);
-                else crest.fillPoints(P([[0, -8], [1.8, -1.8], [8, 0], [1.8, 1.8], [0, 8], [-1.8, 1.8], [-8, 0], [-1.8, -1.8]]), true);
-            };
-            crest.setScale(0.6).setAlpha(0);
-            glyph(0xffffff, 1);
-            this.tweens.add({ targets: crest, scale: 1, alpha: 1, duration: 600, ease: 'Back.easeOut' });
-            const burst = keep(this.add.circle(sx, sy, R, 0, 0).setStrokeStyle(3, col, 1).setDepth(D + 2));
-            this.tweens.add({ targets: burst, scale: 2.6, alpha: 0, duration: 900, ease: 'Quad.easeOut' });
+            // the crest (assets/art/fx_crest): the dial round it, its ticks lit one after another round it where it used to turn,
+            // the dark disc in its rim, the element's icon on it (the HUD's, ui_hudbits; a gold star for a plain clear), at whole pixels
+            const el = COL[element] ? element : 'plain', cs = Math.max(2, Math.round(R / 24)), ak = 'crest_dial_' + el;
+            if (!this.anims.exists(ak)) this.anims.create({ key: ak, frames: this.anims.generateFrameNames('fx_crest', { prefix: `dial_${el}_`, start: 0, end: 8 }), frameRate: 1.2, repeat: -1 });   // (a ninth of the round a frame: it turned once in 30s)
+            keep(this.add.sprite(sx, sy, 'fx_crest', `dial_${el}_0`).setScale(cs).setDepth(D + 2).play(ak));
+            const crest = keep(this.add.container(sx, sy).setDepth(D + 3));
+            const gs = Math.floor(42 * cs / 15) / cs;   // the 15px icon as big as fits in the disc (42px inside its rim), at whole screen pixels
+            crest.add([this.add.image(0, 0, 'fx_crest', 'disc_' + el), el === 'plain' ? this.add.image(0, 0, 'fx_crest', 'star').setScale(gs) : this.add.image(0, 0, 'ui_hudbits', 'el_' + el).setScale(gs)].map(o => o.setScrollFactor(0)));
+            crest.setScale(cs * 0.6).setAlpha(0);
+            this.tweens.add({ targets: crest, scale: cs, alpha: 1, duration: 600, ease: 'Back.easeOut' });
+            const burst = keep(this.add.image(sx, sy, 'fx_crest', `dial_${el}_0`).setScale(cs).setDepth(D + 2));   // the dial's ghost thrown outward
+            this.tweens.add({ targets: burst, scale: cs * 2.6, alpha: 0, duration: 900, ease: 'Quad.easeOut' });
             for (let k = 0; k < 24; k++) {
                 const a = Math.random() * Math.PI * 2, m = keep(this.add.rectangle(sx, sy, 3, 3, k % 3 ? col : 0xffffff).setDepth(D + 2).setBlendMode(ADD));
                 this.tweens.add({ targets: m, x: sx + Math.cos(a) * R * (1.6 + Math.random() * 1.6), y: sy + Math.sin(a) * R * (1.6 + Math.random() * 1.6), alpha: 0, duration: 900 + Math.random() * 700, ease: 'Quad.easeOut' });
@@ -2799,8 +2837,8 @@ class LevelManager {
         const px = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
         const py = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-        // A cosmic dungeon key (pixel art, LevelManager.voidKeyArt), floating over its shadow in a violet glow, stars twinkling round it
-        const img = this.add.image(px, py - 4, LevelManager.voidKeyArt(this)).setDepth(3).setScale(1.3);
+        // A cosmic dungeon key (assets/art/fx_void_key), floating over its shadow in a violet glow, stars twinkling round it
+        const img = this.add.image(px, py - 4, 'fx_void_key', '0').setDepth(3).setScale(1.3);
         this.tweens.add({ targets: img, y: py - 10, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         this.tweens.add({ targets: img, angle: { from: -7, to: 7 }, duration: 1700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         const shadow = this.add.image(px, py + 12, 'vfx_shadow').setScale(0.32, 0.1).setAlpha(0.55).setDepth(2.9);
@@ -2825,31 +2863,6 @@ class LevelManager {
         img._label = lbl;
     }
 
-    // The Void Key: a dark violet key with a galaxy turning in its bow, gold star points and collar
-    static voidKeyArt(scene) {
-        return ShopScene.icon(scene, 'fx_void_key', 28, { M: '#5a3a9a', L: '#a58ae0', D: '#34205e', Y: '#ffd34a', y: '#c8901e', v: '#12041e', p: '#7a3ad8', P: '#e0b0ff' }, m => {
-            const cx = 14, cy = 7.5;
-            m.ring(cx, cy, 6, 2.2, 'M');
-            for (let y = 0; y < 16; y++) for (let x = 0; x < 28; x++) {   // lit from the top left
-                if (m.get(x, y) !== 'M') continue;
-                const d = (x + 0.5 - cx) + (y + 0.5 - cy);
-                if (d < -3.5) m.set(x, y, 'L'); else if (d > 3.5) m.set(x, y, 'D');
-            }
-            m.disc(cx, cy, 3.9, 'v');
-            for (let y = 3; y < 13; y++) for (let x = 9; x < 19; x++) {   // the galaxy: two arms round a bright core
-                const dx = x + 0.5 - cx, dy = y + 0.5 - cy, r = Math.hypot(dx, dy);
-                if (r > 3.9 || m.get(x, y) !== 'v') continue;
-                if (Math.sin(Math.atan2(dy, dx) * 2 + r * 1.6) > 0.45) m.set(x, y, r < 2.2 ? 'P' : 'p');
-            }
-            m.set(13, 7, 'W'); m.set(14, 7, 'P'); m.set(11, 9, 'W'); m.set(16, 5, 'W');
-            m.rect(13, 1, 2, 1, 'Y'); m.set(13, 0, 'W'); m.rect(7, 7, 1, 2, 'Y'); m.rect(20, 7, 1, 2, 'Y');   // star points
-            m.rect(11, 14, 6, 1, 'Y'); m.rect(11, 15, 6, 1, 'y');   // the collar
-            m.rect(13, 16, 1, 10, 'L'); m.rect(14, 16, 1, 10, 'M'); m.rect(13, 26, 2, 1, 'D');   // the shaft
-            m.rect(15, 20, 4, 2, 'M'); m.rect(15, 20, 4, 1, 'L'); m.rect(15, 23, 3, 2, 'M'); m.rect(15, 23, 3, 1, 'L');   // the teeth
-            m.set(18, 21, 'D'); m.set(17, 24, 'D');
-        });
-    }
-
     _spawnBossDoor() {
         // Portcullis across the corridor from R5 to R6, at its mouth in R5. The fixed map's corridor is x:49-51 at y:73;
         // a laid-out map's boss corridor always runs north or south (LevelLayouts.RECIPES.voidrift)
@@ -2861,37 +2874,9 @@ class LevelManager {
         const UP       = this.rooms[6]?.entryDir === 'north' ? T : 0;   // drawn two tiles tall into the corridor, not into R5
 
         if (!this._bossDoor) {
-            const g = this.add.graphics().setDepth(1.5);
+            // the portcullis and its seal (assets/art/fx_boss_door: three tiles wide, two tall)
+            const g = this.add.image(DOOR_X * T, DOOR_Y * T - UP, 'fx_boss_door').setOrigin(0).setDepth(1.5);
             this._bossDoorGfx = g;
-
-            const _draw = () => {
-                g.clear();
-                for (let dx = 0; dx < DOOR_W; dx++) {
-                    const wx = (DOOR_X + dx) * T;
-                    const wy = DOOR_Y * T - UP;
-                    // Dark stone frame
-                    g.fillStyle(0x1a1a2e, 0.95); g.fillRect(wx, wy, T, T * 2);
-                    // Metal bars — 3 vertical bars per tile
-                    for (let b = 0; b < 3; b++) {
-                        const bx = wx + 3 + b * 5;
-                        g.fillStyle(0x556677, 1); g.fillRect(bx, wy + 1, 3, T * 2 - 2);
-                        g.fillStyle(0x88aacc, 0.6); g.fillRect(bx + 1, wy + 2, 1, T * 2 - 4);
-                    }
-                    // Horizontal crossbar
-                    g.fillStyle(0x445566, 1); g.fillRect(wx, wy + T / 2 - 2, T, 4);
-                    g.fillStyle(0x667799, 0.5); g.fillRect(wx, wy + T / 2 - 1, T, 2);
-                    // Purple glow edges
-                    g.lineStyle(2, 0xcc44ff, 0.35); g.strokeRect(wx, wy, T, T * 2);
-                }
-                // Lock symbol in center
-                const cx = (DOOR_X + DOOR_W / 2) * T;
-                const cy = DOOR_Y * T + T - UP;
-                g.fillStyle(0xcc44ff, 0.90); g.fillCircle(cx, cy, 6);
-                g.fillStyle(0x000000, 1);    g.fillCircle(cx, cy, 3.5);
-                g.fillStyle(0xcc44ff, 0.80); g.fillRect(cx - 2, cy, 4, 5);
-                g.lineStyle(1.5, 0xee88ff, 0.50); g.strokeCircle(cx, cy, 8);
-            };
-            _draw();
             // Pulse glow
             this.tweens.add({ targets: g, alpha: 0.80, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
@@ -2924,7 +2909,7 @@ class LevelManager {
         this.cameras.main.shake(60, 0.005);
         // Rise animation
         this.tweens.add({
-            targets: this._bossDoor.gfx, y: -this.TILE_SIZE * 3,
+            targets: this._bossDoor.gfx, y: this._bossDoor.gfx.y - this.TILE_SIZE * 3,
             alpha: 0, duration: 600, ease: 'Quad.easeIn',
             onComplete: () => { if (this._bossDoor.gfx?.active) this._bossDoor.gfx.destroy(); }
         });
@@ -3358,11 +3343,9 @@ class LevelManager {
         if (p.setCrop) p.setCrop(0, 0, fw, Math.max(1, Math.floor(fh * 0.52)));
         this.tweens.add({ targets: p, y: p.y + fh * 0.26, duration: 150, ease: 'Quad.easeIn' });
         this._submergedUntil = untilTime;
-        // waterline ring at the point it swallows you
-        const ring = this.add.graphics().setDepth(5.6);
-        ring.x = p.x; ring.y = p.y + fh * 0.18;
-        ring.lineStyle(2, 0x9fe8ff, 0.85); ring.strokeEllipse(0, 0, 22, 9);
-        ring.fillStyle(0x123c52, 0.45);    ring.fillEllipse(0, 0, 22, 9);
+        // the waterline at the point it swallows you (fx_enemies_c: the murk, a ring of foam over it)
+        const ring = this.add.container(p.x, p.y + fh * 0.18).setDepth(5.6);
+        ring.add([this.add.image(0, 0, 'fx_enemies_c', 'murk_1').setScale(0.9, 1), this.add.image(0, 0, 'fx_enemies_c', 'dring')]);
         this._submergeRing = ring;
         this.tweens.add({ targets: ring, scaleX: 1.25, scaleY: 1.25, alpha: 0.5,
                           duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -3389,39 +3372,18 @@ class LevelManager {
     // ground, so the grab reads as one attack with two outcomes rather than two
     // different attacks.
     _drownWeeds(px, py, onLand) {
-        const N = 8;
+        const N = 8, F = ['weed_0', 'weed_1', 'weed_2', 'weed_2', 'weed_1', 'weed_0'];
         for (let i = 0; i < N; i++) {
-            const a   = (i / N) * Math.PI * 2 + Math.random() * 0.3;
-            const len = 15 + Math.random() * 13;
-            const lean = Math.cos(a) * 6;
-            const g = this.add.graphics().setDepth(5.4);
-            g.x = px + Math.cos(a) * 9;
-            g.y = py + Math.sin(a) * 5 + 4;
-            g.lineStyle(2.6, 0x2f6b46, 0.95);
-            g.beginPath();
-            g.moveTo(0, 0);
-            g.lineTo(lean * 0.30, -len * 0.45);
-            g.lineTo(lean * 0.90, -len);
-            g.strokePath();
-            g.lineStyle(1.2, 0x7fd8a0, 0.55);          // wet highlight down one side
-            g.beginPath();
-            g.moveTo(lean * 0.20, -len * 0.35);
-            g.lineTo(lean * 0.75, -len * 0.85);
-            g.strokePath();
-            g.scaleY = 0.05;
+            const a = (i / N) * Math.PI * 2 + Math.random() * 0.3;
+            const w = this.add.image(Math.round(px + Math.cos(a) * 9), Math.round(py + Math.sin(a) * 5 + 4), 'fx_enemies_c', 'weed_0').setOrigin(0.5, 1)
+                .setDepth(5.4 + Math.sin(a) * 0.01).setFlipX(Math.cos(a) < 0).setScale(0.8 + Math.random() * 0.4).setAlpha(0);
+            this._vfxSort?.(w);
             // whip up out of the floor, hold, then snap back down
-            this.tweens.add({
-                targets: g, scaleY: 1, duration: 130, delay: i * 14, ease: 'Back.easeOut',
-                onComplete: () => this.tweens.add({
-                    targets: g, scaleY: 0.1, alpha: 0, duration: 260, delay: 90,
-                    ease: 'Quad.easeIn', onComplete: () => g.destroy() })
-            });
+            this.tweens.addCounter({ from: 0, to: F.length - 0.01, duration: 480, delay: i * 14, onStart: () => w.setAlpha(1),
+                onUpdate: t => w.setFrame(F[Math.floor(t.getValue())]), onComplete: () => w.destroy() });
         }
         // murk pooling at your feet — greener on land, darker in open water
-        const pool = this.add.graphics().setDepth(5.3);
-        pool.x = px; pool.y = py + 5;
-        pool.fillStyle(onLand ? 0x24483a : 0x123c52, 0.55);
-        pool.fillEllipse(0, 0, 26, 12);
+        const pool = this.add.image(px, py + 5, 'fx_enemies_c', onLand ? 'murk_0' : 'murk_1').setDepth(5.3);
         this.tweens.add({ targets: pool, alpha: 0, scaleX: 1.6, scaleY: 1.6,
             duration: 480, ease: 'Quad.easeOut', onComplete: () => pool.destroy() });
     }
@@ -3456,20 +3418,8 @@ class LevelManager {
     // contracts over the dodge window so the remaining time is visible.
     _drownLockMark(e, tx, ty) {
         const TS = this.TILE_SIZE;
-        const g = this.add.graphics().setDepth(0.95);
-        g.x = tx * TS + TS / 2; g.y = ty * TS + TS / 2;
-        g.fillStyle(0x5a2d6b, 0.30); g.fillCircle(0, 0, TS * 0.62);
-        g.lineStyle(2.2, 0xd8b4ff, 0.95); g.strokeCircle(0, 0, TS * 0.62);
-        g.lineStyle(1.4, 0xd8b4ff, 0.55); g.strokeCircle(0, 0, TS * 0.92);
-        for (let i = 0; i < 4; i++) {
-            const a = i * Math.PI / 2 + Math.PI / 4;
-            g.lineStyle(2, 0xffffff, 0.8);
-            g.beginPath();
-            g.moveTo(Math.cos(a) * TS * 0.42, Math.sin(a) * TS * 0.42);
-            g.lineTo(Math.cos(a) * TS * 0.72, Math.sin(a) * TS * 0.72);
-            g.strokePath();
-        }
-        this.tweens.add({ targets: g, scaleX: 0.35, scaleY: 0.35,
+        const g = this.add.image(tx * TS + TS / 2, ty * TS + TS / 2, 'fx_enemies_c', 'dmark').setDepth(0.95).setScale(TS * 1.84 / 25);   // (fx_enemies_c: its ring out to 0.92 of a tile)
+        this.tweens.add({ targets: g, scaleX: g.scaleX * 0.35, scaleY: g.scaleY * 0.35,
                           duration: e._drownDodge, ease: 'Quad.easeIn' });
         e._drownLockGfx = g;
         (this._drownLocks = this._drownLocks || new Set()).add(g);
@@ -3479,14 +3429,8 @@ class LevelManager {
     // The marker that rides over YOUR head while a Drowner is committed to you.
     _drownWarn(e) {
         Sfx.play(this, 'tell', { ms: 700 });
-        const g = this.add.graphics().setDepth(6);
-        g.fillStyle(0x5a2d6b, 0.55); g.fillCircle(0, 0, 13);
-        g.lineStyle(2.4, 0xd8b4ff, 0.95); g.strokeCircle(0, 0, 13);
-        g.fillStyle(0xffffff, 0.95);
-        g.fillRect(-1.6, -8, 3.2, 9);            // exclamation
-        g.fillCircle(0, 5.5, 1.9);
-        g.x = this.player.x; g.y = this.player.y - 34;
-        this.tweens.add({ targets: g, scaleX: 1.25, scaleY: 1.25, duration: 330,
+        const g = this.add.image(this.player.x, this.player.y - 34, 'fx_enemies_c', 'dwarn').setDepth(6).setScale(1.6);
+        this.tweens.add({ targets: g, scaleX: 2, scaleY: 2, duration: 330,
                           yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         e._drownWarnGfx = g;
         (this._drownWarns = this._drownWarns || new Set()).add(g);
@@ -3531,13 +3475,13 @@ class LevelManager {
     _cavCfg() { return { SPEED: 7, MIN_MS: 280, R: 1.8, DMG: 10, WET_MS: 6000, COL: 0xdff8ff, COLLAPSE_MS: 120, SPLASH: [2, 5], SPLASH_R: 1.6, SCALE: 0.7,   // SPLASH: how many tiles round it a wet one throws water on (random); SCALE: its sprite's at size 1
                          EDGE: 0.15, BLEED_MS: 3000, DAZE_MS: 450, WAVE: 8, WAVE_FADE: 550, HIT_GAP: 300,   // EDGE: the share of its blow at the rim of its burst (all of it at the heart); WAVE: its burst runs out over the floor this fast (tiles a second), each tile lit WAVE_FADE as it passes; HIT_GAP: one cavitation blow on you this often at most
                          DRAW_R: 3.5, FORM_MS: 560,   // DRAW_R: how far round it the Ripplerunner pulls water up into bubbles (standing in it or not)
-                         SIZES: [[0.6, 1.6, 0.45], [0.9, 2.6, 0.35], [1.3, 3.8, 0.2]],   // its bubbles: small, medium, large (sprite size, burst radius in tiles, how often); the same blow
-                         GOD: { DETECT_R: 8, RISE: 8, RISE_MS: 300, FORM_STEP: 90, FORM_MS: 420, LIFT_MS: 320, HOVER: [1.2, 2.8], SPREAD: 1.8, DMG: 5,
-                                SEND_STEP: 140, SEND_SPEED: 11, SLOW: 1.4, BOMBARD_R: 3.5, AT_YOU: 3, FOLLOW: 0.65, CD: 4200 } }; }   // FOLLOW: a sent bubble keeps after you for this share of its flight, then it's committed   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you   // the Ripplerunner's trance (_rippleGod); SLOW: a send starts slow, so it takes this much longer than SEND_SPEED would
+                         SIZES: [[0.6, 0.9, 0.45], [0.9, 1.2, 0.35], [1.3, 1.4, 0.2]],   // its bubbles: small, medium, large (sprite size, burst radius in tiles, how often); the same blow. (Its wave reaches half a tile past that: two tiles off where it lands, you're clear)
+                         GOD: { DETECT_R: 8, RISE: 8, RISE_MS: 300, FORM_STEP: 90, FORM_MS: 420, LIFT_MS: 320, HOVER: [1.2, 2.8], SPREAD: 1.8, DMG: 5, MAX: 10,
+                                SEND_STEP: 140, SEND_MS: 750, BOMBARD_R: 3.5, AT_YOU: 3, FOLLOW: 3.5, CD: 4200, DODGE: 40 } }; }   // DODGE: one that stays on you all the way (a big one it found): a dash that ran out this little before its wave reached you still gets you through   // FOLLOW: a sent bubble of its own keeps after you at up to this many tiles a second (you walk 5; one it found: at once)   // MAX: a barrage is this many bubbles at most (what it found first, then the water nearest it)   // SEND: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of you, each landing SEND_MS after it goes, near or far (so which way you run doesn't change how long it has to catch you)   // the Ripplerunner's trance (_rippleGod)
     _cavBubble(x, y, tx, ty, o = {}) {
         const C = this._cavCfg();
         const b = { x, y, tx, ty, r: o.r ?? C.R, dmg: o.dmg ?? C.DMG, col: o.col ?? C.COL, wet: o.wet ?? true, atYou: !!o.atYou, field: !!o.field,
-                    speed: o.speed ?? C.SPEED, size: o.size ?? 1, ms: o.ms, fuse: o.fuse || 0, ease: o.ease, hold: !!o.hold, markR: o.markR };   // markR: how much ground it marks where it'll land (its whole burst by default)   // hold: formed, it waits for whoever made it (_rippleGod) instead of going
+                    speed: o.speed ?? C.SPEED, size: o.size ?? 1, ms: o.ms, fuse: o.fuse || 0, ease: o.ease, hold: !!o.hold };   // hold: formed, it waits for whoever made it (_rippleGod) instead of going
         b.img = LevelManager.cavSprite(this, x, y, b.col).setScale(C.SCALE * b.size).setDepth(3.2);
         b.redirect = (nx, ny, r = {}) => { b.atYou = true; b.hold = false; b.fuse = 0; b.fuseTimer?.remove(); b.lingering = false; if (r.ease) b.ease = r.ease; if (b.forming) { b.tx = nx; b.ty = ny; } else this._cavGo(b, nx, ny, r.ms, r.follow); };   // sent at you: it bursts when it gets there
         (this._cavs ||= []).push(b);
@@ -3554,7 +3498,7 @@ class LevelManager {
         b.dots = [];
         for (let i = 0; i < 6; i++) {
             const dx = (Math.random() - 0.5) * TS * 0.8 * b.size, dy = (Math.random() - 0.5) * TS * 0.8 * b.size;
-            const d = this.add.image(b.x + dx, b.y + dy, 'tm_bubble_s').setTint(b.col).setDepth(3.15).setScale(0).setAlpha(0.95);
+            const d = this.add.image(b.x + dx, b.y + dy, 'fx_enemies_c', 'cav_s').setTint(b.col).setDepth(3.15).setScale(0).setAlpha(0.95);
             this._vfxSort?.(d);
             b.dots.push(d);
             this.tweens.add({ targets: d, scale: 0.8 + Math.random() * 0.7, delay: Math.random() * ms * 0.35, duration: ms * 0.25, ease: 'Back.easeOut' });   // nucleation
@@ -3571,31 +3515,37 @@ class LevelManager {
             this._cavGo(b, b.tx, b.ty, b.ms);
         });
     }
-    // (Re)aimed: on to (tx, ty), where it'll collapse marked till it does. follow { dx, dy, until }: the spot is that
-    // far off you, and moves with you (its mark too) for `until` of the flight; after that it's committed
-    _cavGo(b, tx, ty, ms, follow = null) {
+    // (Re)aimed: on to (tx, ty), where it collapses, marked from now over all its wave will reach (cavFlash: r and half a
+    // tile). follow: the spot keeps after you (as far off you as it began), moving up to `follow` tiles a second, its mark
+    // with it: a little under your pace and walking gains on it slowly, a dash leaves it behind. In the Boreal Trident's
+    // aura it flies slower (one sitting still keeps its fuse)
+    _cavGo(b, tx, ty, ms, follow = 0) {
         const C = this._cavCfg(), TS = this.TILE_SIZE;
         b.tween?.stop(); b.mark?.kill(); b.fuseTimer?.remove();
-        b.tx = tx; b.ty = ty;
+        b.tx = tx; b.ty = ty; b.dodge = follow >= 1e3 ? C.GOD.DODGE : 0;   // (on you the whole way: only a dash gets you out)
         const dur = ms ?? Math.max(C.MIN_MS, Math.hypot(tx - b.x, ty - b.y) / TS / b.speed * 1000), x0 = b.x, y0 = b.y, k = C.SCALE * b.size;
-        b.mark = BossFX.mark(this, BossFX.tilesInRadius(this, tx, ty, Math.max(b.markR ?? b.r, 0.5) * TS, false), b.col, dur + b.fuse + C.COLLAPSE_MS, { fill: 0.08 });
-        let mt = Math.floor(tx / TS) + ',' + Math.floor(ty / TS);
+        const ox = tx - (this.playerX + 0.5) * TS, oy = ty - (this.playerY + 0.5) * TS;   // (off your tile)
+        let mt = Math.floor(tx / TS) + ',' + Math.floor(ty / TS), lt = null;
+        b.mark = BossFX.mark(this, BossFX.tilesInRadius(this, tx, ty, (b.r + 0.5) * TS, false), b.col, dur + b.fuse + C.COLLAPSE_MS, { fill: 0.08 });
         b.tween = this.tweens.addCounter({ from: 0, to: 1, duration: dur, ease: b.ease || 'Quad.easeOut',
-            onUpdate: tw => {
-                if (follow && tw.elapsed < dur * follow.until && this.player?.active) {   // still after you: the spot moves with you
-                    tx = this.player.x + follow.dx; ty = this.player.y - (this.SLIME_Y_OFFSET || 0) + follow.dy;
+            onUpdate: CombatSystem.tauntKeep(this, tw => {   // (sent at an ally: it keeps after that ally, and bursts on it)
+                if (follow && this.player?.active) {
+                    const now = this.time.now, gx = (this.playerX + 0.5) * TS + ox - tx, gy = (this.playerY + 0.5) * TS + oy - ty, d = Math.hypot(gx, gy), m = Math.min(d, (now - (lt ?? now)) / 1000 * follow * TS);
+                    lt = now;
+                    if (d > 0) { tx += gx / d * m; ty += gy / d * m; }
                     const key = Math.floor(tx / TS) + ',' + Math.floor(ty / TS);
-                    if (key !== mt && b.mark) { mt = key; b.mark.tiles = BossFX.tilesInRadius(this, tx, ty, Math.max(b.markR ?? b.r, 0.5) * TS, false); }
+                    if (key !== mt) { mt = key; b.mark.tiles = BossFX.tilesInRadius(this, tx, ty, (b.r + 0.5) * TS, false); }
                     b.tx = tx; b.ty = ty;
                 }
+                if (tx !== x0 || ty !== y0) tw.timeScale = Trident.slow(this, b.x, b.y);   // (the Boreal Trident's aura)
                 const u = tw.getValue(); b.x = x0 + (tx - x0) * u; b.y = y0 + (ty - y0) * u; if (b.img?.active) b.img.setPosition(b.x, b.y).setScale(k * (1 + 0.15 * u));
-            },
-            onComplete: () => {
+            }),
+            onComplete: CombatSystem.tauntKeep(this, () => {
                 b.tween = null;   // (a finished tween can't be paused or stopped: it throws)
                 if (!b.fuse) return this._cavBurst(b);
                 b.lingering = true;   // it hangs there `fuse` long first (a Smasher's: time for something to turn it onto you)
-                b.fuseTimer = this.time.delayedCall(b.fuse, () => { b.lingering = false; this._cavBurst(b); });
-            } });
+                b.fuseTimer = this.time.delayedCall(b.fuse, CombatSystem.tauntKeep(this, () => { b.lingering = false; this._cavBurst(b); }));
+            }) });
     }
     // It collapses: in to a point, then the flash and the shock (quiet: just gone, as when a ward eats it)
     _cavBurst(b, quiet = false) {
@@ -3605,27 +3555,28 @@ class LevelManager {
         b.dots?.forEach(d => d.destroy());
         if (quiet) { b.mark?.kill(); b.img?.destroy(); return; }
         if (b.img?.active) this.tweens.add({ targets: b.img, scale: 0.02, duration: C.COLLAPSE_MS, ease: 'Cubic.easeIn', onComplete: () => b.img.destroy() });
-        this.time.delayedCall(C.COLLAPSE_MS, () => {
+        this.time.delayedCall(C.COLLAPSE_MS, CombatSystem.tauntKeep(this, () => {
             const now = this.time.now, crowd = now - (this._cavFlashAt || -1e9) < 90;   // a volley landing at once: one big flash, the rest small (they'd add up to white)
             if (!crowd) this._cavFlashAt = now;
             if (crowd) b.mark?.kill(); else b.mark?.done();
             if (!this.player?.active) return;
             Sfx.play(this, 'splash', { soft: b.r < 1.5, big: b.r >= 3 });
-            LevelManager.cavFlash(this, b.x, b.y, b.r * TS, b.col, crowd ? 0.3 : 1, f => this._cavHit(b.dmg * (1 - (1 - C.EDGE) * f)));   // hardest at its heart, as the wave reaches you
+            LevelManager.cavFlash(this, b.x, b.y, b.r * TS, b.col, crowd ? 0.3 : 1, f => this._cavHit(b.dmg * (1 - (1 - C.EDGE) * f)), b.dodge);   // hardest at its heart, as the wave reaches you
             if (b.wet) this._cavSplash(b);
-        });
+        }));
     }
     // A cavitation blow landing on you (its wave reached you): one every HIT_GAP at most, a barrage or not
     _cavHit(dmg) {
-        const now = this.time.now;
-        if (now - (this._cavBlowAt || -1e9) < this._cavCfg().HIT_GAP) return;
-        this._cavBlowAt = now;
-        this.takeDamage(dmg * (this.enemyDamageScale || 1));
+        const now = this.time.now, w = this._tauntAlly || this;   // (an ally standing in for you: its own gap)
+        if (now - (w._cavBlowAt || -1e9) < this._cavCfg().HIT_GAP) return;
+        w._cavBlowAt = now;
+        this.takeDamage(dmg * (this.enemyDamageScale || 1), 'cavitation');
         this._cavAfflict();
     }
     // What a burst does to you besides the blow (once, however many land together): soaked, so you drip; torn, so you
     // bleed as you move; dazed for a moment (and then you can't be dazed again for a while: _ccGate)
     _cavAfflict() {
+        if (this._tauntAlly) return;   // (yours alone: CombatSystem.tauntTo)
         const C = this._cavCfg(), now = this.time.now;
         if (now - (this._cavHitAt || -1e9) < 250) return;
         this._cavHitAt = now;
@@ -3643,10 +3594,10 @@ class LevelManager {
         const C = this._cavCfg(), TS = this.TILE_SIZE, tx = Math.floor(b.x / TS), ty = Math.floor(b.y / TS), k = Math.ceil(C.SPLASH_R);
         const goo = this._vfxBursts?.goo;
         if (goo) { goo.setParticleTint?.(b.col); goo.explode(10 + Math.round(b.r * 8), b.x, b.y); }
-        if (this.textures.exists('vfx_splat')) {
-            const sp = this.add.image(b.x, b.y, 'vfx_splat').setTint(b.col).setAlpha(0.6).setDepth(0.48).setScale(0.3).setAngle(Math.random() * 360);
+        if (this.textures.exists('fx_enemies_c')) {   // (a splat of two, flipped any way: never turned)
+            const sp = this.add.image(b.x, b.y, 'fx_enemies_c', Math.random() < 0.5 ? 'splat_0' : 'splat_1').setTint(b.col).setAlpha(0.6).setDepth(0.48).setScale(0.45).setFlip(Math.random() < 0.5, Math.random() < 0.5);
             this._vfxSort?.(sp);
-            this.tweens.add({ targets: sp, scale: 0.55 + b.r * 0.4, duration: 140, ease: 'Quad.easeOut' });
+            this.tweens.add({ targets: sp, scale: (0.55 + b.r * 0.4) * 1.5, duration: 140, ease: 'Quad.easeOut' });
             this.tweens.add({ targets: sp, alpha: 0, delay: 700, duration: 900, onComplete: () => sp.destroy() });
         }
         const ok = (x, y) => this.world?.[x]?.[y] === this.FLOOR && !(this._roomGated() && !this.isInCurrentRoom(x, y));
@@ -3656,11 +3607,11 @@ class LevelManager {
         const n = C.SPLASH[0] + Math.floor(Math.random() * (C.SPLASH[1] - C.SPLASH[0] + 1));
         for (const [x, y] of [...(ok(tx, ty) ? [[tx, ty]] : []), ...near.slice(0, n)]) this.addWater(x, y, C.WET_MS);
     }
-    // A bubble's sprite (assets/art/tm_bubble, tinted, wobbling): any scene
+    // A bubble's sprite (fx_enemies_c cav_*, tinted, wobbling by frames): any scene
     static cavSprite(S, x, y, col) {
-        if (!S.anims.exists('tm_bubble')) S.anims.create({ key: 'tm_bubble', frames: ['0', '1', '2', '3'].map(frame => ({ key: 'tm_bubble', frame })), frameRate: 7, repeat: -1 });
-        const s = S.add.sprite(x, y, 'tm_bubble', '0').setTint(col);
-        s.play({ key: 'tm_bubble', startFrame: Math.floor(Math.random() * 4) });
+        if (!S.anims.exists('cav_wobble')) S.anims.create({ key: 'cav_wobble', frames: ['cav_0', 'cav_1', 'cav_0', 'cav_3'].map(frame => ({ key: 'fx_enemies_c', frame })), frameRate: 7, repeat: -1 });
+        const s = S.add.sprite(x, y, 'fx_enemies_c', 'cav_0').setTint(col);
+        s.play({ key: 'cav_wobble', startFrame: Math.floor(Math.random() * 4) });
         S._vfxSort?.(s);
         return s;
     }
@@ -3671,24 +3622,24 @@ class LevelManager {
     // edge, every tile it passes lit and fading, two rings of light with it; a column of water thrown up that rains down round it; a
     // dark wet splat left on the ground; and, for any but the dimmed (k: a crowd of them at once), a shake that grows
     // with it. hit(f): called once if the wave reaches you (f: how far out you were, 0 at its heart to 1 at its edge),
-    // not while a dash covers you as it passes. A burst can be huge: the wave is what you dodge.
-    static cavFlash(S, x, y, R, col, k = 1, hit = null) {
+    // not while a dash covers you as it passes (or ran out `dodge` ms before). A burst can be huge: the wave is what you dodge.
+    static cavFlash(S, x, y, R, col, k = 1, hit = null, dodge = 0) {
         const TS = S.TILE_SIZE || 24, rt = R / TS;
         const add = (key, tint, depth, a = k) => { const o = S.add.image(x, y, key).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(depth).setAlpha(a); S._vfxSort?.(o); return o; };
         const core = add('vfx_dot', 0xfffbe8, 3.36).setScale(1.2);
         S.tweens.add({ targets: core, alpha: 0, scale: 0.1, duration: 140, onComplete: () => core.destroy() });
-        const flash = add('vfx_glow', 0xffffff, 3.35).setScale(0.05);
+        const flash = add('vfx_glow', 0xffffff, 3.35, 0.6 * k).setScale(0.05);   // (softer: a big one washed the room white)
         S.tweens.add({ targets: flash, scale: Math.max(0.35, R / 45), alpha: 0, duration: 220, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
         // the shock, over the floor: it runs out at WAVE tiles a second, each tile lighting white as the front reaches it
         // and glowing in its colour for WAVE_FADE after, so you see it spread; the blow travels with the front
         const CC = S._cavCfg?.() || {}, speed = CC.WAVE || 8, fade = CC.WAVE_FADE || 550, reach = rt + 0.5, wave = Math.max(180, reach / speed * 1000);
-        let caught = !hit;
+        const caught = new Set();   // (each once: the ally it was sent at, and you)
         if (S.world) {
             const g = S.add.graphics().setDepth(0.48).setBlendMode(Phaser.BlendModes.ADD);   // (added light: plain, the room's dark swallowed it)
             S._vfxSort?.(g);
             const tiles = BossFX.tilesInRadius(S, x, y, R + TS * 0.5, false).map(([tx, ty]) => ({ tx, ty, d: Math.hypot(tx + 0.5 - x / TS, ty + 0.5 - y / TS) }));
             const t0 = S.time.now;
-            S.tweens.addCounter({ from: 0, to: 1, duration: wave + fade, onUpdate: () => {
+            S.tweens.addCounter({ from: 0, to: 1, duration: wave + fade, onUpdate: CombatSystem.tauntKeep(S, () => {
                 const t = S.time.now - t0, r = Math.min(reach, t / 1000 * speed);
                 g.clear();
                 for (const p of tiles) {
@@ -3697,15 +3648,17 @@ class LevelManager {
                     const a = Math.max(0, 1 - age / fade) * Math.max(0.5, k);
                     if (a <= 0) continue;
                     const front = age < 100, X = p.tx * TS + 1, Y = p.ty * TS + 1;
-                    g.fillStyle(front ? 0xffffff : col, (front ? 0.6 : 0.38) * a).fillRect(X, Y, TS - 2, TS - 2);
+                    g.fillStyle(front ? 0xffffff : col, (front ? 0.4 : 0.26) * a).fillRect(X, Y, TS - 2, TS - 2);
                     g.lineStyle(1, front ? 0xffffff : col, 0.85 * a).strokeRect(X, Y, TS - 2, TS - 2);
                 }
-                if (caught || !S.player?.active) return;
-                const d = Math.hypot(S.playerX + 0.5 - x / TS, S.playerY + 0.5 - y / TS);
-                if (d > reach || Math.abs(r - d) > 0.6) return;   // the front's on your tile, or it isn't (behind it, you're past it)
-                caught = true;
-                if (S.time.now >= (S._dashInvulnUntil || 0)) hit(Math.min(1, d / reach));
-            }, onComplete: () => g.destroy() });
+                if (!hit || !S.player?.active) return;
+                CombatSystem.tauntBoth(S, () => {
+                    const w = S._tauntAlly || S, d = Math.hypot(S.playerX + 0.5 - x / TS, S.playerY + 0.5 - y / TS);
+                    if (caught.has(w) || d > reach || Math.abs(r - d) > 0.6) return;   // the front's on your tile, or it isn't (behind it, you're past it)
+                    caught.add(w);
+                    if (S.time.now >= (S._dashInvulnUntil || 0) + dodge) hit(Math.min(1, d / reach));
+                });
+            }), onComplete: () => g.destroy() });
         }
         for (const [tint, dur, w] of [[col, wave, 1], [0xffffff, wave * 1.35, 1.25]]) {   // two rings of light, the outer later
             const ring = add('vfx_ring', tint, 3.1).setScale(0.05);
@@ -3719,10 +3672,10 @@ class LevelManager {
             const a = Math.random() * Math.PI * 2, d = R * (0.4 + Math.random() * 0.8), h = 20 + Math.random() * 30 * Math.max(1, rt / 1.5), drop = add('vfx_dot', i % 3 ? col : 0xffffff, 3.2, 0.9).setScale(0.12 + Math.random() * 0.1);
             S.tweens.addCounter({ from: 0, to: 1, duration: 380 + Math.random() * 260, ease: 'Linear', onUpdate: tw => { const u = tw.getValue(); drop.setPosition(x + Math.cos(a) * d * u, y + Math.sin(a) * d * u - h * 4 * u * (1 - u)); }, onComplete: () => drop.destroy() });
         }
-        if (S.textures?.exists('vfx_splat')) {
-            const sp = S.add.image(x, y, 'vfx_splat').setTint(col).setAlpha(0.5 * k).setDepth(0.47).setScale(0.2).setAngle(Math.random() * 360);
+        if (S.textures?.exists('fx_enemies_c')) {
+            const sp = S.add.image(x, y, 'fx_enemies_c', Math.random() < 0.5 ? 'splat_0' : 'splat_1').setTint(col).setAlpha(0.5 * k).setDepth(0.47).setScale(0.3).setFlip(Math.random() < 0.5, Math.random() < 0.5);
             S._vfxSort?.(sp);
-            S.tweens.add({ targets: sp, scale: Math.max(0.5, R / 34), duration: 160, ease: 'Quad.easeOut' });
+            S.tweens.add({ targets: sp, scale: Math.max(0.5, R / 34) * 1.5, duration: 160, ease: 'Quad.easeOut' });
             S.tweens.add({ targets: sp, alpha: 0, delay: 900, duration: 1100, onComplete: () => sp.destroy() });
         }
         if (k >= 1) S.cameras?.main?.shake(70 + rt * 35, Math.min(0.012, 0.002 + rt * 0.0022));
@@ -3757,10 +3710,11 @@ class LevelManager {
     // THE TRANCE. A cavitation bubble near it (DETECT_R: a Smasher's drifting, one of the Tide Mother's), or water
     // round it (DRAW_R: it needn't stand in it), and the Ripplerunner goes into a trance: it floats up, its eyes go
     // white, and it holds every bubble it found where it is, on a rippling thread. Then the water round it boils up, a
-    // tile at a time (the tile goes dry), into bubbles small, medium and large, each rising to hang over it. Then it
-    // bombards you with them, one by one (the ones it found first; _rippleGodSend): each starts slow and speeds up,
-    // its spot (on you, or near you) moving with you for most of its flight, then committed. Cut short (dazed, frozen, killed), whatever it still holds bursts where it
-    // is. True if it went into one.
+    // tile at a time (the tile goes dry, the nearest first, MAX bubbles in all), into bubbles small, medium and large,
+    // each rising to hang over it. Then it bombards you with them, one by one (the ones it found first; _rippleGodSend):
+    // each starts slow and speeds up, to a spot (where you are as it goes, or near it) marked from the moment it's sent,
+    // creeping after you slower than you walk (a big one it found stays on you). Cut short (dazed, frozen, killed), whatever it still holds
+    // bursts where it is. True if it went into one.
     _rippleGod(e, wet) {
         const C = this._cavCfg(), G = C.GOD, TS = this.TILE_SIZE, ex = e.sprite.x, ey = e.sprite.y - (this.SLIME_Y_OFFSET || 0);
         const found = [...(this._cavs || []).filter(b => !b.atYou && !b.forming && !b.godHeld), ...(typeof TideMother !== 'undefined' ? TideMother.redirectables(this) : [])]
@@ -3769,14 +3723,15 @@ class LevelManager {
         for (let dx = -k; dx <= k; dx++) for (let dy = -k; dy <= k; dy++) if ((dx || dy) && Math.hypot(dx, dy) <= C.DRAW_R && this.isWaterAt(e.x + dx, e.y + dy)) water.push([e.x + dx, e.y + dy]);
         if (!found.length && !water.length) return false;
         water.sort((a, c) => Math.hypot(a[0] - e.x, a[1] - e.y) - Math.hypot(c[0] - e.x, c[1] - e.y));
-        const god = e._god = { found, made: [], g: this.add.graphics().setDepth(3.25).setBlendMode(Phaser.BlendModes.ADD) };
-        this._vfxSort?.(god.g);
+        water.splice(Math.max(0, G.MAX - found.length));   // (the rest stays water)
+        const god = e._god = { found, made: [] };
         // up it floats, eyes white, a glow under it
         god.y0 = e.sprite.y;
         this.tweens.add({ targets: e.sprite, y: god.y0 - G.RISE, duration: G.RISE_MS, ease: 'Sine.easeOut' });
         god.aura = this.add.image(ex, ey + 6, 'vfx_glow').setTint(0x9ff8ff).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setScale(0.5).setDepth(0.95);
         this.tweens.add({ targets: god.aura, alpha: 0.55, duration: G.RISE_MS });
         e.sprite._cfx?.eyes?.setTintFill(0xffffff);
+        if (e.sprite.texture.has('god_0')) { e.sprite.anims.stop(); e.sprite.setFrame('god_0'); }   // its trance frames (_rippleGodDraw bobs them)
         this.showStatusText?.(e.sprite.x, e.sprite.y - 30, 'RIPPLE', '#bff8ff');
         Sfx.play(this, 'bubbles');
         for (const b of found) {   // held where they are
@@ -3790,7 +3745,7 @@ class LevelManager {
             this._takeWater(x, y);
             let roll = Math.random(), [size, r] = C.SIZES[0];   // small, medium or large: only the look and the burst's reach differ
             for (const z of C.SIZES) { if (roll < z[2]) { [size, r] = z; break; } roll -= z[2]; }
-            const b = this._cavBubble((x + 0.5) * TS, (y + 0.5) * TS, 0, 0, { col: 0x66f0ff, hold: true, atYou: true, r, dmg: G.DMG, size, form: G.FORM_MS, markR: 0.7 });   // (a barrage marks where each lands; its wave shows its reach)
+            const b = this._cavBubble((x + 0.5) * TS, (y + 0.5) * TS, 0, 0, { col: 0x66f0ff, hold: true, atYou: true, r, dmg: G.DMG, size, form: G.FORM_MS });
             b.godHeld = true;
             god.made.push(b);
             b.onFormed = () => {
@@ -3799,25 +3754,28 @@ class LevelManager {
                 this.tweens.addCounter({ from: 0, to: 1, duration: G.LIFT_MS, ease: 'Quad.easeOut', onUpdate: tw => { const u = tw.getValue(); b.x = x0 + (hx - x0) * u; b.y = y0 + (hy - y0) * u; b.img?.setPosition(b.x, b.y); } });
             };
         }));
-        this.time.delayedCall(G.RISE_MS + water.length * G.FORM_STEP + G.FORM_MS + G.LIFT_MS + 150, () => this._rippleGodSend(e, god));
+        this.time.delayedCall(G.RISE_MS + water.length * G.FORM_STEP + G.FORM_MS + G.LIFT_MS + 150, CombatSystem.tauntKeep(this, () => this._rippleGodSend(e, god)));   // (pulled by an ally: at it)
         return true;
     }
-    // Then one by one, the ones it found first: a bombardment, every AT_YOU-th straight at you, the rest anywhere
-    // within BOMBARD_R of where you are as it goes
+    // Then one by one, the ones it found first: a bombardment. One it found (a Smasher's, the Tide Mother's: big) goes
+    // straight at you and keeps after you all the way: only a dash at the right moment gets you through its wave. Its
+    // own: every AT_YOU-th straight at you, the rest anywhere within BOMBARD_R of where you are as it goes, each keeping
+    // after you FOLLOW of the way
     _rippleGodSend(e, god) {
         const G = this._cavCfg().GOD, TS = this.TILE_SIZE;
         if (e._god !== god) return;
         const queue = [...god.found, ...god.made].filter(b => b.godHeld);
-        queue.forEach((b, i) => this.time.delayedCall(i * G.SEND_STEP, () => {
+        queue.forEach((b, i) => this.time.delayedCall(i * G.SEND_STEP, CombatSystem.tauntKeep(this, () => {
             if (e._god !== god || !b.godHeld || b.gone || (b.img && !this._cavs?.includes(b))) return;
+            const big = god.found.includes(b);
             let dx = 0, dy = 0;   // one in AT_YOU straight at you, the rest somewhere round you
-            if (i % G.AT_YOU) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * G.BOMBARD_R * TS; dx = Math.cos(a) * d; dy = Math.sin(a) * d; }
-            const px = this.player.x + dx, py = this.player.y - (this.SLIME_Y_OFFSET || 0) + dy;
+            if (!big && i % G.AT_YOU) { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * G.BOMBARD_R * TS; dx = Math.cos(a) * d; dy = Math.sin(a) * d; }
+            const px = (this.playerX + 0.5) * TS + dx, py = (this.playerY + 0.5) * TS + dy;   // (your tile: not your sprite mid-hop)
             b.godHeld = false; b.held = false;
-            // slow, then faster and faster, keeping after you for the first part of its flight (FOLLOW), then committed
-            b.redirect(px, py, { ms: Math.max(300, Math.hypot(px - b.x, py - b.y) / TS / G.SEND_SPEED * 1000 * G.SLOW), ease: 'Cubic.easeIn', follow: { dx, dy, until: G.FOLLOW } });
+            // slow, then faster and faster, to that spot, moved after you as you go
+            b.redirect(px, py, { ms: G.SEND_MS, ease: 'Cubic.easeIn', follow: big ? 1e3 : G.FOLLOW });
             Sfx.play(this, 'whoosh');
-        }));
+        })));
         this.time.delayedCall(queue.length * G.SEND_STEP + 120, () => this._rippleGodEnd(e));
     }
     // The trance ends: down it comes, its eyes come back. Cut short, whatever it still held bursts where it is.
@@ -3825,7 +3783,7 @@ class LevelManager {
         const god = e._god, G = this._cavCfg().GOD;
         if (!god) return;
         e._god = null;
-        god.g?.destroy();
+        god.g?.destroy(); god.beads?.forEach(L => L.forEach(o => o.destroy()));
         if (god.aura?.active) this.tweens.add({ targets: god.aura, alpha: 0, duration: 250, onComplete: () => god.aura.destroy() });
         for (const b of [...god.found, ...god.made]) {
             if (!b.godHeld) continue;
@@ -3838,6 +3796,7 @@ class LevelManager {
             this.tweens.add({ targets: e.sprite, y: god.y0, duration: 250, ease: 'Sine.easeIn' });
             const u = e.sprite._cfx;
             if (u?.eyes) { u.eyes.clearTint(); if (u.eye !== 0xffffff) u.eyes.setTint(u.eye); }
+            if (String(e.sprite.frame.name).startsWith('god_')) e.sprite.play(e.sprite.texture.key + '_idle');
         }
         e._godReadyAt = this.time.now + G.CD;
     }
@@ -3846,18 +3805,19 @@ class LevelManager {
         const god = e._god, sp = e.sprite;
         if (!god || !sp?.active) return;
         if (god.aura?.active) god.aura.setPosition(sp.x, god.y0 + 6).setScale(0.5 + 0.05 * Math.sin(time * 0.01));
-        const g = god.g, t = time * 0.02, sx = sp.x, sy = sp.y - 8;
-        g.clear();
+        if (String(sp.frame.name).startsWith('god_')) sp.setFrame(Math.floor(time / 260) % 2 ? 'god_1' : 'god_0');
+        const t = time * 0.02, sx = sp.x, sy = sp.y - 8, beads = god.beads ||= new Map();
         for (const b of [...god.found, ...god.made]) {
-            if (!b.godHeld || b.forming) continue;
+            const L = beads.get(b);
+            if (!b.godHeld || b.forming) { if (L) { L.forEach(o => o.destroy()); beads.delete(b); } continue; }
             const img = b.img || b.cont, bob = god.made.includes(b) ? Math.sin(time * 0.006 + b.x) * 2 : 0;
             img?.setPosition?.(b.x, b.y + bob);
-            const bx = b.x, by = b.y + bob, len = Math.hypot(bx - sx, by - sy) || 1, nx = -(by - sy) / len, ny = (bx - sx) / len, n = 14;
-            for (const [w, a, col] of [[3, 0.25, 0x66f0ff], [1.2, 0.8, 0xdfffff]]) {
-                g.lineStyle(w, col, a).beginPath();
-                for (let i = 0; i <= n; i++) { const q = i / n, off = Math.sin(q * 10 - t) * 3 * Math.sin(q * Math.PI), x = sx + (bx - sx) * q + nx * off, y = sy + (by - sy) * q + ny * off; i ? g.lineTo(x, y) : g.moveTo(x, y); }
-                g.strokePath();
-            }
+            // the thread: beads of water running out to it along a ripple
+            const bx = b.x, by = b.y + bob, len = Math.hypot(bx - sx, by - sy) || 1, nx = -(by - sy) / len, ny = (bx - sx) / len, n = Math.max(3, Math.min(9, Math.round(len / 9)));
+            const beadsOf = L || (beads.set(b, []), beads.get(b));
+            while (beadsOf.length < n) { const o = this.add.image(sx, sy, 'fx_enemies_c', beadsOf.length % 2 ? 'foam_1' : 'foam_0').setTint(0x9ff8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(3.25); this._vfxSort?.(o); beadsOf.push(o); }
+            while (beadsOf.length > n) beadsOf.pop().destroy();
+            beadsOf.forEach((o, i) => { const q = ((i + (time * 0.002) % 1) / n) % 1, off = Math.sin(q * 10 - t) * 3 * Math.sin(q * Math.PI); o.setPosition(Math.round(sx + (bx - sx) * q + nx * off), Math.round(sy + (by - sy) * q + ny * off)).setAlpha(0.5 + 0.5 * Math.sin(q * Math.PI)); });
         }
     }
 
@@ -3904,7 +3864,7 @@ class LevelManager {
         }
     }
     // How much faster than usual `e` attacks right now (a Tidecaller's boost): its attack cooldowns are divided by this
-    _atkSpd(e, now = this.time.now) { return (e?._tideUntil || 0) > now ? (e._tideAtk || 1) : 1; }
+    _atkSpd(e, now = this.time.now) { return ((e?._tideUntil || 0) > now ? (e._tideAtk || 1) : 1) * ((e?._rgTauntUntil || 0) > now ? Rimeguard.CFG.TAUNT_ATK : 1); }   // (a Tidecaller's surge; the Rimeguard's taunt)
     _tideCfg() { return { HP: 120, SPEED: 1.6, TIDE_R: 4, ATK_LAND: 1.2, ATK_WATER: 1.8 }; }
     createTidecaller(x, y, ri) {
         const C = this._tideCfg();
@@ -3936,91 +3896,11 @@ class LevelManager {
     // Killed, everything within R of her is DISCOURAGED for DISC_MS: x DISC_SPD as fast, but braced, taking x DISC_TAKEN.
     _cheerCfg() { return { HP: 110, SPEED: 0.16, R: 5, FIRST: 2500, SHOW_MS: 6000, DUR: 6000, CD: 8000, RAISE_AT: 450, MOVE: 1.6, DMG: 3, TAKEN: 0.5,
         DISC_MS: 5000, DISC_SPD: 0.6, DISC_TAKEN: 0.6, SEEK_MS: 500, SEEK_R: 10, KEEP_OFF: 3, COL: 0xff6ad0, CSS: '#ff7ad8', DISC_COL: 0x7080b0, DISC_CSS: '#9aa8d8' }; }
-    // her art (made once): a gold pompom, a heart for the ones she cheers (and its two broken halves), a spotlight's beam, the stage and its
-    // curtains, her backup dancers
+    // her art: pompoms, hearts (whole and broken) and her backup dancers are fx_enemies_c's (typed by hand); the stage, its
+    // curtains and the spotlight are files of their own (assets/art)
     static cheerArt(scene) {
-        const pom = ShopScene.icon(scene, 'fx_pompom', 14, { Y: '#ffd84a', y: '#d8a020', w: '#fff3c0', p: '#ff7ad8', h: '#b04080' }, m => {
-            for (let y = 0; y < 12; y++) for (let x = 0; x < 14; x++) {   // a ball of strands, ragged at the edge
-                const dx = x + 0.5 - 7, dy = y + 0.5 - 6, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
-                if (r > 5.6 || (r > 4.4 && Math.sin(a * 9) < -0.2)) continue;
-                const st = Math.sin(a * 9 + r * 0.6);
-                m.set(x, y, st > 0.55 ? 'w' : st < -0.6 ? 'p' : dx + dy > 3 ? 'y' : 'Y');
-            }
-            m.rect(6, 11, 2, 3, 'h');
-        });
-        const heart = ShopScene.icon(scene, 'fx_cheer_heart', 9, { p: '#ff5fb0', P: '#ffb0dc' }, m => {
-            m.rect(2, 2, 2, 1, 'p'); m.rect(5, 2, 2, 1, 'p'); m.rect(1, 3, 7, 2, 'p'); m.rect(2, 5, 5, 1, 'p'); m.rect(3, 6, 3, 1, 'p'); m.set(4, 7, 'p');
-            m.set(2, 3, 'P'); m.set(2, 2, 'P');
-        });
-        const inHeart = (x, y) => (y === 2 && (x === 2 || x === 3 || x === 5 || x === 6)) || ((y === 3 || y === 4) && x >= 1 && x <= 7) || (y === 5 && x >= 2 && x <= 6) || (y === 6 && x >= 3 && x <= 5);
-        const CRACK = { 2: 4, 3: 5, 4: 4, 5: 3, 6: 4 };   // a zigzag down its middle
-        const broke = [true, false].map(left => ShopScene.icon(scene, left ? 'fx_heartbreak_l' : 'fx_heartbreak_r', 9, { p: '#a8507a', P: '#d890b0' }, m => {
-            for (let y = 2; y < 7; y++) for (let x = 1; x < 8; x++) if (inHeart(x, y) && (left ? x < CRACK[y] : x > CRACK[y])) m.set(x, y, 'p');
-            if (left) m.set(2, 3, 'P');
-        }));
-        if (!scene.textures.exists('fx_spot')) {   // a cone of light, narrow at its lamp, wide and bright where it lands, soft at its sides
-            const W = 64, H = 128, t = scene.textures.createCanvas('fx_spot', W, H), ctx = t.getContext(), img = ctx.createImageData(W, H);
-            for (let y = 0; y < H; y++) {
-                const f = y / (H - 1), half = 5 + 26 * f;
-                for (let x = 0; x < W; x++) {
-                    const d = Math.abs(x + 0.5 - W / 2) / half;
-                    if (d >= 1) continue;
-                    const i = (y * W + x) * 4, a = (1 - d * d) * (0.15 + 0.6 * f) * Math.min(1, f * 6);
-                    img.data[i] = 255; img.data[i + 1] = 244; img.data[i + 2] = 214; img.data[i + 3] = Math.round(255 * a);
-                }
-            }
-            ctx.putImageData(img, 0, 0); t.refresh();
-        }
-        const stage = MenuArt.tex(scene, 'fx_cheer_stage', 96, 20, P => {   // a wooden deck, gold trim, a red skirt hung with bunting
-            for (let x = 0; x < 96; x++) {
-                for (let y = 0; y < 7; y++) {
-                    if ((x < 2 || x > 93) && y === 0) continue;
-                    P.put(x, y, y === 0 ? 0xc08a54 : y === 6 ? 0x4a2a14 : x % 9 === 0 ? 0x6a4024 : 0x9a6438);
-                }
-                P.put(x, 7, 0xffd84a); P.put(x, 8, 0xb8862a);
-                const fold = Math.sin(x * 1.1), edge = x === 0 || x === 95;
-                for (let y = 9; y < 19; y++) P.put(x, y, edge ? 0x1c1728 : fold > 0.5 ? 0xd83048 : fold < -0.5 ? 0x7a0c20 : 0xb01830);
-                P.put(x, 19, 0x2a0610);
-                const seg = Math.floor(x / 8), u = x - seg * 8;
-                if (!edge) for (let y = 9; y < 9 + 4 - Math.abs(u - 3.5); y++) P.put(x, y, [0xff5fb0, 0xffd84a, 0x6ad8ff, 0xffffff][seg % 4]);
-            }
-        });
-        const back = MenuArt.tex(scene, 'fx_cheer_back', 92, 60, P => {   // the back curtain, side drapes tied with gold, a scalloped valance of bulbs
-            for (let y = 6; y < 60; y++) for (let x = 10; x < 82; x++) {
-                const f = Math.sin(x * 0.9);
-                P.put(x, y, f > 0.6 ? 0x7a1226 : f < -0.6 ? 0x3a0610 : 0x5a0a18);
-            }
-            for (const side of [0, 1]) for (let y = 4; y < 60; y++) {
-                const w = y < 39 ? 12 - (y - 4) / 35 * 5 : 7 + (y - 39) / 21 * 5;
-                for (let i = 0; i < w; i++) {
-                    const f = Math.sin(i * 1.3 + side);
-                    P.put(side ? 91 - i : i, y, i === Math.ceil(w) - 1 ? 0x4a0814 : f > 0.5 ? 0xd83048 : f < -0.5 ? 0x7a0c20 : 0xb01830);
-                }
-                if (y >= 38 && y <= 40) for (let i = 0; i < 9; i++) P.put(side ? 91 - i : i, y, y === 39 ? 0xffd84a : 0xb8862a);
-            }
-            for (let x = 0; x < 92; x++) {
-                const b = 8 + Math.round(2.5 * Math.abs(Math.sin(x * Math.PI / 12)));
-                for (let y = 0; y < b; y++) P.put(x, y, y === 0 ? 0x7a0c20 : 0xc01c34);
-                P.put(x, b, 0xffd84a); P.put(x, b + 1, 0x8a5a14);
-                if (x % 8 === 3) for (const [bx, by, c] of [[0, 3, 0xfff3c0], [1, 3, 0xfff3c0], [0, 4, 0xffd84a], [1, 4, 0xffd84a]]) P.put(x + bx, by, c);
-            }
-        });
-        // a backup dancer: a little slime with a bow, two frames (down, then up with its pompoms high), in two colours
-        const dancer = (key, B, b, L) => ShopScene.icon(scene, key, 18, { B, b, L, Y: '#ffd84a', y: '#c89a2a', w: '#ffffff', r: '#ff7ad8' }, (m, f) => {
-            const cy = f ? 11.5 : 12.5, rx = f ? 5.4 : 6.4, ry = f ? 5 : 4;
-            for (let y = 0; y < 17; y++) for (let x = 0; x < 18; x++) {
-                const dx = (x + 0.5 - 9) / rx, dy = (y + 0.5 - cy) / ry;
-                if (y + 0.5 > 16.5 || dx * dx + dy * dy > 1) continue;
-                m.set(x, y, dy > 0.45 ? 'b' : dx < -0.2 && dy < -0.2 ? 'L' : 'B');
-            }
-            const ey = f ? 11 : 12;
-            m.set(7, ey, 'k'); m.set(11, ey, 'k'); m.set(7, ey - 1, 'w'); m.set(11, ey - 1, 'w');
-            const top = Math.round(cy - ry);
-            m.set(8, top - 1, 'r'); m.set(10, top - 1, 'r'); m.set(9, top - 1, 'r'); m.set(8, top - 2, 'r'); m.set(10, top - 2, 'r');   // its bow
-            for (const sx of [2.5, 15.5]) m.disc(sx, f ? 5 : 13, 2, 'Y');   // pompoms: low, then thrown up
-            m.set(2, f ? 4 : 12, 'w'); m.set(15, f ? 4 : 12, 'w');
-        }, 2);
-        return { pom, heart, broke, spot: 'fx_spot', stage, back, dancers: [dancer('fx_dancer_a', '#5ad0f0', '#2a7ab0', '#c0f4ff'), dancer('fx_dancer_b', '#ffb84a', '#c06a20', '#ffe8b0')] };
+        for (const v of ['a', 'b']) if (!scene.anims.exists('cheer_dancer_' + v)) scene.anims.create({ key: 'cheer_dancer_' + v, frames: [0, 1].map(i => ({ key: 'fx_enemies_c', frame: `dancer_${v}_${i}` })), frameRate: 6, repeat: -1 });
+        return { heart: 'heart', broke: ['hb_l', 'hb_r'], spot: 'fx_spot', stage: 'fx_cheer_stage', back: 'fx_cheer_back', dancers: ['cheer_dancer_a', 'cheer_dancer_b'] };
     }
     createCheerleader(x, y, ri) {
         const C = this._cheerCfg();
@@ -4030,9 +3910,9 @@ class LevelManager {
         e._moveCdMult = C.SPEED; e._cheerNext = this.time.now + C.FIRST;
         const k = LevelManager.bodyKey(this, 'cheer');
         if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
-        const A = LevelManager.cheerArt(this);
-        e._pomL = this.add.image(e.sprite.x, e.sprite.y, A.pom).setFlipX(true);
-        e._pomR = this.add.image(e.sprite.x, e.sprite.y, A.pom);
+        LevelManager.cheerArt(this);
+        e._pomL = this.add.image(e.sprite.x, e.sprite.y, 'fx_enemies_c', 'pom_1').setFlipX(true);
+        e._pomR = this.add.image(e.sprite.x, e.sprite.y, 'fx_enemies_c', 'pom_1');
         e._pomPhase = Math.random() * 6; e._pomUp = [0, 0];
         return e;
     }
@@ -4081,6 +3961,7 @@ class LevelManager {
             }
             if (el > 300 && beat !== e._cheerBeat) {   // the routine: a hop on every other beat, both pompoms up every fourth
                 e._cheerBeat = beat;
+                EnemyManager.playAtk?.(this, s, 330, beat % 2 === 1, 'cheer_');   // her cheer, then a wink
                 if (beat % 2 === 0) this._vfxHop?.(s, e._baseScale ?? this.SLIME_SCALE, 220);
                 if (beat % 4 === 3) this._cheerConfetti(s, 8);
             }
@@ -4091,14 +3972,13 @@ class LevelManager {
         const bob = Math.sin(time * 0.006 + e._pomPhase), vis = s.visible && !e._phasedOut, al = s.alpha ?? 1;
         [[e._pomL, -1, e._pomUp[0]], [e._pomR, 1, e._pomUp[1]]].forEach(([pm, dir, up]) => {
             if (!pm?.active) return;
-            const shake = up > 0.3 ? Math.sin(time * 0.05 + dir) * 0.5 : Math.sin(time * 0.004 + e._pomPhase) * 0.18;
-            pm.setVisible(vis).setAlpha(al).setDepth((s.depth ?? 1) + 0.02)
-                .setPosition(s.x + dir * (side + 5 * up), mid + 5 + bob * 1.5 * dir - up * 26)
-                .setRotation(dir * (0.35 - 0.6 * up) + shake * dir).setScale(1 + 0.2 * up);
+            const shake = up > 0.3 ? Math.round(Math.sin(time * 0.05 + dir) * 1.5) : 0;
+            pm.setVisible(vis).setAlpha(al).setDepth((s.depth ?? 1) + 0.02).setFrame(up > 0.45 ? 'pom_0' : 'pom_1')
+                .setPosition(Math.round(s.x + dir * (side + 5 * up) + shake), Math.round(mid + 5 + bob * 1.5 * dir - up * 26)).setScale(1 + 0.2 * up);
         });
         if (e._cheerStage?.active) {
             e._cheerStage.setPosition(...this._cheerAnchor(e)).setDepth((s.depth ?? 1) - 0.03);
-            e._cheerDancers.forEach((dn, i) => { dn.y = -1 - Math.abs(Math.sin(time * 0.009 + i * Math.PI / 2)) * 4; dn.setRotation(Math.sin(time * 0.006 + i * 2) * 0.12); });
+            e._cheerDancers.forEach((dn, i) => { dn.y = -1 - Math.round(Math.abs(Math.sin(time * 0.009 + i * Math.PI / 2)) * 4); });
         }
         if (e._cheerStart && Math.random() < 0.25) {   // dust glittering in the lights
             const feet = s.y + (0.92 - (s.originY ?? 0.5)) * H;
@@ -4122,7 +4002,7 @@ class LevelManager {
         const back = this.add.image(0, -3, A.back).setOrigin(0.5, 1).setScale(1, 0);
         const stage = this.add.image(0, -5, A.stage).setOrigin(0.5, 0).setScale(1, 0);
         const pool = this.add.image(0, -2, 'vfx_glow').setTint(0xffe8c0).setBlendMode(Phaser.BlendModes.ADD).setScale(0.55, 0.13).setAlpha(0);
-        const dancers = A.dancers.map((k, i) => this.add.sprite(i ? 26 : -26, -1, k, '0').setOrigin(0.5, 1).setScale(0).play(k));
+        const dancers = A.dancers.map((k, i) => this.add.sprite(i ? 26 : -26, -1, 'fx_enemies_c', `dancer_${i ? 'b' : 'a'}_0`).setOrigin(0.5, 1).setScale(0).setFlipX(!!i).play(k));
         const beams = [-1, 1].map(k => {   // from lamps at the valance's ends down onto her
             const dx = -k * 42, dy = 48;
             return this.add.image(k * 42, -56, A.spot).setOrigin(0.5, 0).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(44, Math.hypot(dx, dy) + 12)
@@ -4140,9 +4020,9 @@ class LevelManager {
         this.time.delayedCall(260, () => { if (e._cheerStart === time) Sfx.play(this, 'cheer'); });
     }
     _cheerConfetti(s, n) {
-        if (!this.textures.exists('__WHITE')) return;
-        const conf = this.add.particles(s.x, s.y - 10, '__WHITE', { speed: { min: 80, max: 170 }, angle: { min: 210, max: 330 }, gravityY: 320, lifespan: 1000,
-            scale: { min: 0.8, max: 1.4 }, rotate: { min: 0, max: 360 }, alpha: { start: 1, end: 0 }, tint: [0xff5fb0, 0xffd84a, 0x6ad8ff, 0xffffff], emitting: false }).setDepth((s.depth ?? 1) + 0.05);
+        if (!this.textures.exists('fx_enemies_c')) return;   // (scraps of paper, turning over by frames)
+        const conf = this.add.particles(s.x, s.y - 10, 'fx_enemies_c', { frame: ['conf_0', 'conf_1', 'conf_2'], speed: { min: 80, max: 170 }, angle: { min: 210, max: 330 }, gravityY: 320, lifespan: 1000,
+            alpha: { start: 1, end: 0 }, tint: [0xff5fb0, 0xffd84a, 0x6ad8ff, 0xffffff], emitting: false }).setDepth((s.depth ?? 1) + 0.05);
         conf.explode(n); this.time.delayedCall(1100, () => conf.destroy());
     }
     // The cheer lands: everyone close is encouraged; confetti and a pink ring go out
@@ -4198,8 +4078,8 @@ class LevelManager {
             e._breakAt = time;
             const x = s.x + (Math.random() - 0.5) * 12, y = mid - 16;
             LevelManager.cheerArt(this).broke.forEach((k, i) => {
-                const h = this.add.image(x + (i ? 1 : -1), y, k).setDepth(d + 0.05);
-                this.tweens.add({ targets: h, x: h.x + (i ? 4 : -4), y: y + 10, angle: i ? 28 : -28, alpha: 0, duration: 850, ease: 'Quad.easeIn', onComplete: () => h.destroy() });
+                const h = this.add.image(x + (i ? 1 : -1), y, 'fx_enemies_c', k).setDepth(d + 0.05);
+                this.tweens.add({ targets: h, x: h.x + (i ? 4 : -4), y: y + 10, alpha: 0, duration: 850, ease: 'Quad.easeIn', onComplete: () => h.destroy() });
             });
         }
     }
@@ -4219,8 +4099,8 @@ class LevelManager {
         e._cheerFx.setPosition(s.x, mid).setDepth((s.depth ?? 1) + 0.01);
         if (time - (e._heartAt || 0) > 420) {
             e._heartAt = time;
-            const h = this.add.image(s.x + (Math.random() - 0.5) * 16, mid - 10, LevelManager.cheerArt(this).heart).setDepth((s.depth ?? 1) + 0.05).setScale(0.9);
-            this.tweens.add({ targets: h, y: h.y - 18, alpha: 0, scale: 1.2, duration: 700, ease: 'Quad.easeOut', onComplete: () => h.destroy() });
+            const h = this.add.image(s.x + (Math.random() - 0.5) * 16, mid - 10, 'fx_enemies_c', 'heart').setDepth((s.depth ?? 1) + 0.05);
+            this.tweens.add({ targets: h, y: h.y - 18, alpha: 0, duration: 700, ease: 'Quad.easeOut', onComplete: () => h.destroy() });
         }
     }
 
@@ -4269,14 +4149,9 @@ class LevelManager {
 
     _waveTell(e) {
         Sfx.play(this, 'tell', { ms: 700 });
-        const g = this.add.graphics().setDepth(6);
-        g.fillStyle(0x1b3f6b, 0.6); g.fillCircle(0, 0, 12);
-        g.lineStyle(2.4, 0xdff3ff, 0.95); g.strokeCircle(0, 0, 12);
-        g.fillStyle(0xffffff, 0.95);
-        g.fillRect(-1.5, -7.5, 3, 8.5);
-        g.fillCircle(0, 5, 1.8);
-        g.x = e.sprite.x; g.y = e.sprite.y - 30;
-        this.tweens.add({ targets: g, scaleX: 1.3, scaleY: 1.3, duration: 220,
+        const g = this.add.image(e.sprite.x, e.sprite.y - 30, 'fx_enemies_c', 'wwarn').setDepth(6).setScale(1.6);
+        EnemyManager.playAtk?.(this, e.sprite, (e._waveTellEnd || this.time.now + 600) - this.time.now, e._waveDx < 0, 'tell_');   // crouched on its board
+        this.tweens.add({ targets: g, scaleX: 2, scaleY: 2, duration: 220,
                           yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         e._waveTellGfx = g;
         (this._waveTells = this._waveTells || new Set()).add(g);
@@ -4295,7 +4170,8 @@ class LevelManager {
     _updateWaveCharge(e, time, delta) {
         const TS = this.TILE_SIZE, dt = Math.min(delta, 50) / 1000;
         e._waveSpeed = Math.min(e._waveSpeedMax, e._waveSpeed0 + e._waveDist * e._waveAccel);
-        const mx = e._waveDx * e._waveSpeed * dt, my = e._waveDy * e._waveSpeed * dt;
+        const sl = dt * Trident.slow(this, e.sprite.x, e.sprite.y - (this.SLIME_Y_OFFSET || -10));   // (the Boreal Trident's aura: it gains speed by the ground it covers, so that's slowed too)
+        const mx = e._waveDx * e._waveSpeed * sl, my = e._waveDy * e._waveSpeed * sl;
         const nx = e.sprite.x + mx, ny = e.sprite.y + my;
         const ntx = Math.floor(nx / TS), nty = Math.floor((ny - (this.SLIME_Y_OFFSET || -10)) / TS);
         const floor = (x, y) => this.world?.[x]?.[y] === this.FLOOR && !this.isInLockedRoom(x, y);
@@ -4315,17 +4191,27 @@ class LevelManager {
             this.tweens.add({ targets: e.sprite, x: e.x * TS + TS / 2, y: e.y * TS + TS / 2 + (this.SLIME_Y_OFFSET || -10), duration: 120, ease: 'Quad.easeOut', onComplete: () => { e._attackAnimPlaying = false; } });
             this._setSpeedIndicator?.(e, 'wave', 'speed_anchor', false);
             this.showStatusText?.(e.sprite.x, e.sprite.y - 26, 'SPENT', '#8fd8ff');
-            const crash = this.add.graphics().setDepth(2.4);
-            crash.x = e.sprite.x; crash.y = e.sprite.y;
-            crash.lineStyle(3, 0xdff3ff, 0.9); crash.strokeCircle(0, 0, 14);
-            this.tweens.add({ targets: crash, alpha: 0, scaleX: 3, scaleY: 3,
-                duration: 340, onComplete: () => crash.destroy() });
+            if (String(e.sprite.frame.name).startsWith('charge_')) { e.sprite.setFlipX(false); e.sprite.play(e.sprite.texture.key + '_idle'); }
+            const crash = this.add.sprite(e.sprite.x, e.sprite.y + 6, 'fx_enemies_c', 'crash_0').setDepth(2.4).setOrigin(0.5, 1).setScale(2);   // the wave thrown up off the wall
+            this._vfxSort?.(crash);
+            this.tweens.addCounter({ from: 0, to: 2.99, duration: 340, onUpdate: t => crash.setFrame('crash_' + Math.floor(t.getValue())), onComplete: () => crash.destroy() });
+            this.tweens.add({ targets: crash, alpha: 0, delay: 180, duration: 160 });
             return;
         }
 
         e.sprite.x = nx; e.sprite.y = ny;
         e.x = ntx; e.y = nty;
         e._waveDist += Math.hypot(mx, my);
+        if (e.sprite.texture.has('charge_0')) {   // riding it: its charge frames, facing the way it goes, spray off the board
+            if (!String(e.sprite.frame.name).startsWith('charge_')) e.sprite.anims.stop();
+            e.sprite.setFlipX(e._waveDx < 0).setFrame(Math.floor(time / 110) % 2 ? 'charge_1' : 'charge_0');
+            if (time - (e._sprayAt || 0) > 70) {
+                e._sprayAt = time;
+                const f = this.add.image(nx - e._waveDx * 10 + (Math.random() - 0.5) * 10, ny + 6, 'fx_enemies_c', Math.random() < 0.5 ? 'foam_0' : 'foam_1').setDepth(e.sprite.depth - 0.01);
+                this._vfxSort?.(f);
+                this.tweens.add({ targets: f, x: f.x - e._waveDx * 8, y: f.y - 6 - Math.random() * 6, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => f.destroy() });
+            }
+        }
 
         // Carpet: 5 tiles across, perpendicular to travel.
         const perpX = -e._waveDy, perpY = e._waveDx;
@@ -4338,17 +4224,20 @@ class LevelManager {
 
         // Are you in the wave? Perpendicular distance inside half-width, and roughly
         // level with the front. Either that or standing right next to the rider.
-        const dxp = this.player.x - e.sprite.x, dyp = this.player.y - e.sprite.y;
+        // (the ally it charged, and you: CombatSystem.tauntBoth, each with its own gap between hits)
+        CombatSystem.tauntBoth(this, () => {
+        const dxp = this.player.x - e.sprite.x, dyp = this.player.y - e.sprite.y, w = this._tauntAlly || e;
         const along = dxp * e._waveDx + dyp * e._waveDy;
         const perp  = Math.abs(dxp * perpX + dyp * perpY);
         const inWave = perp <= e._waveHalfW * TS && Math.abs(along) <= 2 * TS;
         const nearRider = Math.hypot(dxp, dyp) <= 2 * TS;
 
-        if ((inWave || nearRider) && time - (e._waveLastHit || 0) >= e._waveHitGap) {
-            e._waveLastHit = time;
+        if ((inWave || nearRider) && time - (w._waveLastHit || 0) >= e._waveHitGap) {
+            w._waveLastHit = time;
             // the faster it's going, the harder it hits
             const f = Phaser.Math.Clamp((e._waveSpeed - e._waveSpeed0) / (e._waveSpeedMax - e._waveSpeed0), 0, 1);
-            this.takeDamage(Math.round(e._waveDmg[0] + (e._waveDmg[1] - e._waveDmg[0]) * f) * (this.enemyDamageScale || 1));
+            this.takeDamage(Math.round(e._waveDmg[0] + (e._waveDmg[1] - e._waveDmg[0]) * f) * (this.enemyDamageScale || 1), e);
+            if (w !== e) { this.showStatusText?.(this.player.x, this.player.y - 30, 'SWEPT', '#dff3ff'); return; }
             this._waterSlowUntil = Math.max(this._waterSlowUntil || 0, time + 1500);
             // Pulled a tile onto its line (if you're off it), then thrown _waveKnock tiles along its path, as far as the floor allows
             const off = (this.player.x - e.sprite.x) * perpX + (this.player.y - e.sprite.y) * perpY;
@@ -4371,6 +4260,7 @@ class LevelManager {
             }
             this.showStatusText?.(this.player.x, this.player.y - 30, 'SWEPT', '#dff3ff');
         }
+        });
     }
 
     // ── WISHING WELL — the source ───────────────────────────────────────────
@@ -4415,8 +4305,7 @@ class LevelManager {
         e._frostMoveCd = e._fgAim ? e._fgHold : e._moveCdMult; e._moveCdMult = 999;
         e.isStunned = true; e.stunnedUntil = e._frostUntil;
         this.updateEnemyHealthBar?.(e);
-        const key = LevelManager.frostBlockKey(this);
-        e._frostGfx = this.add.image(e.sprite.x, e.sprite.y + 6, key).setScale(1.7).setDepth((e.sprite.depth ?? 1) + 0.02).setAlpha(0);
+        e._frostGfx = this.add.image(e.sprite.x, e.sprite.y + 6, 'fx_enemies_b', 'ice_block').setScale(1.7).setDepth((e.sprite.depth ?? 1) + 0.02).setAlpha(0);
         e._frostRing = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.02);
         this.tweens.add({ targets: e._frostGfx, alpha: 0.92, scale: 1.8, duration: 220, ease: 'Back.easeOut' });
         this._vfxBursts?.ice?.explode(18, e.sprite.x, e.sprite.y);
@@ -4449,7 +4338,7 @@ class LevelManager {
                 const m = this.add.image(s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.7, 'vfx_dot').setTint(0xdff8ff).setAlpha(0.7).setDepth(4.2);
                 this.tweens.add({ targets: m, y: m.y - 12, alpha: 0, duration: 700, onComplete: () => m.destroy() });
             }
-            if (Math.hypot(this.playerX - e.x, this.playerY - e.y) <= F.HAZE_R) {
+            if (CombatSystem.tauntAs(this, null, () => Math.hypot(this.playerX - e.x, this.playerY - e.y)) <= F.HAZE_R) {   // (you where you are, whoever it's after)
                 this._frostHazeMult = F.HAZE_SLOW;
             }
         }
@@ -4501,10 +4390,9 @@ class LevelManager {
         if (!s?.active) return;
         for (let i = 0; i < B.VOLLEY; i++) {
             const a = i / B.VOLLEY * Math.PI * 2 + Math.random() * 0.2;
-            const g = this.add.graphics().setDepth(2.8).setPosition(s.x, s.y);
-            g.fillStyle(0x1e3a10, 1).fillCircle(0, 0, 4.5);
-            g.fillStyle(0x8ae04a, 1).fillCircle(0, 0, 3.5);
-            g.fillStyle(0xd4ff9a, 1).fillCircle(-1, -1, 1.3);
+            if (!this.anims.exists('eb_glob')) this.anims.create({ key: 'eb_glob', frames: ['glob_0', 'glob_1'].map(frame => ({ key: 'fx_enemies_b', frame })), frameRate: 8, repeat: -1 });
+            const g = this.add.sprite(s.x, s.y, 'fx_enemies_b', 'glob_0').setDepth(2.8).setScale(1.2).play({ key: 'eb_glob', startFrame: i % 2 });   // a glob of poison, wobbling as it flies
+            this._vfxSort?.(g);
             this.enemyProjectiles.push({ src: e, gfx: g, vx: Math.cos(a) * B.GLOB_SPEED, vy: Math.sin(a) * B.GLOB_SPEED, damage: B.GLOB_DMG * (this.enemyDamageScale || 1),
                 startX: s.x, startY: s.y, maxDist: B.GLOB_RANGE * this.TILE_SIZE, _bfxKind: 'vine', onHit: () => this._poisonPlayer(B.POISON[0] * (this.enemyDamageScale || 1), B.POISON[1], B.POISON[2]) });
         }
@@ -4532,6 +4420,7 @@ class LevelManager {
                        && this.enemies.filter(o => o._isBud && o.sprite?.active && o.health > 0).length < B.ALL_MAX) {
                 e._budSwell = time;
                 e._budHold = e._moveCdMult; e._moveCdMult = 999;   // it plants itself to bud
+                EnemyManager.playAtk(this, e.sprite, B.SWELL_MS, false, 'swell_');   // filling, its flowers opening all over it
                 e._budRing = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.02);
                 this.showStatusText(e.sprite.x, e.sprite.y - 28, 'BUDDING!', '#ffb0dc');
             }
@@ -4604,6 +4493,7 @@ class LevelManager {
             if (still) {
                 if (e._shroud) this._shroudLook(e);
                 if (e._plate > 0 || e._plateBar) this._plateDraw(e);
+                if (e._dvTank) this._diverTank(e);
                 for (const a of [e._healerAura, e._anchorRing, e._shadeAura, e._tideAura]) if (a?.active) { a.setPosition(e.sprite.x, e.sprite.y); VisualFX.clipAura(this, a); }
                 continue;
             }
@@ -4611,9 +4501,9 @@ class LevelManager {
             if (e._isWraith) { this._wraithTick(e, time); this._wraithDrift(e); }
             if (e._shroudBy) this._shroudKeep(e, time);
             if (e._shroud) this._shroudLook(e);
-            if (e._isDiver) this._diverTick(e, time);
+            if (e._isDiver) CombatSystem.tauntAs(this, CombatSystem.tauntOf(this, e), () => this._diverTick(e, time));   // (pulled by an ally: it keeps off it and shoots at it)
             if (e._isLeech) this._leechTick(e, time);
-            if (e._isCeo) this._ceoTick(e, time);
+            if (e._isCeo) CombatSystem.tauntAs(this, CombatSystem.tauntOf(this, e), () => this._ceoTick(e, time));   // (its wave goes for the ally pulling it, and you)
             if (e._isGem) this._gemTick(e, time);
             if (e._isTidecaller) this._tideTick(e, time);
             if (e._tideFx || (e._tideUntil || 0) > time) this._tideLook(e, time);
@@ -4649,18 +4539,24 @@ class LevelManager {
         const o = near[Math.floor(Math.random() * near.length)];
         if (!o) return;
         o._shroud = true; o._shroudR = W.REVEAL; o._shroudBy = w; o._shroudOut = 0;
-        const g = this.add.graphics().setDepth(3).lineStyle(2, 0xbfd8ff, 0.8).lineBetween(w.sprite.x, w.sprite.y, o.sprite.x, o.sprite.y);
-        this.tweens.add({ targets: g, alpha: 0, duration: 450, onComplete: () => g.destroy() });
+        EnemyManager.playAtk(this, w.sprite, 450, o.x < w.x, 'cloak_');   // its wisps flare
+        const wisp = this._wraithWisps(w.sprite);   // ghost-fire drifting from it over to the one it hides
+        for (let k = 0; k <= 8; k++) wisp.emitParticleAt(w.sprite.x + (o.sprite.x - w.sprite.x) * k / 8, w.sprite.y + (o.sprite.y - w.sprite.y) * k / 8, 1);
         this.showStatusText(o.sprite.x, o.sprite.y - 28, 'CLOAKED', '#bfd8ff');
     }
     // Pale ghost-fire peeling off it and its body wavering, shrouded or not
     _wraithDrift(w) {
         const s = w.sprite;
         s.setScale((w._baseScale ?? this.SLIME_SCALE) * (1 + 0.04 * Math.sin(this.time.now / 220)), (w._baseScale ?? this.SLIME_SCALE) * (1 - 0.04 * Math.sin(this.time.now / 220)));
-        if (Math.random() < 0.3) {
-            const m = this.add.image(s.x + (Math.random() - 0.5) * 18, s.y + 4, 'vfx_dot').setTint(Math.random() < 0.5 ? 0xbfe4ff : 0x7aa8e0).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.7 * s.alpha).setDepth((s.depth ?? 1) - 0.02);
-            this.tweens.add({ targets: m, y: m.y - 22, x: m.x + (Math.random() - 0.5) * 10, alpha: 0, scale: 1.6, duration: 900, ease: 'Sine.easeOut', onComplete: () => m.destroy() });
-        }
+        if (Math.random() < 0.3 * s.alpha) this._wraithWisps(s).emitParticleAt(s.x + (Math.random() - 0.5) * 18, s.y + 4, 1);
+    }
+    // The scene's ghost-fire: hand-drawn wisps (fx_enemies_b wisp_0..2) rising and going out
+    _wraithWisps(s) {
+        if (this._ebWisp?.active) return this._ebWisp;
+        this._ebWisp = this.add.particles(0, 0, 'fx_enemies_b', { frame: ['wisp_0', 'wisp_1', 'wisp_2'], emitting: false, lifespan: { min: 700, max: 1000 },
+            speedY: { min: -30, max: -16 }, speedX: { min: -7, max: 7 }, alpha: { start: 0.75, end: 0 }, scale: { start: 1.3, end: 0.7 }, blendMode: 'ADD' }).setDepth((s?.depth ?? 1) - 0.02);
+        this._vfxSort?.(this._ebWisp);
+        return this._ebWisp;
     }
     // A shrouded ally: it stays while its Wraith lives and it hasn't been out of the aura too long
     _shroudKeep(e, time) {
@@ -4721,7 +4617,8 @@ class LevelManager {
         e._shadeAura?.setTint(F.col);
         if (quiet) return;
         this._vfxFlash?.(e.sprite.x, e.sprite.y, 60, F.col, 260, 0.8);
-        VisualFX.ripple(this, e.sprite.x, e.sprite.y, 10, 70, F.col, { duration: 500 });
+        EnemyManager.playAtk(this, e.sprite, 420, this.playerX < e.x, 'adapt_');   // its new element flaring off it
+        this._shadeWisps(F.col).explode(16, e.sprite.x, e.sprite.y);
         this.showStatusText(e.sprite.x, e.sprite.y - 40, `RESISTS ${form.toUpperCase()}`, UIKit._hex(F.col));
         Sfx.play(this, 'roar');
     }
@@ -4752,10 +4649,20 @@ class LevelManager {
         const now = this.time.now;
         if (e.sprite?.active && now - (e._absorbFxAt || 0) > 140) {   // a thread from what was hit to what took it
             e._absorbFxAt = now;
-            const g = this.add.graphics().setDepth(3).lineStyle(2, this._shadeCfg().FORMS[sh._form].col, 0.85).lineBetween(e.sprite.x, e.sprite.y, sh.sprite.x, sh.sprite.y);
-            this.tweens.add({ targets: g, alpha: 0, duration: 220, onComplete: () => g.destroy() });
+            const w = this._shadeWisps(this._shadeCfg().FORMS[sh._form].col);
+            for (let k = 0; k <= 6; k++) w.emitParticleAt(e.sprite.x + (sh.sprite.x - e.sprite.x) * k / 6, e.sprite.y + (sh.sprite.y - e.sprite.y) * k / 6, 1);
         }
         if (sh.health <= 0) this.killEnemy(sh);
+    }
+    // The Shade's element in the air: hand-drawn wisps (fx_enemies_b) in its colour, flung out and going out
+    _shadeWisps(col) {
+        if (!this._ebShade?.active) {
+            this._ebShade = this.add.particles(0, 0, 'fx_enemies_b', { frame: ['wisp_0', 'wisp_1', 'wisp_2'], emitting: false, lifespan: { min: 260, max: 520 },
+                speed: { min: 10, max: 70 }, gravityY: -40, alpha: { start: 0.9, end: 0 }, scale: { start: 1.4, end: 0.6 }, blendMode: 'ADD' }).setDepth(3);
+            this._vfxSort?.(this._ebShade);
+        }
+        this._ebShade.setParticleTint(col);
+        return this._ebShade;
     }
     _shadeTick(e, time) {
         const S = this._shadeCfg(), F = S.FORMS[e._form];
@@ -4777,79 +4684,159 @@ class LevelManager {
     }
 
     // ── TORPEDO DIVER ────────────────────────────────────────────────────────
-    // Aims down a line at you, then fires itself along it like a bullet, through you and on to
-    // the wall, leaving water. The shot is always instant: what's fair is the aim. The farther
-    // away it is, the shorter the aim (TELL_FAR at FAR tiles and beyond: you won't get out of
-    // the way); close up, the aim is long enough to step aside. The lit lane shows where it will
-    // go. A hit is DMG, and you drip and bleed.
-    _diverCfg() { return { HP: 110, SPEED: 1.2, CD: 5000, NEAR: 3, FAR: 8, TELL_NEAR: 1500, TELL_FAR: 220, DMG: 18, ZIP_MS: 12, BLEED_MS: 4000, WATER_MS: 12000, MAX_RUN: 40 }; }
+    // A sniper with a water rifle. It keeps KEEP_MIN to KEEP_MAX tiles off you with a clear line, and backs off when you
+    // come within BACK. No warning but the gun: it raises it and takes careful aim (AIM_MS), then fires a slug of water
+    // that homes the farther off you were (HOME: [tiles, degrees a second], between them a ramp: running dodges it close up
+    // and at middle range; from across a room it all but always finds you, unless you dash through it). A hit is DMG; you
+    // drip for DRIP_MS and your steps take SLOW times as long for SLOW_MS. Its shots are in the tank on its back (START, up
+    // to MAX). It drinks from the water it stands on, a shot every DRINK_MS, but every water tile holds only WATER_RES of
+    // them (hidden, shared by every diver). A tile drunk dry stays dry: only new water (a pipe's, a wellspring's, a Ripplerunner's
+    // wave, water where there was none) comes full. Run dry, it goes for the nearest water that has some left, the farther
+    // from you the better, and fills up, sniping on the way whenever it has a shot; otherwise it keeps its distance like any
+    // shooter, never walking past you if it can help it. With no water left to it, a shot trickles back every TRICKLE_MS. CD: from a shot to its next aim (a shot every 2.5s in all).
+    _diverCfg() { return { HP: 110, SPEED: 1.2, START: 3, MAX: 4, DRINK_MS: 1000, WATER_RES: 3, TRICKLE_MS: 6000, KEEP_MIN: 7, KEEP_MAX: 14, BACK: 5, SEEK_R: 6, SEEK_MS: 450,
+        AIM_MS: 800, CD: 1700, DMG: 16, DRIP_MS: 4000, SLOW: 1.6, SLOW_MS: 700, SHOT_SPD: 440, HOME: [[6, 0], [11, 120], [14, 300]], REACH: 40 }; }
     createTorpedoDiver(x, y, ri) {
         const D = this._diverCfg();
         const e = this.createEnemy(x, y, D.HP);
         e.tutorialRoomIndex = ri;
         e._isDiver = true; e._waterNative = true;
-        e._moveCdMult = D.SPEED; e._diveNext = this.time.now + 2500;
+        e._moveCdMult = D.SPEED; e._dvShots = D.START; e._dvFillAt = this.time.now; e._dvNext = this.time.now + 1200;
+        e._goalX = x; e._goalY = y;   // (it always walks to a tile of its own, never at you)
         const k = LevelManager.bodyKey(this, 'diver');
         if (k) { e.sprite.setTexture(k, 0); e.sprite.play(k + '_idle'); }
+        if (k && this.textures.get(k).has('tank_0')) { e._dvTank = this.add.image(e.sprite.x, e.sprite.y, k, 'tank_' + e._dvShots); this._vfxSort?.(e._dvTank); this._diverTank(e); }
         return e;
     }
-    _diverTick(e, time) {
-        const D = this._diverCfg();
-        if (e._diving || time < e._diveNext || e.isFrozen || e.isStunned || this._deathScreenActive) return;
-        const d = Math.hypot(this.playerX - e.x, this.playerY - e.y);
-        if (d < 2 || d > 16 || !this._clearShot(e.x, e.y, this.playerX, this.playerY)) return;
-        // the line: from it, through where you stand, on until a wall
-        const dx = this.playerX - e.x, dy = this.playerY - e.y, n = Math.max(Math.abs(dx), Math.abs(dy));
-        const line = [];
-        for (let i = 1; i <= D.MAX_RUN; i++) {
-            const tx = Math.round(e.x + dx * i / n), ty = Math.round(e.y + dy * i / n);
-            if (this.world[tx]?.[ty] !== this.FLOOR) break;
-            if (!line.length || line[line.length - 1][0] !== tx || line[line.length - 1][1] !== ty) line.push([tx, ty]);
-        }
-        if (!line.length) return;
-        const k = Phaser.Math.Clamp((d - D.NEAR) / (D.FAR - D.NEAR), 0, 1), tell = D.TELL_NEAR + (D.TELL_FAR - D.TELL_NEAR) * k;
-        e._diving = true; e._diveHold = e._moveCdMult; e._moveCdMult = 999;
-        const T = this.TILE_SIZE, g = e._diverTell = this.add.graphics().setDepth(0.9);
-        const t0 = time;
-        const draw = () => {   // the lit lane, like a Tidal Guard's aim: brighter as it nears
-            if (!g.active) return;
-            const a = Math.min(1, (this.time.now - t0) / tell), flash = a > 0.7 && (this.time.now / 70 | 0) % 2;
-            g.clear();
-            for (const [tx, ty] of line) {
-                g.fillStyle(flash ? 0xffffff : 0x4ad0ff, 0.12 + 0.3 * a).fillRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
-                g.lineStyle(1.5, 0x9fe8ff, 0.5 + 0.4 * a).strokeRect(tx * T + 2, ty * T + 2, T - 4, T - 4);
-            }
-        };
-        draw();
-        const tick = this.time.addEvent({ delay: 30, loop: true, callback: draw });
-        this.time.delayedCall(tell, () => {
-            tick.remove(); g.destroy(); e._diverTell = null;
-            if (!e.sprite?.active || e.health <= 0) return;
-            this._diverZip(e, line);
-        });
+    // its tank, laid behind its body frame for frame (a pixel lower when the body squashes), the water at its shots
+    _diverTank(e) {
+        const t = e._dvTank, s = e.sprite;
+        if (!t?.active || !s?.active) return;
+        const f = 'tank_' + Phaser.Math.Clamp(e._dvShots | 0, 0, this._diverCfg().MAX), low = /^(18|atk_[02]|fire_0|empty_1|refill_0)$/.test(String(s.frame.name));
+        if (t.frame.name !== f) t.setFrame(f);
+        t.setPosition(s.x, s.y + (low ? Math.abs(s.scaleY) : 0)).setScale(s.scaleX, s.scaleY).setOrigin(s.originX, s.originY).setFlipX(s.flipX)
+            .setAlpha(s.alpha).setVisible(s.visible).setDepth(s.depth - 0.001);
     }
-    _diverZip(e, line) {
-        const D = this._diverCfg(), T = this.TILE_SIZE;
-        let hit = false;
-        Sfx.play(this, 'whoosh');
-        line.forEach(([tx, ty], i) => this.time.delayedCall(i * D.ZIP_MS, () => {
-            if (!e.sprite?.active) return;
-            this.addWater(tx, ty, D.WATER_MS);
-            const s = this.add.image(tx * T + T / 2, ty * T + T / 2, 'vfx_dot').setTint(0xbff0ff).setScale(2.2).setAlpha(0.8).setDepth(3);
-            this.tweens.add({ targets: s, scale: 0.4, alpha: 0, duration: 260, onComplete: () => s.destroy() });
-            if (!hit && tx === this.playerX && ty === this.playerY) {
-                hit = true;
-                const before = this.health;
-                this._hitBy = e; this._hitMelee = true; this.takeDamage(D.DMG * (this.enemyDamageScale || 1)); this._hitBy = null; this._hitMelee = false;
-                if (this.health < before) { this._applyDripping(this.time.now); this._bleedStart(D.BLEED_MS); }
-                this.cameras.main.shake(80, 0.006);
+    // what a water tile has left for them: kept with the tile's own water (addWater's entry), so water gone and back again,
+    // or a new level's, is full
+    _diverRes(x, y) {
+        if (!this._dvRes || this._dvResOf !== this.waterTiles) { this._dvRes = new Map(); this._dvResOf = this.waterTiles; }
+        const k = this._wKey(x, y), r = this._dvRes.get(k);
+        return r && r.w === this.waterTiles?.get(k) ? r.n : this._diverCfg().WATER_RES;
+    }
+    _diverTick(e, time) {
+        const D = this._diverCfg(), s = e.sprite, T = this.TILE_SIZE;
+        this._diverTank(e);
+        // the tank: it drinks from the tile it stands on while that has some left; with no water left to it, a shot trickles back
+        const drink = this.isWaterAt(e.x, e.y) && this._diverRes(e.x, e.y) > 0;
+        const rate = e._dvShots >= D.MAX ? 0 : drink ? D.DRINK_MS : e._dvDry ? D.TRICKLE_MS : 0;
+        if (!rate) e._dvFillAt = time;
+        else if (time - e._dvFillAt >= rate) {
+            e._dvShots++; e._dvFillAt = time;
+            if (drink) {
+                const k = this._wKey(e.x, e.y), left = this._diverRes(e.x, e.y) - 1;
+                this._dvRes.set(k, { n: left, w: this.waterTiles.get(k) });
+                if (!left) { this._diverFx('drain', e.x * T + T / 2, e.y * T + T / 2 + 2, false, 0.5); e._dvSeekAt = 0; }   // its last: a ripple, and it looks for more
+                if (!e._dvAim) EnemyManager.playAtk(this, s, 500, false, 'refill_');   // bubbles up off its tank
             }
-        }));
-        // it ends at the last free tile of the lane
-        const free = [...line].reverse().find(([x, y]) => !(x === this.playerX && y === this.playerY) && !this.enemies.some(o => o !== e && o.sprite?.active && o.x === x && o.y === y)) || [e.x, e.y];
-        this.tweens.killTweensOf(e.sprite);
-        this.tweens.add({ targets: e.sprite, x: free[0] * T + T / 2, y: free[1] * T + T / 2 + this.SLIME_Y_OFFSET, duration: line.length * D.ZIP_MS, ease: 'Linear', onUpdate: () => this.updateEnemyHealthBar(e),
-            onComplete: () => { e.x = free[0]; e.y = free[1]; e._committedPath = null; e.lastMoveTime = this.time.now; e._diving = false; e._moveCdMult = e._diveHold; e._diveNext = this.time.now + D.CD / this._atkSpd(e); } });
+        }
+        if (e._dvShots >= D.MAX) e._dvRefill = false;
+        const stuck = e.isFrozen || e.isStunned || e._iceCube || this._deathScreenActive;
+        const away = this._roomGated?.() && (e.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom();
+        if (e._dvAim) {   // taking aim: stopped (frozen, stunned, you've gone) the shot isn't spent
+            if (stuck || away) this._diverAimEnd(e);
+            else if (time >= e._dvAim) this._diverFire(e, time);
+            return;
+        }
+        if (stuck || away) return;
+        this._diverSeek(e, time);
+        const d = Math.hypot(this.playerX - e.x, this.playerY - e.y);
+        if (time < e._dvNext || e._dvShots <= 0 || d < 1.5 || !this._clearShot(e.x, e.y, this.playerX, this.playerY)) return;
+        if (d < D.BACK && (e._goalX !== e.x || e._goalY !== e.y)) return;   // too close: it backs off first, unless it's cornered
+        // it stops, raises the rifle and steadies it
+        e._dvAim = time + D.AIM_MS / this._atkSpd(e, time);
+        e._dvHold = e._moveCdMult; e._moveCdMult = 999;
+        s._atkTw?.stop();
+        EnemyManager.playAtk(this, s, e._dvAim - time + 150, this.player.x < s.x, 'aim_');   // (a beat longer: the shot ends it, not idling first)
+    }
+    _diverAimEnd(e) {
+        e._dvAim = 0; e._moveCdMult = e._dvHold ?? this._diverCfg().SPEED;
+        e.sprite?._atkTw?.stop();
+    }
+    _diverFire(e, time) {
+        const D = this._diverCfg(), T = this.TILE_SIZE, s = e.sprite, west = this.playerX * T + T / 2 < s.x;
+        this._diverAimEnd(e);
+        const ex = s.x + (west ? -14 : 14) * Math.abs(s.scaleX), ey = s.y + 10.5 * Math.abs(s.scaleY);   // its nozzle (frame x 30, row 26.5)
+        const a = Math.atan2(this.playerY * T + T / 2 - ey, this.playerX * T + T / 2 - ex);
+        const d = Math.hypot(this.playerX - e.x, this.playerY - e.y), H = D.HOME, i = H.findIndex(([at]) => d <= at);
+        const deg = i < 0 ? H[H.length - 1][1] : i === 0 ? 0 : H[i - 1][1] + (H[i][1] - H[i - 1][1]) * (d - H[i - 1][0]) / (H[i][0] - H[i - 1][0]);
+        const g = this.add.image(ex, ey, 'fx_enemies_b', 'jet_e').setDepth(2.6).setScale(1.2);
+        g._efxBase = 'jet'; this._vfxSort?.(g); EnemyFX.aim(g, 'jet', a);
+        this.enemyProjectiles.push({ src: e, gfx: g, _bfxKind: 'jet', vx: Math.cos(a) * D.SHOT_SPD, vy: Math.sin(a) * D.SHOT_SPD, startX: ex, startY: ey, maxDist: D.REACH * T,
+            damage: D.DMG * (this.enemyDamageScale || 1), home: deg * Math.PI / 180,   // (EnemyManager.updateEnemyProjectiles turns it)
+            onHit: () => {   // (dashed through, or untouchable: only the hit's own wetness)
+                if (this.time.now < (this._dashInvulnUntil || 0) || this.thunderheadActive || this.lightningUltInvuln) return;
+                this._applyDripping(this.time.now, D.DRIP_MS);
+                this._dvSlowUntil = Math.max(this._dvSlowUntil || 0, this.time.now + D.SLOW_MS);
+            }, onEnd: (x, y) => this._diverFx('splash', x, y - 4, false) });
+        e._dvShots--; e._dvNext = time + D.CD / this._atkSpd(e, time);
+        if (e._dvShots <= 0) { e._dvRefill = true; e._dvSeekAt = 0; }
+        EnemyManager.playAtk(this, s, 320, west, 'fire_');   // the kick
+        this._diverFx('mz', ex + (west ? -7 : 7), ey, west);
+        BossFX.muzzle(this, 'jet', ex, ey, a);
+        if (e._dvShots <= 0) this.time.delayedCall(360, () => { if (s.active && !e._dvAim) EnemyManager.playAtk(this, s, 700, west, 'empty_'); });   // a dry click
+    }
+    // Its hit's slow on your step (GameScene.update): your steps take SLOW times as long, unless a stronger slow is already on you
+    // (then nothing: the strongest wins); never longer than SLOW_MS from the last hit. Dashes aren't steps
+    _diverSlow() {
+        if (!((this._dvSlowUntil || 0) > this.time.now)) return 1;
+        const other = (this.moveCooldown / 200) * (this._frostHazeMult || 1) * (this.playerWaterMult?.() ?? 1);
+        return Math.max(1, this._diverCfg().SLOW / Math.max(1, other));
+    }
+    // its typed water: the spray out of the nozzle (mz), the slug bursting where it lands (splash), a tile drunk dry (drain)
+    _diverFx(kind, x, y, flip, depth = 3) {
+        const key = 'eb_' + kind, tex = this.textures.get('fx_enemies_b');
+        if (!this.anims.exists(key)) { let n = 0; while (tex.has(kind + '_' + n)) n++; this.anims.create({ key, frames: Array.from({ length: n }, (_, i) => ({ key: 'fx_enemies_b', frame: kind + '_' + i })), frameRate: kind === 'mz' ? 20 : kind === 'drain' ? 8 : 16 }); }
+        const o = this.add.sprite(x, y, 'fx_enemies_b', kind + '_0').setScale(1.2).setDepth(depth).setFlipX(flip).play(key);
+        this._vfxSort?.(o);
+        o.once('animationcomplete', () => o.destroy());
+    }
+    // Where it wants to be (moveEnemies walks it there). Run dry: the nearest water that has some left, the farther from you
+    // the better (none: it notes it's dry, for its trickle). Otherwise, like any shooter: KEEP_MIN to KEEP_MAX tiles off you,
+    // with a clear line while it has shots, as near its own tile as it can. Never a way that passes within a tile of you,
+    // unless you've cornered it
+    _diverSeek(e, time) {
+        const D = this._diverCfg();
+        if (time - (e._dvSeekAt || 0) < D.SEEK_MS) return;
+        e._dvSeekAt = time;
+        const px = this.playerX, py = this.playerY;
+        const room = this._roomGated?.() ? this.rooms?.[e.tutorialRoomIndex] : null;
+        const inRoom = (x, y) => room ? x >= room.x && y >= room.y && x < room.x + room.w && y < room.y + room.h : Math.hypot(x - e.x, y - e.y) <= 16;
+        const free = (x, y, here) => this.world[x]?.[y] === this.FLOOR && inRoom(x, y) && (here || !this.getEnemyAt(x, y)) && !(x === px && y === py);
+        const wide = (x, y) => { if (x === e.x && y === e.y) return true; const p = this.findPathBFS(e.x, e.y, x, y); return !!p && !p.slice(1).some(q => Math.abs(q.x - px) <= 1 && Math.abs(q.y - py) <= 1); };   // (from where it stands: right by you, it can still step away)
+        const pools = [...(this.waterTiles?.values() || [])].filter(w => inRoom(w.tx, w.ty) && this._diverRes(w.tx, w.ty) > 0);
+        e._dvDry = !pools.length;
+        let best = null;
+        if (e._dvRefill && pools.length) {
+            const cost = w => Math.hypot(w.tx - e.x, w.ty - e.y) + 2 * Math.max(0, D.KEEP_MIN - Math.hypot(w.tx - px, w.ty - py));
+            if (pools.some(w => w.tx === e.x && w.ty === e.y)) best = [e.x, e.y];
+            else for (const w of pools.filter(w => free(w.tx, w.ty, false)).sort((p, q) => cost(p) - cost(q)).slice(0, 6)) if (wide(w.tx, w.ty)) { best = [w.tx, w.ty]; break; }
+            if (!best) e._dvDry = true;
+        }
+        if (!best) {
+            const opts = [];
+            for (let dx = -D.SEEK_R; dx <= D.SEEK_R; dx++) for (let dy = -D.SEEK_R; dy <= D.SEEK_R; dy++) {
+                const x = e.x + dx, y = e.y + dy, here = !dx && !dy;
+                if (!free(x, y, here)) continue;
+                const d = Math.hypot(x - px, y - py), off = d < D.KEEP_MIN ? (D.KEEP_MIN - d) * 3 : Math.max(0, d - D.KEEP_MAX);
+                opts.push([-off - (e._dvShots > 0 && !this._clearShot(x, y, px, py) ? 6 : 0) + (this.isWaterAt(x, y) && this._diverRes(x, y) > 0 ? 0.6 : 0) - Math.hypot(dx, dy) * 0.25 + (here ? 0.8 : 0) + (x === e._goalX && y === e._goalY ? 1 : 0), x, y]);   // (sticking to its goal: no dithering)
+            }
+            opts.sort((p, q) => q[0] - p[0]);
+            for (const [, x, y] of opts.slice(0, 8)) if (wide(x, y)) { best = [x, y]; break; }
+            if (!best && opts[0] && Math.hypot(e.x - px, e.y - py) < D.BACK) best = [opts[0][1], opts[0][2]];   // cornered by you: past you, then
+        }
+        best ||= [e.x, e.y];
+        if (best[0] !== e._goalX || best[1] !== e._goalY) { e._goalX = best[0]; e._goalY = best[1]; e._committedPath = null; }
     }
 
     // ── LEECH ────────────────────────────────────────────────────────────────
@@ -4878,7 +4865,7 @@ class LevelManager {
     _leechPick(e) {
         const L = this._leechCfg(), els = Object.keys(L.COLS).filter(el => this.unlockedElements?.has(el) && !this._elStolen?.[el]);
         e._leechEl = els[Math.floor(Math.random() * els.length)] || 'fire';
-        e._leechAt = this.time.now + L.SETTLE;
+        e._leechAt = this.time.now + L.SETTLE; e._drainOn = false;
         const k = LevelManager.slimeRecolor(this, 'slime_leech_' + e._leechEl, L.PALS[e._leechEl]);
         if (k) { e.sprite.setTexture(k, e.sprite.frame?.name ?? 0); e.sprite.play(k + '_idle'); }
         if (e.sprite._cfx) CreatureFX.dress(e.sprite._cfx, 'leech', L.COLS[e._leechEl]);
@@ -4905,6 +4892,7 @@ class LevelManager {
         if (g) { g.beginPath(); g.arc(0, 0, 14, -Math.PI / 2, -Math.PI / 2 + (1 - left) * Math.PI * 2); g.strokePath(); }
         if (warn && sees && this.player?.active) g?.lineStyle(1, col, 0.35 + 0.3 * Math.sin(time / 60)).lineBetween(0, -10, this.player.x - e.sprite.x, this.player.y - e.sprite.y - 10);   // the aim
         if (this.player?.active) this._leechWarn(e, col, time, warn);   // what it wants, spinning over your head the whole time
+        if (warn && !e._drainOn && this.player?.active) { e._drainOn = true; EnemyManager.playAtk(this, e.sprite, Math.max(80, e._leechAt - time), this.player.x < e.sprite.x, 'drain_'); }   // its mouth working at it
         if (time < e._leechAt || e.isFrozen || e.isStunned) return;
         if (sees && !this._deathScreenActive && this.currentElement === e._leechEl && !this._elStolen?.[e._leechEl]) { this._leechSteal(e, time); return; }
         this._leechPick(e);
@@ -4913,15 +4901,16 @@ class LevelManager {
         const L = this._leechCfg(), el = e._leechEl, col = L.COLS[el];
         e._stoleEl = el; (this._elStolen ||= {})[el] = e;
         e._leechRing?.destroy(); e._leechRing = null; e._leechIcon?.destroy(); e._leechIcon = null;
-        const gem = e._leechHeld = this.add.image(this.player.x, this.player.y - 6, this._leechGemKey(el)).setDepth(5.3).setScale(1.6);   // torn out of you, into its grip
+        const gem = e._leechHeld = this.add.image(this.player.x, this.player.y - 6, 'fx_enemies_b', this._leechGemFrame(el, time)).setDepth(5.3).setScale(1.6);   // torn out of you, into its grip
         this._vfxSort?.(gem);
         e._leechHeld.setData('flying', true);
         const hand = this._leechHand(e);
         this.tweens.add({ targets: gem, x: hand.x, y: hand.y, duration: 380, ease: 'Back.easeIn', onComplete: () => gem.setData('flying', false) });
         e._portNext = time + 1500;
         this._staggerUntil = Math.max(this._staggerUntil || 0, time + L.STAGGER);
-        const beam = this.add.graphics().setDepth(4.4).lineStyle(4, col, 0.95).lineBetween(this.player.x, this.player.y, e.sprite.x, e.sprite.y);
-        this.tweens.add({ targets: beam, alpha: 0, duration: 420, onComplete: () => beam.destroy() });
+        EnemyManager.playAtk(this, e.sprite, 380, this.player.x < e.sprite.x);   // the bite
+        const dust = CosmicSystem.fx(this).fine;   // a thread of the void from you to it
+        for (let k = 0; k <= 12; k++) dust.emitParticleAt(this.player.x + (e.sprite.x - this.player.x) * k / 12, this.player.y + (e.sprite.y - this.player.y) * k / 12, 2);
         for (let i = 0; i < 10; i++) {   // the element pulled out of you and into it
             const m = this.add.image(this.player.x, this.player.y, 'vfx_dot').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.5);
             this.tweens.add({ targets: m, x: e.sprite.x, y: e.sprite.y, delay: i * 40, duration: 320, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
@@ -4939,27 +4928,22 @@ class LevelManager {
         const s = e.sprite;
         return { x: s.x + 10 * Math.abs(s.scaleX), y: s.y + (26.5 - s.originY * 32) * s.scaleY - 2 };
     }
-    // A gem in an element's colour (the one a Leech is after, or holds)
-    _leechGemKey(el) {
-        const col = this._leechCfg().COLS[el];
-        return ShopScene.icon(this, 'fx_leech_gem_' + el, 10, { G: UIKit._hex(col), g: UIKit._hex(MenuArt.mix(col, 0x000000, 0.45)), W: '#ffffff' }, m => {
-            m.poly([[5, 0], [9, 4], [5, 9], [1, 4]], 'G'); m.poly([[5, 0], [9, 4], [5, 9]], 'g'); m.set(4, 3, 'W');
-        });
-    }
+    // The gem in an element's colour (the one a Leech is after, or holds), turning on its axis by its frames (fx_enemies_b gem_<el>_0..3)
+    _leechGemFrame(el, t = 0) { return `gem_${el}_${Math.floor(t / 110) % 4}`; }
     // The gem it's after, spinning over your head: faint while it settles, bright and flashing as it aims (with a nudge when you're holding it)
     _leechWarn(e, col, time, warn) {
-        const p = this.player, holding = this.currentElement === e._leechEl, key = this._leechGemKey(e._leechEl);
-        const ic = e._leechIcon?.active ? e._leechIcon : (e._leechIcon = this.add.image(0, 0, key).setDepth(5.2));
-        if (ic.texture.key !== key) ic.setTexture(key);
+        const p = this.player, holding = this.currentElement === e._leechEl, fr = this._leechGemFrame(e._leechEl, time);
+        const ic = e._leechIcon?.active ? e._leechIcon : (e._leechIcon = this.add.image(0, 0, 'fx_enemies_b', fr).setDepth(5.2));
+        if (ic.frame.name !== fr) ic.setFrame(fr);   // turning on its axis
         const s = (holding ? 2 : 1.6) * (warn ? 1.1 : 1);
-        ic.setPosition(p.x, p.y - 34 + Math.sin(time / 260) * 2).setScale(s * Math.cos(time / 170), s)   // turning on its axis
+        ic.setPosition(p.x, p.y - 34 + Math.sin(time / 260) * 2).setScale(s)
           .setAlpha(warn ? ((time / 120 | 0) % 2 ? 1 : 0.5) : 0.75);
         if (warn && holding && time - (e._leechNagAt || 0) > 700) { e._leechNagAt = time; this.showStatusText(p.x, p.y - 50, `SWAP OFF ${e._leechEl.toUpperCase()}`, UIKit._hex(col)); }
     }
     // While it holds your element: its prize held up beside it, and on your HUD the gem grey with the Leech sat on it, laughing
     _leechHold(e, time) {
         const s = e.sprite, held = e._leechHeld;
-        if (held?.active) { const h = this._leechHand(e); held.setPosition(h.x, h.y + Math.sin(time / 200) * 1.5).setScale(1.4 * Math.cos(time / 200), 1.4).setDepth((s.depth ?? 1) + 0.05); }
+        if (held?.active) { const h = this._leechHand(e); held.setPosition(h.x, h.y + Math.sin(time / 200) * 1.5).setFrame(this._leechGemFrame(e._stoleEl, time * 0.6)).setScale(1.4).setDepth((s.depth ?? 1) + 0.05); }
         const u = this._ultGemUI?.find(q => q.el === e._stoleEl);
         if (!u) return;
         const SC = 2.6;   // sat on your gem: big enough to see, its feet on the gem's middle, its face (and eyes) on
@@ -5027,14 +5011,10 @@ class LevelManager {
         e._portNext = time + L.PORT_CD;
         e._porting = true;
         const portal = (x, y) => {   // a swirl of the void opening on the floor, then closing
-            const g = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.03).setPosition(x, y + 8);
-            const st = { k: 0 };
-            this.tweens.add({ targets: st, k: 1, duration: L.PORT_MS, yoyo: true, onUpdate: () => {
-                g.clear().fillStyle(0x0a0418, 0.9).fillEllipse(0, 0, 30 * st.k, 12 * st.k);
-                g.lineStyle(2, 0xb070ff, 0.95).strokeEllipse(0, 0, 30 * st.k, 12 * st.k);
-                g.lineStyle(1, 0xffffff, 0.7).strokeEllipse(0, 0, 18 * st.k, 7 * st.k);
-            }, onComplete: () => g.destroy() });
-            VisualFX.ripple(this, x, y + 8, 6, 26, 0xb070ff, { duration: 300 });
+            const g = this.add.image(x, y + 8, 'fx_enemies_b', 'portal_0').setDepth((e.sprite.depth ?? 1) - 0.03).setScale(1.5);   // (hand-drawn: fx_enemies_b portal_0..3)
+            this._vfxSort?.(g);
+            this.tweens.addCounter({ from: 0, to: 1, duration: L.PORT_MS, yoyo: true, onUpdate: t => { const k = t.getValue(); if (g.active) g.setFrame('portal_' + (k < 0.3 ? 0 : k < 0.6 ? 1 : (this.time.now / 90 | 0) % 2 ? 2 : 3)); }, onComplete: () => g.destroy() });
+            CosmicSystem.puff?.(CosmicSystem.fx(this).dust, x, y + 8, 6, -Math.PI / 2, Math.PI / 2, 20, 60);
         };
         const s = e.sprite, tx = best[0] * T + T / 2, ty = best[1] * T + T / 2 + this.SLIME_Y_OFFSET;
         portal(s.x, s.y);
@@ -5061,7 +5041,7 @@ class LevelManager {
             const x0 = held.x, y0 = held.y, st = { t: 0 };
             this.tweens.add({ targets: st, t: 1, duration: 520, ease: 'Sine.easeIn', onUpdate: () => {
                 if (!this.player) return;
-                const t = st.t; held.setPosition(x0 + (this.player.x - x0) * t, y0 + (this.player.y - 8 - y0) * t - Math.sin(t * Math.PI) * 46).setRotation(t * 9).setAlpha(1);
+                const t = st.t; held.setPosition(x0 + (this.player.x - x0) * t, y0 + (this.player.y - 8 - y0) * t - Math.sin(t * Math.PI) * 46).setFrame(this._leechGemFrame(el, t * 1500)).setAlpha(1);   // tumbling by its frames
             }, onComplete: () => { if (this.player) { VisualFX.ripple(this, this.player.x, this.player.y, 6, 30, col, { duration: 260 }); this._vfxFlash?.(this.player.x, this.player.y, 70, col, 260, 0.9); } held.destroy(); } });
         }
         this.showStatusText(this.player.x, this.player.y - 34, `${el.toUpperCase()} RETURNED`, UIKit._hex(col));
@@ -5079,14 +5059,6 @@ class LevelManager {
     // AND holding that element, or it bursts on you for DMG.
     _gemCfg() { return { EVERY: 22000, FIRST: 6000, FALL: 5000, SAFE: 3, SAFE_R: 1.6, SAFE_GAP: 5, DMG: 38, BURST_R: 2.2,
         COLS: { fire: 0xff8a2a, ice: 0x6ac8ff, lightning: 0xffe040, cosmic: 0xb070ff } }; }
-    static gemKey(scene, el, col) {
-        return ShopScene.icon(scene, 'fx_gem_' + el, 24, { G: UIKit._hex(col), L: UIKit._hex(MenuArt.mix(col, 0xffffff, 0.45)), D: UIKit._hex(MenuArt.mix(col, 0x000000, 0.45)), K: '#0a0612', W: '#ffffff' }, m => {
-            m.poly([[12, 1], [21, 8], [12, 23], [3, 8]], 'K');
-            m.poly([[12, 3], [19, 8], [12, 21], [5, 8]], 'G');
-            m.poly([[12, 3], [19, 8], [12, 8]], 'L'); m.poly([[5, 8], [12, 8], [12, 21]], 'D');
-            m.line(7, 6, 9, 5, 'W'); m.set(10, 5, 'W');
-        });
-    }
     createGem(x, y, ri) {
         const G = this._gemCfg();
         const e = this.createEnemy(x, y, 999);
@@ -5121,9 +5093,10 @@ class LevelManager {
     }
     _gemDrop(e) {
         const G = this._gemCfg(), T = this.TILE_SIZE;
-        const els = Object.keys(G.COLS).filter(el => this.unlockedElements?.has(el));   // only what you can hold
+        const els = Object.keys(G.COLS).filter(el => this.unlockedElements?.has(el) && !this._elStolen?.[el]);   // only what you can hold (not one a Leech has taken)
         const el = els[Math.floor(Math.random() * els.length)] || 'fire', col = G.COLS[el];
         e._gemDrop = true;
+        EnemyManager.playAtk?.(this, e.sprite, 600, this.playerX < e.x);   // every facet flaring
         Sfx.play(this, 'tell', { ms: 1200, big: true });
         e._gemGlow?.setTint(col);   // its glow takes the colour of what's coming
         // the safe circles: open floor in your room, apart from each other
@@ -5137,14 +5110,14 @@ class LevelManager {
         }
         this.showStatusText(this.player.x, this.player.y - 44, `${el.toUpperCase()} GEM FALLING`, UIKit._hex(col));
         // the falling gem: high over you, following you down; its shadow grows under you
-        const gem = this.add.image(this.player.x, this.player.y - 200, LevelManager.gemKey(this, el, col)).setDepth(6).setScale(2.2);   // (high enough to read as falling, low enough to stay on screen)
-        const shadow = this.add.ellipse(this.player.x, this.player.y + 8, 10, 5, 0x000000, 0.35).setDepth(0.96);
+        const gem = this.add.image(this.player.x, this.player.y - 200, 'fx_enemies_c', `gemf_${el}_0`).setDepth(6).setScale(2);   // (high enough to read as falling, low enough to stay on screen)
+        const shadow = this.add.image(this.player.x, this.player.y + 8, 'vfx_shadow').setDepth(0.96).setAlpha(0.5).setDisplaySize(10, 5);
         const t0 = this.time.now;
         const follow = () => {
             if (!gem.active || !this.player?.active) return;
             const k = Math.min(1, (this.time.now - t0) / G.FALL), eased = k * k;   // slow at first, quicker at the end
-            gem.setPosition(this.player.x, this.player.y - 200 * (1 - eased) - 8).setRotation(k * 4);
-            shadow.setPosition(this.player.x, this.player.y + 8).setSize(10 + 40 * k, 5 + 18 * k).setAlpha(0.2 + 0.35 * k);
+            gem.setPosition(this.player.x, this.player.y - 200 * (1 - eased) - 8).setFrame(`gemf_${el}_${[0, 1, 2, 1][Math.floor(k * 24) % 4]}`);   // turning as it falls (by frames)
+            shadow.setPosition(this.player.x, this.player.y + 8).setDisplaySize(10 + 40 * k, 5 + 18 * k).setAlpha(0.3 + 0.6 * k);
         };
         this.events.on('update', follow);
         this.time.delayedCall(G.FALL, () => {
@@ -5164,33 +5137,25 @@ class LevelManager {
                 this._hitBy = e; this.takeDamage(G.DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
             }
             for (let i = 0; i < 14; i++) {   // shards
-                const a = i / 14 * Math.PI * 2, m = this.add.image(px, py, 'vfx_dot').setTint(i % 2 ? col : 0xffffff).setDepth(5);
+                const a = i / 14 * Math.PI * 2, m = this.add.image(px, py, 'fx_enemies_c', i % 2 ? 'shard_0' : 'shard_1').setTint(i % 2 ? col : 0xffffff).setFlip(Math.cos(a) < 0, Math.sin(a) > 0).setDepth(5);
                 this.tweens.add({ targets: m, x: px + Math.cos(a) * 50, y: py + Math.sin(a) * 34, alpha: 0, duration: 450, onComplete: () => m.destroy() });
             }
             Sfx.play(this, 'shatter');
         });
     }
-    // A safe zone: a glassy dome of the gem's colour over a ring on the floor, a sheen across it
+    // A safe zone: a glassy dome of the gem's colour over a ring on the floor (fx_enemies_c dome, its colour a tint), two tiles wide
     _gemDome(x, y, R, col) {
-        const g = this.add.graphics().setDepth(4.3).setPosition(x, y);
-        const H = R * 0.95, half = (rx, ry, n = 24) => Array.from({ length: n + 1 }, (_, i) => { const t = Math.PI * i / n; return { x: Math.cos(t) * rx, y: -Math.sin(t) * ry }; });
-        g.fillStyle(col, 0.16).fillEllipse(0, 0, R * 2, R * 0.9);                        // its footprint
-        g.lineStyle(2, col, 0.9).strokeEllipse(0, 0, R * 2, R * 0.9);
-        g.fillStyle(col, 0.14).fillPoints(half(R, H), true);                              // the dome
-        g.lineStyle(1, MenuArt.mix(col, 0xffffff, 0.5), 0.3);
-        for (const k of [0.35, 0.7]) g.strokePoints(half(R * k, H * Math.sqrt(1 - k * k * 0.3)), false);   // meridians
-        g.strokeEllipse(0, -H * 0.55, R * 1.7, R * 0.35);                                 // a band round it
-        g.lineStyle(2, col, 0.85).strokePoints(half(R, H), false);                        // its rim
-        g.lineStyle(3, 0xffffff, 0.45).strokePoints(half(R * 0.8, H * 0.8, 24).slice(14, 21), false);   // the sheen, upper left
-        g.setScale(1, 0.1).setAlpha(0);
-        this.tweens.add({ targets: g, scaleY: 1, alpha: 1, duration: 380, ease: 'Back.easeOut' });   // rising out of the floor
+        const g = this.add.image(x, y + R * 0.2, 'fx_enemies_c', 'dome').setOrigin(0.5, 0.82).setTint(col).setDepth(4.3);
+        const k = R * 2 / 39;
+        g.setScale(k, k * 0.1).setAlpha(0);
+        this.tweens.add({ targets: g, scaleY: k, alpha: 1, duration: 380, ease: 'Back.easeOut' });   // rising out of the floor
         this.tweens.add({ targets: g, alpha: 0.75, delay: 400, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         return g;
     }
     _gemShatter(e) {
         const s = e.sprite;
         for (let i = 0; i < 16; i++) {
-            const a = i / 16 * Math.PI * 2, m = this.add.image(s.x, s.y - 10, 'vfx_dot').setTint(i % 2 ? 0xffffff : 0xd8e8ff).setDepth(5).setScale(1.4);
+            const a = i / 16 * Math.PI * 2, m = this.add.image(s.x, s.y - 10, 'fx_enemies_c', i % 2 ? 'shard_0' : 'shard_1').setTint(i % 2 ? 0xffffff : 0xf0c8ff).setFlip(Math.cos(a) < 0, Math.sin(a) > 0).setDepth(5).setScale(2);
             this.tweens.add({ targets: m, x: s.x + Math.cos(a) * 60, y: s.y - 10 + Math.sin(a) * 44, alpha: 0, duration: 600, onComplete: () => m.destroy() });
         }
         this.showStatusText(s.x, s.y - 40, 'THE GEM SHATTERS', '#e8f0ff');
@@ -5228,7 +5193,10 @@ class LevelManager {
         const g = e._plateBar ||= this.add.graphics().setDepth(4.75), s = e.sprite;
         const a = e._plateArmor ||= this.textures.exists('fx_plate_armor') ? this.add.image(s.x, s.y, 'fx_plate_armor', '0') : null;
         if (a) {
-            a.setFrame(a.texture.has(s.frame.name) ? s.frame.name : '0').setPosition(s.x, s.y).setOrigin(s.originX, s.originY).setScale(s.scaleX, s.scaleY)
+            const own = 'plate_' + s.frame.name;   // a sheet with its own plate_ frames wears those, else the knights' plates
+            if (s.texture.has(own)) a.setTexture(s.texture.key, own);
+            else a.setTexture('fx_plate_armor', this.textures.get('fx_plate_armor').has(s.frame.name) ? s.frame.name : '0');
+            a.setPosition(s.x, s.y).setOrigin(s.originX, s.originY).setScale(s.scaleX, s.scaleY)
                 .setFlipX(s.flipX).setDepth((s.depth ?? 1) + 0.0005).setAlpha(s.alpha).setVisible(s.visible);
             if (s.isCropped && s._crop) a.setCrop(s._crop.x, s._crop.y, s._crop.width, s._crop.height); else if (a.isCropped) a.setCrop();   // (rising out of the floor as it spawns)
         }
@@ -5265,8 +5233,15 @@ class LevelManager {
             const o = near[Math.floor(Math.random() * near.length)];
             if (o) {
                 this._plateGive(o); o._knight = true;
-                const g = this.add.graphics().setDepth(3).lineStyle(3, 0xffd84a, 0.9).lineBetween(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y);
-                this.tweens.add({ targets: g, alpha: 0, duration: 500, onComplete: () => g.destroy() });
+                EnemyManager.playAtk?.(this, e.sprite, 290, o.x < e.x);   // a tap of its cane
+                for (let i = 0; i < 7; i++) {   // gold running along to it
+                    const m = this.add.image(e.sprite.x, e.sprite.y - 6, 'fx_enemies_c', i % 2 ? 'foam_1' : 'foam_0').setTint(0xffd84a).setBlendMode(Phaser.BlendModes.ADD).setDepth(3);
+                    this._vfxSort?.(m);
+                    this.tweens.add({ targets: m, x: o.sprite.x, y: o.sprite.y - 6, delay: i * 35, duration: 260, ease: 'Quad.easeIn', onComplete: () => m.destroy() });
+                }
+                const cr = this.add.image(o.sprite.x, o.sprite.y - 30, 'fx_enemies_c', 'crest').setDepth(5).setScale(0);   // its crest, pinned on
+                this._vfxSort?.(cr);
+                this.tweens.add({ targets: cr, scale: 1.5, delay: 260, duration: 160, ease: 'Back.easeOut', onComplete: () => this.tweens.add({ targets: cr, y: cr.y - 8, alpha: 0, delay: 500, duration: 300, onComplete: () => cr.destroy() }) });
                 this.showStatusText(o.sprite.x, o.sprite.y - 30, 'KNIGHTED!', '#ffd84a');
                 Sfx.play(this, 'clink');
             }
@@ -5275,7 +5250,8 @@ class LevelManager {
             e._ceoWaveAt = time + C.WAVE_EVERY;
             this.showStatusText(e.sprite.x, e.sprite.y - 40, '!', '#ffd84a');
             VisualFX.ripple(this, e.sprite.x, e.sprite.y, 6, 40, 0xffd84a, { duration: C.WINDUP });
-            this.time.delayedCall(C.WINDUP, () => { if (e.sprite?.active && e.health > 0) this._ceoWave(e); });
+            EnemyManager.playAtk?.(this, e.sprite, C.WINDUP, this.playerX < e.x);   // the cane up, and down
+            this.time.delayedCall(C.WINDUP, CombatSystem.tauntKeep(this, () => { if (e.sprite?.active && e.health > 0) this._ceoWave(e); }));
         }
     }
     _ceoWave(e) {
@@ -5285,21 +5261,19 @@ class LevelManager {
         const far = Math.ceil(Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.hypot(x - cx, y - cy))));
         const gaps = Array.from({ length: C.GAPS }, (_, i) => Math.random() * Math.PI * 2 / C.GAPS + i * Math.PI * 2 / C.GAPS);
         const inGap = (x, y) => { const a = Math.atan2(y - cy, x - cx); return gaps.some(g => Math.abs(Phaser.Math.Angle.Wrap(a - g)) < C.GAP_HALF); };
-        let hit = false;
+        const hit = new Set(), on = (x, y, r) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && this.world[x]?.[y] === this.FLOOR && Math.abs(Math.hypot(x - cx, y - cy) - r) < 0.5 && !inGap(x, y);
         Sfx.play(this, 'fissure');
-        for (let r = 1; r <= far; r++) this.time.delayedCall((r - 1) * C.WAVE_STEP, () => {
-            const g = this.add.graphics().setDepth(0.95);
-            for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
-                if (this.world[x]?.[y] !== this.FLOOR || Math.abs(Math.hypot(x - cx, y - cy) - r) >= 0.5 || inGap(x, y)) continue;
-                g.fillStyle(0xffd84a, 0.5).fillRect(x * T + 3, y * T + 3, T - 6, T - 6);
-                g.lineStyle(1.5, 0xfff0b0, 0.8).strokeRect(x * T + 3, y * T + 3, T - 6, T - 6);
-                if (!hit && x === this.playerX && y === this.playerY) {
-                    hit = true;
-                    this._hitBy = e; this.takeDamage(C.WAVE_DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
-                }
-            }
+        for (let r = 1; r <= far; r++) this.time.delayedCall((r - 1) * C.WAVE_STEP, CombatSystem.tauntKeep(this, () => {
+            const g = this.add.container(0, 0).setDepth(0.95);   // (fx_enemies_c ceo_tile: a gold plate on each tile it hits)
+            for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (on(x, y, r)) g.add(this.add.image(x * T + T / 2, y * T + T / 2, 'fx_enemies_c', 'ceo_tile').setDisplaySize(T, T));
+            CombatSystem.tauntBoth(this, () => {   // (once a wave each: the ally it went for, and you)
+                const w = this._tauntAlly || this;
+                if (hit.has(w) || !on(this.playerX, this.playerY, r)) return;
+                hit.add(w);
+                this._hitBy = e; this.takeDamage(C.WAVE_DMG * (this.enemyDamageScale || 1)); this._hitBy = null;
+            });
             this.tweens.add({ targets: g, alpha: 0, duration: C.RING_MS, ease: 'Quad.easeIn', onComplete: () => g.destroy() });   // gone a moment before the next ring
-        });
+        }));
     }
 
     // ── ARMORED SLIME ────────────────────────────────────────────────────────
@@ -5318,7 +5292,8 @@ class LevelManager {
         e._modelKey = 'armored_' + e._armorWeak;   // its body shows the open side: a plate gone, the slime glowing through (SlimeModels)
         SlimeModels.wear(this, e.sprite, e._modelKey);
         e._baseScale = this.SLIME_SCALE * A.SCALE; e.sprite.setScale(e._baseScale); LevelManager.seat(e, A.SCALE);   // a big one: it's a tank
-        e._armorGfx = this.add.graphics().setDepth((e.sprite.depth ?? 1) + 0.05);
+        e._armorGfx = this.add.image(0, 0, 'vfx_glow').setBlendMode(Phaser.BlendModes.ADD).setDepth((e.sprite.depth ?? 1) + 0.05);   // the light out of its gap
+        this._vfxSort?.(e._armorGfx);
         return e;
     }
     // The side of it you're on: your tile against its, the longer axis deciding (a dead diagonal counts as plated)
@@ -5346,11 +5321,12 @@ class LevelManager {
             if (!e.sprite?.active || e.health <= 0) { g?.destroy(); e._armorGfx = null; continue; }
             if (!g?.active) continue;
             const s = e.sprite, base = this.SLIME_SCALE || 1, kx = Math.abs(s.scaleX) / base, ky = s.scaleY / base;   // its size and the hop's squash both carry to the shields
-            g.clear().setPosition(Math.round(s.x), Math.round(s.y + (26.5 - s.originY * 32) * s.scaleY)).setScale(kx, ky).setAlpha(s.alpha);   // round the body, which sits low in its frame
             const open = this._armorSide(e) === e._armorWeak;
-            // a soft glow over the gap in its steel: dull while you're round its plates, bright gold when you're on the open side
+            // a soft glow over the gap in its steel (round the body, which sits low in its frame): dull while you're round its plates,
+            // bright gold when you're on the open side
             const W = e._armorWeak, sx = W === 'E' ? 1 : W === 'W' ? -1 : 0, sy = W === 'S' ? 1 : W === 'N' ? -1 : 0, pulse = 0.55 + 0.45 * Math.sin(time / 140);
-            g.fillStyle(open ? 0xffd84a : 0xff7a2a, open ? 0.35 + 0.2 * pulse : 0.12 + 0.08 * pulse).fillCircle(sx * 7, sy * 4, open ? 7 : 5);
+            g.setPosition(Math.round(s.x + sx * 7 * kx * base), Math.round(s.y + (26.5 - s.originY * 32) * s.scaleY + sy * 4 * ky * base))
+             .setTint(open ? 0xffd84a : 0xff7a2a).setAlpha(s.alpha * (open ? 0.45 + 0.25 * pulse : 0.15 + 0.1 * pulse)).setScale((open ? 0.22 : 0.15) * kx);
         }
     }
     // ── CHEVRONS ─────────────────────────────────────────────────────────────
@@ -5374,7 +5350,7 @@ class LevelManager {
             if (cd >= 50) continue;             // planted to cast or encased: not a pace
             mark(e, s.x, s.y - 10, cd / e._chevBase * (e.isWet ? 2 : 1) / ((e._cheerUntil || 0) > time ? e._cheerSpd : 1) / ((e._discUntil || 0) > time ? e._discSpd : 1), e.isWet ? 'slow_ice' : 'slow_goop');
         }
-        if (this.player?.active && this._stepMul && !this._deathScreenActive) mark(this, this.player.x, this.player.y - 6, this._stepMul, (this._frostHazeMult || 1) > 1 || this._ultMoveMult() > 1 ? 'slow_ice' : 'slow_goop');
+        if (this.player?.active && this._stepMul && !this._deathScreenActive) mark(this, this.player.x, this.player.y - 6, this._stepMul, (this._frostHazeMult || 1) > 1 || this._ultMoveMult() > 1 || (this._dvSlowUntil || 0) > time ? 'slow_ice' : 'slow_goop');
     }
     // ── HUNTER SLIME ─────────────────────────────────────────────────────────
     // Starts out crawling (SLOW). Every moment it spends chasing you (within CHASE_R) winds it
@@ -5413,7 +5389,7 @@ class LevelManager {
             const s = e.sprite;
             if (!s?.active || e.health <= 0) { e._huntMark?.destroy(); e._huntMark = null; continue; }
             if (e._huntPhase === 'tell' || e._huntPhase === 'gone') continue;   // its timers run those
-            const d = Math.hypot(this.playerX - e.x, this.playerY - e.y);
+            const a = CombatSystem.tauntOf(this, e), d = CombatSystem.tauntAs(this, a, () => Math.hypot(this.playerX - e.x, this.playerY - e.y));   // (pulled by an ally: that's what it hunts)
             const held = e.isFrozen || e.isStunned;
             const met = e.tutorialRoomIndex === undefined || !this.rooms?.[e.tutorialRoomIndex] || e.tutorialRoomIndex === this.getCurrentPlayerRoom();   // only once you're in its room: not through the walls before you've met
             if (d <= H.CHASE_R && !held && met) e._huntRun = Math.min(H.RAMP_TILES, e._huntRun + H.RAMP_TILES * Math.min(100, delta || 16) / H.RAMP_MS);   // (its rage kept in RAMP_TILES units: the cools take fractions of it)
@@ -5423,7 +5399,7 @@ class LevelManager {
             this._hunterFrenzy(e, k >= 1, time);
             const lvl = Math.min(4, Math.floor(k * 4 + 1e-6)), u = s._cfx;   // its ears fill with blood as it winds up
             if (u && u.set !== 'hunter' + lvl) CreatureFX.dress(u, 'hunter' + lvl);
-            if (met && d <= H.POUNCE_R + (H.POUNCE_R_MAX - H.POUNCE_R) * k && !held && time >= e._huntNext && !this._deathScreenActive) this._hunterPounce(e, k);
+            if (met && d <= H.POUNCE_R + (H.POUNCE_R_MAX - H.POUNCE_R) * k && !held && time >= e._huntNext && !this._deathScreenActive) CombatSystem.tauntAs(this, a, () => this._hunterPounce(e, k));
         }
     }
     // Wound all the way up: the blood-red body and red eyes on (or off), afterimages and blood leaking off it
@@ -5455,6 +5431,7 @@ class LevelManager {
     _hunterPounce(e, k) {
         const H = this._hunterCfg(), T = this.TILE_SIZE, tx = this.playerX, ty = this.playerY;
         e._huntPhase = 'tell'; e._moveCdMult = 999;
+        EnemyManager.playAtk(this, e.sprite, H.TELL, this.player?.x < e.sprite.x, 'pounce_');   // it crouches, then coils with its claws out
         // the ground it will strike: tiles inside a squircle growing with its rage (3x3 at a crawl, 5x5 less its corners in a frenzy)
         const R = H.AREA_R[0] + (H.AREA_R[1] - H.AREA_R[0]) * k, area = [];
         for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if ((dx ** 4 + dy ** 4) ** 0.25 <= R) area.push([dx, dy]);
@@ -5477,7 +5454,7 @@ class LevelManager {
         this.tweens.addCounter({ from: 0, to: 1, duration: H.TELL, onUpdate: tw => { if (mark.active) draw(tw.getValue(), (this.time.now / 80 | 0) % 2 && tw.getValue() > 0.6); } });
         this.showStatusText(e.sprite.x, e.sprite.y - 28, '!', '#ff3a3a');
         Sfx.play(this, 'whoosh');
-        this.time.delayedCall(H.TELL, () => {
+        this.time.delayedCall(H.TELL, CombatSystem.tauntKeep(this, () => {   // (at an ally: its flurry is on that ally)
             if (!e.sprite?.active || e.health <= 0) { mark.destroy(); return; }
             if (e.isFrozen || e.isStunned) { mark.destroy(); e._huntPhase = null; e._huntNext = this.time.now + 1500; return; }   // caught mid-tell: called off
             e._huntPhase = 'gone';
@@ -5486,16 +5463,18 @@ class LevelManager {
             e.healthBarBg?.setVisible(false); e.healthBarFill?.setVisible(false);
             const cx = tx * T + T / 2, cy = ty * T + T / 2;
             const n = Math.round(H.SLASHES[0] + (H.SLASHES[1] - H.SLASHES[0]) * k), every = H.FLURRY_MS / n;   // the flurry always lasts FLURRY_MS; the angrier, the more slashes in it
-            for (let i = 0; i < n; i++) this.time.delayedCall(140 + i * every, () => {
+            for (let i = 0; i < n; i++) this.time.delayedCall(140 + i * every, CombatSystem.tauntKeep(this, () => {
                 if (!e.sprite?.active) return;
                 this._hunterSlash(cx, cy, i, Rn, area);
+                CombatSystem.tauntBoth(this, () => {   // (the ally it pounced on, and you if you're in it)
                 const dx = this.playerX - tx, dy = this.playerY - ty;
                 if (inArea(dx, dy)) {
                     const before = this.health;
                     this._hitBy = e; this._hitMelee = true; this.takeDamage(H.FLURRY_DMG / n * H.RING_MULT[ring(dx, dy)] * (1 + H.SLASH_RAMP * k) * (this.enemyDamageScale || 1)); this._hitBy = null; this._hitMelee = false;
                     if (this.health < before) this._bleedStart(H.BLEED_MS);
                 }
-            });
+                });
+            }));
             this.time.delayedCall(140 + H.FLURRY_MS, () => {
                 mark.destroy(); e._huntMark = null;
                 if (!e.sprite?.active) return;
@@ -5510,39 +5489,35 @@ class LevelManager {
                 e._huntNext = this.time.now + H.POUNCE_CD;
                 this.updateEnemyHealthBar?.(e);
             });
-        });
+        }));
     }
     // One pass of the flurry: three blade streaks across the square, a different angle each time
     _hunterSlash(cx, cy, i, n = 1, area = []) {
-        // a rake of claws across the ground: three curved gashes side by side at a fresh angle each pass, red with a white
-        // edge, the tiles they cross flaring and spitting blood
-        const T = this.TILE_SIZE, g = this.add.graphics().setDepth(4.6).setPosition(cx, cy).setBlendMode(Phaser.BlendModes.ADD);
-        const a = [-0.6, 0.9, 0.15, -1.25, 0.5, -0.2, 1.3][i % 7] + (Math.random() - 0.5) * 0.3, R = T * (0.8 + n), bend = (i % 2 ? 1 : -1) * T * 0.35;
-        for (let j = -1; j <= 1; j++) {
-            const off = j * T * 0.45, pts = [];
-            for (let q = 0; q <= 10; q++) {
-                const t = q / 10 * 2 - 1, along = t * R, sweep = bend * (1 - t * t);
-                pts.push({ x: Math.cos(a) * along - Math.sin(a) * (off + sweep), y: Math.sin(a) * along + Math.cos(a) * (off + sweep) });
-            }
-            g.lineStyle(8, 0xc0101e, 0.55).strokePoints(pts, false);
-            g.lineStyle(3, 0xff4a4a, 0.95).strokePoints(pts, false);
-            g.lineStyle(1, 0xffffff, 1).strokePoints(pts.slice(2, 9), false);
-        }
+        // a rake of claws across the ground: three gashes side by side at a fresh angle each pass (hand-drawn, one of the eight
+        // ways: fx_enemies_b rake_*), opening red with a white edge and fading; the tiles they cross flaring, blood flying
+        const T = this.TILE_SIZE, a = [-0.6, 0.9, 0.15, -1.25, 0.5, -0.2, 1.3][i % 7] + (Math.random() - 0.5) * 0.3;
+        const k = ((Math.round(a / (Math.PI / 4)) % 4) + 4) % 4, way = ['e', 'se', 's', 'ne'][k], flip = Math.random() < 0.5, diag = k % 2 === 1;
+        const key = 'eb_rake_' + way;
+        if (!this.anims.exists(key)) this.anims.create({ key, frames: [0, 1, 1, 2].map(f => ({ key: 'fx_enemies_b', frame: `rake_${way}_${f}` })), frameRate: 18 });
+        const r = this.add.sprite(cx + (Math.random() - 0.5) * T * 0.4 * n, cy + (Math.random() - 0.5) * T * 0.4 * n, 'fx_enemies_b', `rake_${way}_0`)
+            .setDepth(4.6).setScale(n > 1 ? 2 : 1.5).setFlip(flip, diag ? flip : Math.random() < 0.5).play(key);
+        this._vfxSort?.(r);
+        r.once('animationcomplete', () => this.tweens.add({ targets: r, alpha: 0, duration: 120, onComplete: () => r.destroy() }));
         for (const [dx, dy] of area) if (Math.random() < 0.35) {   // tiles flaring under it
             const f = this.add.rectangle(cx + dx * T, cy + dy * T, T - 6, T - 6, 0xff3a3a, 0.45).setDepth(0.96).setBlendMode(Phaser.BlendModes.ADD);
             this.tweens.add({ targets: f, alpha: 0, duration: 180, onComplete: () => f.destroy() });
         }
-        for (let q = 0; q < 6; q++) {   // blood flying off
-            const m = this.add.image(cx + (Math.random() - 0.5) * R, cy + (Math.random() - 0.5) * R * 0.6, 'vfx_dot').setTint(0xc0101e).setDepth(4.55).setScale(0.6);
-            this.tweens.add({ targets: m, x: m.x + (Math.random() - 0.5) * 30, y: m.y - 10 - Math.random() * 16, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => m.destroy() });
+        if (!this._ebBlood?.active) {   // blood flying off (hand-drawn drops)
+            this._ebBlood = this.add.particles(0, 0, 'fx_enemies_b', { frame: ['blood_0', 'blood_1', 'blood_2'], emitting: false, lifespan: { min: 240, max: 420 },
+                speed: { min: 50, max: 130 }, angle: { min: 200, max: 340 }, gravityY: 420, scale: 1.5, alpha: { start: 1, end: 0.4 } }).setDepth(4.55);
+            this._vfxSort?.(this._ebBlood);
         }
-        g.setScale(0.6);
-        this.tweens.add({ targets: g, scale: 1.05, alpha: 0, duration: 220, ease: 'Cubic.easeOut', onComplete: () => g.destroy() });
+        this._ebBlood.explode(6, cx, cy);
         this.cameras.main.shake(40, 0.002);
         Sfx.play(this, 'clink');
     }
-    // What's on you, as a row of small pixel icons over your head, each with its time running down beneath:
-    // dripping, bleeding, poisoned, rooted, burning, hexed (one graphics, redrawn each frame)
+    // What's on you, as a row of small pixel icons over your head (assets/art/fx_status), each with its time running down
+    // beneath: dripping, bleeding, poisoned, rooted, burning, hexed (the timers one graphics, redrawn each frame)
     _playerStatusRow(time) {
         const p = this.player;
         const on = [];
@@ -5552,31 +5527,27 @@ class LevelManager {
         if (this._playerRooted && (this._playerRootUntil || 0) > time) on.push(['root', Math.min(1, (this._playerRootUntil - time) / 1500)]);
         if ((this._pBurnUntil || 0) > time) on.push(['burn', (this._pBurnUntil - time) / 3000]);
         if ((this._absHexUntil || 0) > time) on.push(['hex', (this._absHexUntil - time) / 4000]);
-        const g = this._statusRowG;
+        if ((this._nsight?.until || 0) > time) on.push(['blind', (this._nsight.until - time) / this._nsight.ms]);   // nearsighted (Blinder.js; its icon is fx_blinder's)
+        if ((this._windedUntil || 0) > time) on.push(['winded', (this._windedUntil - time) / (this._windedMs || 3000)]);   // winded (GameScene.applyWinded; fx_winded's)
+        const g = this._statusRowG, icons = this._statusIcons || (this._statusIcons = {});
+        for (const k in icons) if (icons[k]?.active) icons[k].setVisible(false);
         if (!on.length || !p?.active || this._deathScreenActive) { if (g?.active) g.clear(); return; }
         const G = g?.active ? g : (this._statusRowG = this.add.graphics().setDepth(5.5));
-        G.clear().setPosition(Math.round(p.x), Math.round(p.y - 30));
-        const ART = {   // 7 x 8, 'k' outline
-            drip:   { rows: ['...k...', '..kbk..', '.kbbbk.', 'kbbwbbk', 'kbbbbbk', 'kbbbbbk', '.kbbbk.', '..kkk..'], b: 0x6fd0ee, w: 0xdff6ff },
-            bleed:  { rows: ['...k...', '..krk..', '.krrrk.', 'krrwrrk', 'krrrrrk', 'krrrrrk', '.krrrk.', '..kkk..'], r: 0xd8202e, w: 0xffb0b0 },
-            poison: { rows: ['.k...k.', 'kgk.kwk', '.k.kgk.', '..kgggk', '.kggwgk', 'kggggk.', 'kgggk..', '.kkk...'], g: 0x8ae04a, w: 0xe8ffd0 },
-            root:   { rows: ['..k.k..', '.kvkvk.', '.kvkvk.', '..kvk..', 'k.kvk.k', 'vkkvkkv', '.vvvvv.', '..kkk..'], v: 0x6a4a26 },
-            burn:   { rows: ['...k...', '..kok..', '.kooyk.', '.koyok.', 'kooyyok', 'koyyyok', '.koyok.', '..kkk..'], o: 0xff6a20, y: 0xffd040 },
-            hex:    { rows: ['.kkkkk.', 'k.khk.k', 'kkhhhkk', 'khhwhhk', 'kkhhhkk', 'k.khk.k', '.kkkkk.', '.......'], h: 0xb05cff, w: 0xf0d0ff },
-        };
-        const S = 1.5, W = 7 * S, GAP = 4, x0 = -(on.length * (W + GAP) - GAP) / 2;
+        const X = Math.round(p.x), Y = Math.round(p.y - 30);
+        G.clear().setPosition(X, Y);
+        const COL = { drip: 0x6fd0ee, bleed: 0xd8202e, poison: 0x8ae04a, root: 0x6a4a26, burn: 0xff6a20, hex: 0xb05cff, blind: 0xa890d8, winded: 0x9aa4b4 };
+        const W = 10, GAP = 4, x0 = -(on.length * (W + GAP) - GAP) / 2;
         on.forEach(([kind, left], i) => {
-            const A = ART[kind], ox = x0 + i * (W + GAP), bob = Math.sin(time / 260 + i) * 1;
-            A.rows.forEach((row, y) => [...row].forEach((c, x) => {
-                if (c === '.') return;
-                G.fillStyle(c === 'k' ? 0x14090a : A[c], 1).fillRect(ox + x * S, y * S - 12 + bob, S, S);
-            }));
+            const ox = x0 + i * (W + GAP), bob = Math.round(Math.sin(time / 260 + i));
+            const ic = icons[kind]?.active ? icons[kind] : (icons[kind] = this.add.image(0, 0, { blind: 'fx_blinder', winded: 'fx_winded' }[kind] || 'fx_status', kind).setOrigin(0).setDepth(5.5));
+            ic.setPosition(X + ox, Y - 12 + bob).setVisible(true);
             G.fillStyle(0x14090a, 0.9).fillRect(ox, 1, W, 2.5);   // its time, running down
-            G.fillStyle(A.b ?? A.r ?? A.g ?? A.v ?? A.o ?? A.h, 1).fillRect(ox + 0.5, 1.5, Math.max(0, (W - 1) * Math.min(1, left)), 1.5);
+            G.fillStyle(COL[kind], 1).fillRect(ox + 0.5, 1.5, Math.max(0, (W - 1) * Math.min(1, left)), 1.5);
         });
     }
     // BLEED: moving hurts. Every tile you go while it lasts (a dash, every tile it covers) costs BLEED_STEP.
     _bleedStart(ms) {
+        if (this._tauntAlly) return;   // (a hit on an ally standing in for you: CombatSystem.tauntTo)
         if (!(this._bleedUntil > this.time.now)) { this._bleedAt = [this.playerX, this.playerY]; Sfx.play(this, 'status', { kind: 'bleed' }); }
         this._bleedUntil = this.time.now + ms;
         this.showStatusText(this.player.x, this.player.y - 34, 'BLEEDING', '#ff4a4a');
@@ -5591,7 +5562,7 @@ class LevelManager {
             this._bleedAt = [this.playerX, this.playerY];
             const dashing = this.time.now < (this._dashInvulnUntil || 0);
             this._ownWound = true;
-            try { this.takeDamage(H.BLEED_STEP * steps * (dashing ? H.BLEED_DASH : 1) * (this.enemyDamageScale || 1)); } finally { this._ownWound = false; }
+            try { this.takeDamage(H.BLEED_STEP * steps * (dashing ? H.BLEED_DASH : 1) * (this.enemyDamageScale || 1), 'bleed'); } finally { this._ownWound = false; }
             for (let k = 0; k < Math.min(6, steps * 2); k++) {
                 const m = this.add.image(p.x + (Math.random() - 0.5) * 16, p.y + 4, 'vfx_dot').setTint(0xc81e2a).setDepth((p.depth ?? 2) + 0.1).setScale(0.9);
                 this.tweens.add({ targets: m, x: m.x + (Math.random() - 0.5) * 20, y: m.y + 10, alpha: 0, duration: 380, ease: 'Quad.easeOut', onComplete: () => m.destroy() });
@@ -5626,6 +5597,7 @@ class LevelManager {
         const tiles = area.filter(t => !safe.includes(t));
         const aim = born ? F.GRID_AIM_BORN : F.GRID_AIM, TS = this.TILE_SIZE;
         e._fgAim = tiles; e._fgHold = e._moveCdMult; e._moveCdMult = 999;   // it stands to cast
+        EnemyManager.playAtk(this, e.sprite, aim, this.playerX < e.x, 'cast_');   // its cold gathering on it
         const g = this.add.graphics().setDepth(0.9);
         for (const t of tiles) {
             g.fillStyle(born ? 0x4a9fff : 0x9fe8ff, 0.24); g.fillRect(t.x * TS + 1, t.y * TS + 1, TS - 2, TS - 2);
@@ -5633,20 +5605,21 @@ class LevelManager {
         }
         this.tweens.add({ targets: g, alpha: 0.45, duration: 160, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         Sfx.play(this, 'freeze');
-        this.time.delayedCall(aim, () => {   // (on its own clock, so a death mid-cast still clears the telegraph)
+        this.time.delayedCall(aim, CombatSystem.tauntKeep(this, () => {   // (on its own clock, so a death mid-cast still clears the telegraph; cast at an ally, on that ally)
             this.tweens.killTweensOf(g); g.destroy();
             e._fgAim = null; e._fgLast = this.time.now;
             if (!e.sprite?.active || e._frostStage === 'statue') return;
             e._moveCdMult = e._fgHold;
-            if (tiles.some(t => t.x === this.playerX && t.y === this.playerY)) {
-                this.takeDamage((born ? F.GRID_DMG_BORN : F.GRID_DMG) * (this.enemyDamageScale || 1));
+            CombatSystem.tauntBoth(this, () => {   // (and you, if you're in it)
+                if (!tiles.some(t => t.x === this.playerX && t.y === this.playerY)) return;
+                this.takeDamage((born ? F.GRID_DMG_BORN : F.GRID_DMG) * (this.enemyDamageScale || 1), e);
                 this.showStatusText?.(this.player.x, this.player.y - 30, 'FROSTBITTEN', '#bff4ff');
-            }
+            });
             const f = this.add.graphics().setDepth(2.6);
             for (const t of tiles) { f.fillStyle(0xffffff, 0.8); f.fillRect(t.x * TS + 3, t.y * TS + 3, TS - 6, TS - 6); f.fillStyle(0x9fe8ff, 0.5); f.fillRect(t.x * TS, t.y * TS, TS, TS); }
             this.tweens.add({ targets: f, alpha: 0, duration: 280, ease: 'Quad.easeOut', onComplete: () => f.destroy() });
             this._vfxBursts?.ice?.explode(14, e.sprite.x, e.sprite.y); this.cameras.main.shake(90, 0.004); Sfx.play(this, 'shatter');
-        });
+        }));
     }
     // A rebirth, up close: the fight holds still (GameScene._frame skips play while _cinemaUntil runs), bars slide in, the
     // camera swoops onto (x, y) as the shell shudders, `hatch` breaks it, the new body lands, and it all swings back.
@@ -5721,12 +5694,12 @@ class LevelManager {
         },
         slime: ['aggressor'], berserker: ['aggressor'], ranged: ['controller'], encased: ['controller', 'tough'], rooter: ['controller'],
         anchor: ['buffer', 'tough'], healer: ['buffer', 'tough'], splitter: ['aggressor', 'multiplier'], mortar: ['controller'],
-        voidsniper: ['aggressor', 'trickster'], lightningelem: ['controller'], singularity: ['aggressor', 'controller'],
+        voidsniper: ['aggressor', 'trickster'], sniper: ['controller', 'trickster'], lightningelem: ['controller'], singularity: ['aggressor', 'controller'],
         drowner: ['aggressor', 'water', 'trickster'], ripplerunner: ['controller', 'water'], tidecaller: ['buffer', 'water'],
         waverider: ['aggressor', 'water'], bud: ['aggressor', 'multiplier'], shade: ['buffer', 'tough'], wraith: ['buffer', 'trickster'],
-        diver: ['aggressor', 'controller', 'water'], leech: ['trickster'], gem: ['controller', 'tough'], ceo: ['buffer', 'controller', 'tough'],
+        diver: ['controller', 'water'], leech: ['trickster'], gem: ['controller', 'tough'], ceo: ['buffer', 'controller', 'tough'],
         armored: ['aggressor', 'tough'], hunter: ['aggressor', 'trickster'], frost: ['controller', 'water', 'tough'], tidalguard: ['controller', 'water'],
-        wishingwell: ['buffer', 'water'], conduit: ['controller', 'water'], cheer: ['buffer'],
+        wishingwell: ['buffer', 'water'], conduit: ['controller', 'water'], cheer: ['buffer'], blinder: ['controller', 'trickster'],
     };
     static bodyKey(scene, kind) { const L = LevelManager.LOOKS[kind]; return L ? LevelManager.slimeRecolor(scene, 'slime_' + kind, L.pal, L.glint) : null; }
     // { tex, anim, tint } for a codex key, in any scene
@@ -5782,109 +5755,16 @@ class LevelManager {
         if (!scene.anims.exists(key + '_idle')) scene.anims.create({ key: key + '_idle', frames: [{ key, frame: 0 }, { key, frame: 18 }], frameRate: 2, repeat: -1 });
         return key;
     }
-    // The Wraith's body: its pale slime with a ghost's ragged hem (the bottom scalloped away) and the lower half fading
-    // to see-through, so it reads as a ghost rather than a slime of ice
-    static wraithBodyKey(scene) {
-        const base = LevelManager.bodyKey(scene, 'wraith'), key = 'slime_wraith_ghost', TX = scene.textures;
-        if (!base) return null;
-        if (!TX.exists(key)) {
-            const src = TX.get(base), img = src.getSourceImage();
-            const work = document.createElement('canvas'); work.width = img.width; work.height = img.height;
-            const wctx = work.getContext('2d', { willReadFrequently: true });
-            wctx.drawImage(img, 0, 0);
-            const d = wctx.getImageData(0, 0, img.width, img.height), px = d.data, W = img.width, at = (x, y) => (y * W + x) * 4;
-            for (const name of src.getFrameNames()) {
-                const f = src.get(name), x0 = f.cutX, y0 = f.cutY, fw = f.cutWidth, fh = f.cutHeight;
-                let top = Infinity, bot = -1;
-                for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) if (px[at(x0 + x, y0 + y) + 3]) { top = Math.min(top, y); bot = Math.max(bot, y); }
-                if (bot < 0) continue;
-                const h = Math.max(1, bot - top);
-                for (let y = top; y <= bot; y++) for (let x = 0; x < fw; x++) {
-                    const i = at(x0 + x, y0 + y);
-                    if (!px[i + 3]) continue;
-                    const fromBot = bot - y, w = x % 5;
-                    if (fromBot === 0 && w !== 2) { px[i + 3] = 0; continue; }          // the hem: scallops, a point every few pixels
-                    if (fromBot === 1 && (w === 0 || w === 4)) { px[i + 3] = 0; continue; }
-                    const k = (y - top) / h;
-                    if (k > 0.45) px[i + 3] = Math.round(px[i + 3] * (1 - 0.6 * (k - 0.45) / 0.55));   // fading out toward the hem
-                }
-            }
-            wctx.putImageData(d, 0, 0);
-            const t = TX.createCanvas(key, img.width, img.height);
-            t.getContext().drawImage(work, 0, 0);
-            for (const name of src.getFrameNames()) { const f = src.get(name); t.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight); }
-            t.refresh();
-        }
+    // The Wraith's body: a ghost, pale lavender, see-through toward its ragged hem (drawn by hand: assets/art/slime_wraith_ghost.png)
+    static wraithBodyKey(scene) { return LevelManager._handBody(scene, 'slime_wraith_ghost'); }
+    // a body sheet drawn by hand, with its two-frame idle; null while its file isn't there
+    static _handBody(scene, key) {
+        if (!scene.textures.exists(key)) return null;
         if (!scene.anims.exists(key + '_idle')) scene.anims.create({ key: key + '_idle', frames: [{ key, frame: 0 }, { key, frame: 18 }], frameRate: 2, repeat: -1 });
         return key;
     }
-    // The Encased Slime's body: the red slime with a broken shell of stone plates over its top half, painted into every
-    // frame so the armour squashes, breathes and hops with the body (plates laid over it as a separate drawing floated
-    // off it mid-hop). Chipped away in places to show the slime underneath, a dark rim where the shell ends, light on
-    // the plates' top edges, a few cracks glowing.
-    static encBodyKey(scene) {
-        const key = 'slime_encased_armor', TX = scene.textures;
-        if (!TX.exists(key)) {
-            const src = TX.exists('slime_red') ? TX.get('slime_red') : null, img = src?.getSourceImage();
-            if (!img) return null;
-            const work = document.createElement('canvas'); work.width = img.width; work.height = img.height;
-            const wctx = work.getContext('2d', { willReadFrequently: true });
-            wctx.drawImage(img, 0, 0);
-            const d = wctx.getImageData(0, 0, img.width, img.height), px = d.data, W = img.width;
-            const at = (x, y) => (y * W + x) * 4, solid = (x, y) => px[at(x, y) + 3] > 0;
-            const hash = (a, b) => (((a * 73856093) ^ (b * 19349663)) >>> 0) % 100;
-            const put = (x, y, c) => { const i = at(x, y); px[i] = c >> 16 & 255; px[i + 1] = c >> 8 & 255; px[i + 2] = c & 255; };
-            for (const name of src.getFrameNames()) {
-                const f = src.get(name), x0 = f.cutX, y0 = f.cutY, fw = f.cutWidth, fh = f.cutHeight;
-                let top = Infinity, bot = -1;
-                for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) if (solid(x0 + x, y0 + y)) { top = Math.min(top, y); bot = Math.max(bot, y); }
-                if (bot < 0) continue;
-                const depth = Math.max(4, Math.round((bot - top) * 0.72));
-                const rock = new Set();
-                for (let x = 0; x < fw; x++) {
-                    let ct = -1; for (let y = 0; y < fh; y++) if (solid(x0 + x, y0 + y)) { ct = y; break; }
-                    if (ct < 0) continue;
-                    if (ct > 0 && hash(Math.floor(x / 3), 41) < 55) { const i = at(x0 + x, y0 + ct - 1); px[i + 3] = 255; rock.add(x + ',' + (ct - 1)); }   // stones standing proud of its outline
-                    for (let y = ct; y < Math.min(fh, ct + 1 + depth + (hash(x, 7) % 3) - 1); y++) {   // the outline row stays; a ragged lower edge
-                        if (!solid(x0 + x, y0 + y)) continue;
-                        const cx = Math.floor((x + (Math.floor(y / 3) % 2) * 2) / 4), cy = Math.floor(y / 3);
-                        if (y > ct + 1 && hash(cx + 11, cy + 5) < 20) continue;   // a chip: a plate gone, the slime showing
-                        rock.add(x + ',' + y);
-                    }
-                }
-                for (const k of rock) {
-                    const [x, y] = k.split(',').map(Number), X = x0 + x, Y = y0 + y;
-                    const ox = (x + (Math.floor(y / 3) % 2) * 2), cx = Math.floor(ox / 4), cy = Math.floor(y / 3), lx = ox % 4, ly = y % 3;
-                    const below = !rock.has(x + ',' + (y + 1)), above = !rock.has(x + ',' + (y - 1));
-                    let c = hash(cx, cy) < 50 ? 0x8c8272 : 0x6e6456;   // two stones, plate by plate
-                    if (ly === 0) c = 0xc4baa6;                       // light on its top edge
-                    if (lx === 3 || ly === 2) c = 0x3a3128;           // the seam between plates
-                    if ((lx === 3 || ly === 2) && hash(cx + 3, cy + 9) < 14) c = 0xffb25a;   // a crack, glowing
-                    if (above) c = 0x1e1812;                         // its outline
-                    if (below) c = 0x2a221a;                          // the shell's broken rim
-                    put(X, Y, c);
-                }
-            }
-            wctx.putImageData(d, 0, 0);
-            const t = TX.createCanvas(key, img.width, img.height);
-            t.getContext().drawImage(work, 0, 0);
-            for (const name of src.getFrameNames()) { const f = src.get(name); t.add(name, 0, f.cutX, f.cutY, f.cutWidth, f.cutHeight); }
-            t.refresh();
-        }
-        if (!scene.anims.exists(key + '_idle')) scene.anims.create({ key: key + '_idle', frames: [{ key, frame: 0 }, { key, frame: 18 }], frameRate: 2, repeat: -1 });
-        return key;
-    }
-    // The statue: a 24px block of ice, darker at its base, a highlight down one face, cracks.
-    static frostBlockKey(scene) {
-        const key = 'lv_frost_block';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 24, { k: '#0b2a3a', i: '#9fe8ff', d: '#5fb8e0', w: '#ffffff', c: '#dff8ff' }, (m) => {
-            m.poly([[5, 4], [19, 3], [21, 20], [3, 21]], 'i');
-            m.poly([[3, 15], [21, 14], [21, 20], [3, 21]], 'd');
-            m.line(7, 5, 6, 18, 'w'); m.line(8, 5, 8, 9, 'w');
-            m.line(14, 6, 12, 11, 'c'); m.line(12, 11, 15, 15, 'c'); m.line(17, 8, 19, 12, 'c');
-        });
-    }
+    // The Encased Slime's body: a boulder of stone plates over a slime glowing red through a slit (drawn by hand: assets/art/slime_encased_armor.png)
+    static encBodyKey(scene) { return LevelManager._handBody(scene, 'slime_encased_armor'); }
 
     // ── THE ENCASED SLIME (the Fracture) ─────────────────────────────────────
     // A slime that throws the room's rubble with its mind. Its attack, the Rubble Clap: eight lanes centred on
@@ -5912,7 +5792,7 @@ class LevelManager {
         const ek = LevelManager.encBodyKey(this);
         if (ek && e.sprite) { e.sprite.clearTint?.(); e.sprite.setTexture(ek, 0); e.sprite.play(ek + '_idle'); }
         else if (e.sprite?.setTint) e.sprite.setTint(0x9a8a7a);
-        e._encLook = { pebbles: [0, 1, 2].map(k => this.add.image(0, 0, LevelManager.encRubbleKey(this)).setScale(0.55)), a: Math.random() * 6 };
+        e._encLook = { pebbles: [0, 1, 2].map(k => this.add.image(0, 0, 'fx_enemies_b', 'rubble_' + k).setScale(0.6)), a: Math.random() * 6 };
         for (const o of e._encLook.pebbles) this._vfxSort?.(o);
         return e;
     }
@@ -5927,7 +5807,7 @@ class LevelManager {
         e._encMoveCd = e._moveCdMult; e._moveCdMult = 999;
         e.isStunned = true; e.stunnedUntil = e._encUntil;
         this.updateEnemyHealthBar?.(e);
-        e._encGfx = this.add.image(e.sprite.x, e.sprite.y + 4, LevelManager.encStoneKey(this)).setScale(1.8).setDepth((e.sprite.depth ?? 1) + 0.02).setAlpha(0);
+        e._encGfx = this.add.image(e.sprite.x, e.sprite.y + 2, 'fx_enemies_b', 'stone').setScale(1.8).setDepth((e.sprite.depth ?? 1) + 0.02).setAlpha(0);
         e._encRing = this.add.graphics().setDepth((e.sprite.depth ?? 1) - 0.02);
         this.tweens.add({ targets: e._encGfx, alpha: 1, scale: 1.9, duration: 220, ease: 'Back.easeOut' });
         this._bfxDust?.(e.sprite.x, e.sprite.y);
@@ -5951,7 +5831,7 @@ class LevelManager {
         if (L) {   // the pebbles circle (stilled while it's stone, gone once reborn: it has a body of fire then)
             const live = e._encStage === 'live' && s?.active && s.visible;
             L.a += 0.03;
-            L.pebbles.forEach((pb, k) => { const a = L.a + k * 2.094; pb.setVisible(live).setPosition(s.x + Math.cos(a) * 15, s.y + 4 + Math.sin(a) * 6 + Math.sin(time * 0.005 + k) * 1.5).setDepth((s.depth ?? 1) + (Math.sin(a) > 0 ? 0.004 : -0.004)).setRotation(a); });
+            L.pebbles.forEach((pb, k) => { const a = L.a + k * 2.094; pb.setVisible(live).setPosition(s.x + Math.cos(a) * 15, s.y + 4 + Math.sin(a) * 6 + Math.sin(time * 0.005 + k) * 1.5).setDepth((s.depth ?? 1) + (Math.sin(a) > 0 ? 0.004 : -0.004)).setFrame('rubble_' + ((Math.floor(a * 1.5) + k) % 3)); });   // tumbling by its frames
         }
         if (e._encStage === 'stone') {
             const k = 1 - Math.max(0, (e._encUntil - time) / C.STONE_MS);
@@ -5982,7 +5862,8 @@ class LevelManager {
         this.updateEnemyHealthBar?.(e);
         e._encRing?.destroy(); e._encRing = null;
         if (e._encGfx) { const b = e._encGfx; this._bfxShatter?.(b.x, b.y, 0x9a8a7a, 14); this.tweens.add({ targets: b, alpha: 0, scale: 2.8, duration: 260, onComplete: () => b.destroy() }); e._encGfx = null; }
-        if (s?.setTint) s.setTint(0xff8a3a);
+        const rk = LevelManager._handBody(this, 'slime_encased_reborn');   // its body gone molten (a sheet of its own: a tint was lost at the first hit)
+        if (rk && s) { s.setTexture(rk, s.frame?.name ?? 0); s.play(rk + '_idle'); } else if (s?.setTint) s.setTint(0xff8a3a);
         if (s) this.tweens.add({ targets: s, scaleX: s.scaleX * 1.25, scaleY: s.scaleY * 1.25, duration: 220, ease: 'Back.easeOut' });
         Sfx.play(this, 'roar'); this.cameras.main.shake(180, 0.007);
         this.showStatusText(s.x, s.y - 30, 'REBORN!', '#ff8a3a');
@@ -5994,15 +5875,16 @@ class LevelManager {
         const lanes = vice ? Array.from({ length: C.VICE_W }, (_, i) => pb - (C.VICE_W >> 1) + i)
                            : Array.from({ length: C.LANES }, (_, i) => pb - C.LANES / 2 + i).filter((b, i) => i % 4 < 2);
         const tile = (a, b) => (h ? [a, b] : [b, a]), px = (a, b) => { const [x, y] = tile(a, b); return [x * T + T / 2, y * T + T / 2]; };
-        const key = LevelManager.encRubbleKey(this), stones = [];
+        const stones = [];
         for (const b of lanes) for (const side of [-1, 1]) {
-            const [x, y] = px(pa + side * dist, b), st = this.add.image(x, y + 4, key).setScale(0).setDepth(2.6).setAngle(Math.random() * 360);
+            const [x, y] = px(pa + side * dist, b), st = this.add.image(x, y + 4, 'fx_enemies_b', 'rubble_' + Math.floor(Math.random() * 3)).setScale(0).setDepth(2.6).setFlipX(Math.random() < 0.5);
             this.tweens.add({ targets: st, scale: 1.2 + Math.random() * 0.3, y: y - 6, duration: 300, ease: 'Back.easeOut' });   // lifted off the floor
             stones.push({ st, b, side });
         }
         const lane = this.add.graphics().setDepth(0.62), mind = this.add.graphics().setDepth(2.55).setBlendMode(Phaser.BlendModes.ADD);
         e._encSaveCd = e._moveCdMult; e._moveCdMult = 999;   // it holds still to cast
-        e._encAtk = { kind, t0: now, h, pa, pb, dist, lanes, stones, lane, mind, tele: vice ? C.VICE_TELE : C.TELE, run: vice ? C.VICE_SLAM : C.SLIDE, done: { '-1': false, '1': false }, hit: false, px, tile };
+        EnemyManager.playAtk(this, e.sprite, vice ? C.VICE_TELE : C.TELE, this.player?.x < e.sprite.x, 'cast_');   // the slime in its shell burning bright as its mind lifts the stones
+        e._encAtk = { kind, t0: now, h, pa, pb, dist, lanes, stones, lane, mind, tele: vice ? C.VICE_TELE : C.TELE, run: vice ? C.VICE_SLAM : C.SLIDE, u: { '-1': 0, '1': 0 }, px, tile };   // u: how far in each side's stones have come (0 to 1)
         Sfx.play(this, 'whoosh');
     }
     _encAtkTick(e, now) {
@@ -6016,38 +5898,43 @@ class LevelManager {
                 g.fillStyle(vice ? 0xff4a2a : 0xffa63a, (0.08 + 0.14 * k) * (0.6 + 0.4 * pulse));
                 if (A.h) g.fillRect(x0 - T / 2, y0 - T / 2, w, T); else g.fillRect(x0 - T / 2, y0 - T / 2, T, w);
             }
-            for (const S of A.stones) { S.st.x += (Math.random() - 0.5) * 1.2 * k; if (Math.random() < 0.08) { m.lineStyle(1, 0xffb25a, 0.35); m.lineBetween(e.sprite.x, e.sprite.y - 6, S.st.x, S.st.y); } }
+            for (const S of A.stones) { S.st.x += (Math.random() - 0.5) * 1.2 * k; if (Math.random() < 0.08) CosmicSystem.fx(this).gold.emitParticleAt(S.st.x + (Math.random() - 0.5) * 10, S.st.y + 4, 1); }   // its mind's grip glinting under them
             return;
         }
-        const u = Math.min(1, (t - A.tele) / A.run), ease = u * u, front = A.dist * (1 - ease);   // stones accelerate in
-        for (const S of A.stones) { const [x, y] = A.px(A.pa + S.side * front, S.b); S.st.setPosition(x, y - 6 * (1 - u)); S.st.angle += 12 * S.side; }
-        // the stones sweep in: if you're in a closing lane out past them, they shove you along it toward where they meet
-        {
-            const pa0 = A.h ? this.playerX : this.playerY, pb0 = A.h ? this.playerY : this.playerX, d = pa0 - A.pa;
-            if (A.lanes.includes(pb0) && Math.abs(d) > front + 0.5 && Math.abs(d) <= A.dist && now >= (this._dashInvulnUntil || 0)) {
-                const to = Math.round(A.pa + Math.sign(d) * Math.max(0, Math.floor(front))), [nx, ny] = A.tile(to, pb0);
+        const dt = now - (A.lt ?? A.t0 + A.tele); A.lt = now;
+        for (const sd of [-1, 1]) A.u[sd] = Math.min(1, A.u[sd] + dt / A.run * Math.min(...A.stones.filter(S => S.side === sd).map(S => Trident.slow(this, S.st.x, S.st.y))));   // each side its own front, slowed in the Boreal Trident's aura
+        const front = sd => A.dist * (1 - A.u[sd] ** 2), u = Math.min(A.u[-1], A.u[1]);   // stones accelerate in
+        for (const S of A.stones) { const [x, y] = A.px(A.pa + S.side * front(S.side), S.b); S.st.setPosition(x, y - 6 * (1 - A.u[S.side])).setFrame('rubble_' + (((now / 70 | 0) + (S.side > 0 ? 0 : 1)) % 3)); }   // tumbling in, by its frames
+        // the stones sweep in: if you're in a closing lane out past them, they shove you along it toward where they meet (you: an ally isn't shoved)
+        CombatSystem.tauntAs(this, null, () => {
+            const pa0 = A.h ? this.playerX : this.playerY, pb0 = A.h ? this.playerY : this.playerX, d = pa0 - A.pa, fr = front(Math.sign(d) || 1);
+            if (A.lanes.includes(pb0) && Math.abs(d) > fr + 0.5 && Math.abs(d) <= A.dist && now >= (this._dashInvulnUntil || 0)) {
+                const to = Math.round(A.pa + Math.sign(d) * Math.max(0, Math.floor(fr))), [nx, ny] = A.tile(to, pb0);
                 if (this.world?.[nx]?.[ny] === this.FLOOR && !this.getEnemyAt?.(nx, ny) && (this._iceShellUntil || 0) <= this.time.now) {   // (not through the ice ult's shell)
                     this.playerX = nx; this.playerY = ny;
                     this.player.setPosition(nx * T + T / 2, ny * T + T / 2 + (this.SLIME_Y_OFFSET || 0));
                     if (!A.shoved) { A.shoved = true; this.showStatusText(this.player.x, this.player.y - 26, 'SHOVED', '#d8c8a8'); }
                 }
             }
-        }
-        // the hit: each side's stones reach you (a dash going through them can't be hit)
+        });
+        // the hit: each side's stones reach you (a dash going through them can't be hit); the ally it cast at, and you, each once
+        CombatSystem.tauntBoth(this, () => {
+        const k = this._tauntAlly || 0, W = (A.who ||= new Map()), w = W.get(k) || W.set(k, { done: { '-1': false, '1': false }, hit: false }).get(k);
         const pa = A.h ? this.playerX : this.playerY, pb = A.h ? this.playerY : this.playerX, inLane = A.lanes.includes(pb), within = Math.abs(pa - A.pa) <= A.dist;
         for (const side of [-1, 1]) {
-            if (A.done[side]) continue;
-            const pos = A.pa + side * front;
+            if (w.done[side]) continue;
+            const pos = A.pa + side * front(side);
             if (side < 0 ? pos >= pa - 0.4 : pos <= pa + 0.4) {
-                A.done[side] = true;
-                if (A.hit || !inLane || !within) continue;
+                w.done[side] = true;
+                if (w.hit || !inLane || !within) continue;
                 if (this.time.now < (this._dashInvulnUntil || 0)) { this.showStatusText(this.player.x, this.player.y - 26, 'THROUGH!', '#ffe08a'); continue; }
-                A.hit = true;
-                this.takeDamage((vice ? C.VICE_DMG : C.CLAP_DMG) * e._encDmg * (this.enemyDamageScale || 1));
+                w.hit = true;
+                this.takeDamage((vice ? C.VICE_DMG : C.CLAP_DMG) * e._encDmg * (this.enemyDamageScale || 1), e);
                 if (vice && this._ccGate(C.DAZE_MS)) { this._staggerUntil = Math.max(this._staggerUntil || 0, this.time.now + C.DAZE_MS); this.showStatusText(this.player.x, this.player.y - 26, 'CRUSHED', '#ff6a3a'); }
                 this.cameras.main.shake(vice ? 200 : 110, vice ? 0.01 : 0.005);
             }
         }
+        });
         if (u >= 1) {   // the stones meet and break
             for (const b of A.lanes) { const [x, y] = A.px(A.pa, b); if (Math.random() < (vice ? 0.4 : 1)) this._bfxDust?.(x, y); }
             Sfx.play(this, 'boom'); this.cameras.main.shake(vice ? 120 : 60, 0.004);
@@ -6062,25 +5949,7 @@ class LevelManager {
         if (e._encStage !== 'stone') e._moveCdMult = e._encSaveCd;
     }
     // A thrown stone: 16px, a broken lump of the floor, lit from the top left.
-    static encRubbleKey(scene) {
-        const key = 'lv_enc_rubble';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 16, { k: '#1a140e', a: '#8a8078', b: '#6a625a', c: '#b8aea2', d: '#4a443e' }, (m) => {
-            m.poly([[3, 6], [7, 2], [12, 3], [14, 8], [12, 13], [6, 14], [2, 11]], 'a');
-            m.poly([[7, 9], [14, 8], [12, 13], [6, 14]], 'b'); m.poly([[3, 6], [7, 2], [9, 5], [5, 8]], 'c');
-            m.line(8, 6, 10, 10, 'd'); m.line(10, 10, 9, 13, 'd');
-        });
-    }
-    // The stone it encases itself in: a boulder in the slime's shape, glowing cracks.
-    static encStoneKey(scene) {
-        const key = 'lv_enc_stone';
-        if (typeof ShopScene === 'undefined' || !ShopScene.icon) return key;
-        return ShopScene.icon(scene, key, 24, { k: '#1a140e', a: '#7a7068', b: '#5a524a', c: '#a8a096', o: '#ff8a3a', y: '#ffd27a' }, (m) => {
-            m.poly([[3, 20], [5, 10], [10, 5], [15, 5], [20, 10], [22, 20]], 'a');
-            m.poly([[3, 20], [12, 15], [22, 20]], 'b'); m.poly([[5, 10], [10, 5], [12, 8], [7, 12]], 'c');
-            m.line(12, 8, 11, 13, 'o'); m.line(11, 13, 14, 17, 'o'); m.line(16, 9, 18, 13, 'y'); m.line(7, 15, 9, 18, 'o');
-        });
-    }
+    static encRubbleKey(scene) { return 'lv_enc_rubble'; }   // (assets/art: the same stone as fx_enemies_b rubble_0)
 
     createWishingWell(x, y, ri) {
         const e = this.createEnemy(x, y, 90);
@@ -6148,19 +6017,12 @@ class LevelManager {
             if (this._deathScreenActive) return;
 
             // shadow on the ground: this is the tell for where it lands
-            const shadow = this.add.ellipse(sx, sy, 10, 5, 0x000000, 0.28).setDepth(0.5);
-            this.tweens.add({ targets: shadow, x: px, y: py, scaleX: 2.2, scaleY: 1.8,
-                              alpha: 0.42, duration: FLIGHT, ease: 'Linear' });
+            const shadow = this.add.image(sx, sy, 'vfx_shadow').setDepth(0.5).setAlpha(0.5).setDisplaySize(10, 5);
+            this.tweens.add({ targets: shadow, x: px, y: py, scaleX: shadow.scaleX * 2.2, scaleY: shadow.scaleY * 1.8,
+                              alpha: 0.8, duration: FLIGHT, ease: 'Linear' });
 
-            const glob = this.add.graphics().setDepth(5);
-            const draw = (r) => {
-                glob.clear();
-                glob.fillStyle(0x2a5cc8, 0.55); glob.fillCircle(0, 0, r + 1.5);
-                glob.fillStyle(0x4aa3c4, 0.95); glob.fillCircle(0, 0, r);
-                glob.fillStyle(0xbdf6ff, 0.85); glob.fillCircle(-r * 0.35, -r * 0.35, r * 0.33);
-            };
-            draw(6);
-            glob.x = sx; glob.y = sy;
+            const glob = this.add.image(sx, sy, 'fx_enemies_c', 'glob_0').setDepth(5);   // (wobbling by frames as it flies)
+            this._vfxSort?.(glob);
 
             let elapsed = 0;
             const timer = this.time.addEvent({
@@ -6176,9 +6038,8 @@ class LevelManager {
                     const t = Math.min(elapsed / FLIGHT, 1);
                     glob.x = sx + (px - sx) * t;
                     glob.y = sy + (py - sy) * t - 4 * ARC * t * (1 - t);
-                    // wobbles like a thrown liquid, and flattens as it falls
-                    draw(6 + Math.sin(t * 14) * 1.1);
-                    glob.setScale(1, 1 - 0.18 * Math.sin(Math.PI * t));
+                    // wobbles like a thrown liquid
+                    glob.setFrame('glob_' + (Math.floor(t * 9) % 3));
                     if (t < 1) return;
 
                     timer.remove();
@@ -6188,17 +6049,13 @@ class LevelManager {
                     // IMPACT — the puddle appears here, not before
                     this._wwBlob(tx, ty, 6 + Math.floor(Math.random() * 8));
                     Sfx.play(this, 'splash');
-                    const sp = this.add.graphics().setDepth(2.3);
-                    sp.x = px; sp.y = py;
-                    sp.lineStyle(2.5, 0xbdf6ff, 0.85); sp.strokeCircle(0, 0, 7);
-                    sp.fillStyle(0x4aa3c4, 0.45);       sp.fillCircle(0, 0, 7);
-                    this.tweens.add({ targets: sp, alpha: 0, scaleX: 2.6, scaleY: 2.6,
-                        duration: 340, ease: 'Quad.easeOut', onComplete: () => sp.destroy() });
+                    const sp = this.add.sprite(px, py, 'fx_enemies_c', 'wsplash_0').setDepth(2.3).setScale(1.5);
+                    this._vfxSort?.(sp);
+                    this.tweens.addCounter({ from: 0, to: 1.99, duration: 340, onUpdate: t => sp.setFrame('wsplash_' + Math.floor(t.getValue())), onComplete: () => sp.destroy() });
+                    this.tweens.add({ targets: sp, alpha: 0, delay: 160, duration: 180 });
                     for (let d = 0; d < 5; d++) {
                         const da = Math.random() * Math.PI * 2, dr = 10 + Math.random() * 16;
-                        const dg = this.add.graphics().setDepth(2.4);
-                        dg.fillStyle(0x9fe8ff, 0.9); dg.fillCircle(0, 0, 1.6 + Math.random() * 1.4);
-                        dg.x = px; dg.y = py;
+                        const dg = this.add.image(px, py, 'fx_enemies_c', d % 2 ? 'foam_1' : 'foam_0').setDepth(2.4);
                         this.tweens.add({ targets: dg, x: px + Math.cos(da) * dr,
                             y: py + Math.sin(da) * dr, alpha: 0, duration: 300 + Math.random() * 160,
                             onComplete: () => dg.destroy() });
@@ -6242,6 +6099,7 @@ class LevelManager {
         VisualFX.ripple(this, e.sprite.x, e.sprite.y, 10, e._wwRadius * TS, 0x9fe8ff, { depth: 2.2, duration: 600, alpha: 0.7 });
         // a heave animation, so the throw has a source
         if (e.sprite?.active) {
+            EnemyManager.playAtk?.(this, e.sprite, 300, false, 'heave_');
             this.tweens.add({ targets: e.sprite, scaleY: (e.sprite.scaleY || 1) * 0.88,
                 duration: 110, yoyo: true, ease: 'Quad.easeOut' });
         }
@@ -6296,19 +6154,20 @@ class LevelManager {
         return e;
     }
 
-    // DRIPPING — every tile you walk becomes permanent water. It does not damage you;
+    // DRIPPING — every tile you step off becomes permanent water (_onPlayerStepWater). It does not damage you;
     // it punishes moving, which is the opposite of every other threat in this level and
     // is why it is worth having.
     _dripCfg() { return { MS: 8000 }; }
 
-    _applyDripping(time) {
-        const C = this._dripCfg();
-        this._drippingUntil = Math.max(this._drippingUntil || 0, (time ?? this.time.now) + C.MS);
-        this._dripMs = C.MS;   // (its icon is in the row over you: _playerStatusRow)
+    _applyDripping(time, ms = this._dripCfg().MS) {   // (ms: a shorter soaking, the Torpedo Diver's)
+        if (this._tauntAlly) return;   // (an ally standing in for you doesn't drip: CombatSystem.tauntTo)
+        const until = (time ?? this.time.now) + ms;
+        if (until >= (this._drippingUntil || 0)) { this._drippingUntil = until; this._dripMs = ms; }   // (its icon is in the row over you: _playerStatusRow)
         this.showStatusText?.(this.player.x, this.player.y - 44, 'DRIPPING', '#6fd0ee');
     }
 
     _updateDripping(time) {
+        this._dripFrom = [this.playerX, this.playerY];   // (the tile you're on, for the tile you leave next)
         if (!this._drippingUntil) return;
         if (time >= this._drippingUntil) { this._drippingUntil = 0; return; }
     }
@@ -6380,13 +6239,9 @@ class LevelManager {
 
     _tgDrawAim(e) {
         const TS = this.TILE_SIZE;
-        const g = this.add.graphics().setDepth(0.9);
-        for (const t of e._tgAimTiles) {
-            g.fillStyle(0x7fe8ff, 0.22);
-            g.fillRect(t.x * TS + 1, t.y * TS + 1, TS - 2, TS - 2);
-            g.lineStyle(1.2, 0xbdf6ff, 0.55);
-            g.strokeRect(t.x * TS + 1.5, t.y * TS + 1.5, TS - 3, TS - 3);
-        }
+        const g = this.add.container(0, 0).setDepth(0.9);   // (fx_enemies_c tg_aim: exactly the tile it will hit)
+        for (const t of e._tgAimTiles) g.add(this.add.image(t.x * TS + TS / 2, t.y * TS + TS / 2, 'fx_enemies_c', 'tg_aim').setDisplaySize(TS, TS));
+        EnemyManager.playAtk?.(this, e.sprite, Math.max(60, (e._tgFireAt || 0) - this.time.now), this.playerX < e.x, 'aim_');   // the trident drawn back
         this.tweens.add({ targets: g, alpha: 0.45, duration: 180, yoyo: true, repeat: -1,
                           ease: 'Sine.easeInOut' });
         e._tgGfx = g;
@@ -6397,10 +6252,11 @@ class LevelManager {
     _tgFire(e, time) {
         const TS = this.TILE_SIZE;
         Sfx.play(this, 'swing');   // the trident thrown
-        // Hitscan: whatever is standing on a lit tile at this instant takes it.
+        // Hitscan: whatever is standing on a lit tile at this instant takes it (the ally it aimed at, and you: CombatSystem.tauntBoth).
+        CombatSystem.tauntBoth(this, () => {
         const hit = e._tgAimTiles.some(t => t.x === this.playerX && t.y === this.playerY);
         if (hit) {
-            this.takeDamage(e._tgDmg * (this.enemyDamageScale || 1));
+            this.takeDamage(e._tgDmg * (this.enemyDamageScale || 1), e);
             // Grounded through the water it is standing in: pins you and leaves you
             // dripping, so the follow-up punishes the thing you want to do next.
             if (this._enemyWet(e) && this._ccGate(e._tgRootMs)) {
@@ -6412,15 +6268,22 @@ class LevelManager {
                 this.showStatusText?.(this.player.x, this.player.y - 30, 'SPEARED', '#bdf6ff');
             }
         }
-        const g = this.add.graphics().setDepth(2.6);
-        for (const t of e._tgAimTiles) {
-            g.fillStyle(0xffffff, 0.85);
-            g.fillRect(t.x * TS + 2, t.y * TS + 2, TS - 4, TS - 4);
-            g.fillStyle(0x7fe8ff, 0.55);
-            g.fillRect(t.x * TS, t.y * TS, TS, TS);
-        }
+        });
+        const g = this.add.container(0, 0).setDepth(2.6);
+        for (const t of e._tgAimTiles) g.add(this.add.image(t.x * TS + TS / 2, t.y * TS + TS / 2, 'fx_enemies_c', 'tg_hit').setDisplaySize(TS, TS).setAlpha(0.8));
         this.tweens.add({ targets: g, alpha: 0, duration: 260, ease: 'Quad.easeOut',
                           onComplete: () => g.destroy() });
+        // the throw (its own frames) and the trident flying the length of its shaft, snapped to the nearest of 8 ways
+        if (e.sprite?.active) {
+            e.sprite._atkTw?.stop();
+            EnemyManager.playAtk?.(this, e.sprite, 260, this.playerX < e.x);
+            const far = e._tgAimTiles[e._tgAimTiles.length - 1], tx = (far.x + 0.5) * TS, ty = (far.y + 0.5) * TS, x0 = e.sprite.x, y0 = e.sprite.y;
+            const k = (Math.round(Math.atan2(ty - y0, tx - x0) / (Math.PI / 4)) + 8) % 8;   // 0 east, going clockwise
+            const [fr, fx, fy] = [['tri_e', 0, 0], ['tri_se', 0, 0], ['tri_s', 0, 0], ['tri_se', 1, 0], ['tri_e', 1, 0], ['tri_ne', 1, 0], ['tri_s', 0, 1], ['tri_ne', 0, 0]][k];
+            const tri = this.add.image(x0, y0, 'fx_enemies_c', fr).setFlip(!!fx, !!fy).setDepth(2.65);
+            this._vfxSort?.(tri);
+            this.tweens.add({ targets: tri, x: tx, y: ty, duration: 220, ease: 'Quad.easeIn', onComplete: () => this.tweens.add({ targets: tri, alpha: 0, duration: 120, onComplete: () => tri.destroy() }) });
+        }
         e._tgLastFire = time;
     }
 
@@ -6439,7 +6302,8 @@ class LevelManager {
         e._zapCd = 900;
         e._lastZap = 0;
         if (e.sprite.setTint) e.sprite.setTint(0xe8ff3a);
-        e._conduitGfx = this.add.graphics().setDepth(0.95);
+        e._conduitGfx = this.add.container(0, 0).setDepth(0.95);   // its live water: a crackling tile (fx_enemies_c live_*) on each
+        e._conduitGfx.clear = () => { e._conduitGfx.each(o => o.setVisible(false)); return e._conduitGfx; };
         this._cisternMark(e, m => {
             m.lineStyle(2, 0xffff44, 0.95);
             m.beginPath(); m.moveTo(-4, -8); m.lineTo(1, -1); m.lineTo(-2, -1); m.lineTo(3, 8);
@@ -6456,7 +6320,6 @@ class LevelManager {
         if (!(this.isLevel6 || this.trainingRun || this.towerRun) || !this.enemies) return;   // (the Training Ground and the Tower spawn Cistern kinds too: they stood idle there)
         this._frostHazeMult = 1;   // set again below while you stand in a Frostborn's haze
         const room = this.getCurrentPlayerRoom();
-        const PX = this.playerX, PY = this.playerY;
 
         // Levels 2-4 expire the root in their own room check; level 6 needs its own.
         if (this._playerRooted && time >= (this._playerRootUntil || 0)) this._playerRooted = false;
@@ -6533,6 +6396,10 @@ class LevelManager {
                 if (e._isFrost && e._frostStage === 'statue') this._frostUpdate(e, time);   // (a statue is held stunned till it thaws: its thaw ring and shiver still run)
                 if (e._conduitGfx?.active) e._conduitGfx.clear(); continue;
             }
+            // pulled by an ally: its attacks go at that ally (CombatSystem._tauntBegin, as in moveEnemies)
+            const _taunt = this._tauntBegin?.(e);
+            try {
+            const PX = this.playerX, PY = this.playerY;
 
             // ── Drowner: sink, track, lock, resolve ──
             if (e._isDrowner) {
@@ -6548,6 +6415,7 @@ class LevelManager {
                     e._drownBaseScale = bs;
                     this.tweens.add({ targets: e.sprite, alpha: 0.06,
                         scaleX: bs * 0.55, scaleY: bs * 0.55, duration: 220 });
+                    EnemyManager.playAtk?.(this, e.sprite, 220, false, 'sink_');   // melting into the floor
                     if (e._cisternMark?.active) e._cisternMark.setVisible(false);
                     this._drownWarn(e);
                     this.showStatusText?.(e.sprite.x, e.sprite.y - 24, 'SINKS', '#b08fd0');
@@ -6581,7 +6449,9 @@ class LevelManager {
                                 scaleX: bsw, scaleY: bsw, duration: 200, ease: 'Back.easeOut' });
                             if (e._cisternMark?.active) e._cisternMark.setVisible(true);
 
-                            this.takeDamage(e._drownDmg * (this.enemyDamageScale || 1));
+                            this.takeDamage(e._drownDmg * (this.enemyDamageScale || 1), e);
+                            if (this.time.now >= (this._dashInvulnUntil || 0) && !this.thunderheadActive && !this.lightningUltInvuln) this.applyWinded?.(2500);   // WINDED 2.5s, a real hit only
+                            EnemyManager.playAtk?.(this, e.sprite, 290, PX < e.x);   // up, lashing
                             this._drownWeeds(this.player.x, this.player.y, false);
                             if (this._ccGate(e._drownStun)) {
                                 this._playerRooted    = true;
@@ -6601,10 +6471,6 @@ class LevelManager {
                     // Only ever reached for a LAND commit, so this branch is purely the
                     // dodge check. Reach is tested here as well as at commit, or the grab
                     // would land on you from anywhere in the room once marked.
-                    const reach  = Math.hypot(e.x - this.playerX, e.y - this.playerY) <= e._drownReachR;
-                    const onSpot = this.playerX === e._drownMark.x && this.playerY === e._drownMark.y;
-                    const hit    = reach && onSpot;
-
                     e._drownPhase = 'idle';
                     e._drownSubmerged = false;
                     const bs = e._drownBaseScale ?? 1;
@@ -6624,11 +6490,17 @@ class LevelManager {
                     // undodgeable version next time anything commits there. Dodging buys
                     // you this grab, not the room.
                     if (this.world?.[mt.x]?.[mt.y] === this.FLOOR) this.addWater(mt.x, mt.y, 0);
-                    if (hit) {
-                        this.takeDamage(e._drownDmg * (this.enemyDamageScale || 1));
+                    EnemyManager.playAtk?.(this, e.sprite, 290, mt.x < e.x);   // up, lashing
+                    let hit = false;
+                    CombatSystem.tauntBoth(this, () => {   // (whichever stands on the mark: the ally it went for, or you)
+                        if (hit || Math.hypot(e.x - this.playerX, e.y - this.playerY) > e._drownReachR || this.playerX !== mt.x || this.playerY !== mt.y) return;
+                        hit = true;
+                        this.takeDamage(e._drownDmg * (this.enemyDamageScale || 1), e);
+                        if (this.time.now >= (this._dashInvulnUntil || 0) && !this.thunderheadActive && !this.lightningUltInvuln) this.applyWinded?.(2500);   // WINDED 2.5s, a real hit only
                         this._drownWeeds(this.player.x, this.player.y, true);
                         this.showStatusText?.(this.player.x, this.player.y - 30, 'GRABBED', '#b08fd0');
-                    } else {
+                    });
+                    if (!hit) {
                         // The grab still HAPPENS -- it just closes on empty ground.
                         this._drownWeeds(mt.x * TS + TS / 2, mt.y * TS + TS / 2, true);
                         this.showStatusText?.(this.player.x, this.player.y - 30, 'DODGED', '#9fe8ff');
@@ -6738,21 +6610,25 @@ class LevelManager {
             if (e._isConduit) {
                 const g = e._conduitGfx;
                 if (g?.active) {
-                    g.clear();
                     const T = this.TILE_SIZE;
-                    g.fillStyle(0xffff44, 0.10);
+                    let n = 0;
                     for (const t of this.waterTiles?.values() || []) {   // (no water yet: the Training Ground starts dry)
                         if (Math.hypot(t.tx - e.x, t.ty - e.y) > e._liveR) continue;
-                        g.fillRect(t.tx * T, t.ty * T, T, T);
+                        const o = g.list[n++] || g.add(this.add.image(0, 0, 'fx_enemies_c', 'live_0').setDisplaySize(T, T)).list[n - 1];
+                        o.setVisible(true).setPosition(t.tx * T + T / 2, t.ty * T + T / 2).setFrame('live_' + ((Math.floor(time / 90) + t.tx * 7 + t.ty * 3) % 3)).setAlpha(0.35 + 0.25 * ((t.tx + t.ty + Math.floor(time / 180)) % 2));
                     }
+                    for (let i = n; i < g.list.length; i++) g.list[i].setVisible(false);
                 }
-                if (this.isWaterAt(PX, PY) && Math.hypot(e.x - PX, e.y - PY) <= e._liveR
-                    && time - (e._lastZap || 0) >= e._zapCd) {
+                if (time - (e._lastZap || 0) >= e._zapCd) CombatSystem.tauntBoth(this, () => {   // (whoever's in its live water: the ally it's after, and you)
+                    if (!this.isWaterAt(this.playerX, this.playerY) || Math.hypot(e.x - this.playerX, e.y - this.playerY) > e._liveR) return;
                     e._lastZap = time;
-                    this.takeDamage(6 * (this.enemyDamageScale || 1));
+                    this.takeDamage(6 * (this.enemyDamageScale || 1), e);
+                    EnemyManager.playAtk?.(this, e.sprite, 240, this.playerX < e.x, 'zap_');
+                    if (typeof WeaponSystem !== 'undefined') WeaponSystem.bolt(this, e.sprite.x, e.sprite.y - 4, this.player.x, this.player.y, 'y', { life: 160, thin: true });   // through the water
                     this.showStatusText?.(this.player.x, this.player.y - 26, 'LIVE WATER', '#ffff44');
-                }
+                });
             }
+            } finally { this._tauntEnd?.(_taunt); }
         }
     }
 
@@ -6790,6 +6666,7 @@ class LevelManager {
         if (e._isWraith)           return 'wraith';
         if (e._isDiver)            return 'diver';
         if (e._isLeech)            return 'leech';
+        if (e._isBlinder)          return 'blinder';
         if (e._isCeo)              return 'ceo';
         if (e._isGem)              return 'gem';
         if (e._isDrowner)          return 'drowner';
@@ -6803,6 +6680,7 @@ class LevelManager {
         if (e._isEncased)          return 'encased';
         if (e.isMortar)            return 'mortar';
         if (e.isHealerTotem)       return 'healer';
+        if (e._upgradedSniper)     return 'sniper';
         if (e.isVoidSniper)        return 'voidsniper';
         if (e.isAnchor || e._anchorRange)      return 'anchor';
         if (e._tendrilRange)       return 'rooter';
@@ -6838,14 +6716,16 @@ class LevelManager {
                             desc: 'Lobs shells over walls at where you stand, from up to thirteen tiles. Inside its glow, five tiles round it, you are safe.' },
             voidsniper:   { name: 'Void Sniper',      role: 'Ambusher',  tint: 0x220044,
                             desc: 'Hides in a pocket dimension where nothing can touch it. A portal opens right next to you, then it steps out, blasts a spread of shots, and stays hittable for a few seconds.' },
+            sniper:       { name: 'Bankshot',         role: 'Marksman',  tint: 0xffcf4a,
+                            desc: 'Keeps six to ten tiles away and fires one heavy slug at a time: its scope glints, then the shot. The slug glances off walls twice, so it can bank one round cover at you. After every shot it blinks somewhere else in the room, six to nine tiles from you, and stands re-aiming for a moment and a half: that\'s your chance to reach it. Hit it while it aims and it may blink away without firing, but not twice in three seconds.' },
             lightningelem:{ name: 'Storm Elemental',  role: 'Zoner',     tint: 0xe8ff3a,
                             desc: 'Arcs at you every few seconds while you are inside its ring and it can see you. Resists lightning.' },
             singularity:  { name: 'Singularity Slime',role: 'Bruiser',   tint: 0x440088,
                             desc: 'Slow and heavy. Get within two tiles and it lights the square round itself, then slams it: get out before it lands or you are hit and slowed.' },
             drowner:      { name: 'Drowner',          role: 'Ambusher',  tint: 0x5a2d6b,
-                            desc: 'Sinks to attack and tracks you for two seconds before it strikes. In water it lands at once and holds you under for two seconds. On dry ground you get a moment to step off the mark, but it leaves a pool either way.' },
+                            desc: 'Sinks to attack and tracks you for two seconds before it strikes. In water it lands at once and holds you under for two seconds. On dry ground you get a moment to step off the mark, but it leaves a pool either way. A strike that lands leaves you winded: no stamina back for two and a half seconds.' },
             ripplerunner: { name: 'Ripplerunner',     role: 'Skirmisher',tint: 0x66f0ff,
-                            desc: 'Quick on water, sluggish on dry stone, and it keeps its distance. Near a bubble or near water, it goes into a trance: it floats, its eyes go white, it holds the bubbles near it and boils the water round it into more, then bombards the ground all round you with them, one by one, slow at first and faster and faster. Keep moving. Daze it, freeze it or kill it mid-trance and it drops the lot.' },
+                            desc: 'Quick on water, sluggish on dry stone, and it keeps its distance. Near a bubble or near water, it goes into a trance: it floats, its eyes go white, it holds the bubbles near it and boils the water round it into more, then bombards the ground round you with them, one by one, slow at first and faster and faster, each marked where it\'ll burst, the mark creeping after you a little slower than you walk. Keep moving and most land behind you; dash and they all do. A Smasher\'s or the Tide Mother\'s bubble it throws stays on you: dash just as it lands. Daze it, freeze it or kill it mid-trance and it drops the lot.' },
             tidecaller:   { name: 'Tidecaller',       role: 'Booster',   tint: 0x2a5cc8,
                             desc: 'Doesn\'t fight. Everything near it attacks faster: a little on dry floor, far faster standing in water. Dry the floor round it, or kill it first.' },
             cheer:        { name: 'Cheerleader Slime', role: 'Booster',  tint: 0xff6ad0,
@@ -6858,8 +6738,8 @@ class LevelManager {
                             desc: 'Hex slides off it. Two seconds after fire, ice or lightning hits it, it turns into that element and barely feels it, then can\'t change again for six seconds. It takes the hits of everything near it. Swap elements.' },
             wraith:       { name: 'Wraith',           role: 'Shroud',    tint: 0xc8bce8,
                             desc: 'Untouchable until you\'re within three tiles. Now and then it shrouds an enemy near it the same way, for as long as it lives.' },
-            diver:        { name: 'Torpedo Diver',    role: 'Striker',   tint: 0x4ad0ff,
-                            desc: 'Lights a lane at you and zips down it, leaving water. From far off the aim is a blink; up close you can step aside. A hit makes you drip and bleed.' },
+            diver:        { name: 'Torpedo Diver',    role: 'Sniper',    tint: 0x4ad0ff,
+                            desc: 'A sniper with a water gun. It keeps its distance and backs off when you close in, and its only warning is raising the gun to aim. Keep running and its shot misses you up close and often at middle range; from across the room it follows you, and only a quick dash through it saves you. A hit soaks you: you drip for 4 seconds and slow down for a moment. The tank on its back holds four shots and it drinks from water to refill, but every water tile only has three in it, so it hunts for fresh water when it runs dry.' },
             leech:        { name: 'Leech',            role: 'Thief',     tint: 0xb070ff,
                             desc: 'A thing of the void. It picks one of your elements, and its gem spins over your head while it does. Still holding that element when its ring closes and it tears the gem out of you and runs, slipping through portals to get ahead, and you cannot switch to it. Kill it and the gem flies back to you.' },
             gem:          { name: 'The Gem',          role: 'Hazard',    tint: 0xd8e8ff,
@@ -6878,6 +6758,8 @@ class LevelManager {
                             desc: 'Never moves, never attacks. Every few seconds it throws a few lasting puddles nearby and soaks every ally within seven tiles, so for two seconds they act as though they were in water. Break it first.' },
             conduit:      { name: 'Conduit',          role: 'Emplacement',tint: 0xe8ff3a,
                             desc: 'Arcs lightning at you within five tiles, and electrifies every wet tile within four, so standing in live water hurts on a timer. Resists lightning. Burn a dry path or kill it.' },
+            blinder:      { name: 'Blinder',          role: 'Obscurer',  tint: 0x9a88b4,
+                            desc: 'Keeps five to eight tiles away. Every few seconds it swells up, haze leaking out of it, and heaves a wide, slow bank of haze at you that drifts through whatever stands in the room, almost across it (it never leaves the room), leaving a low mist along its way for a few seconds. Both sting while you\'re in them. The haze leaves you seeing only two tiles round you for five seconds, the mist for two, and after either nothing blinds you again for a moment. While you can\'t see, it comes for you in the dark: its eyes glint at the edge of your sight, then it lunges, hitting you and leaving you winded (no stamina back for three seconds). Dash as the eyes glint, or hit it then. Sometimes it glints, pulls back and comes again. Get two tiles out of the haze\'s way and keep off the mist.' },
         };
         // each card in its body's own colour (SlimeModels / LOOKS), not the old tint it wore over the red slime
         const pal = k => (typeof SlimeModels !== 'undefined' && SlimeModels.DEFS[k]?.pal) || LevelManager.LOOKS[k]?.pal;
@@ -6941,22 +6823,18 @@ class LevelManager {
         const panel = this.add.container(CX, CY).setScrollFactor(0).setDepth(D + 1);
         objs.push(panel);
 
-        const bg = this.add.graphics();
-        bg.fillStyle(0x0b1220, 0.97); bg.fillRoundedRect(-PW/2, -PH/2, PW, PH, 14);
-        bg.lineStyle(2, entry.tint, 0.9); bg.strokeRoundedRect(-PW/2, -PH/2, PW, PH, 14);
-        bg.fillStyle(entry.tint, 0.10); bg.fillRoundedRect(-PW/2, -PH/2, PW, 44, { tl: 14, tr: 14, bl: 0, br: 0 });
+        // the card (ui_kit 'card': its border and header wash in the enemy's colour)
+        const card = (h, top) => { const fr = UIKit.nine(this, 'card', 'card_a', PW, h, entry.tint); return [fr.key, -PW/2 - fr.pl, top - fr.pt]; };
+        const [ck, cx0, cy0] = card(PH, -PH/2), bg = this.add.image(cx0, cy0, ck).setOrigin(0);
         panel.add(bg);
 
-        const portrait = this.add.graphics();
-        portrait.x = -PW/2 + 62; portrait.y = 16;
-        portrait.fillStyle(0x000000, 0.35); portrait.fillCircle(0, 0, 36);
-        portrait.fillStyle(entry.tint, 0.9);  portrait.fillCircle(0, 0, 27);
-        portrait.fillStyle(0xffffff, 0.22);   portrait.fillCircle(-9, -10, 8);
-        portrait.lineStyle(2, 0xffffff, 0.30); portrait.strokeCircle(0, 0, 36);
+        // the portrait's socket (ui_kit sock_gad, its rim in the enemy's colour) with a glow breathing in it
+        const portrait = this.add.container(-PW/2 + 62, 16);
+        const pglow = this.add.image(0, 0, 'vfx_glow').setTint(entry.tint).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.22).setScale(0.5);
+        portrait.add([this.add.image(0, 0, 'ui_kit', 'sock_gad').setScale(3), pglow, this.add.image(0, 0, 'ui_kit', 'sock_gad_rim').setScale(3).setTint(entry.tint).setAlpha(0.8)]);
         panel.add(portrait);
         this._cfxPortrait?.(panel, portrait, key, entry);   // Creatures.js: the slime, its hat, its glare
-        this.tweens.add({ targets: portrait, scaleX: 1.06, scaleY: 1.06,
-            duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        this.tweens.add({ targets: pglow, alpha: 0.36, scale: 0.56, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
         const head = this.add.text(-PW/2 + 20, -PH/2 + 13, 'NEW ENEMY', {
             fontFamily: 'monospace', fontSize: '13px', color: '#9fb4d0' }).setOrigin(0, 0);
@@ -6975,10 +6853,7 @@ class LevelManager {
         const _over = descT.y + descT.height - (PH / 2 - 32);
         if (_over > 0) {
             const PH2 = PH + _over, top = -PH / 2;
-            bg.clear();
-            bg.fillStyle(0x0b1220, 0.97); bg.fillRoundedRect(-PW/2, top, PW, PH2, 14);
-            bg.lineStyle(2, entry.tint, 0.9); bg.strokeRoundedRect(-PW/2, top, PW, PH2, 14);
-            bg.fillStyle(entry.tint, 0.10); bg.fillRoundedRect(-PW/2, top, PW, 44, { tl: 14, tr: 14, bl: 0, br: 0 });
+            const [k2, x2, y2] = card(PH2, top); bg.setTexture(k2).setPosition(x2, y2);
             hint.y = top + PH2 - 22;
             panel.y -= _over / 2;
         }
@@ -7135,9 +7010,7 @@ class LevelManager {
             (x, y) => this.createRooter(x, y, 3),
             (x, y) => this.createEncasedSlime(x, y, 3),
         ], { roomIndex: 3 });
-        // The Upgraded Sniper has no identity of its own -- it is a Void Sniper with +15 HP.
-        // A trait on one of the pair is the cheapest way to give it one, and leaving its twin
-        // untagged makes the difference legible side by side.
+        // Two Snipers (Sniper.js): a trait on one of the pair, its twin untagged, so the difference reads side by side.
         this._tagResist(this.createUpgradedSniper(...at(3, 72, 28), 3), 'ice'); this.createUpgradedSniper(...at(3, 72, 32), 3);
         this._placeSupportInCluster(3, (x, y) => this.createAnchorSlime(x, y, 3),
                                     { fallback: fb(3, 74, 30) });
@@ -7214,7 +7087,7 @@ class LevelManager {
     _fractureEnemies(time) {
         for (const enemy of this.enemies) {
             if (!enemy.sprite?.active) continue;
-            if (enemy._isEncased) this._encUpdate(enemy, time);
+            if (enemy._isEncased) CombatSystem.tauntAs(this, CombatSystem.tauntOf(this, enemy), () => this._encUpdate(enemy, time));   // (pulled by an ally: its stones go at it)
             const mx = enemy.sprite.x, my = enemy.sprite.y;
             if (enemy._rooterMark?.active)  enemy._rooterMark.setPosition(mx, my - 16);
             if (enemy._splitterMark?.active) enemy._splitterMark.setPosition(mx, my - 20);
@@ -7328,8 +7201,8 @@ class LevelManager {
         const cx = Math.floor(room.x + room.w / 2), cy = Math.floor(room.y + room.h / 2), now = this.time.now;
         const container = this.add.container(cx * TS + TS / 2, cy * TS + TS / 2).setDepth(3).setScale(0.2).setAlpha(0.3);
         const glow = this.textures.exists('vfx_glow') ? this.make.image({ x: 0, y: 0, key: 'vfx_glow' }, false).setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa63a).setAlpha(0.55).setScale(1.1) : null;
-        const body = this.add.graphics();
-        this._bfxCoreDraw(body);
+        const body = BossFX.coreBody(this) || this.add.graphics();   // (Bosses.js: its typed amber core)
+        if (body.clear) this._bfxCoreDraw(body);
         if (glow) container.add(glow);
         container.add(body);
         this.fractureCore = {
@@ -7344,7 +7217,7 @@ class LevelManager {
         this._fractureWeakPoints = []; this._wpSequenceIdx = 0;
         if (!tower) this.spawnFinalLevelChest(cx, room.y + 3, null);
         this.tweens.add({ targets: container, scale: 1, alpha: 1, duration: C.RISE_MS * 1.5, ease: 'Back.easeOut', onComplete: () => this._geodeArm() });
-        BossFX.blast(this, container.x, container.y, 60, 'shell'); Sfx.play(this, 'roar', { big: true });
+        BossFX.geodeBlast(this, container.x, container.y, 60); Sfx.play(this, 'roar', { big: true });
         this._showRhythmSessionBanner('THE GEODE', '#ffb25a', 'Break its shell: heat a plate with fire, then shatter it with ice.');
         this.cameras.main.shake(260, 0.006);
     }
@@ -7473,7 +7346,7 @@ class LevelManager {
                 if (f.emberAt - em / tempo > f.born + 400) {
                     const a = Math.atan2(this.player.y - f.py, this.player.x - f.px);
                     this.enemyProjectiles.push({ gfx: BossFX.shot(this, 'bolt', f.px, f.py, a, 2.8), vx: Math.cos(a) * C.EMBER_SPEED, vy: Math.sin(a) * C.EMBER_SPEED,
-                        damage: C.EMBER_DMG * (this.enemyDamageScale || 1), startX: f.px, startY: f.py, maxDist: this.TILE_SIZE * 12, _bfxKind: 'bolt' });
+                        damage: C.EMBER_DMG * (this.enemyDamageScale || 1), startX: f.px, startY: f.py, maxDist: this.TILE_SIZE * 12, _bfxKind: 'bolt', srcName: 'core embers' });
                 }
             }
             if (st >= 3 && time >= f.breedAt) {
@@ -7765,14 +7638,14 @@ class LevelManager {
         core.rhythm = null; this._fractureWeakPoints = [];
         const c = core.container;
         if (aborted) {
-            this.takeDamage(C.MISS3_DMG * (this.enemyDamageScale || 1));
+            this.takeDamage(C.MISS3_DMG * (this.enemyDamageScale || 1), 'core rhythm');
             this._fcOpenFissure(null, 1.5);
             this._showRhythmSessionBanner('YOU LOST THE BEAT', '#ff6a5a', 'It dives, and the floor cracks.');
             this._fractureCoreSubmerge(); return;
         }
         const max = R.notes.length * C.SCORE.PERFECT, got = R.notes.reduce((a, n) => a + C.SCORE[n.grade || 'MISS'], 0), acc = got / max, pct = Math.round(acc * 100);
         if (acc < C.STAY_AT) {
-            if (acc < C.SAFE_AT) this.takeDamage(C.DUCK_DMG * (this.enemyDamageScale || 1));
+            if (acc < C.SAFE_AT) this.takeDamage(C.DUCK_DMG * (this.enemyDamageScale || 1), 'core rhythm');
             this._showRhythmSessionBanner(`${pct}%`, acc < C.SAFE_AT ? '#ff6a5a' : '#ffc24a', acc < C.SAFE_AT ? 'Off the beat. It strikes out and ducks back.' : 'Not enough. It ducks back.');
             this._fractureCoreSubmerge(); return;
         }
@@ -7929,7 +7802,7 @@ class LevelManager {
         if (el === 'lightning' && wasCracked) for (const q of core.plates) {   // it arcs through the cracks
             if (q === p || q.broken || q.hp >= q.max * C.CRACKED_AT) continue;
             q.hp -= d * C.ARC_SHARE;
-            const g = this.add.graphics().setDepth(4.9); g.lineStyle(2, 0xffe14a, 0.95); g.lineBetween(px, py, c.x + Math.cos(q.a) * 30, c.y + Math.sin(q.a) * 22);
+            const g = this.add.graphics().setDepth(4.9); if (WeaponSystem.bolt) WeaponSystem.bolt(this, px, py, c.x + Math.cos(q.a) * 30, c.y + Math.sin(q.a) * 22, 'y', { life: 220, br: 1, d: 4.9 }); else { g.lineStyle(2, 0xffe14a, 0.95); g.lineBetween(px, py, c.x + Math.cos(q.a) * 30, c.y + Math.sin(q.a) * 22); }
             this.tweens.add({ targets: g, alpha: 0, duration: 200, onComplete: () => g.destroy() });
             if (q.hp <= 0) this._geodeShatter(q, null);
         }
@@ -7949,7 +7822,7 @@ class LevelManager {
     _geodeExpose() {
         const core = this.fractureCore, C = this._geodeCfg();
         core.state = 'vuln'; core.stateAt = this.time.now; core.vulnUntil = this.time.now + C.EXPOSE_MS;
-        const c = core.container; BossFX.blast(this, c.x, c.y, 60, 'shell'); this._vfxFlash?.(c.x, c.y, 200, 0xffd27a, 400, 0.9);
+        const c = core.container; BossFX.geodeBlast(this, c.x, c.y, 60); this._vfxFlash?.(c.x, c.y, 200, 0xffd27a, 400, 0.9);
         this._showRhythmSessionBanner('THE HEART IS EXPOSED', '#ffd27a', 'Hit it before it grows its shell back.');
         Sfx.play(this, 'roar');
     }
@@ -8036,7 +7909,7 @@ class LevelManager {
             core.tileX = tx; core.tileY = ty;
             core.container.setPosition(tx * T + T / 2, ty * T + T / 2);
             this.tweens.add({ targets: core.container, scale: 1, alpha: 1, duration: C.RISE_MS, ease: 'Back.easeOut', onComplete: () => { if (core.active) { core.state = 'armored'; core.stateAt = this.time.now; core._isInvulnerable = false; } } });
-            BossFX.blast(this, core.container.x, core.container.y, 46, 'shell'); this.cameras.main.shake(140, 0.006);
+            BossFX.geodeBlast(this, core.container.x, core.container.y, 46); this.cameras.main.shake(140, 0.006);
             Sfx.play(this, 'slam');
         } });
     }
@@ -8060,18 +7933,19 @@ class LevelManager {
             const f = core.faults[i];
             if (!f.hit && time - f.at >= C.FAULT_TELE) {
                 f.hit = true;
-                if (f.tiles.some(([x, y]) => x === this.playerX && y === this.playerY)) this.takeDamage(C.FAULT_DMG * (this.enemyDamageScale || 1));
+                if (f.tiles.some(([x, y]) => x === this.playerX && y === this.playerY)) this.takeDamage(C.FAULT_DMG * (this.enemyDamageScale || 1), 'core fault');
                 for (const [x, y] of f.tiles) if (Math.random() < 0.35) this._vfxFlash?.(x * T + T / 2, y * T + T / 2, 30, 0xff8a2a, 200, 0.6);
                 this.cameras.main.shake(120, 0.005); Sfx.play(this, 'erupt');
             }
             if (time - f.at >= C.FAULT_TELE + 350) core.faults.splice(i, 1);
         }
         // rifts burn whoever stands in them (a dash's invulnerability carries you across)
-        if (core.rifts.has(this.playerX + ',' + this.playerY) && time - (core._riftAt || 0) >= C.RIFT_TICK) { core._riftAt = time; this.takeDamage(C.RIFT_DMG * (this.enemyDamageScale || 1)); }
+        if (core.rifts.has(this.playerX + ',' + this.playerY) && time - (core._riftAt || 0) >= C.RIFT_TICK) { core._riftAt = time; this.takeDamage(C.RIFT_DMG * (this.enemyDamageScale || 1), 'core rift'); }
         this._geodeDraw(time);
     }
     _geodeDraw(time) {
         const core = this.fractureCore, C = this._geodeCfg(), T = this.TILE_SIZE, g = core.fxG, pg = core.plateG, c = core.container;
+        if (BossFX.geodeDraw(this, core, time)) return;   // (Bosses.js: its typed plates, cracks and rifts)
         g.clear();
         for (const line of core.riftLines) {   // rifts: one jagged gash through the floor, magma glowing down its middle
             const pts = line.map(([x, y], i) => ({ x: x * T + T / 2 + Math.sin(i * 2.3) * T * 0.12, y: y * T + T / 2 + Math.cos(i * 1.9) * T * 0.12 }));
@@ -8108,11 +7982,9 @@ class LevelManager {
         e.tutorialRoomIndex = tutorialRoomIndex;
         e._arcs = true;                    // its arc attack (EnemyManager)
         this._tagResist(e, 'lightning');   // resists lightning (it used to be immune)
-        // The only type in the game with no body colour of its own, and the most numerous
-        // enemy in The Cistern. Acid yellow rather than the ranged enemy's pale 0xffee88:
-        // both are yellow, so they are separated by SATURATION, which survives being
-        // glanced at in a crowd better than hue does.
-        if (typeof e.sprite.setTint === 'function') e.sprite.setTint(0xe8ff3a);
+        // The most numerous enemy in The Cistern, in a body of its own (slime_m_lightningelem): acid yellow rather than
+        // the Spitter's pale yellow, so they are told apart by SATURATION, which survives a glance at a crowd better than hue.
+        if (!SlimeModels.wear(this, e.sprite, 'lightningelem') && typeof e.sprite.setTint === 'function') e.sprite.setTint(0xe8ff3a);
         e._lightningMark = this._spawnLightningMark(e);
         // Periodic arc attack toward player
         e._arcCooldown = 2500;
@@ -8174,14 +8046,9 @@ class LevelManager {
         e._sniperVulnerable = false;
         // Stagger first appearance 4-8s
         e._nextDimensionExit = this.time.now + 4000 + Math.random() * 4000;
-        // Swap to purple slime sprite
-        if (this.anims.exists('purple_idle')) {
-            e.sprite.setTexture('slime_purple', 0);
-            e.sprite.play('purple_idle');
-        }
+        SlimeModels.wear(this, e.sprite, 'voidsniper');   // its own body: an assassin out of the dark
         // Fully hidden — lives in dimension
         e.sprite.setAlpha(0);
-        e.sprite.setTint(0x220044);
         if (e.healthBarBg?.active)   e.healthBarBg.setAlpha(0);
         if (e.healthBarFill?.active) e.healthBarFill.setAlpha(0);
         // Void mark (hidden while in dimension)
@@ -8491,17 +8358,22 @@ class LevelManager {
                             duration: 200, yoyo: true, repeat: -1
                         });
 
-                        this.tweens.killTweensOf(queen.sprite);
+                        // the strain, in the tell's last 200ms only: the next one starts a frame after the last pop, and killing
+                        // her tweens here cut that pop's bounce back, so she stayed stretched the whole time she laid them
+                        queen._strainAt = this.time.now + 300;   // (Bosses.js: her straining face from then)
                         this.tweens.add({
-                            targets: queen.sprite, scaleX: 2.6, scaleY: 3.8,
-                            duration: 350, ease: 'Power2'
+                            targets: queen.sprite, scaleX: (queen._baseScale || 3.2) * 0.81, scaleY: (queen._baseScale || 3.2) * 1.19,   // (a stretch, from her own size)
+                            delay: 300, duration: 200, ease: 'Power2'
                         });
 
                         this.time.delayedCall(500, () => {
                             warnTween.stop(); warn.destroy();
                             queen._spawning = false;
                             if (!queen.active) return;
-                            if (this.world[sx]?.[sy] !== this.FLOOR || this.getEnemyAt(sx, sy)) return;
+                            if (this.world[sx]?.[sy] !== this.FLOOR || this.getEnemyAt(sx, sy)) {   // taken meanwhile: no brood, she eases back
+                                this.tweens.add({ targets: queen.sprite, scaleX: queen._baseScale || 3.2, scaleY: queen._baseScale || 3.2, duration: 150 });
+                                return;
+                            }
 
                             // 32 HP, not 25. Still chaff — two Flame Fists punches — but
                             // it no longer dies to a single tick of anything, so volume is
@@ -8532,7 +8404,8 @@ class LevelManager {
                                     });
                                 }
                             });
-                            const pop = this.add.circle(wpx, wpy, 6, 0xff4444, 0.8).setDepth(3);
+                            const pop = this.add.circle(wpx, wpy, 6, 0xff4444, 0.8).setDepth(3).setVisible(!this._bfxOn);   // (Bosses.js: a splash of her red instead)
+                            if (this._bfxOn) { const goo = this._vfxBursts?.goo; if (goo) { goo.setParticleTint?.(0xff5a6a); goo.explode(8, wpx, wpy); } }
                             this.tweens.add({
                                 targets: pop, scaleX: 2.5, scaleY: 2.5,
                                 alpha: 0, duration: 260,
@@ -8597,7 +8470,7 @@ class LevelManager {
                 const plx = this.player.x;
                 const ply = this.player.y - (this.SLIME_Y_OFFSET || 0);
                 if (Math.hypot(plx - px, ply - py) <= R) {
-                    this.takeDamage(DMG * (this.enemyDamageScale || 1));
+                    this.takeDamage(DMG * (this.enemyDamageScale || 1), 'queen pulse');
                 }
                 this.cameras.main.shake(90, 0.005);
                 Sfx.play(this, 'pulse');
@@ -8938,7 +8811,7 @@ class LevelManager {
         Sfx.play(this, 'boom');
 
         if (Math.sqrt(dx*dx + dy*dy) <= radiusPx) {
-            this.takeDamage(10 * this.enemyDamageScale);
+            this.takeDamage(10 * this.enemyDamageScale, 'sovereign mine');
             this._rootPlayer(3000, time);
         }
         this._damageTowersInPixelRadius(mine.gfx.x, mine.gfx.y, radiusPx, 10 * this.damageScaling);
@@ -8949,6 +8822,7 @@ class LevelManager {
     // One at a time: while one holds, another can't land, and when it ends you have CC_IMMUNE ms to get away before
     // the next can (a pale shimmer on you while it lasts). Damage still lands; only the hold is refused. True if it may.
     _ccGate(ms) {
+        if (this._tauntAlly) return false;   // (the hold was on an ally standing in for you: CombatSystem.tauntTo)
         const now = this.time.now, CC_IMMUNE = 1200;
         if (now < (this._ccImmuneUntil || 0)) {
             if (this.player?.active && now - (this._ccResistMsg || 0) > 700) { this._ccResistMsg = now; this.showStatusText(this.player.x, this.player.y - 30, 'RESISTED', '#e8f0ff'); }
@@ -9065,7 +8939,7 @@ class LevelManager {
                 boss._voidMines.push({ gfx: mineGfx, spawnTime: this.time.now, duration: mineDuration, radius: 2.5 });
                 Sfx.play(this, 'mine');
 
-                const flash = this.add.circle(mpx, mpy, 8, 0x9922cc, 0.8).setDepth(4);
+                const flash = this.add.circle(mpx, mpy, 8, 0x9922cc, 0.8).setDepth(4).setVisible(!BossFX.voidBurst(this, mpx, mpy, 18));   // (Bosses.js: a pop of void)
                 this.tweens.add({ targets: flash, radius: 20, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
             }
         };
@@ -9106,7 +8980,7 @@ class LevelManager {
 
                 const spx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
                 const spy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const flash = this.add.circle(spx, spy, 14, 0xcc44ff, 0.8).setDepth(5);
+                const flash = this.add.circle(spx, spy, 14, 0xcc44ff, 0.8).setDepth(5).setVisible(!BossFX.voidBurst(this, spx, spy, 24));
                 this.tweens.add({ targets: flash, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 280, onComplete: () => flash.destroy() });
 
                 const slime = this.createSingularitySlime(tx, ty, 6);
@@ -9221,7 +9095,7 @@ class LevelManager {
             const px = hitX(), py = hitY();
             for (const [x1,y1,x2,y2] of segs) {
                 if (Utils.distancePointToSegment(px,py,x1,y1,x2,y2) < BEAM_HALF) {
-                    this.takeDamage((LASER_DMG) * (this.enemyDamageScale || 1)); return;
+                    this.takeDamage((LASER_DMG) * (this.enemyDamageScale || 1), 'sovereign laser'); return;
                 }
             }
             if (this.engineerTowers?.length) {
@@ -9502,7 +9376,7 @@ class LevelManager {
                     // Hit detection vs player
                     const dx = this.player.x - fg.x, dy = this.player.y - fg.y;
                     if (Math.sqrt(dx*dx + dy*dy) < this.TILE_SIZE * 1.2) {
-                        this.takeDamage(15 * this.enemyDamageScale);
+                        this.takeDamage(15 * this.enemyDamageScale, 'sovereign fragments');
                     }
                     this._damageTowersInPixelRadius(fg.x, fg.y, this.TILE_SIZE * 1.2, 15 * this.damageScaling);
                 });
@@ -9565,7 +9439,7 @@ class LevelManager {
                 boss._vulnerableUntil = this.time.now + 4000;
                 (this._bfxCallout || this.showStatusText).call(this, boss.container.x, boss.container.y - 80, '💥 VULNERABLE! 2× DAMAGE', '#ff4444');
                 Sfx.play(this, 'ready');
-                const vFlash = this.add.circle(boss.container.x, boss.container.y, 8, 0xff4444, 0.5).setDepth(5);
+                const vFlash = this.add.circle(boss.container.x, boss.container.y, 8, 0xff4444, 0.5).setDepth(5).setVisible(!BossFX.voidBurst(this, boss.container.x, boss.container.y - 20, 60));
                 this.tweens.add({ targets:vFlash, radius:60, alpha:0, duration:400, onComplete:()=>vFlash.destroy() });
                 this.time.delayedCall(4500, () => this._voidSovereignNextAttack());
             }
@@ -9669,7 +9543,7 @@ class LevelManager {
                     // Damage player if nearby
                     const dx = this.player.x - finalX, dy = this.player.y - finalY;
                     if (Math.sqrt(dx*dx + dy*dy) <= 2.5 * this.TILE_SIZE) {
-                        this.takeDamage(40 * this.enemyDamageScale);
+                        this.takeDamage(40 * this.enemyDamageScale, 'sovereign stomp');
                         this._rootPlayer(2000, this.time.now);
                     }
                     this._damageTowersInPixelRadius(finalX, finalY, 2.5 * this.TILE_SIZE, 40 * this.damageScaling);
@@ -9900,7 +9774,7 @@ class LevelManager {
             this.enemyProjectiles.push({
                 gfx: this._bfxSwap ? this._bfxSwap(g, 'maw', angle) : g, vx, vy, damage: DAMAGE * (this.enemyDamageScale || 1),
                 startX: ex, startY: ey, maxDist: MAX_DIST,
-                isRicochetArrow: true, ricochetLeft: 5,
+                isRicochetArrow: true, ricochetLeft: 5, srcName: 'sovereign maw',
                 _bfxKind: 'maw',   // they bounce like darts but are the maw's: drawn, lit and popped in its violet
             });
         }
@@ -9943,7 +9817,7 @@ class LevelManager {
                 // More particles + faster travel as we near collapse
                 const count = Math.floor(2 + t * 10);
                 const travelDur = Math.max(250, 1200 - t * 950);
-                for (let i = 0; i < count; i++) {
+                for (let i = 0; i < (this._bfxOn ? 0 : count); i++) {   // (Bosses.js draws its own: dust drawn in)
                     const a = Math.random() * Math.PI * 2;
                     const r = 4 * this.TILE_SIZE + Math.random() * 6 * this.TILE_SIZE;
                     const pg = this.add.graphics().setDepth(16);
@@ -10082,7 +9956,7 @@ class LevelManager {
                     }
                 });
                 const dmg = Math.max(0, this.health - 1);
-                if (dmg > 0) this.takeDamage((dmg) * (this.enemyDamageScale || 1));
+                if (dmg > 0) this.takeDamage((dmg) * (this.enemyDamageScale || 1), 'sovereign collapse');
                 this.showStatusText(cx, cy - 60, '💀 CAUGHT!', '#ff0000');
                 this._rootPlayer(2000, this.time.now);
             } else {
@@ -10091,7 +9965,7 @@ class LevelManager {
 
             // Flash and lift darkness
             const flash = this.add.rectangle(this.scale.width/2, this.scale.height/2,
-                this.scale.width, this.scale.height, 0xffffff, 0.80).setScrollFactor(0).setDepth(40);
+                this.scale.width, this.scale.height, 0xffffff, 0.80).setScrollFactor(0).setDepth(40).setVisible(!this._bfxOn);   // (Bosses.js: a burst of void, not the whole screen white)
             this.tweens.add({ targets: flash, alpha: 0, duration: 600, onComplete: () => flash.destroy() });
             this._bfxCollapseEnd?.();   // Bosses.js
             this.tweens.add({ targets: dark, alpha: 0, duration: 1200, onComplete: () => dark.destroy() });
@@ -10177,7 +10051,7 @@ class LevelManager {
                     const dist = Math.hypot(this.player.x - px, this.player.y - py);
                     if (!boss._pulseHitThisCycle && Math.abs(dist - r) < this.TILE_SIZE * 0.6) {
                         boss._pulseHitThisCycle = true;
-                        this.takeDamage(12 * (this.enemyDamageScale || 1));
+                        this.takeDamage(12 * (this.enemyDamageScale || 1), 'sovereign horizon');
                         this.showStatusText(this.player.x, this.player.y - 28, 'REFLECTED!', '#cc44ff');
                         // Knockback away from the boss
                         const dx = this.player.x - px, dy = this.player.y - py;
@@ -10258,7 +10132,7 @@ class LevelManager {
                     // Visual: rubble flash
                     const rx = (px+dx) * this.TILE_SIZE + this.TILE_SIZE/2;
                     const ry = (py+dy) * this.TILE_SIZE + this.TILE_SIZE/2;
-                    const rg = this.add.rectangle(rx, ry, this.TILE_SIZE, this.TILE_SIZE, 0x664422, 1).setDepth(0.5);
+                    const rg = this.add.rectangle(rx, ry, this.TILE_SIZE, this.TILE_SIZE, 0x664422, 1).setDepth(0.5).setVisible(!this._bfxOn);   // (Bosses.js crumbles them)
                     this.tweens.add({ targets:rg, alpha:0, duration:400, onComplete:()=>rg.destroy() });
                 }
             }
@@ -10291,7 +10165,7 @@ class LevelManager {
         for (let i = this._voidRipples.length - 1; i >= 0; i--) {
             const r = this._voidRipples[i];
             if (!r.gfx?.active) { this._voidRipples.splice(i, 1); continue; }
-            r.gfx.x += r.vx * ds; r.gfx.y += r.vy * ds;
+            { const sd = ds * Trident.slow(this, r.gfx.x, r.gfx.y); r.gfx.x += r.vx * sd; r.gfx.y += r.vy * sd; }   // (the Boreal Trident's aura)
             // Lifetime check
             if (this.time.now - r.createdAt > 4000) { r.gfx.destroy(); this._voidRipples.splice(i, 1); continue; }
             // Wall check
@@ -10300,7 +10174,7 @@ class LevelManager {
             // Player hit
             const dx = this.player.x - r.gfx.x, dy = this.player.y - r.gfx.y;
             if (Math.sqrt(dx*dx + dy*dy) < this.TILE_SIZE * 0.9) {
-                this.takeDamage((r.damage || 8) * (this.enemyDamageScale || 1));
+                this.takeDamage((r.damage || 8) * (this.enemyDamageScale || 1), 'sovereign ripple');
                 if (r.slowsPlayer) {
                     this.isSlowed = true;
                     this.slowedUntil = this.time.now + 3000;
@@ -10425,7 +10299,7 @@ class LevelManager {
             for (let i = 0; i < 8; i++) {
                 const a = (i/8)*Math.PI*2;
                 const fx = boss.container.x + Math.cos(a)*40, fy = boss.container.y + Math.sin(a)*40;
-                const fg = this.add.graphics().setDepth(3);
+                const fg = this.add.graphics().setDepth(3).setVisible(!this._bfxOn);   // (Bosses.js: its shards and its pool)
                 fg.fillStyle(0xcc44ff, 0.90); fg.fillCircle(fx, fy, 4);
                 this.tweens.add({ targets:fg, alpha:0, duration:800, delay:i*60, onComplete:()=>fg.destroy() });
             }

@@ -88,24 +88,6 @@ class EnemyManager {
         return enemy;
     }
 
-    updateVoidSniperBolts(delta) {
-        if (!this._voidSniperBolts?.length) return;
-        const ds = delta / 1000;
-        for (let i = this._voidSniperBolts.length - 1; i >= 0; i--) {
-            const b = this._voidSniperBolts[i];
-            if (!b.gfx?.active) { this._voidSniperBolts.splice(i, 1); continue; }
-            b.gfx.x += b.vx * ds; b.gfx.y += b.vy * ds;
-            if (this.time.now - b.createdAt > 3000) { b.gfx.destroy(); this._voidSniperBolts.splice(i, 1); continue; }
-            const tx = Math.floor(b.gfx.x / this.TILE_SIZE), ty = Math.floor(b.gfx.y / this.TILE_SIZE);
-            if (!this.world[tx] || this.world[tx][ty] === this.WALL) { b.gfx.destroy(); this._voidSniperBolts.splice(i, 1); continue; }
-            const dx = this.player.x - b.gfx.x, dy = this.player.y - b.gfx.y;
-            if (Math.sqrt(dx*dx + dy*dy) < this.TILE_SIZE * 0.8) {
-                this.takeDamage(b.damage || 20);
-                b.gfx.destroy(); this._voidSniperBolts.splice(i, 1);
-            }
-        }
-    }
-
     updateEnemyHealthBar(enemy) {
         if (!enemy.healthBarFill || !enemy.healthBarBg) return;
 
@@ -131,6 +113,23 @@ class EnemyManager {
                 pip.x = enemy.sprite.x - totalW / 2 + i * (W + GAP) + W / 2;
                 pip.y = enemy.sprite.y - 36;
             }
+        }
+    }
+
+    // Everything hung over an enemy back over it: its step's tween, and once a frame at the end of GameScene.update, for a
+    // sprite moved by anything else (a trident's carry, a shove, a drag, a knockback), which left them where it was.
+    _syncEnemyMarks(e) {
+        const x = e.sprite.x, y = e.sprite.y, at = (o, dy) => { if (o?.active) o.setPosition(x, y + dy); };
+        this.updateEnemyHealthBar(e);
+        at(e.burnVisual, -18); at(e.brittleVisual, 14); at(e._tsunamiMultText, -28);
+        at(e._shieldMark, -22); at(e._inhibitRing, 0); at(e._inhibitMark, -22);
+        at(e._fireMark, -16); at(e._iceMark, -16); at(e._lightningMark, -16); at(e._voidMark, -22);
+        at(e._rangedMark, -22); at(e._splitterMark, -20); at(e._sniperMark, -20);
+        if (e._chillBar?.active) e._chillBar.setPosition(x - 11, y - 30);
+        if (e._stunIndicator?.active) e._stunIndicator.setPosition(x, y - 32);   // (its row's height is _stackStatusIcons')
+        const cv = e.cosmicMarkVisuals;
+        for (let i = 0; cv?.length && i < e.cosmicMarks; i++) {
+            for (const o of [cv[i * 2], cv[i * 2 + 1]]) if (o) { o.x = x + (i - 1) * 12; o.y = y - 25; }
         }
     }
 
@@ -256,11 +255,12 @@ class EnemyManager {
                     // not through a wall, and not out of a room you haven't come into (it zapped you in the doorway of the Void Rift's boss room)
                     const sameRoom = !this._roomGated() || enemy.tutorialRoomIndex === undefined || enemy.tutorialRoomIndex === this.getCurrentPlayerRoom();
                     if (dist <= 5 && this.player?.active && sameRoom && this._clearShot(enemy.x, enemy.y, this.playerX, this.playerY)) {
-                        // Arc toward player
-                        this.drawLightningBolt({ sprite: enemy.sprite }, { sprite: this.player });
+                        // Arc toward player: it throws its crown up (its own frames) and a bolt leaps off it onto you
+                        const _as = enemy.sprite, _top = _as.y + (16 - _as.originY * 32) * _as.scaleY, _py = this.player.y + 8;
+                        EnemyManager.playAtk(this, _as, 260, this.player.x < _as.x, 'arc_');
+                        WeaponSystem.bolt(this, _as.x, _top, this.player.x, _py, 'y', { life: 160, br: 1 });
+                        WeaponSystem.zapFlare(this, _as.x, _top, 'y', 0.8); WeaponSystem.zapFlare(this, this.player.x, _py, 'y', 1.1);
                         this._hitBy = enemy; this.takeDamage(8 * (this.enemyDamageScale || 1)); this._hitBy = null;
-                        enemy.sprite.setTint(0xffffaa);
-                        this.time.delayedCall(120, () => { if (enemy.sprite?.active) enemy.sprite.setTint(0xffffaa); });
                         // Flash range ring on fire
                         if (enemy._arcRangeRing?.active) {
                             this.tweens.killTweensOf(enemy._arcRangeRing);
@@ -294,7 +294,7 @@ class EnemyManager {
                         Sfx.play(this, 'tell', { ms: enemy._berserkerChargeDur || 600 });
                         this.tweens.add({ targets: enemy._berserkerMark, alpha: 1, duration: 80 });
                         this.tweens.add({ targets: enemy._berserkerMark, scaleX: 1.3, scaleY: 1.3, duration: 150, yoyo: true, repeat: 4, ease: 'Sine.easeInOut' });
-                        enemy.sprite.setTint(0xff0000);
+                        EnemyManager.playAtk(this, enemy.sprite, enemy._berserkerChargeDur || 600, bdx < 0, 'chg_');   // head down, eyes red-hot, fuming
                     }
                 } else if (bstate === 'charging') {
                     if (currentTime - enemy._berserkerChargeStart >= (enemy._berserkerChargeDur || 600)) {
@@ -302,7 +302,6 @@ class EnemyManager {
                         enemy._berserkerLastSwing = currentTime;
                         this.tweens.killTweensOf(enemy._berserkerMark);
                         this.tweens.add({ targets: enemy._berserkerMark, alpha: 0, duration: 100 });
-                        enemy.sprite.setTint(0xff4444);
                         this._berserkerSwing(enemy);
                     }
                 }
@@ -327,7 +326,7 @@ class EnemyManager {
                         // Show purple ! mark with pulse
                         this.tweens.add({ targets: enemy._singMark, alpha: 1, duration: 80 });
                         this.tweens.add({ targets: enemy._singMark, scaleX: 1.3, scaleY: 1.3, duration: 180, yoyo: true, repeat: 3, ease: 'Sine.easeInOut' });
-                        enemy.sprite.setTint(0x9922cc);
+                        if (!EnemyManager.playAtk(this, enemy.sprite, enemy._singChargeDur || 700, this.playerX < enemy.x, 'slam_')) enemy.sprite.setTint(0x9922cc);   // it rears up, gathers, comes down (its own frames)
                         // Show 3×3 warning tiles
                         if (!enemy._singWarningTiles) enemy._singWarningTiles = [];
                         for (let wx = -2; wx <= 2; wx++) {
@@ -348,7 +347,7 @@ class EnemyManager {
                         Sfx.play(this, 'slam', { small: true });
                         this.tweens.killTweensOf(enemy._singMark);
                         this.tweens.add({ targets: enemy._singMark, alpha: 0, duration: 120 });
-                        enemy.sprite.setTint(0x440088);
+                        if (enemy.sprite.texture.has('slam_0')) enemy.sprite.clearTint(); else enemy.sprite.setTint(0x440088);
 
                         // Destroy warning tiles
                         if (enemy._singWarningTiles) {
@@ -363,28 +362,21 @@ class EnemyManager {
                                 const spx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
                                 const spy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
 
-                                // Base purple cosmic tint — covers the full tile cleanly
-                                const base = this.add.rectangle(spx, spy, this.TILE_SIZE, this.TILE_SIZE, 0x6600bb, 0.55).setDepth(1.3);
-                                // Yellow cosmic shimmer — faint golden streaks like cosmic energy
-                                const shimmer = this.add.rectangle(spx, spy, this.TILE_SIZE, this.TILE_SIZE, 0xddaa00, 0.15).setDepth(1.4);
-                                // Small highlight dot — gives it the wet tile feel
-                                const dot = this.add.rectangle(spx - 3, spy - 3, 3, 3, 0xffdd88, 0.45).setDepth(1.5);
-
-                                // Pulse once then fade out — longer linger than before
-                                this.tweens.add({ targets: base,    alpha: 0, duration: 1400, delay: 400, ease: 'Quad.easeIn', onComplete: () => base.destroy() });
-                                this.tweens.add({ targets: shimmer, alpha: 0, duration: 1000, delay: 600, ease: 'Sine.easeIn', onComplete: () => shimmer.destroy() });
-                                this.tweens.add({ targets: dot,     alpha: 0, duration: 700,  delay: 300, ease: 'Linear',      onComplete: () => dot.destroy() });
-
-                                // Damage + slow if player is on this tile
-                                if (this.playerX === tx && this.playerY === ty) {
-                                    this._hitBy = enemy; this.takeDamage(4 * (this.enemyDamageScale || 1)); this._hitBy = null;
-                                    this.player?.setTint(0xcc88ff);
-                                    this.time.delayedCall(300, () => { if (this.player?.active) this.player.clearTint(); });
-                                    this._singularitySlowed = true;
-                                    this._singularitySlowUntil = currentTime + 2000;
-                                }
+                                // its goo slapped over the tile, gold flecks of its stars in it (hand-drawn: fx_enemies_b goo_0/1), then soaking away
+                                const base = this.add.image(spx, spy, 'fx_enemies_b', 'goo_' + ((tx + ty) & 1)).setDepth(1.3).setAlpha(0.8).setFlip((tx * 7 + ty) % 3 === 0, (tx + ty * 5) % 3 === 0);
+                                this.tweens.add({ targets: base, alpha: 0, duration: 1400, delay: 400, ease: 'Quad.easeIn', onComplete: () => base.destroy() });
                             }
                         }
+                        // Damage + slow if player is on these tiles (an ally it went for, and you: CombatSystem.tauntBoth; the slow is yours alone)
+                        CombatSystem.tauntBoth(this, () => {
+                            if (Math.abs(this.playerX - enemy.x) > 2 || Math.abs(this.playerY - enemy.y) > 2) return;
+                            this._hitBy = enemy; this.takeDamage(4 * (this.enemyDamageScale || 1)); this._hitBy = null;
+                            if (this._tauntAlly) return;
+                            this.player?.setTint(0xcc88ff);
+                            this.time.delayedCall(300, () => { if (this.player?.active) this.player.clearTint(); });
+                            this._singularitySlowed = true;
+                            this._singularitySlowUntil = currentTime + 2000;
+                        });
                         // Screen shake
                         this.cameras.main.shake(25, 0.004);
                     }
@@ -476,7 +468,7 @@ class EnemyManager {
                     if (typeof this._spawnSniperPortal === 'function') this._spawnSniperPortal(enemy, wx, wy);
 
                     // 1500ms — portal opens, player has time to react before sniper pops out
-                    this.time.delayedCall(1500, () => {
+                    this.time.delayedCall(1500, CombatSystem.tauntKeep(this, () => {   // (flanking an ally: its shot goes at it)
                         if (!enemy.sprite?.active) return;
                         enemy._inDimension = false;
                         enemy._sniperInvisible = false;
@@ -498,7 +490,7 @@ class EnemyManager {
                         if (typeof this._closeSniperPortal === 'function') this._closeSniperPortal(enemy);
 
                         // 350ms — fire shotgun
-                        this.time.delayedCall(350, () => {
+                        this.time.delayedCall(350, CombatSystem.tauntKeep(this, () => {
                             if (!enemy.sprite?.active || enemy._inDimension) return;
                             this._fireSniperShotgun(enemy);
 
@@ -533,8 +525,8 @@ class EnemyManager {
                                 if (enemy.healthBarFill?.active) this.tweens.add({ targets: enemy.healthBarFill, alpha: 0, duration: 200 });
                                 if (enemy._voidMark?.active)     this.tweens.add({ targets: enemy._voidMark,     alpha: 0, duration: 200 });
                             });
-                        });
-                    });
+                        }));
+                    }));
                     continue;
                 }
 
@@ -633,39 +625,30 @@ class EnemyManager {
 
             // Hexed (Cosmic.js, Void Blade's Retribution): 40% slower
             if ((enemy._csHexUntil || 0) > currentTime) moveCooldown = Math.round(moveCooldown / 0.6);
+            if ((enemy._rgTauntUntil || 0) > currentTime) moveCooldown = Math.round(moveCooldown / Rimeguard.CFG.TAUNT_SPD);   // taunted by the Rimeguard: it hurries to you
 
             // a healer slime's heal, on its own clock (a second), not its slow steps' (it only came on a step: every 1.3-1.8s)
             if (enemy.isHealerTotem) {
                 if (!enemy.isFrozen && currentTime - enemy._healerLastTick >= enemy._healerTickInterval) {
                     enemy._healerLastTick = currentTime;
                     if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
+                    let mended = false;
                     for (const ally of this.enemies) {
                         if (!ally.sprite?.active || ally === enemy) continue;
                         const adx = Math.abs(ally.x - enemy.x), ady = Math.abs(ally.y - enemy.y);
                         if (adx + ady > enemy._healerRange) continue;
+                        mended = true;
                         // past full: up to three times its health (its bar: yellow over the red, green over the yellow; Visuals)
                         ally.health = Math.min(ally.maxHealth * 3, ally.health + ally.maxHealth * enemy._healerHealFrac);
                         this.updateEnemyHealthBar(ally);
-                        // Green aura flash on healed enemy + plus sign above head
+                        // a flash of green on the one it mends, its cross rising off it (EnemyFX)
                         if (!ally._lastHealPuff4 || currentTime - ally._lastHealPuff4 > 500) {
                             ally._lastHealPuff4 = currentTime;
-                            // Aura ring flash around enemy
-                            const auraFlash = this.add.graphics().setDepth(3.0);
-                            auraFlash.x = ally.sprite.x; auraFlash.y = ally.sprite.y;
-                            auraFlash.lineStyle(2, 0x44ff88, 0.85);
-                            auraFlash.strokeCircle(0, 0, 12);
-                            auraFlash.fillStyle(0x44ff88, 0.18);
-                            auraFlash.fillCircle(0, 0, 12);
-                            this.tweens.add({ targets: auraFlash, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 400, ease: 'Quad.easeOut', onComplete: () => auraFlash.destroy() });
-                            // Small green plus sign rising above head
-                            const plus = this.add.graphics().setDepth(3.5);
-                            plus.fillStyle(0x44ff88, 0.95);
-                            plus.fillRect(-2, -5, 4, 10);
-                            plus.fillRect(-5, -2, 10, 4);
-                            plus.x = ally.sprite.x; plus.y = ally.sprite.y - 14;
-                            this.tweens.add({ targets: plus, y: plus.y - 10, alpha: 0, duration: 450, ease: 'Quad.easeOut', onComplete: () => plus.destroy() });
+                            this._vfxFlash?.(ally.sprite.x, ally.sprite.y, 34, 0x44ff88, 320, 0.6);
+                            EnemyFX.cross(this, ally.sprite.x, ally.sprite.y - 14, true);
                         }
                     }
+                    if (mended) EnemyManager.playAtk(this, enemy.sprite, 600, false, 'heal_');   // its cross alight, sparkling
                 }
             }
 
@@ -716,6 +699,7 @@ class EnemyManager {
                     enemy._anchorLastPulse = currentTime;
                     if ((this._roomGated()) && (enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) { continue; }
                     Sfx.play(this, 'pulse');
+                    EnemyManager.playAtk(this, enemy.sprite, 600, false, 'pulse_');   // it lifts its anchor and slams it down
                     // Speed buff nearby enemies
                     for (const ally of this.enemies) {
                         if (!ally.sprite?.active || ally === enemy || ally.isMortar || ally.isHealerTotem || ally.isAnchor) continue;
@@ -734,7 +718,8 @@ class EnemyManager {
                     }
                     // Pulse ring — steel blue expanding wave
                     VisualFX.ripple(this, enemy.sprite.x, enemy.sprite.y, 12, enemy._anchorRange * this.TILE_SIZE * 1.1, 0x4499cc, { duration: 900 });
-                    // Slow player if in range
+                    // Slow player if in range (you where you are, whoever it's after: CombatSystem.tauntAs)
+                    CombatSystem.tauntAs(this, null, () => {
                     const pdx = Math.abs(this.playerX - enemy.x), pdy = Math.abs(this.playerY - enemy.y);
                     if (pdx + pdy <= enemy._anchorRange) {
                         this.moveCooldown = Math.max(this.moveCooldown, Math.round(200 / enemy._anchorSlowMult));
@@ -747,6 +732,7 @@ class EnemyManager {
                             );
                         }
                     }
+                    });
                 }
                 if (!enemy._mobile) continue;   // a fixed anchor stays put; the anchor slime walks on
             }
@@ -764,8 +750,8 @@ class EnemyManager {
                             enemy._thumpLastFire = currentTime;
                             this._rooterGroundThump(enemy);
                         }
-                    } else if (rdist <= (enemy._tendrilRange || 12)) {
-                        // FAR — pull tendril
+                    } else if (!this._tauntAlly && rdist <= (enemy._tendrilRange || 12)) {
+                        // FAR — pull tendril (never at an ally: nothing pulls one; it walks up to it and stomps)
                         if (currentTime - (enemy._tendrilLastFire || 0) >= (enemy._tendrilCooldown || 4000) / this._atkSpd(enemy, currentTime)) {
                             enemy._tendrilLastFire = currentTime;
                             this._fireRootTendril(enemy);
@@ -917,68 +903,7 @@ class EnemyManager {
                         y: targetY,
                         duration: tweenDur,
                         ease: 'Sine.easeInOut',
-                        onUpdate: () => {
-                            // Sync health bars and marks
-                            if (enemy.healthBarBg) {
-                                enemy.healthBarBg.x = enemy.sprite.x;
-                                enemy.healthBarBg.y = enemy.sprite.y + (enemy._hpBarYOff || 0);
-                            }
-                            if (enemy.healthBarFill) {
-                                enemy.healthBarFill.x = enemy.sprite.x;
-                                enemy.healthBarFill.y = enemy.sprite.y + (enemy._hpBarYOff || 0);
-                            }
-                            if (enemy.burnVisual) {
-                                enemy.burnVisual.x = enemy.sprite.x;
-                                enemy.burnVisual.y = enemy.sprite.y - 18;
-                            }
-                            if (enemy.brittleVisual) {
-                                enemy.brittleVisual.x = enemy.sprite.x;
-                                enemy.brittleVisual.y = enemy.sprite.y + 14;
-                            }
-                            if (enemy._tsunamiMultText) {
-                                enemy._tsunamiMultText.x = enemy.sprite.x;
-                                enemy._tsunamiMultText.y = enemy.sprite.y - 28;
-                            }
-                            if (enemy._shieldMark && enemy._shieldMark.active) {
-                                enemy._shieldMark.x = enemy.sprite.x;
-                                enemy._shieldMark.y = enemy.sprite.y - 22;
-                            }
-                            if (enemy._inhibitRing && enemy._inhibitRing.active) {
-                                enemy._inhibitRing.x = enemy.sprite.x;
-                                enemy._inhibitRing.y = enemy.sprite.y;
-                            }
-                            if (enemy._inhibitMark && enemy._inhibitMark.active) {
-                                enemy._inhibitMark.x = enemy.sprite.x;
-                                enemy._inhibitMark.y = enemy.sprite.y - 22;
-                            }
-                            if (enemy._fireMark && enemy._fireMark.active) {
-                                enemy._fireMark.x = enemy.sprite.x;
-                                enemy._fireMark.y = enemy.sprite.y - 16;
-                            }
-                            if (enemy._iceMark && enemy._iceMark.active) {
-                                enemy._iceMark.x = enemy.sprite.x;
-                                enemy._iceMark.y = enemy.sprite.y - 16;
-                            }
-                            if (enemy._rangedMark && enemy._rangedMark.active) {
-                                enemy._rangedMark.x = enemy.sprite.x;
-                                enemy._rangedMark.y = enemy.sprite.y - 22;
-                            }
-                            if (enemy.cosmicMarkVisuals && enemy.cosmicMarkVisuals.length > 0) {
-                                const markY = enemy.sprite.y - 25;
-                                for (let i = 0; i < enemy.cosmicMarks; i++) {
-                                    const offsetX = (i - 1) * 12;
-                                    const visualIndex = i * 2;
-                                    if (visualIndex < enemy.cosmicMarkVisuals.length) {
-                                        enemy.cosmicMarkVisuals[visualIndex].x = enemy.sprite.x + offsetX;
-                                        enemy.cosmicMarkVisuals[visualIndex].y = markY;
-                                        if (visualIndex + 1 < enemy.cosmicMarkVisuals.length) {
-                                            enemy.cosmicMarkVisuals[visualIndex + 1].x = enemy.sprite.x + offsetX;
-                                            enemy.cosmicMarkVisuals[visualIndex + 1].y = markY;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        onUpdate: () => this._syncEnemyMarks(enemy)   // (the frame's end does it too; this covers a frame that returns early)
                     });
                 }
             } // end if (dist < 20)
@@ -1036,6 +961,20 @@ class EnemyManager {
         }
     }
 
+    // An enemy's own attack frames, if its sheet has them (atk_0, atk_1, ... by name, drawn facing east), played evenly across
+    // `ms` (flipped for a target to the west), then back to the animation or frame it had. False if it has none.
+    static playAtk(scene, s, ms, west = false, pre = 'atk_') {
+        const tex = s?.texture;
+        if (!tex?.has?.(pre + '0') || s._atkTw) return false;
+        let n = 0; while (tex.has(pre + n)) n++;
+        const anim = s.anims?.isPlaying ? s.anims.currentAnim?.key : null, fr = s.frame.name, flip = s.flipX, key = tex.key;
+        s.anims?.stop(); s.setFlipX(west);
+        const back = () => { s._atkTw = null; if (!s.active) return; s.setFlipX(flip); if (s.texture.key !== key) return; if (anim) s.play(anim); else s.setFrame(fr); };
+        s._atkTw = scene.tweens.addCounter({ from: 0, to: n, duration: ms, onComplete: back, onStop: back,
+            onUpdate: t => { if (s.active && s.texture.key === key) s.setFrame(pre + Math.min(n - 1, Math.floor(t.getValue()))); } });
+        return true;
+    }
+
     enemyAttackAnimation(enemy, targetX, targetY) {
         if (!enemy.sprite || !enemy.sprite.active) return;
         if (enemy._attackAnimPlaying) return; // prevent stacking animations
@@ -1051,6 +990,7 @@ class EnemyManager {
         const lungeY = homeY + (dirY / len) * this.TILE_SIZE * 0.42;
 
         enemy._attackAnimPlaying = true;
+        EnemyManager.playAtk(this, enemy.sprite, 290, dirX < 0);   // its own wind-up, strike and recovery, over the four steps below (60+80+90+60)
         const B = enemy._baseScale ?? this.SLIME_SCALE;   // its own size (a big Splitter's, not a slime's)
 
         // 1. Wind-up squish (compress toward direction)
@@ -1101,8 +1041,7 @@ class EnemyManager {
         // Body colour, not just the crosshair above it. A small icon is unreadable in a
         // crowded room -- you are tracking a dozen sprites, not studying one. Every type
         // should be identifiable from its BODY at a glance, with the mark as confirmation.
-        // Pale yellow to match its own crosshair.
-        if (typeof enemy.sprite.setTint === 'function') enemy.sprite.setTint(0xffee88);
+        SlimeModels.wear(this, enemy.sprite, 'ranged');   // the Spitter's own body
         enemy.isRanged = true;
         enemy.rangedState = 'idle';
 
@@ -1128,7 +1067,7 @@ class EnemyManager {
         enemy._berserkerCooldown   = 3200;
         enemy._berserkerChargeDur  = 600;
         enemy._berserkerChargeStart = 0;
-        enemy.sprite.setTint(0xff4444);
+        SlimeModels.wear(this, enemy.sprite, 'berserker');   // its own body: a horned bull
 
         // Red ! mark — hidden until charging
         const markGfx = this.add.graphics().setDepth(3.5).setAlpha(0);
@@ -1153,35 +1092,12 @@ class EnemyManager {
         const SWING_DMG   = 18 * this.damageScaling;
         const SWING_DUR   = 220;
 
-        // Arc sweep visual — red
-        const arcGfx = this.add.graphics().setDepth(3.5);
-        arcGfx.x = ex; arcGfx.y = ey;
+        // the swing: its own frames (horns back, then through), streaks of its gore along the arc (EnemyFX)
         const startAngle = facingAngle + halfSpread;
         const endAngle   = facingAngle - halfSpread;
-        let elapsed = 0;
-        const swingTimer = this.time.addEvent({
-            delay: 16, repeat: Math.floor(SWING_DUR / 16),
-            callback: () => {
-                elapsed += 16;
-                const t = Math.min(elapsed / SWING_DUR, 1);
-                const curEnd = startAngle + (endAngle - startAngle) * t;
-                // a slash, not a pie: a crescent band swept behind the blade, hot at its leading edge and cooling
-                // behind it, thicker in the middle of the swing, a bright edge on the blade itself
-                arcGfx.clear();
-                const R0 = RANGE * 0.5, ring = (r, a0, a1, n) => Array.from({ length: n + 1 }, (_, k) => { const a = a0 + (a1 - a0) * k / n; return { x: Math.cos(a) * r, y: Math.sin(a) * r }; });
-                const band = (from, rIn, rOut, col, alpha) => {   // a smooth crescent over the newest (1 - from) of the sweep
-                    const a0 = startAngle + (curEnd - startAngle) * from;
-                    arcGfx.fillStyle(col, alpha); arcGfx.fillPoints([...ring(rOut, a0, curEnd, 14), ...ring(rIn, curEnd, a0, 14)], true);
-                };
-                band(0, R0, RANGE + 4, 0xff2a10, 0.28);
-                band(0.4, R0 + RANGE * 0.08, RANGE + 2, 0xff7a20, 0.5);
-                band(0.78, R0 + RANGE * 0.16, RANGE, 0xffd890, 0.8);
-                arcGfx.lineStyle(2, 0xff3a10, 0.5); arcGfx.strokePoints(ring(RANGE + 4, startAngle, curEnd, 12), false);
-                arcGfx.lineStyle(3, 0xfff4d0, 0.95);
-                arcGfx.lineBetween(Math.cos(curEnd) * R0 * 0.8, Math.sin(curEnd) * R0 * 0.8, Math.cos(curEnd) * (RANGE + 6), Math.sin(curEnd) * (RANGE + 6));
-                if (t >= 1) { swingTimer.remove(); this.tweens.add({ targets: arcGfx, alpha: 0, duration: 180, ease: 'Quad.easeIn', onComplete: () => arcGfx.destroy() }); }
-            }
-        });
+        enemy.sprite._atkTw?.stop();   // (its charge frames give way)
+        EnemyManager.playAtk(this, enemy.sprite, SWING_DUR + 120, this.player.x < ex, 'swing_');
+        EnemyFX.cleave(this, ex, ey, startAngle, endAngle, RANGE, SWING_DUR);
 
         // Hit check — sample tiles in arc
         const hitTiles = new Set();
@@ -1192,6 +1108,7 @@ class EnemyManager {
                 hitTiles.add(`${Math.round(wx / this.TILE_SIZE)},${Math.round(wy / this.TILE_SIZE)}`);
             }
         }
+        CombatSystem.tauntBoth(this, () => {   // (the ally it swung at, and you if you're in it)
         const playerKey = `${Math.round(this.player.x / this.TILE_SIZE)},${Math.round(this.player.y / this.TILE_SIZE)}`;
         if (hitTiles.has(playerKey)) {
             this._hitBy = enemy; this._hitMelee = true; this.takeDamage(SWING_DMG); this._hitBy = null; this._hitMelee = false;
@@ -1206,6 +1123,7 @@ class EnemyManager {
                 this.player.y = ny * this.TILE_SIZE + this.TILE_SIZE / 2 + this.SLIME_Y_OFFSET;
             }
         }
+        });
         this.cameras.main.shake(35, 0.003);
     }
 
@@ -1284,6 +1202,9 @@ class EnemyManager {
             if (this._roomGated()) {
                 if ((enemy.tutorialRoomIndex ?? -1) !== this.getCurrentPlayerRoom()) continue;
             }
+            // pulled by an ally: it keeps off it, aims at it and spits at it (CombatSystem._tauntBegin, as in moveEnemies)
+            const _taunt = this._tauntBegin?.(enemy);
+            try {
 
             // Track splitter mark position
             if (enemy._splitterMark?.active) { enemy._splitterMark.x = enemy.sprite.x; enemy._splitterMark.y = enemy.sprite.y - 20; }
@@ -1384,12 +1305,14 @@ class EnemyManager {
                     enemy._sniperTarget = null;
                 }
             }
+            } finally { this._tauntEnd?.(_taunt); }
         }
     }
 
     _spawnPrefireBeam(enemy) {
         this._destroyPrefireBeam(enemy); // safety clear
         Sfx.play(this, 'laser_charge');
+        EnemyManager.playAtk(this, enemy.sprite, Math.max(300, (enemy.prefireEnd || 0) - (enemy.prefireStart || 0)), (this.player?.x ?? enemy.sprite.x) < enemy.sprite.x, 'aim_');   // its cheeks filling
         enemy._prefireBeam = this.add.graphics().setDepth(1.5);
         // Pulsing exclamation above head
         enemy._prefireWarning = this.add.text(
@@ -1469,6 +1392,7 @@ class EnemyManager {
     }
 
     _destroyPrefireBeam(enemy) {
+        enemy.sprite?._atkTw?.stop();   // (its wind-up ends with it)
         if (enemy._prefireBeam && enemy._prefireBeam.active) {
             this.tweens.killTweensOf(enemy._prefireBeam);
             enemy._prefireBeam.destroy();
@@ -1482,14 +1406,6 @@ class EnemyManager {
     }
 
     _fireEnemyProjectile(enemy) {
-        // Level 4 upgraded sniper — 3 arrows in a spread, each ricochets 3 times
-        if (enemy._upgradedSniper) {
-            const SPREAD_ANGLES = [-0.20, 0, 0.20];
-            for (const spreadA of SPREAD_ANGLES) {
-                this._fireRicochetArrow(enemy, spreadA);
-            }
-            return;
-        }
         const ex = enemy.sprite.x, ey = enemy.sprite.y + 12 * Math.abs(enemy.sprite.scaleY || 1);   // from its mouth: the body fills the bottom of its frame
 
         // Use locked direction if available, otherwise fall back to current player pos
@@ -1511,23 +1427,14 @@ class EnemyManager {
         const fdx = ndx * cos - ndy * sin;
         const fdy = ndx * sin + ndy * cos;
 
-        // Small elongated bullet (not a circle — fast bullets look better as dashes)
+        // a glob of acid (EnemyFX: typed, pointing the nearest of eight ways); its wake, light and splash are the green ones (Bosses.js 'vine')
         const angle = Math.atan2(fdy, fdx);
-        const g = this.add.graphics().setDepth(2.5);
-        g.fillStyle(0xff2200, 1);
-        // Draw a short line in the direction of travel
-        g.lineStyle(3, 0xff6600, 1);
-        g.beginPath();
-        g.moveTo(-Math.cos(angle) * 6, -Math.sin(angle) * 6);
-        g.lineTo( Math.cos(angle) * 6,  Math.sin(angle) * 6);
-        g.strokePath();
-        g.fillStyle(0xffaa66, 1);
-        g.fillCircle(0, 0, 2);
-        g.x = ex; g.y = ey;
+        const g = EnemyFX.shot(this, 'spit', ex, ey, angle, 2.5);
+        EnemyManager.playAtk(this, enemy.sprite, 180, fdx < 0, 'spit_');
 
         const SPEED = 420;
         this.enemyProjectiles.push({ src: enemy,
-            gfx: this._bfxSwap ? this._bfxSwap(g, 'bolt', angle) : g,   // Bosses.js
+            gfx: g, _bfxKind: 'vine',
             vx: fdx * SPEED,
             vy: fdy * SPEED,
             damage: 8,
@@ -1535,12 +1442,7 @@ class EnemyManager {
             startY: ey,
         });
 
-        // Muzzle flash
-        if (this._bfxOn) BossFX.muzzle(this, 'bolt', ex, ey, angle);   // Bosses.js
-        else {
-            const flash = this.add.circle(ex, ey, 8, 0xff4400, 0.7).setDepth(3);
-            this.tweens.add({ targets: flash, radius: 14, alpha: 0, duration: 140, onComplete: () => flash.destroy() });
-        }
+        BossFX.muzzle(this, 'vine', ex, ey, angle);   // a flash of its green at its mouth
     }
 
     _fireSniperShotgun(enemy) {
@@ -1555,13 +1457,10 @@ class EnemyManager {
         const DAMAGE = 14;
         const MAX_DIST = this.TILE_SIZE * 3.5; // dissolve after ~3.5 tiles
 
-        // Muzzle flash
-        const flash = this.add.graphics().setDepth(4);
-        flash.x = ex; flash.y = ey;
-        flash.fillStyle(0xee88ff, 0.85); flash.fillCircle(0, 0, 14);
-        flash.lineStyle(2, 0xffffff, 0.90); flash.strokeCircle(0, 0, 18);
-        this.tweens.add({ targets: flash, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => flash.destroy() });
-        if (this._bfxOn) { flash.setVisible(false); BossFX.muzzle(this, 'shard', ex, ey, baseAngle, true); }   // Bosses.js
+        // its own frames (a glint, the kick, smoke), a flash in its colour; shards of the void, or the Sniper's brass slugs (EnemyFX)
+        const amber = !!enemy._upgradedSniper, base = amber ? 'apel' : 'vpel', kind = amber ? 'dart' : 'shard';
+        EnemyManager.playAtk(this, enemy.sprite, 360, px < ex, 'fire_');
+        BossFX.muzzle(this, kind, ex, ey, baseAngle, true);
         this.cameras.main.shake(30, 0.003);
 
         for (let i = 0; i < PELLETS; i++) {
@@ -1570,53 +1469,21 @@ class EnemyManager {
             const vx = Math.cos(angle) * SPEED;
             const vy = Math.sin(angle) * SPEED;
 
-            const g = this.add.graphics().setDepth(2.8);
-            g.lineStyle(2.5, 0xdd66ff, 1);
-            g.beginPath();
-            g.moveTo(-Math.cos(angle) * 5, -Math.sin(angle) * 5);
-            g.lineTo( Math.cos(angle) * 5,  Math.sin(angle) * 5);
-            g.strokePath();
-            g.fillStyle(0xffffff, 0.9); g.fillCircle(0, 0, 2);
-            g.x = ex; g.y = ey;
-
-            this.enemyProjectiles.push({ src: enemy, gfx: this._bfxSwap ? this._bfxSwap(g, 'shard', angle) : g, vx, vy, damage: DAMAGE, startX: ex, startY: ey, _isShotgunPellet: true, maxDist: MAX_DIST });
+            const g = EnemyFX.shot(this, base, ex, ey, angle, 2.8);
+            this.enemyProjectiles.push({ src: enemy, gfx: g, _bfxKind: kind, vx, vy, damage: DAMAGE, startX: ex, startY: ey, _isShotgunPellet: true, maxDist: MAX_DIST });
         }
     }
 
-    _fireRicochetArrow(enemy, spreadOffset) {
-        const ex = enemy.sprite.x, ey = enemy.sprite.y;
-        let ndx, ndy;
-        if (enemy.lockedDir) {
-            ndx = enemy.lockedDir.x; ndy = enemy.lockedDir.y;
-        } else {
-            const px = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const py = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const dx = px - ex, dy = py - ey;
-            const len = Math.sqrt(dx*dx + dy*dy) || 1;
-            ndx = dx/len; ndy = dy/len;
-        }
-        const cos = Math.cos(spreadOffset), sin = Math.sin(spreadOffset);
-        const fdx = ndx*cos - ndy*sin, fdy = ndx*sin + ndy*cos;
-        const angle = Math.atan2(fdy, fdx);
-
-        // Arrow visual — pointed yellow dart
-        const g = this.add.graphics().setDepth(2.5);
-        g.fillStyle(0xffdd00, 1.0);
-        g.beginPath();
-        g.moveTo(Math.cos(angle)*8, Math.sin(angle)*8);
-        g.lineTo(Math.cos(angle+2.8)*5, Math.sin(angle+2.8)*5);
-        g.lineTo(Math.cos(angle+Math.PI)*3, Math.sin(angle+Math.PI)*3);
-        g.lineTo(Math.cos(angle-2.8)*5, Math.sin(angle-2.8)*5);
-        g.closePath(); g.fillPath();
-        g.lineStyle(1, 0xffaa00, 0.80); g.strokePath();
-        g.x = ex; g.y = ey;
-
-        this.enemyProjectiles.push({ src: enemy,
-            gfx: this._bfxSwap ? this._bfxSwap(g, 'dart', angle) : g, vx: fdx * 380, vy: fdy * 380,   // Bosses.js
-            damage: 10 * this.damageScaling,
-            isRicochetArrow: true, ricochetLeft: 3,
-            startX: ex, startY: ey,
-        });
+    // The Sniper's slug (Sniper.js): one heavy round heading `angle`, glancing off up to two walls (the bounce is
+    // updateEnemyProjectiles'), a spark off each (fx_sniper's typed frames, pointing the nearest of eight ways)
+    _fireRicochetArrow(enemy, angle) {
+        const C = Sniper.CFG.SLUG, [ex, ey] = Sniper.muzzle(enemy.sprite);
+        const g = this.add.image(ex, ey, 'fx_sniper', 'slug_e').setDepth(2.6).setScale(1.2);
+        g._efxBase = 'slug'; this._vfxSort?.(g); EnemyFX.aim(g, 'slug', angle);
+        this.enemyProjectiles.push({ src: enemy, gfx: g, _bfxKind: 'dart', vx: Math.cos(angle) * C.SPEED, vy: Math.sin(angle) * C.SPEED,
+            damage: C.DMG * (this.enemyDamageScale || 1), isRicochetArrow: true, ricochetLeft: C.BOUNCES, startX: ex, startY: ey,
+            maxDist: Sniper.CFG.BANK.REACH * this.TILE_SIZE, onBounce: (x, y) => Sniper.spark(this, x, y) });
+        BossFX.muzzle(this, 'dart', ex, ey, angle);
     }
 
     updateEnemyProjectiles(delta) {
@@ -1631,12 +1498,27 @@ class EnemyManager {
             const p = this.enemyProjectiles[i];
 
             // Rope tendril — advance tip separately, keep gfx at 0,0
+            const x0 = p.isRopeTendril ? p._tipX : p.gfx.x, y0 = p.isRopeTendril ? p._tipY : p.gfx.y;   // (where it was: the player hit checks the whole step)
+            const k = ds * Trident.slow(this, x0, y0);   // (the Boreal Trident's aura)
             if (p.isRopeTendril) {
-                p._tipX += p.vx * ds;
-                p._tipY += p.vy * ds;
+                if (p.sourceEnemy?.sprite?.active) { p.startX = p.sourceEnemy.sprite.x; p.startY = p.sourceEnemy.sprite.y; }   // (its root stays at the rooter as it walks)
+                p._tipX += p.vx * k;
+                p._tipY += p.vy * k;
             } else {
-                p.gfx.x += p.vx * ds;
-                p.gfx.y += p.vy * ds;
+                p.gfx.x += p.vx * k;
+                p.gfx.y += p.vy * k;
+            }
+            // a pulled enemy's shot goes for the ally pulling it as it was fired (CombatSystem.tauntOf, its first frame) while that stands
+            if (p._ally === undefined) p._ally = CombatSystem.tauntOf(this, p.src || p.sourceEnemy);
+            const ally = p._ally?.alive ? p._ally : null, aimX = ally ? ally.x : this.playerX, aimY = ally ? ally.y : this.playerY;
+            // a homing shot (the Torpedo Diver's) turns toward you, up to p.home radians a second, while you're still ahead of it
+            if (p.home && p.gfx.active) {
+                const hx = aimX * this.TILE_SIZE + this.TILE_SIZE / 2 - p.gfx.x, hy = aimY * this.TILE_SIZE + this.TILE_SIZE / 2 - p.gfx.y;
+                if (hx * p.vx + hy * p.vy > 0) {
+                    const a0 = Math.atan2(p.vy, p.vx), a = a0 + Phaser.Math.Clamp(Phaser.Math.Angle.Wrap(Math.atan2(hy, hx) - a0), -p.home * k, p.home * k), v = Math.hypot(p.vx, p.vy);
+                    p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v;
+                    if (p.gfx._efxBase) EnemyFX.aim(p.gfx, p.gfx._efxBase, a);
+                }
             }
 
             // ── Rope tendril visual — thorned organic tendril redrawn each frame ──
@@ -1740,18 +1622,19 @@ class EnemyManager {
             const tx = Math.floor(checkX / this.TILE_SIZE);
             const ty = Math.floor(checkY / this.TILE_SIZE);
             const oob = tx < 0 || tx >= this.WORLD_WIDTH || ty < 0 || ty >= this.WORLD_HEIGHT;
-            if (oob || this.world[tx][ty] === this.WALL || this.world[tx][ty] === this.NOTHING || this.isInLockedRoom(tx, ty)) {
+            if (oob || (!p.thruWalls && (this.world[tx][ty] === this.WALL || this.world[tx][ty] === this.NOTHING || this.isInLockedRoom(tx, ty)))) {   // (thruWalls: a Blinder's haze drifts through)
                 if (p.isRicochetArrow && p.ricochetLeft > 0) {                    // Bounce — reflect off wall axis
-                    const prevTX = Math.floor((p.gfx.x - p.vx * (delta/1000)) / this.TILE_SIZE);
-                    const prevTY = Math.floor((p.gfx.y - p.vy * (delta/1000)) / this.TILE_SIZE);
-                    // Determine wall axis by checking which direction caused the hit
-                    const hitX = !oob && (this.world[tx][prevTY] === this.WALL || this.world[tx][prevTY] === this.NOTHING || tx < 0 || tx >= this.WORLD_WIDTH);
-                    const hitY = !oob && (this.world[prevTX][ty] === this.WALL || this.world[prevTX][ty] === this.NOTHING || ty < 0 || ty >= this.WORLD_HEIGHT);
-                    if (hitX || oob) p.vx = -p.vx;
-                    if (hitY || oob) p.vy = -p.vy;
+                    // back out of the wall by the step it took (a slowed one's is shorter), then turn off whichever side it met;
+                    // meeting neither (a corner, square on: a sealed doorway too) it comes back the way it went (Sniper.trace aims by this)
+                    const T = this.TILE_SIZE, solid = (x, y) => x < 0 || y < 0 || x >= this.WORLD_WIDTH || y >= this.WORLD_HEIGHT || this.world[x][y] === this.WALL || this.world[x][y] === this.NOTHING || this.isInLockedRoom(x, y);
+                    p.gfx.x -= p.vx * k; p.gfx.y -= p.vy * k;
+                    const hitX = solid(tx, Math.floor(p.gfx.y / T)), hitY = solid(Math.floor(p.gfx.x / T), ty);
+                    if (hitX || !hitY) p.vx = -p.vx;
+                    if (hitY || !hitX) p.vy = -p.vy;
                     p.ricochetLeft--;
+                    p.onBounce?.(p.gfx.x, p.gfx.y);   // its own spark (the Sniper's slug)
                     if (this._bfxOn) {   // Bosses.js: it points its new way; a spark in its colour
-                        p.gfx.rotation = Math.atan2(p.vy, p.vx);
+                        if (p.gfx._efxBase) EnemyFX.aim(p.gfx, p.gfx._efxBase, Math.atan2(p.vy, p.vx)); else p.gfx.rotation = Math.atan2(p.vy, p.vx);
                         BossFX.pop(this, BossFX.kindOf(p), p.gfx.x, p.gfx.y, 2);
                         continue;
                     }
@@ -1795,13 +1678,18 @@ class EnemyManager {
                 continue;
             }
 
-            // Player hit
-            const ppx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-            const ppy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
+            // Player hit (you, or the ally it went for: whichever it reaches, the hit as it would be on you, on it: CombatSystem.tauntAs)
             const hitX = p.isRopeTendril ? p._tipX : p.gfx.x;
             const hitY = p.isRopeTendril ? p._tipY : p.gfx.y;
-            const dist = Math.hypot(hitX - ppx, hitY - ppy);
-            if (dist < this.TILE_SIZE * 0.7) {
+            // the nearest point of this frame's step to you, so a fast shot at a low frame rate can't step over you
+            const sx = hitX - x0, sy = hitY - y0, L2 = sx * sx + sy * sy;
+            const reaches = (tx, ty) => {
+                const ppx = tx * this.TILE_SIZE + this.TILE_SIZE / 2, ppy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
+                const u = L2 ? Math.max(0, Math.min(1, ((ppx - x0) * sx + (ppy - y0) * sy) / L2)) : 1;
+                return Math.hypot(x0 + sx * u - ppx, y0 + sy * u - ppy) < (p.hitR ?? this.TILE_SIZE * 0.7);   // (hitR: a bigger shot's own reach)
+            };
+            const on = reaches(this.playerX, this.playerY) ? null : ally && reaches(ally.x, ally.y) ? ally : undefined;
+            if (on !== undefined) CombatSystem.tauntAs(this, on, () => {
                 if (p.isRootTendril) {
                     if (p.isPullTendril && p.sourceEnemy?.sprite?.active && (this._iceShellUntil || 0) <= this.time.now && this._ccGate?.(250) !== false) {   // (encased in the ice ult's shell, nothing moves you)
                         // Pull player toward the rooter — move up to 3 tiles
@@ -1841,11 +1729,13 @@ class EnemyManager {
                     }
                 } else if (time - this.lastPlayerDamageTime >= this.playerDamageCooldown) {
                     this._hitBy = p.src || p.sourceEnemy || null;   // who fired it (a Tidecaller's boost, the Frost Shield's chill back)
-                    this.takeDamage(p.damage);
+                    this.takeDamage(p.damage, p.srcName);
                     this._hitBy = null;
                     this.lastPlayerDamageTime = time;
-                    p.onHit?.();   // what else it does to you (a Budding Slime's glob poisons)
+                    if (!this._tauntAlly) p.onHit?.();   // what else it does to you (a Budding Slime's glob poisons; not an ally)
                 }
+            });
+            if (on !== undefined) {
                 if (p.trailGfx?.active) p.trailGfx.destroy();
                 this._destroyEnemyProjectile(p);
                 this.enemyProjectiles.splice(i, 1);
@@ -1868,6 +1758,7 @@ class EnemyManager {
         if (p.trailGfx?.active) p.trailGfx.destroy();
         // Bosses.js: a vine whips back into the ground; a shot ends in a pop of its own colour
         if (p.isRopeTendril && this._bfxVineSnap?.(p)) return;
+        if (p.gfx?.active) p.onEnd?.(p.gfx.x, p.gfx.y);   // its own end (the Torpedo Diver's slug bursts)
         if (this._bfxOn && p.gfx?.active) {
             const x = p.gfx.x, y = p.gfx.y;
             p.gfx.destroy();
@@ -1886,25 +1777,8 @@ class EnemyManager {
     // LEVEL 4 ENEMY CREATORS
     // ══════════════════════════════════════════════════════════════════════
 
-    createUpgradedSniper(x, y, roomIndex) {
-        // Level 4 sniper — fires 3 ricocheting arrows
-        const e = this.createVoidSniper ? this.createVoidSniper(x, y, roomIndex) : this.createRangedEnemy(x, y, roomIndex);
-        e._upgradedSniper = true;
-        e.health = e.maxHealth = Math.round(50 * (this.enemyHealthScale || 1)); // a bit more than a base sniper
-        if (typeof e.sprite.setTint === 'function') e.sprite.setTint(0xcc8800);
-        // The only type with a tint and NO mark. A long crosshair with a gap in the
-        // middle, so it reads as a scope rather than as the ranged enemy's full crosshair.
-        const sm = this.add.graphics().setDepth(3);
-        sm.lineStyle(1.5, 0xffcc44, 0.95);
-        sm.beginPath(); sm.moveTo(-11, 0); sm.lineTo(-4, 0); sm.strokePath();
-        sm.beginPath(); sm.moveTo(4, 0);   sm.lineTo(11, 0); sm.strokePath();
-        sm.beginPath(); sm.moveTo(0, -11); sm.lineTo(0, -4); sm.strokePath();
-        sm.beginPath(); sm.moveTo(0, 4);   sm.lineTo(0, 11); sm.strokePath();
-        sm.lineStyle(1.5, 0xffcc44, 0.7); sm.strokeCircle(0, 0, 7);
-        sm.x = e.sprite.x; sm.y = e.sprite.y - 26;
-        e._sniperMark = sm;
-        return e;
-    }
+    // The Sniper: one ricochet slug at a time, a blink after every shot (Sniper.js); its hood and scope are its mark
+    createUpgradedSniper(x, y, roomIndex) { return Sniper.make(this, x, y, roomIndex); }
 
     createMortar(x, y, roomIndex) {
         const e = this.createEnemy(x, y, 220);
@@ -1914,8 +1788,7 @@ class EnemyManager {
         e._mortarCooldown = 3200;
         e._mortarSafeRadius = 5;  // tiles — blind spot underneath it
         e._mortarMaxRange   = 13; // tiles — outer limit, so it cannot shell the map
-        // Visual: dark grey with orange glowing barrel ring
-        e.sprite.setTint(0x445566);
+        SlimeModels.wear(this, e.sprite, 'mortar');   // its own body: a little volcano
         const gfx = this.add.graphics().setDepth(2);
         gfx.lineStyle(2.5, 0xff6600, 0.80); gfx.strokeCircle(0, 0, 10);
         gfx.fillStyle(0xff6600, 0.40);       gfx.fillCircle(0, 0, 10);
@@ -1939,7 +1812,7 @@ class EnemyManager {
         e.tutorialRoomIndex = roomIndex;
         e.isSplitter = true;
         e._splitterTier = tier;
-        e.sprite.setTint(tintByTier[tier]);
+        SlimeModels.wear(this, e.sprite, 'splitter');   // its own body (its tiers are its sizes)
         const targetScale = this.SLIME_SCALE * scaleByTier[tier];
         e._baseScale = targetScale; // stored so scale resets always use the right value
         if (typeof e.sprite.setScale === 'function') e.sprite.setScale(targetScale);
@@ -1972,11 +1845,12 @@ class EnemyManager {
         e._thumpCooldown = 2000;
         e._thumpLastFire = 0;
         e._thumpRange = 2;      // tiles — switches to thump when player is within this range
+        e._thumpAllyDmg = 8;    // a thump on an ally it's drawn to: a hit, as an ally can't be rooted
         // Legacy alias for old code that still references _rooterCooldown/_rooterRange
         e._rooterCooldown = e._tendrilCooldown;
         e._rooterLastFire = 0;
         e._rooterRange    = e._tendrilRange;
-        e.sprite.setTint(0x226633);
+        SlimeModels.wear(this, e.sprite, 'rooter');   // its own body: a gnarled root
         // Green tendril mark
         const gfx = this.add.graphics().setDepth(2);
         gfx.lineStyle(2, 0x44ff88, 0.90);
@@ -2028,10 +1902,7 @@ class EnemyManager {
             delay: 420, loop: true,
             callback: () => {
                 if (!e.sprite?.active) { particleTimer.remove(); return; }
-                const pg = this.add.graphics().setDepth(2.8), sz = 2 + Math.random() * 1.5;
-                pg.fillStyle(0x44ff88, 0.9).fillRect(-sz * 0.4, -sz, sz * 0.8, sz * 2).fillRect(-sz, -sz * 0.4, sz * 2, sz * 0.8);
-                pg.x = e.sprite.x + (Math.random() - 0.5) * 14; pg.y = e.sprite.y - 6;
-                this.tweens.add({ targets: pg, y: pg.y - 16 - Math.random() * 8, alpha: 0, duration: 550, ease: 'Quad.easeOut', onComplete: () => pg.destroy() });
+                EnemyFX.cross(this, e.sprite.x + (Math.random() - 0.5) * 14, e.sprite.y - 6);
             }
         });
         e._particleTimer = particleTimer;
@@ -2050,25 +1921,16 @@ class EnemyManager {
 
         // Arc trajectory — parabolic tween
         const FLIGHT_DUR = 1000 + Math.random() * 300;
-        const ROCK_SIZE  = 10;
         const SPLASH_R   = 2.0; // tile radius AoE on landing
         const DMG        = this._mortarShellDamage ?? (20 * (this.enemyDamageScale || 1));
 
-        // Shadow grows on ground as rock descends
-        const shadow = this.add.ellipse(ex, ey, 8, 5, 0x000000, 0.35).setDepth(0.5);
-        this.tweens.add({ targets: shadow, x: targetPX, y: targetPY,
-            scaleX: 3, scaleY: 2, alpha: 0.50, duration: FLIGHT_DUR, ease: 'Linear' });
-
-        // Rock sprite — orange boulder
-        const rock = this.add.graphics().setDepth(5);
-        rock.fillStyle(0xcc6622, 1.0); rock.fillCircle(0, 0, ROCK_SIZE);
-        rock.fillStyle(0xffaa55, 0.60); rock.fillCircle(-3, -3, 4);
-        rock.lineStyle(1.5, 0x885522, 0.80); rock.strokeCircle(0, 0, ROCK_SIZE);
-        rock.x = ex; rock.y = ey;
-        // Bosses.js: a spinning shell for the drawn rock, and the very tiles it will hit filling in
-        // on the floor from the moment it leaves (the old ring came at 40% of the flight)
-        const _shell = this._bfxOn ? BossFX.shot(this, 'shell', ex, ey, 0, 5) : null;
-        if (_shell) rock.setVisible(false);
+        EnemyManager.playAtk(this, enemy.sprite, 450, targetPX < ex, 'fire_');   // its crater swells and bursts (its own frames)
+        // its shadow grows on the floor as the rock comes down; the rock, a lump of lava stone tumbling by its frames (EnemyFX)
+        const shadow = EnemyFX.shadow(this, ex, ey);
+        const shadowTw = this.tweens.add({ targets: shadow, x: targetPX, y: targetPY,
+            scaleX: 3, scaleY: 2, duration: FLIGHT_DUR, ease: 'Linear' });
+        const rock = EnemyFX.shell(this, ex, ey - 6);
+        // Bosses.js: the very tiles it will hit filling in on the floor from the moment it leaves (the old ring came at 40% of the flight)
         const _mk = this._bfxOn ? BossFX.mark(this, BossFX.tilesInRadius(this, targetPX, targetPY, SPLASH_R * TS, false), 0xff7a1a, FLIGHT_DUR) : null;
 
         // Warning ring at landing zone appears halfway through flight
@@ -2087,37 +1949,24 @@ class EnemyManager {
         let elapsed = 0;
         const arcTimer = this.time.addEvent({
             delay: 16, loop: true,
-            callback: () => {
-                elapsed += 16;
+            callback: CombatSystem.tauntKeep(this, () => {   // (lobbed at an ally: it's that ally it lands on)
+                const slow = Trident.slow(this, rock.x, rock.y);   // (the Boreal Trident's aura)
+                elapsed += 16 * slow; shadowTw.timeScale = slow;
                 const t = Math.min(elapsed / FLIGHT_DUR, 1);
                 rock.x = ex + (targetPX - ex) * t;
                 // Parabola: y = start + (end-start)*t - 4*arcHeight*t*(1-t)
                 rock.y = startY + (targetPY - startY) * t - 4 * arcHeight * t * (1 - t);
-                rock.setScale(0.6 + t * 0.5); // grows as it falls
-                if (_shell?.active) { _shell.setPosition(rock.x, rock.y).setScale(1.2 + t * 0.9); _shell.rotation += 0.18; }
+                rock.setScale(1.2 + t * 0.6); // grows as it falls
+                EnemyFX.tumble(rock, elapsed);
                 if (t >= 1) {
                     arcTimer.remove();
                     rock.destroy(); shadow.destroy();
-                    _shell?.destroy();
                     if (_mk) { _mk.done(); BossFX.blast(this, targetPX, targetPY, SPLASH_R * TS, 'shell'); }
                     // IMPACT
                     this.cameras.main.shake(80, 0.006);
                     Sfx.play(this, 'slam', { small: true });
-                    const impactGfx = this.add.graphics().setDepth(5);
-                    impactGfx.x = targetPX; impactGfx.y = targetPY;
-                    if (_mk) impactGfx.setVisible(false);
-                    impactGfx.fillStyle(0xff6600, 0.65); impactGfx.fillCircle(0, 0, SPLASH_R * TS * 1.1);
-                    impactGfx.fillStyle(0xffaa44, 0.80); impactGfx.fillCircle(0, 0, SPLASH_R * TS * 0.4);
-                    this.tweens.add({ targets: impactGfx, scaleX: 1.4, scaleY: 1.4, alpha: 0, duration: 400, onComplete: () => impactGfx.destroy() });
-                    // Debris particles
-                    for (let d = 0; d < 6; d++) {
-                        const da = Math.random() * Math.PI * 2;
-                        const dr = 18 + Math.random() * 30;
-                        const dg = this.add.graphics().setDepth(4);
-                        dg.fillStyle(0xcc6622, 1.0); dg.fillCircle(0, 0, 3 + Math.random() * 3);
-                        dg.x = targetPX; dg.y = targetPY;
-                        this.tweens.add({ targets: dg, x: targetPX + Math.cos(da)*dr, y: targetPY + Math.sin(da)*dr, alpha: 0, duration: 350, onComplete: () => dg.destroy() });
-                    }
+                    if (!_mk) this._vfxFlash?.(targetPX, targetPY, SPLASH_R * TS * 1.6, 0xff7a1a, 320, 1);
+                    EnemyFX.debris(this, targetPX, targetPY, SPLASH_R * TS);   // rocks and embers flung out, a scorch on the floor
                     // Damage if the locked-on impact point is still within splash range of
                     // wherever the target actually is now. In TD, targetPX/Y is permanently
                     // the base position (immune to dodging by design — you're defending a
@@ -2125,12 +1974,14 @@ class EnemyManager {
                     // In the main game, the player may have moved since the rock launched —
                     // check their CURRENT position against the locked impact point, same as
                     // the original intent, just reading the right coordinate pair.
+                    CombatSystem.tauntBoth(this, () => {   // (and you, if you're in it too)
                     const curPX = this.playerX * TS + TS / 2;
                     const curPY = this.playerY * TS + TS / 2;
                     const pdx = curPX - targetPX, pdy = curPY - targetPY;
                     if (Math.sqrt(pdx*pdx + pdy*pdy) <= SPLASH_R * TS) {
                         this._hitBy = enemy; this.takeDamage(DMG); this._hitBy = null;
                     }
+                    });
                     // Damage any engineer tower caught in the splash
                     if (this.engineerTowers?.length) {
                         for (const tower of this.engineerTowers) {
@@ -2142,7 +1993,7 @@ class EnemyManager {
                         }
                     }
                 }
-            }
+            })
         });
     }
 
@@ -2156,6 +2007,7 @@ class EnemyManager {
         const len = Math.sqrt(dx*dx + dy*dy) || 1;
         const ndx = dx/len, ndy = dy/len;
         const SPEED = 130; // slower — player must react
+        EnemyManager.playAtk(this, enemy.sprite, 400, dx < 0, 'cast_');   // it digs in and sends it
 
         // Single graphics object redrawn every frame as full rope from body to tip
         const ropeGfx = this.add.graphics().setDepth(3.2);
@@ -2182,6 +2034,7 @@ class EnemyManager {
         const ex = enemy.sprite.x, ey = enemy.sprite.y;
         const THUMP_R = enemy._thumpRange || 3;
         const ROOT_DUR = 500;
+        EnemyManager.playAtk(this, enemy.sprite, 450, false, 'thump_');   // it rears and stamps
 
         // Visual — ground shockwave ring
         this.cameras.main.shake(50, 0.005);
@@ -2202,12 +2055,20 @@ class EnemyManager {
         crack.beginPath(); crack.moveTo(ex, ey - 8); crack.lineTo(ex, ey + 8); crack.strokePath();
         this.tweens.add({ targets: crack, alpha: 0, duration: 600, onComplete: () => crack.destroy() });
 
-        // Root player if within range
+        // Root player if within range (you, whoever it stamped at: an ally can't be held)
+        CombatSystem.tauntAs(this, null, () => {
         const pdx = Math.abs(this.playerX - enemy.x), pdy = Math.abs(this.playerY - enemy.y);
         if (pdx + pdy <= THUMP_R) {
             this._bfxRootNext = 'vine';   // Bosses.js: thorned roots, not void tendrils
             if (typeof this._rootPlayer === 'function') this._rootPlayer(ROOT_DUR, this.time.now);
             this.showStatusText(this.player.x, this.player.y - 28, 'ROOTED!', '#44ff88');
+        }
+        });
+
+        // An ally it stamped at can't be rooted (nothing holds one): the stomp hits it instead
+        const tA = this._tauntAlly;
+        if (tA?.alive && Math.abs(tA.x - enemy.x) + Math.abs(tA.y - enemy.y) <= THUMP_R) {
+            this._hitBy = enemy; this.takeDamage((enemy._thumpAllyDmg || 8) * (this.enemyDamageScale || 1)); this._hitBy = null;
         }
 
         // Root nearby enemies too (friendly fire — makes combat chaotic)
@@ -2237,20 +2098,16 @@ class EnemyManager {
         const DMG = 12 * (this.enemyDamageScale || 1);   // (was the player's damageScaling: it hit harder as your weapons grew)
         const SPLASH_R = 2 * TS;
 
-        // Split explosion visual — position object, draw at local (0,0)
-        const gfx = this.add.graphics().setDepth(5);
-        const col = tier === 0 ? 0xff6600 : 0xff8822;
+        // it tears in two (its own death frames): a burst of its light as wide as the splash, and its goo
         const spx = ex * TS + TS/2, spy = ey * TS + TS/2;
-        gfx.x = spx; gfx.y = spy;
-        gfx.fillStyle(col, 0.55); gfx.fillCircle(0, 0, SPLASH_R * 0.9);
-        gfx.fillStyle(0xffffff, 0.70); gfx.fillCircle(0, 0, SPLASH_R * 0.3);
-        this.tweens.add({ targets: gfx, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 300, onComplete: () => gfx.destroy() });
+        BossFX.blast(this, spx, spy, SPLASH_R, 'bolt');
+        this._vfxBursts?.goo && (this._vfxBursts.goo.setParticleTint?.(0xf0822a), this._vfxBursts.goo.explode(10, spx, spy));
         this.cameras.main.shake(40 + tier * 20, 0.004);
 
         // Damage player in splash
         const ppx = this.player.x, ppy = this.player.y;
         if (Math.sqrt((ppx-spx)**2 + (ppy-spy)**2) <= SPLASH_R) {
-            this.takeDamage(DMG);
+            this.takeDamage(DMG, enemy);
         }
         // Damage any engineer tower caught in the splash
         if (this.engineerTowers?.length) {
@@ -2403,8 +2260,8 @@ class EnemyManager {
     }
 
     // A ring of poison tiles R round (cx, cy), the Rooter's thump's and a Budding Slime's bud's: a trap
-    // that doses you (_poisonPlayer) while you stand in it, gone after 12s.
-    _poisonRing(cx, cy, r) {
+    // that doses you (_poisonPlayer) while you stand in it, gone after ms (0: it stays; r 0: the one tile).
+    _poisonRing(cx, cy, r, ms = 12000) {
         const poisonRadius = r, TS = this.TILE_SIZE;
         const poisonTiles = [];
         for (let dx = -poisonRadius; dx <= poisonRadius; dx++) {
@@ -2432,9 +2289,9 @@ class EnemyManager {
                 glow.fillStyle(0x44ff88, 0.22); glow.fillRect(px2 + 2, py2 + 2, TS - 4, TS - 4);
                 glow.lineStyle(1, 0x44ff88, 0.50); glow.strokeRect(px2 + 1, py2 + 1, TS - 2, TS - 2);
             }
-            // Pulsing bubble
-            const bubble = this.add.circle(px2 + TS/2 + (Math.random()-0.5)*6, py2 + TS/2 + (Math.random()-0.5)*6,
-                this._vfxSludgeTile ? 1.5 + Math.random() : 3 + Math.random()*2, 0x88ff66, this._vfxSludgeTile ? 0.45 : 0.60).setDepth(0.72);
+            // a bubble rising and popping (cfx_bits)
+            const bubble = this.add.image(Math.round(px2 + TS/2 + (Math.random()-0.5)*6), Math.round(py2 + TS/2 + (Math.random()-0.5)*6), 'cfx_bits', 'bubble')
+                .setAlpha(this._vfxSludgeTile ? 0.6 : 0.8).setDepth(0.72);
             this.tweens.add({ targets: bubble, y: bubble.y - 4, alpha: 0.20, duration: 500 + Math.random()*300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
             gfxObjs.push(base, glow, bubble);
         }
@@ -2449,8 +2306,8 @@ class EnemyManager {
         };
         this.floorTraps.push(trap);
 
-        // Auto-remove trap after 12s
-        this.time.delayedCall(12000, () => {
+        // Auto-remove trap after ms
+        if (ms) this.time.delayedCall(ms, () => {
             const idx = this.floorTraps.indexOf(trap);
             if (idx !== -1) this.floorTraps.splice(idx, 1);
             for (const g2 of gfxObjs) { if (g2?.active) { this.tweens.killTweensOf(g2); g2.destroy(); } }
@@ -2462,6 +2319,7 @@ class EnemyManager {
     // POISON: its ticks, and healing cut by POISON_CUT while it lasts (each frame claws back that share of whatever health
     // came back since the last, rather than touching every heal)
     _poisonPlayer(dmg, every, ms) {
+        if (this._tauntAlly) return;   // (an ally standing in for you isn't poisoned: CombatSystem.tauntTo)
         if (!(this._poisonUntil > this.time.now)) {
             this.showStatusText(this.player.x, this.player.y - 30, 'POISONED', '#9ae04a');
             Sfx.play(this, 'status', { kind: 'poison' });
@@ -2477,7 +2335,7 @@ class EnemyManager {
         this.playerPoisoned = true;   // its bubbles (Creatures.js)
         const CUT = 0.6;   // POISON_CUT
         if (this._poisonHp != null && this.health > this._poisonHp) this.health = this._poisonHp + (this.health - this._poisonHp) * (1 - CUT);
-        if (time - this._poisonTickAt >= this._poisonEvery) { this._poisonTickAt = time; this.takeDamage(this._poisonDmg); }
+        if (time - this._poisonTickAt >= this._poisonEvery) { this._poisonTickAt = time; this.takeDamage(this._poisonDmg, 'poison'); }
         this._poisonHp = this.health;
     }
 
@@ -2492,7 +2350,7 @@ class EnemyManager {
                 if (trap.type === 'poison') {
                     this._poisonPlayer(trap.damage, trap.interval, trap.poisonDuration);   // stepping on it (again) doses you afresh
                 } else if (trap.type === 'spike') {
-                    this.takeDamage(trap.damage);
+                    this.takeDamage(trap.damage, 'spike trap');
                     this.cameras.main.shake(60, 0.005);
                     this.showStatusText(
                         this.player.x,
@@ -2533,22 +2391,9 @@ class EnemyManager {
         const cx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
         const cy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
 
+        // what you see is CreatureFX's potion (cfx_bits), its glow and shadow; the container carries the bob and the pickup
         const container = this.add.container(cx, cy - 10).setDepth(2);
-        // Bottle body
-        const bottle = this.add.graphics();
-        bottle.fillStyle(0xdd2244, 0.85); bottle.fillRect(-5, -8, 10, 12);
-        bottle.fillStyle(0xaa1133, 0.9);  bottle.fillRect(-3, -8, 6, 3);   // neck
-        bottle.fillStyle(0xff88aa, 0.5);  bottle.fillRect(-3, -5, 3, 7);   // shine
-        bottle.fillStyle(0x888888, 1);    bottle.fillRect(-3, -11, 6, 3);  // cork
-        container.add(bottle);
-        const lbl = this.add.text(0, 8, '+HP', {
-            fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ff9ab8', stroke: '#1a0608', strokeThickness: 3, resolution: 2
-        }).setOrigin(0.5, 0); container.add(lbl);
-
-        // Hover bob
         this.tweens.add({ targets: container, y: cy - 16, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        // Soft glow pulse on bottle
-        this.tweens.add({ targets: bottle, alpha: 0.7, duration: 500, yoyo: true, repeat: -1 });
 
         this.groundDrops.push({ type: 'healthpot', container, tileX: tx, tileY: ty, heal: 25, worldX: cx, worldY: cy });
     }
@@ -2559,20 +2404,9 @@ class EnemyManager {
         const cx = tx * this.TILE_SIZE + this.TILE_SIZE / 2;
         const cy = ty * this.TILE_SIZE + this.TILE_SIZE / 2;
 
+        // what you see is CreatureFX's potion (cfx_bits), its glow and shadow; the container carries the bob and the pickup
         const container = this.add.container(cx, cy - 10).setDepth(2);
-        // Same bottle shape as health pot, gold tint
-        const bottle = this.add.graphics();
-        bottle.fillStyle(0xddaa00, 0.85); bottle.fillRect(-5, -8, 10, 12);
-        bottle.fillStyle(0xaa7700, 0.9);  bottle.fillRect(-3, -8, 6, 3);
-        bottle.fillStyle(0xffeeaa, 0.5);  bottle.fillRect(-3, -5, 3, 7);
-        bottle.fillStyle(0x888888, 1);    bottle.fillRect(-3, -11, 6, 3);
-        container.add(bottle);
-        const lbl = this.add.text(0, 8, '+ULT', {
-            fontSize: '8px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#ffee66', stroke: '#1a1406', strokeThickness: 3, resolution: 2
-        }).setOrigin(0.5, 0); container.add(lbl);
-
         this.tweens.add({ targets: container, y: cy - 16, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-        this.tweens.add({ targets: bottle, alpha: 0.7, duration: 500, yoyo: true, repeat: -1 });
 
         this.groundDrops.push({ type: 'ultpot', container, tileX: tx, tileY: ty, ultAmount: 15, worldX: cx, worldY: cy });
     }

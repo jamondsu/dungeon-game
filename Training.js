@@ -17,7 +17,7 @@ class Training {
         ['Rooter',       (S, x, y) => S.createRooter(x, y, 0), 'rooter'],
         ['Healer slime', (S, x, y) => S.createHealerTotem(x, y, 0), 'healer'],
         ['Anchor',       (S, x, y) => S.createAnchorSlime(x, y, 0), 'anchor'],
-        ['Sniper',       (S, x, y) => S.createUpgradedSniper(x, y, 0), 'voidsniper'],
+        ['Bankshot',     (S, x, y) => S.createUpgradedSniper(x, y, 0), 'sniper'],
         ['Void sniper',  (S, x, y) => S.createVoidSniper(x, y, 0), 'voidsniper'],
         ['Lightning el.',(S, x, y) => S.createLightningElemental(x, y, 0), 'lightningelem'],
         ['Singularity',  (S, x, y) => S.createSingularitySlime(x, y, 0), 'singularity'],
@@ -40,15 +40,17 @@ class Training {
         ['Tidal guard',  (S, x, y) => S.createTidalGuard(x, y, 0), 'tidalguard'],
         ['Conduit',      (S, x, y) => S.createConduit(x, y, 0), 'conduit'],
         ['Smasher',      (S, x, y) => TideMother.makeSmasher(S, x, y, 0), 'smasher'],
+        ['Blinder',      (S, x, y) => Blinder.make(S, x, y, 0), 'blinder'],
     ];
     static BOSSES = [
         ['Voltslime',      (S, x, y) => S.spawnVoltslimeBoss(x, y), 'volt'],   // (and its body: BossFX.body)
         ['Void Sovereign', (S, x, y) => S.spawnVoidSovereignBoss(x, y), 'void'],
-        ['Queen',          (S, x, y) => S.spawnPortal(x, y, 0, 'train_q' + (S.portals?.length || 0))],
+        ['Queen',          (S, x, y) => S.spawnPortal(x, y, 0, 'train_q' + (S.portals?.length || 0)), 'queen'],
     ];
 
     // WorldGen: one round room in the middle of the world
     static world(S) {
+        if (S._trainLayout === 'breakers') return Training.breakerWorld(S);
         const W = S.WORLD_WIDTH, H = S.WORLD_HEIGHT, R = Training.R, cx = W >> 1, cy = H >> 1, world = [];
         for (let x = 0; x < W; x++) { world[x] = []; for (let y = 0; y < H; y++) world[x][y] = S.NOTHING; }
         for (let x = cx - R; x <= cx + R; x++) for (let y = cy - R; y <= cy + R; y++) if (Math.hypot(x - cx, y - cy) <= R + 0.3) world[x][y] = S.FLOOR;
@@ -74,9 +76,13 @@ class Training {
         S.playerX = A.cx; S.playerY = A.cy + 4;
         S.player.setPosition(S.playerX * TS + TS / 2, S.playerY * TS + TS / 2 + S.SLIME_Y_OFFSET);
         S._devGodMode = true;
-        S._train = { count: 1, dummy: true, hp: new Map(), log: [], total: 0, peak: 0, t0: S.time.now, pipes: 0 };
+        S._train = { count: 1, dummy: true, hp: new Map(), log: [], total: 0, peak: 0, t0: S.time.now, pipes: 0, paint: new Map() };
         S.pipes = [];   // (the scene object outlives a level: the Cistern's would come along)
         Training.panel(S);
+        S.input.on('pointermove', p => Training.stroke(S, p));   // a brush dragged: every tile it crosses
+        S.input.on('pointerup', () => { if (S._train) S._train.stroke = null; });
+        if (S._trainLayout === 'breakers') Training.breakerRoom(S);
+        else if (S._trainRoomAt != null) Training.room(S, S._trainRoomAt);
     }
 
     // spawn n of a kind round the arena, away from you
@@ -89,24 +95,107 @@ class Training {
                 x = Math.round(A.cx + Math.cos(a) * d); y = Math.round(A.cy + Math.sin(a) * d);
                 if (S.world[x]?.[y] === S.FLOOR && Math.hypot(x - S.playerX, y - S.playerY) >= 3 && !S.getEnemyAt?.(x, y)) break;
             }
-            const before = new Set(S.enemies || []);
-            try { make(S, x, y); } catch (e) { console.error('Training spawn:', e); S.showStatusText?.(S.player.x, S.player.y - 40, 'COULD NOT SPAWN THAT HERE', '#ff8866'); return; }
-            for (const e of S.enemies || []) if (!before.has(e)) {
-                e.tutorialRoomIndex = 0; if (S._train.dummy && !boss) e._trainImmortal = true; if (!S.enemies.includes(e)) S.enemies.push(e);
-                if (boss || !e.sprite?.active) continue;   // the panel's modifiers (OPTIONS): a resistance, an ult-blocking zone
-                const res = ['fire', 'ice', 'lightning'].filter(k => S._train.res?.[k]);
-                if (res.length) S._tagResist(e, res.length === 1 ? res[0] : res);
-                if (S._train.ult) S._ultBlockerFx(e, S._train.ult === 'absorb');
-            }
-            if (boss) break;   // one boss at a time
+            if (!Training.make(S, make, x, y, boss) || boss) return;   // (one boss at a time)
         }
     }
+    // one of a kind at (x, y), with the panel's modifiers (OPTIONS: a dummy; a resistance, an ult-blocking zone). False if it couldn't.
+    static make(S, make, x, y, boss = false) {
+        const before = new Set(S.enemies || []);
+        try { make(S, x, y); } catch (e) { console.error('Training spawn:', e); S.showStatusText?.(S.player.x, S.player.y - 40, 'COULD NOT SPAWN THAT HERE', '#ff8866'); return false; }
+        for (const e of S.enemies || []) if (!before.has(e)) {
+            e.tutorialRoomIndex = 0; if (S._train.dummy && !boss) e._trainImmortal = true; if (!S.enemies.includes(e)) S.enemies.push(e);
+            if (boss || !e.sprite?.active) continue;
+            const res = ['fire', 'ice', 'lightning'].filter(k => S._train.res?.[k]);
+            if (res.length) S._tagResist(e, res.length === 1 ? res[0] : res);
+            if (S._train.ult) S._ultBlockerFx(e, S._train.ult === 'absorb');
+        }
+        return true;
+    }
+    // HOW MANY: PLACE. A click on the floor puts the chosen kind there (one a click); a right-click takes away the enemy under
+    // the pointer. GameScene's pointerdown asks first: true if the click was spent here (no attack).
+    static place(S, p) {
+        const T = S._train;
+        if (T?.brush && (p.button === 0 || p.button === 2)) { T.stroke = { erase: p.button === 2 || T.brush === 'floor', at: null }; Training.stroke(S, p); return true; }   // ARENA's brushes
+        if (T?.count !== 'place' || T.placeKind == null || (p.button !== 0 && p.button !== 2)) return false;
+        const TS = S.TILE_SIZE, w = S.cameras.main.getWorldPoint(p.x, p.y);
+        if (p.button === 2) {
+            const e = (S.enemies || []).filter(o => o.sprite?.active).sort((a, b) => Math.hypot(a.sprite.x - w.x, a.sprite.y - w.y) - Math.hypot(b.sprite.x - w.x, b.sprite.y - w.y))[0];
+            if (e && Math.hypot(e.sprite.x - w.x, e.sprite.y - w.y) < TS) { e._trainImmortal = false; S.killEnemy(e); }
+            return true;
+        }
+        const x = Math.floor(w.x / TS), y = Math.floor(w.y / TS);
+        if (S.world[x]?.[y] !== S.FLOOR || S.getEnemyAt?.(x, y) || (x === S.playerX && y === S.playerY)) { Sfx.play(S, 'deny'); return true; }
+        if (Training.make(S, Training.KINDS[T.placeKind][1], x, y)) Sfx.play(S, 'click');
+        return true;
+    }
 
-    // A pool of water (2-3 tiles across) somewhere round the arena, away from you
-    static pool(S) {
-        const A = S._trainArena, R = Training.R, a = Math.random() * Math.PI * 2, d = 3 + Math.random() * (R - 5), r = 2 + Math.random();
-        const cx = Math.round(A.cx + Math.cos(a) * d), cy = Math.round(A.cy + Math.sin(a) * d);
-        for (let ox = -3; ox <= 3; ox++) for (let oy = -3; oy <= 3; oy++) if (Math.hypot(ox, oy) <= r) S.addWater(cx + ox, cy + oy, 0);
+    // ARENA: TERRAIN brushes. One picked (lit; picked again, put down), a click lays it on the tile under the pointer and a drag on
+    // every tile it crosses; a right-click (or Floor) takes a tile back to bare floor. What's painted stays till it's taken up.
+    // Never on you or under an enemy, and the arena's own walls stay (only painted walls come up). [its button, its id, its
+    // marker's tint, its icon's texture and frame: the ground's own (none: the arena's wall or floor as it's drawn)]
+    static BRUSHES = [['Wall', 'wall', 0xd8d0e8], ['Water', 'water', 0x6ad0ff, 'fx_ground', 'water0'], ['Conductive', 'pulse', 0xfff06a, 'pulse_panel', 'live'], ['Lava', 'lava', 0xff6a2a, 'fx_fire_w', 'lava_0'],
+        ['Embers', 'hot', 0xffb050, 'ember_scythe', 'flame_0'], ['Fog', 'fog', 0xd8e0e8, 'fx_ground', 'fog0'], ['Poison', 'poison', 0x7aff8a, 'fx_ground', 'sludge0'], ['Floor', 'floor', 0xffffff]];
+    // the pointer down or moved with a brush: each tile from the last one it painted to the one under it now
+    static stroke(S, p) {
+        const T = S._train, K = T?.stroke;
+        if (!K) return;
+        if (!p.isDown) { T.stroke = null; return; }
+        if (Training.overPanel(S, p)) return;
+        const TS = S.TILE_SIZE, w = S.cameras.main.getWorldPoint(p.x, p.y), x = Math.floor(w.x / TS), y = Math.floor(w.y / TS);
+        const [ax, ay] = K.at || [x, y], n = Math.max(Math.abs(x - ax), Math.abs(y - ay));
+        if (K.at && !n) return;
+        const did = new Set();
+        for (let i = K.at ? 1 : 0; i <= n; i++) did.add(Training.lay(S, Math.round(ax + (x - ax) * i / (n || 1)), Math.round(ay + (y - ay) * i / (n || 1)), K.erase));
+        K.at = [x, y];
+        if (did.has('ok')) Sfx.play(S, 'click'); else if (did.has('deny')) Sfx.play(S, 'deny');
+    }
+    // one tile painted (or, erase, bared): 'ok', 'deny' (you, an enemy, the arena's own wall), or null (the void: nothing to do)
+    static lay(S, x, y, erase) {
+        const T = S._train, TS = S.TILE_SIZE, k = x + ',' + y, b = T.brush, mine = T.paint.get(k) === 'wall', t = S.world[x]?.[y];
+        if (t !== S.FLOOR && !mine) return t === S.WALL ? 'deny' : null;
+        if (erase) { Training.bare(S, x, y); return 'ok'; }
+        if ((x === S.playerX && y === S.playerY) || S.getEnemyAt?.(x, y)) return 'deny';
+        Training.bare(S, x, y);   // (whatever was laid there first: one ground a tile)
+        const px = x * TS + TS / 2, py = y * TS + TS / 2;
+        if (b === 'wall') { S.world[x][y] = S.WALL; Training.retile(S, x, y); }
+        else if (b === 'water') S.addWater(x, y, 0);
+        else if (b === 'pulse') Pulse.tile(S, Training.field(S), x, y, true);
+        else if (b === 'lava') S.spawnIgnitionTrail(px, py, 1e9);
+        else if (b === 'hot') {   // Embers: lava's Super Burn kind, drawn as the Ember Scythe's ember burning there (not a slab of lava)
+            S.spawnIgnitionTrail(px, py, 1e9, { superBurn: true });
+            const t = S.ignitionPierceTrails?.find(o => o.tileX === x && o.tileY === y);
+            if (t) { for (const v of t.visuals) { S.tweens.killTweensOf(v); v.destroy(); } t.visuals = Scythe.emberArt(S, px, py); }
+        }
+        else if (b === 'fog') { S.addWater(x, y, 0); S.evaporateWater(x, y, 1e9); }   // water dried by fire (kept up by update)
+        else if (b === 'poison') S._poisonRing(x, y, 0, 0);
+        T.paint.set(k, b);
+        return 'ok';
+    }
+    // a tile back to bare floor: its water or fog, lava, a pool of poison of its own, a panel, a painted wall
+    static bare(S, x, y) {
+        const T = S._train, k = x + ',' + y, wet = S.waterTiles?.delete(k), fog = S.steamTiles?.delete(k);
+        if (wet || fog) { S._fogOff(k); if (!S._waterPatch?.(x, y, null)) S._waterDirty = true; }
+        const L = S.ignitionPierceTrails || [], i = L.findIndex(t => t.tileX === x && t.tileY === y);
+        if (i >= 0) { for (const v of L[i].visuals) { S.tweens.killTweensOf(v); v.destroy(); } L.splice(i, 1); }
+        for (let j = (S.floorTraps?.length || 0) - 1; j >= 0; j--) {
+            const f = S.floorTraps[j];
+            if (f.type === 'poison' && f.tiles.length === 1 && f.tiles[0].x === x && f.tiles[0].y === y) { for (const o of f.gfxObjs) { S.tweens.killTweensOf(o); o.destroy(); } S.floorTraps.splice(j, 1); }
+        }
+        if (T.pulse) Pulse.tile(S, T.pulse, x, y, false);
+        if (T.paint.get(k) === 'wall') { S.world[x][y] = S.FLOOR; Training.retile(S, x, y); }
+        T.paint.delete(k);
+    }
+    // a wall come or gone: it and the tiles round it drawn as the world now stands (BossFX._bfxCrumble), the floor's clutter hidden under it
+    static retile(S, x, y) {
+        S._bfxCrumble?.([[x, y]], true);
+        const TS = S.TILE_SIZE, on = S.world[x][y] !== S.WALL;
+        for (const o of S.children.list) if (o.depth === 0.1 && o.type === 'Image' && o.texture?.key === 'vfx_atlas' && o.x === x * TS + TS / 2 && o.y === y * TS + TS / 2) o.setVisible(on);
+    }
+    // the painted conductive floor: a field of its own (Pulse.add) beside any ROOMS floor, panels laid one at a time (Pulse.tile)
+    static field(S) {
+        const T = S._train;
+        if (!S._pulseFields?.includes(T.pulse)) { const was = S._pulse; T.pulse = Pulse.add(S, { x0: 0, y0: 0, w: 0, h: 0, pattern: 'all', period: 2400 }); if (was) S._pulse = was; }   // (a ROOMS floor stays the one counted)
+        return T.pulse;
     }
     // A leaking pipe in the arena wall, pointing in: steel mains (a stream across the arena) and copper valves (a pool at
     // the wall) by turns. LevelManager's pipes refill what fire dries; initPipes rebuilds them all from S.pipes.
@@ -129,24 +218,11 @@ class Training {
         S._pipeFlow?.destroy();
         S._pipes = [];
     }
-    // A spot a few tiles beside you, and a 3x3 patch of some ground round it to walk into (and hear): `put(tx, ty)` lays one tile
-    static spot(S) {
-        for (const [dx, dy] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) if (S.world[S.playerX + dx]?.[S.playerY + dy] === S.FLOOR) return [S.playerX + dx, S.playerY + dy];
-        return null;
-    }
-    static patch(S, put) {
-        const c = Training.spot(S);
-        if (c) for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) if (S.world[c[0] + ox]?.[c[1] + oy] === S.FLOOR) put(c[0] + ox, c[1] + oy);
-    }
-    static lava(S, superBurn) {
-        const T = S.TILE_SIZE;
-        Training.patch(S, (x, y) => S.spawnIgnitionTrail(x * T + T / 2, y * T + T / 2, 20000, superBurn ? { superBurn: true } : {}));
-    }
-    static fog(S) { Training.patch(S, (x, y) => { S.addWater(x, y, 0); S.evaporateWater(x, y, 1e9); }); }   // water dried by fire
-    static poison(S) { const c = Training.spot(S); if (c) S._poisonRing(c[0], c[1], 1); }   // a ring of pools round that spot
-    // every pipe and drop of water gone
+    // every pipe, drop of water and wisp of fog gone, and all that's painted
     static dry(S) {
         S.pipes = []; Training._pipesOff(S);
+        for (const k of [...S._train.paint.keys()]) Training.bare(S, ...k.split(',').map(Number));
+        for (const k of S.steamTiles?.keys() || []) S._fogOff(k);
         S.waterTiles?.clear(); S.steamTiles?.clear(); S._waterDirty = true;
     }
 
@@ -155,9 +231,10 @@ class Training {
     static ROOMS = [
         ['1 · A LITTLE', 'all', 2600, (dx, dy) => dx === 0 || dx === 1 || (Math.abs(dx) >= 3 && Math.abs(dy) >= 3), 3, 0, 'A STRIP AND THE CORNERS: OFF THEM WHEN THEY GLOW'],
         ['2 · A LOT', 'all', 2400, (dx, dy) => !((Math.abs(dx) === 2 || Math.abs(dx) === 3) && (Math.abs(dy) === 2 || Math.abs(dy) === 3)) && !(dx === 0 && dy === 0), 4, 0, 'ISLANDS OF SAFE FLOOR: FIGHT FROM THEM'],
-        ['3 · ALL OF IT', 'checker', 1700, null, 3, 1, 'ALL OF IT, HALF AT A TIME: STEP OR DASH TO THE DARK HALF'],
+        ['3 · ALL OF IT', 'checker', 1700, null, 4, 0, 'ALL OF IT, HALF AT A TIME: STEP OR DASH TO THE DARK HALF'],
     ];
     static room(S, i) {
+        if (S._trainLayout) { S.scene.restart({ levelIndex: S.currentLevelIndex, training: true, trainRoom: i }); return; }   // (back in the round arena first)
         const [, pattern, period, conducts, slimes, armored, hint] = Training.ROOMS[i], A = S._trainArena, T = S.TILE_SIZE, F = 4, X = S._train;
         Training.clear(S);
         X.room = i; X.crossed = false;
@@ -174,6 +251,42 @@ class Training {
         S.showStatusText?.(S.player.x, S.player.y - 40, hint, '#9ff6ff');
     }
 
+    // BREAKERS (Breakers.js): its own walled room, three chambers in a row (A, where you start; B; C, the way out east) joined by
+    // two doorways. Red opens the first door and powers B's floor; blue powers C's floor and, with yellow (in B), the way out.
+    // Forget blue on your way past and you cross B's live floor twice. The wires run along the walls.
+    static breakerWorld(S) {
+        const W = S.WORLD_WIDTH, H = S.WORLD_HEIGHT, cx = W >> 1, cy = H >> 1, x0 = cx - 11, y0 = cy - 6, world = [];
+        for (let x = 0; x < W; x++) { world[x] = []; for (let y = 0; y < H; y++) world[x][y] = S.NOTHING; }
+        for (let lx = 0; lx <= 22; lx++) for (let ly = 0; ly <= 12; ly++) world[x0 + lx][y0 + ly] = (lx === 7 || lx === 15) && ly !== 5 && ly !== 6 ? S.WALL : S.FLOOR;
+        S.addWalls(world);
+        S.rooms = [{ x: x0, y: y0, w: 23, h: 13, isArena: true }];
+        S._trainArena = { cx, cy }; S._breakerAt = [x0, y0];
+        return world;
+    }
+    static breakerRoom(S) {
+        const [x0, y0] = S._breakerAt, T = S.TILE_SIZE, L = (x, y) => [x0 + x, y0 + y], path = pts => pts.map(([x, y]) => L(x, y));
+        const X = S._train; X.room = 'breakers';
+        Training.clear(S); Breakers.stop(S);
+        [S.playerX, S.playerY] = L(3, 6); S._step = null;
+        S.player.setPosition(S.playerX * T + T / 2, S.playerY * T + T / 2 + (S.SLIME_Y_OFFSET || 0));
+        const B = (x, y) => x >= 8 && x <= 14 && y >= 0 && y <= 12 && !(x === 14 && y === 0), C = (x, y) => x >= 16 && x <= 21;   // (the yellow breaker's tile has no panel)
+        Pulse.start(S, { x0, y0, w: 23, h: 13, pattern: 'all', period: 2200, tiles: (x, y) => B(x - x0, y - y0) || C(x - x0, y - y0), circuit: (x, y) => B(x - x0, y - y0) ? 'red' : 'blue' });
+        Breakers.start(S, {
+            breakers: [{ x: L(2, 0)[0], y: L(2, 0)[1], colour: 'red' }, { x: L(2, 12)[0], y: L(2, 12)[1], colour: 'blue' }, { x: L(14, 0)[0], y: L(14, 0)[1], colour: 'yellow' }],
+            doors: [{ tiles: [L(7, 5), L(7, 6)], need: ['red'] }, { tiles: [L(15, 5), L(15, 6)], need: ['blue', 'yellow'] }],
+            wires: [
+                { colour: 'red', path: path([[2, 0], [2, -1], [3, -1], [4, -1], [5, -1], [6, -1], [7, -1], [7, 0], [7, 1], [7, 2], [7, 3], [7, 4], [7, 5]]) },
+                { colour: 'red', path: path([[6, -1], [7, -1], [8, -1], [9, -1], [10, -1], [11, -1], [11, 0]]) },
+                { colour: 'blue', path: path([[2, 12], [2, 13], [3, 13], [4, 13], [5, 13], [6, 13], [7, 13], [8, 13], [9, 13], [10, 13], [11, 13], [12, 13], [13, 13], [14, 13], [15, 13], [15, 12], [15, 11], [15, 10], [15, 9], [15, 8], [15, 7], [15, 6]]) },
+                { colour: 'blue', path: path([[14, 13], [15, 13], [16, 13], [17, 13], [18, 13], [18, 12]]) },
+                { colour: 'yellow', path: path([[14, 0], [14, -1], [15, -1], [15, 0], [15, 1], [15, 2], [15, 3], [15, 4], [15, 5]]) },
+            ],
+            exit: { x: x0 + 22, msg: S => { const n = S._pulse?.shocks || 0; S.showStatusText?.(S.player.x, S.player.y - 40, n ? `THROUGH · ${n} ZAP${n > 1 ? 'S' : ''}` : 'THROUGH · NOT ONE ZAP!', '#ffe14a'); } },
+        });
+        for (const [x, y] of [[11, 4], [11, 9], [19, 3], [19, 9]]) { const before = new Set(S.enemies || []); S.createEnemy(...L(x, y)); for (const e of S.enemies || []) if (!before.has(e)) e.tutorialRoomIndex = 0; }
+        S.showStatusText?.(S.player.x, S.player.y - 40, 'STEP ON A BREAKER TO FLIP IT: FOLLOW THE WIRES', '#9ff6ff');
+    }
+
     static clear(S) {
         for (const e of [...(S.enemies || [])]) { e._trainImmortal = false; S.killEnemy(e); }
         try { if (S.voltslimeBoss?.active) S.damageVoltslimeBoss(1e9); if (S.voidSovereignBoss?.active) { S.voidSovereignBoss._isInvulnerable = false; S.damageVoidSovereignBoss(1e9); } } catch (e) {}
@@ -185,11 +298,14 @@ class Training {
     static update(S, time) {
         const T = S._train;
         if (!T) return;
-        if (T.room != null && S._pulse) {   // across the floor, and how many zaps it took (back to the start: again)
+        Training.mark(S);
+        if (typeof T.room === 'number' && S._pulse) {   // across the floor, and how many zaps it took (back to the start: again)
             const A = S._trainArena, n = S._pulse.shocks;
             if (!T.crossed && S.playerX >= A.cx + 5) { T.crossed = true; S.showStatusText?.(S.player.x, S.player.y - 40, n ? `ACROSS · ${n} ZAP${n > 1 ? 'S' : ''}` : 'ACROSS · NOT ONE ZAP!', '#ffe14a'); }
             else if (T.crossed && S.playerX <= A.cx - 5) { T.crossed = false; S._pulse.shocks = 0; }
         }
+        const half = S._waterCfg().STEAM_MS / 2;   // painted fog held at its fullest (it thins as it runs out: Visuals' fog)
+        for (const [k, b] of T.paint) if (b === 'fog' && S.steamTiles?.has(k)) S.steamTiles.set(k, time + half);
         if (S.voidSovereignBoss?.active) S._updateVoidSovereign?.(time);
         S._fractureEnemies?.(time);   // the Encased slime's attacks and rebirth, the rooter's and splitter's marks (the Fracture's own loop)
         let dealt = 0;
@@ -199,25 +315,37 @@ class Training {
             if (e._trainImmortal && time - (e._trainHitAt || time) > 4000 && e.health < e.maxHealth) { e.health = e.maxHealth; T.hp.set(e, e.health); S.updateEnemyHealthBar?.(e); }
         }
         for (const b of [S.voltslimeBoss, S.voidSovereignBoss, ...(S.portals || [])]) if (b?.active) read(b, b.hp);
-        if (dealt > 0) { T.log.push([time, dealt]); T.total += dealt; }
+        if (dealt > 0) { T.log.push([time, dealt]); T.total += dealt; T.first ??= time; }   // (the clock runs from the first hit after a reset)
         while (T.log.length && time - T.log[0][0] > 5000) T.log.shift();
         const win = Math.min(5000, Math.max(1000, time - (T.log[0]?.[0] ?? time))), dps = T.log.reduce((n, [, d]) => n + d, 0) / (win / 1000);
         T.peak = Math.max(T.peak, dps);
         if (T.readout?.active && time - (T.readAt || 0) > 200) {
             T.readAt = time;
             const live = (S.enemies || []).filter(e => e.sprite?.active).length + [S.voltslimeBoss, S.voidSovereignBoss].filter(b => b?.active).length;
-            T.readout.setText(`DPS ${dps.toFixed(1).padEnd(8)} PEAK ${T.peak.toFixed(1)}\nTOTAL ${String(Math.round(T.total)).padEnd(6)} ENEMIES ${live}`);
+            const secs = T.first == null ? 0 : (time - T.first) / 1000;
+            T.readout.setText(`DPS ${dps.toFixed(1).padEnd(7)} PEAK ${T.peak.toFixed(1).padEnd(7)} ${secs.toFixed(1)}s\nTOTAL ${String(Math.round(T.total)).padEnd(5)} AVG ${(secs > 0 ? T.total / secs : 0).toFixed(1).padEnd(7)} ×${live}`);
         }
     }
 
     // Is the pointer over the panel? GameScene's pointerdown asks, so a click on it doesn't fire. Asked at the click, from where
     // the panel is: a hover flag set by its buttons stuck on when you slid off a button out of the panel, and then no click ever fired.
     static overPanel(S, p) { const bg = S._trainPanel?.[0]; return !!(bg?.visible && bg.getBounds().contains(p.x, p.y)); }
+    // While a brush (or PLACE and a kind) is picked: the tile under the pointer marked (tr_cursor, the brush's tint), not over the panel
+    static mark(S) {
+        const T = S._train, p = S.input.activePointer, b = Training.BRUSHES.find(r => r[1] === T.brush), on = b || (T.count === 'place' && T.placeKind != null);
+        if (!T.marker && on) S._vfxSort?.(T.marker = S.add.image(0, 0, 'tr_cursor').setDepth(0.95));
+        if (!T.marker) return;
+        if (!on || Training.overPanel(S, p)) { T.marker.setVisible(false); return; }
+        const TS = S.TILE_SIZE, w = S.cameras.main.getWorldPoint(p.x, p.y);
+        T.marker.setPosition(Math.floor(w.x / TS) * TS + TS / 2, Math.floor(w.y / TS) * TS + TS / 2).setTint(b ? b[2] : 0xff8a7a).setVisible(true);
+    }
 
     // The panel, on the HUD camera at the left, in its frames (ui_tr: a 9-slice panel, the buttons' three states): a title,
-    // tabs, the tab's page (ENEMIES: how many, how strong, what they carry, a card each with its portrait; BOSSES; ARENA:
-    // options and terrain; TRIAL), and under every page your damage and LEAVE. Short enough for a 720-high window.
+    // tabs, the tab's page (ENEMIES: how many, how strong, what they carry, the options, a card each with its portrait; BOSSES;
+    // ARENA: terrain brushes; TRIAL), and under every page your damage and LEAVE. Short enough for a 720-high window.
     static TABS = [['enemies', 'ENEMIES'], ['bosses', 'BOSSES'], ['arena', 'ARENA'], ['trial', 'TRIAL'], ['rooms', 'ROOMS']];
+    // the damage readout back to nothing (its clock starts again at the next hit)
+    static resetMeter(S) { const T = S._train; T.log = []; T.total = 0; T.peak = 0; T.first = null; }
     static showPanel(S, on) { if (S._train) S._train.panelOn = on; S._trainPanelShow?.(); }
     // the box of what's drawn in a frame (its opaque pixels), measured once
     static drawn(S, key, frame) {
@@ -240,7 +368,7 @@ class Training {
         const text = (x, yy, t, size = 11, col = '#9fb0d0', o = {}) => pin(S.add.text(x, yy, t, { fontFamily: 'monospace', fontSize: size + 'px', fontStyle: 'bold', color: col, ...o }), 0.2);
         const btn = (x, yy, w, h, label, fn, on = null, o = {}) => {
             const b = pin(S.add.nineslice(x, yy, 'ui_tr', 'btn', w, h, 4, 4, 4, 4).setOrigin(0), 0.1).setInteractive({ useHandCursor: true });
-            const t = label == null ? null : pin(S.add.text(o.left != null ? x + o.left : x + w / 2, yy + h / 2, label, { fontFamily: 'monospace', fontSize: (o.size || 11) + 'px', fontStyle: 'bold', color: '#d8e0f4' }).setOrigin(o.left != null ? 0 : 0.5, 0.5), 0.2);
+            const t = label == null ? null : pin(S.add.text(o.left != null ? x + o.left : x + w / 2, yy + (o.top ?? h / 2), label, { fontFamily: 'monospace', fontSize: (o.size || 11) + 'px', fontStyle: 'bold', color: '#d8e0f4' }).setOrigin(o.left != null ? 0 : 0.5, 0.5), 0.2);
             let hover = false;
             const paint = () => { const lit = !!on?.(); b.setFrame(lit ? 'btn_on' : hover ? 'btn_hover' : 'btn'); b.updateUVs(); t?.setColor(lit ? '#14101c' : '#d8e0f4'); };   // (a 9-slice keeps its old frame's UVs till told)
             b.on('pointerover', () => { hover = true; paint(); }); b.on('pointerout', () => { hover = false; paint(); });
@@ -250,7 +378,7 @@ class Training {
         // an enemy's portrait: its body as the game draws it (LevelManager.look; a boss's, BossFX.body), its colours, its face
         // and hat (CreatureFX), fitted by what's drawn of its frame (a slime fills little of its frame: scaled whole, a speck)
         const portrait = (key, x, yy, size, boss = false) => {
-            const L = boss ? { tex: BossFX.body(S, key), anim: null, tint: null } : LevelManager.look(S, key);
+            const L = boss ? { tex: S.textures.exists('boss_' + key) ? 'boss_' + key : BossFX.body(S, key), anim: null, tint: null } : LevelManager.look(S, key);   // (a boss's own typed sheet)
             if (!L.tex || !S.textures.exists(L.tex)) return;
             const tex = S.textures.get(L.tex), fr = tex.has(0) ? 0 : tex.getFrameNames()[0], f = tex.get(fr), b = Training.drawn(S, L.tex, fr);
             const k = size / Math.max(b.w, b.h, 1);
@@ -272,7 +400,10 @@ class Training {
         // ENEMIES
         cur = 'enemies'; y = top;
         row('HOW MANY');
-        [1, 3, 5, 10].forEach((n, i) => btn(x0 + P + 66 + i * 54, y, 50, 20, '×' + n, () => { T.count = n; }, () => T.count === n));
+        [1, 3, 5, 10, 'place'].forEach((n, i) => btn(x0 + P + 66 + i * 43, y, 40, 20, n === 'place' ? 'PLACE' : '×' + n, () => {
+            T.count = n;
+            if (n === 'place') S.showStatusText?.(S.player.x, S.player.y - 40, 'PICK ONE, THEN CLICK THE FLOOR · RIGHT-CLICK REMOVES', '#ffe14a');
+        }, () => T.count === n, { size: 10 }));
         y += 24; row('FLOOR');
         const fl = text(x0 + P + 66 + 2 * 39 + 21, y + 4, `${Training.floor()}`, 11, '#ffffff').setOrigin(0.5, 0);
         const setF = d => { const f = Math.max(1, Math.min(200, Training.floor() + d)); try { localStorage.setItem('train_floor', String(f)); } catch (e) {} Training.scale(S); fl.setText(`${f}`); };
@@ -282,14 +413,19 @@ class Training {
         [['Fire', 'fire'], ['Ice', 'ice'], ['Bolt', 'lightning']].forEach(([l, k], i) => btn(x0 + P + 66 + i * 72, y, 68, 20, l, () => { T.res[k] = !T.res[k]; }, () => !!T.res[k]));
         y += 24; row('ULT');
         [['Block', 'block'], ['Absorb', 'absorb']].forEach(([l, k], i) => btn(x0 + P + 66 + i * 108, y, 104, 20, l, () => { T.ult = T.ult === k ? null : k; }, () => T.ult === k));
-        y += 28;
-        const cw = (IW - 4) / 2;
+        y += 24;   // the options, for what's spawned (and you)
+        const opts = [['Dummies', () => { T.dummy = !T.dummy; for (const e of S.enemies || []) e._trainImmortal = T.dummy; }, () => T.dummy], ['Frozen', () => { S._devFreezeEnemies = !S._devFreezeEnemies; }, () => !!S._devFreezeEnemies],
+            ['God mode', () => { S._devGodMode = !S._devGodMode; }, () => !!S._devGodMode], ['Fill ults', () => { for (const k in S.ultGems) S.ultGems[k] = S.ultChargeMax; S._ultLockUntil = 0; S.updateHUD?.(); }], ['Clear all', () => Training.clear(S)]];
+        const ow = (IW - 4 * (opts.length - 1)) / opts.length;
+        opts.forEach(([l, fn, on], i) => btn(x0 + P + i * (ow + 4), y, ow, 20, l, fn, on || null, { size: 9 }));
+        y += 26;
+        const cw = (IW - 4) / 2;   // (a card a row of 22: the page still fits a 720-high window)
         Training.KINDS.forEach(([label, make, key], i) => {
-            const x = x0 + P + (i % 2) * (cw + 4), yy = y + Math.floor(i / 2) * 24;
-            btn(x, yy, cw, 22, label, () => Training.spawn(S, make, T.count), null, { left: 26, size: 10 });
-            portrait(key, x + 13, yy + 11, 17);
+            const x = x0 + P + (i % 2) * (cw + 4), yy = y + Math.floor(i / 2) * 22;
+            btn(x, yy, cw, 20, label, () => T.count === 'place' ? (T.placeKind = i, T.brush = null) : Training.spawn(S, make, T.count), () => T.count === 'place' && T.placeKind === i, { left: 26, size: 10 });
+            portrait(key, x + 13, yy + 10, 17);
         });
-        y += Math.ceil(Training.KINDS.length / 2) * 24;
+        y += Math.ceil(Training.KINDS.length / 2) * 22;
         foot = Math.max(foot, ends.enemies = y);
         // BOSSES
         cur = 'bosses'; y = top;
@@ -302,19 +438,28 @@ class Training {
         foot = Math.max(foot, ends.bosses = y);
         // ARENA
         cur = 'arena'; y = top;
-        const hw = (IW - 4) / 2;
-        row('OPTIONS'); y += 16;
-        [[['Dummies', () => { T.dummy = !T.dummy; for (const e of S.enemies || []) e._trainImmortal = T.dummy; }, () => T.dummy], ['Frozen', () => { S._devFreezeEnemies = !S._devFreezeEnemies; }, () => !!S._devFreezeEnemies]],
-         [['God mode', () => { S._devGodMode = !S._devGodMode; }, () => !!S._devGodMode], ['Fill ults', () => { for (const k in S.ultGems) S.ultGems[k] = S.ultChargeMax; S._ultLockUntil = 0; S.updateHUD?.(); }]],
-         [['Clear all', () => Training.clear(S)], ['Reset meter', () => { T.log = []; T.total = 0; T.peak = 0; }]]].forEach(pair => {
-            pair.forEach(([l, fn, on], i) => btn(x0 + P + i * (hw + 4), y, hw, 22, l, fn, on || null));
-            y += 25;
+        const hw = (IW - 4) / 2, t4 = (IW - 12) / 4;
+        row('TERRAIN'); text(x0 + PW - P, y + 5, 'pick, then paint the floor', 9, '#59627f').setOrigin(1, 0); y += 16;
+        // each brush's icon over its name: its ground's own frame at 1x (the middle 16 px of a tile), the arena's wall and floor as
+        // they're drawn (vfx_atlas, the theme's tint), the conductive panel lit, the Scythe's ember burning
+        const pt = S.textures.get('pulse_panel'), A = S._trainArena, TH = S._vfxTheme?.() || {};
+        if (!pt.has('off')) ['off', 'warn', 'live'].forEach((f, i) => pt.add(f, 0, i * 12, 0, 12, 12));   // (as Pulse.add names them)
+        let wy = A.cy; while (S.world[A.cx]?.[wy - 1] === S.FLOOR) wy--;   // (the arena's north wall, its face)
+        Training.BRUSHES.forEach(([l, id, , key, frame], i) => {
+            const bx = x0 + P + (i % 4) * (t4 + 4), by = y + Math.floor(i / 4) * 37;
+            btn(bx, by, t4, 34, l, () => {
+                T.brush = T.brush === id ? null : id;
+                if (T.brush) { T.placeKind = null; S.showStatusText?.(S.player.x, S.player.y - 40, id === 'floor' ? 'CLICK OR DRAG: BACK TO BARE FLOOR' : `${l.toUpperCase()}: CLICK OR DRAG TO PAINT · RIGHT-CLICK ERASES`, '#ffe14a'); }
+            }, () => T.brush === id, { size: 9, top: 26 });
+            const [k, f, tint] = key ? [key, frame] : ['vfx_atlas', S._vfxTileFrame?.(A.cx, id === 'wall' ? wy - 1 : A.cy)?.frame, id === 'wall' ? TH.wall : TH.floor];
+            if (!f || !S.textures.get(k).has(f)) return;
+            const ic = pin(S.add.sprite(Math.round(bx + t4 / 2), by + 12, k, f), 0.25);
+            if (ic.width > 16) ic.setCrop((ic.width - 16) / 2, (ic.height - 16) / 2, 16, 16);
+            if (tint != null && tint !== 0xffffff) ic.setTint(tint);
+            if (id === 'hot') { Scythe.st(S); ic.play('scy_flame'); }
         });
-        y += 6; row('TERRAIN'); y += 16;
-        const t3 = (IW - 8) / 3, t4 = (IW - 12) / 4;
-        [['Water', () => Training.pool(S)], ['Pipe', () => Training.pipe(S)], ['Dry', () => Training.dry(S)]].forEach(([l, fn], i) => btn(x0 + P + i * (t3 + 4), y, t3, 22, l, fn));
-        y += 25;   // beside you, to walk into and hear
-        [['Lava', () => Training.lava(S, false)], ['Hot', () => Training.lava(S, true)], ['Fog', () => Training.fog(S)], ['Poison', () => Training.poison(S)]].forEach(([l, fn], i) => btn(x0 + P + i * (t4 + 4), y, t4, 22, l, fn));
+        y += 74;
+        [['Pipe', () => Training.pipe(S)], ['Dry', () => Training.dry(S)]].forEach(([l, fn], i) => btn(x0 + P + i * (hw + 4), y, hw, 22, l, fn));
         y += 25;
         foot = Math.max(foot, ends.arena = y);
         // TRIAL
@@ -351,15 +496,18 @@ class Training {
         // a lot, all of it
         cur = 'rooms'; y = top;
         text(x0 + P, y, 'THE GAUNTLET: THE CONDUCTIVE FLOOR', 12, '#ffffff'); y += 18;
-        text(x0 + P, y, 'Panels glow, then zap, every few seconds.\nCaught on one: a small hit and a daze.\nThey zap enemies too, not the insulated.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 50;
+        text(x0 + P, y, 'Panels glow, then zap, every few seconds.\nCaught on one: a small hit and a daze.\nA trap for you: the enemies walk it fine.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 50;
         Training.ROOMS.forEach(([label], i) => { btn(x0 + P, y, IW, 24, label, () => Training.room(S, i), () => T.room === i && !!S._pulse, { size: 11 }); y += 28; });
-        btn(x0 + P, y, IW, 22, 'STOP THE FLOOR', () => { Pulse.stop(S); T.room = null; Training.clear(S); }, null, { size: 10 });
+        btn(x0 + P, y, IW, 24, '4 · BREAKERS', () => S._trainLayout === 'breakers' ? Training.breakerRoom(S) : S.scene.restart({ levelIndex: S.currentLevelIndex, training: true, trainLayout: 'breakers' }), () => T.room === 'breakers', { size: 11 }); y += 28;   // (its own walls: the Training Ground is laid out again)
+        btn(x0 + P, y, IW, 22, 'STOP THE FLOOR', () => { if (S._trainLayout) { S.scene.restart({ levelIndex: S.currentLevelIndex, training: true }); return; } Pulse.stop(S); T.room = null; Training.clear(S); }, null, { size: 10 });
         y += 26;
         foot = Math.max(foot, ends.rooms = y);
         // under every page: your damage, and the way out
         cur = null; y = foot + 6;
         const footFrom = objs.length;
-        text(x0 + P, y, 'YOUR DAMAGE', 9, '#f6d58a'); y += 14;
+        text(x0 + P, y, 'YOUR DAMAGE', 9, '#f6d58a');
+        btn(x0 + PW - P - 64, y - 3, 64, 16, 'RESET', () => Training.resetMeter(S), null, { size: 9 });
+        y += 14;
         T.readout = text(x0 + P, y, '', 11, '#7dff9a', { lineSpacing: 2 }); y += 32;
         btn(x0 + P, y, IW, 22, 'LEAVE', () => { S.cameras.main.fadeOut(300, 0, 0, 0); S.time.delayedCall(320, () => S.scene.start('LevelSelect')); });
         y += 22 + P;

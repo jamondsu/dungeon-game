@@ -50,7 +50,7 @@ class LevelSelectScene extends Phaser.Scene {
         const NODES = [
             { page: 0, blurb: 'Learn the elements. Fire and ice, one room at a time.', verb: 'CHOOSE TUTORIAL',
               go: () => this.openTutorialSelect() },
-            { page: 1, blurb: 'Survive the corridors. Beat the Voltslime to claim LIGHTNING.', go: () => this.launchLevel(2) },
+            { page: 1, blurb: 'Climb the storm tower: five floors, and its floors carry current. Watch the panels, dash when they glow. Beat the Voltslime on the roof to claim LIGHTNING.', go: () => this.launchLevel(2) },
             { page: 2, blurb: 'Tear through the rift. The final chest holds COSMIC.', go: () => this.launchLevel(3) },
             { page: 3, blurb: 'Split rooms, split attention. Two threats at once.', go: () => this.launchLevel(4) },
             { page: 4, name: 'Engineering Defense', blurb: 'Hold the base for 30 waves. Towers, wisps and wrenches.', verb: 'DEFEND',
@@ -99,31 +99,19 @@ class LevelSelectScene extends Phaser.Scene {
         let sel = Math.max(0, Math.min(NODES.length - 1, parseInt(localStorage.getItem('_lastWorld') || '0') || 0));
         const medals = NODES.map(n => this._drawMedal(n));
 
-        // The lock-on ring: lifts off the level you leave and snaps onto the one you reach,
-        // spinning in, then breathes while it sits there.
-        const ring = this.add.graphics().setDepth(6);
+        // The lock-on ring (map_kit rg_<level>): lifts off the level you leave and snaps onto the one you reach,
+        // closing in, then breathes while it sits there.
+        const ring = this.add.image(0, 0, 'map_kit', 'rg_tut').setDepth(6).setAlpha(0);
         let ringBreath = null;
-        const paintRing = (n) => {
-            const r = n.tower ? 30 : 24;
-            ring.clear();
-            ring.lineStyle(3, n.accent, 0.95); ring.strokeCircle(0, 0, r + 6);
-            ring.lineStyle(1, n.accent, 0.45); ring.strokeCircle(0, 0, r + 11);
-            ring.lineStyle(2, n.accent, 0.9);
-            for (let q = 0; q < 4; q++) {
-                const a = q * Math.PI / 2;
-                ring.lineBetween(Math.cos(a) * (r + 14), Math.sin(a) * (r + 14), Math.cos(a) * (r + 20), Math.sin(a) * (r + 20));
-            }
-        };
         const lockOn = (n) => {
             ringBreath?.stop(); this.tweens.killTweensOf(ring);
-            paintRing(n);
-            ring.setPosition(n.x, n.y).setScale(1.8).setAlpha(0).setAngle(-60);
-            this.tweens.add({ targets: ring, scale: 1, alpha: 1, angle: 0, duration: 300, ease: 'Back.easeOut',
-                onComplete: () => { ringBreath = this.tweens.add({ targets: ring, scale: 1.07, alpha: 0.7, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); } });
+            ring.setFrame('rg_' + this._medalKey(n)).setPosition(n.x, n.y).setScale(3.6).setAlpha(0);
+            this.tweens.add({ targets: ring, scale: 2, alpha: 1, duration: 300, ease: 'Back.easeOut',
+                onComplete: () => { ringBreath = this.tweens.add({ targets: ring, scale: 2.14, alpha: 0.7, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); } });
         };
         const liftRing = () => {
             ringBreath?.stop(); this.tweens.killTweensOf(ring);
-            this.tweens.add({ targets: ring, scale: 0.5, alpha: 0, angle: 45, duration: 140, ease: 'Quad.easeIn' });
+            this.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 140, ease: 'Quad.easeIn' });
         };
 
         // You: the slime, standing on the selected level.
@@ -131,7 +119,7 @@ class LevelSelectScene extends Phaser.Scene {
         const BASE = 2.3;
         const slime = this.add.sprite(NODES[sel].x, NODES[sel].y + SLIME_DY, 'slime_blue', 0).setScale(BASE).setDepth(9);
         if (typeof CreatureFX !== 'undefined') { CreatureFX.face(this, slime, { mood: 'friend', look: 'pointer' }); CreatureFX.boopable(this, slime, 'hero'); }
-        const shadow = this.add.ellipse(slime.x, NODES[sel].y - 24, 26, 7, 0x2a1a0c, 0.35).setDepth(8);
+        const shadow = this.add.image(slime.x, NODES[sel].y - 24, 'map_kit', 'shadow').setScale(2).setAlpha(0.35 / 0.4).setDepth(8);
         const idle = () => this.tweens.add({ targets: slime, scaleY: BASE * 0.91, scaleX: BASE * 1.07, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         let idleTw = idle();
         // a little kicked-up dust where it lands
@@ -205,7 +193,7 @@ class LevelSelectScene extends Phaser.Scene {
                     slime.setScale(BASE * (1 + 0.16 * squash - 0.06 * air), BASE * (1 - 0.16 * squash + 0.1 * air));
                     slime.setPosition(p.x, p.y + SLIME_DY - air * 13);
                     if (Math.abs(p.dx) > 0.3) slime.setFlipX(p.dx < 0);
-                    shadow.setPosition(p.x, p.y - 24).setScale(1 - air * 0.4).setAlpha(0.35 - air * 0.15);
+                    shadow.setPosition(p.x, p.y - 24).setScale(2 * (1 - air * 0.4)).setAlpha((0.35 - air * 0.15) / 0.4);
                     trail.lineStyle(4, NODES[sel].accent, 0.55); trail.lineBetween(last.x, last.y, p.x, p.y);
                     trail.lineStyle(1.5, 0xffffff, 0.6); trail.lineBetween(last.x, last.y, p.x, p.y);
                     last = p;
@@ -215,7 +203,7 @@ class LevelSelectScene extends Phaser.Scene {
                     this.tweens.add({ targets: trail, alpha: 0, duration: 600, onComplete: () => trail.destroy() });
                     puff(n.x, n.y - 24);
                     slime.setPosition(n.x, n.y + SLIME_DY).setScale(BASE * 1.2, BASE * 0.8);
-                    shadow.setPosition(n.x, n.y - 24).setScale(1).setAlpha(0.35);
+                    shadow.setPosition(n.x, n.y - 24).setScale(2).setAlpha(0.35 / 0.4);
                     this.tweens.add({ targets: slime, scaleX: BASE, scaleY: BASE, duration: 220, ease: 'Back.easeOut', onComplete: () => { idleTw = idle(); } });
                     medals[sel].pop();
                     lockOn(n);
@@ -229,7 +217,7 @@ class LevelSelectScene extends Phaser.Scene {
             if (NODES[sel].locked) { this._refuseSealed(NODES[sel]); return; }
             // Once a level is on its way in, clicks and keys do nothing: spamming used to start
             // a fresh iris and card on every press. (The tutorial only opens its picker.)
-            if (NODES[sel].page !== 0) this._entering = true;
+            if (NODES[sel].page !== 0 && !NODES[sel].tower) this._entering = true;   // (the Tower opens a panel first: _climb locks it once you climb)
             // the iris closes on the slime standing on this medallion (screen coords)
             const cam = this.cameras.main;
             this._enterFrom = { x: NODES[sel].x - cam.scrollX, y: NODES[sel].y + SLIME_DY + 18 - cam.scrollY };
@@ -263,260 +251,31 @@ class LevelSelectScene extends Phaser.Scene {
 
     // ── THE SHEET ─────────────────────────────────────────────────────────────
     // ── THE MAP'S VIGNETTES ───────────────────────────────────────────────────
-    // A painted scene beside each level, in the weapons' style: shaded pixel art (every shape
-    // lit from the top left, three or four tones dithered between, a rim of light on its lit
-    // edge, textures on top), inked outlines, and glows drawn over without them. 56x48, 4
-    // frames, drawn 2x.
+    // A painted scene beside each level (assets/art map_vig_<kind>: 56x48, 4 frames, typed by hand), drawn 2x; its
+    // animation is made here. And the small details for the empty parchment (map_decor_<kind>, 24x24).
     static vignette(scene, kind) {
-        const key = 'map_vig_' + kind, W = 56, H = 48, F = 4;
-        const anim = () => { if (!scene.anims.exists(key)) scene.anims.create({ key, frames: [0, 1, 2, 3].map(f => ({ key, frame: String(f) })), frameRate: 5, repeat: -1 }); };
-        if (scene.textures.exists(key)) { anim(); return key; }   // (from its file: the animation still has to be made)
-        const mix = MenuArt.mix, bay = MenuArt.bayer, INK = 0x2a1a10;
-        const P = new MenuArt.Px(W * F, H);
-        for (let f = 0; f < F; f++) {
-            const g = new Array(W * H).fill(null), glow = [];
-            const set = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) g[y * W + x] = c; };
-            const get = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? null : g[y * W + x];
-            const lite = (x, y, c, a = 1) => glow.push([Math.round(x), Math.round(y), c, a]);
-            // a filled shape, lit from the top left; `tex(x, y, c)` may change a pixel's colour
-            const fill = (inside, x0, y0, x1, y1, base, tex = null, flat = false) => {
-                for (let y = Math.floor(y0); y <= y1; y++) for (let x = Math.floor(x0); x <= x1; x++) {
-                    if (!inside(x + 0.5, y + 0.5)) continue;
-                    const u = (x - x0) / Math.max(1, x1 - x0), v = (y - y0) / Math.max(1, y1 - y0);
-                    const l = flat ? 0 : (0.5 - u) * 0.9 + (0.5 - v) * 0.6 + (bay(x, y) - 0.5) * 0.45;
-                    const step = l > 0.35 ? 0.22 : l > 0 ? 0.08 : l > -0.35 ? -0.12 : -0.3;
-                    let c = step > 0 ? mix(base, 0xffffff, step) : mix(base, 0x000000, -step);
-                    if (tex) c = tex(x, y, c) ?? c;
-                    set(x, y, c);
-                }
-            };
-            const pin = (pts, x, y) => { let r = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) r = !r; } return r; };
-            const poly = (pts, base, tex, flat) => { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); fill((x, y) => pin(pts, x, y), Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), base, tex, flat); };
-            const rect = (x, y, w, h, base, tex, flat) => fill(() => true, x, y, x + w - 1, y + h - 1, base, tex, flat);
-            const disc = (cx, cy, r, base, tex, flat) => fill((x, y) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r, cx - r, cy - r, cx + r, cy + r, base, tex, flat);
-            const bricks = (bw, bh, mortar) => (x, y, c) => ((y % bh === 0) || ((x + (Math.floor(y / bh) % 2) * (bw >> 1)) % bw === 0)) ? mix(c, mortar, 0.55) : null;
-            const noise = MenuArt.noise(kind.length * 31 + 7);
-            const A = {
-                camp: () => {
-                    poly([[2, 44], [54, 44], [50, 34], [36, 30], [18, 31], [6, 36]], 0x5a8a3a, (x, y, c) => noise(x * 0.5, y * 0.5) > 0.7 ? mix(c, 0x9ac060, 0.4) : null);
-                    for (let x = 4; x < 52; x += 3) set(x, 32 + Math.round(noise(x, 1) * 3), 0x8ab858);
-                    poly([[8, 38], [18, 18], [28, 38]], 0xc8402a, (x, y, c) => x === 18 ? mix(c, 0x000000, 0.35) : null);
-                    poly([[16, 38], [18, 30], [20, 38]], 0x2a140c, null, true);
-                    poly([[28, 37], [36, 23], [44, 37]], 0xd8b878, (x, y, c) => (x - 28) % 4 === 0 ? mix(c, 0x8a6a40, 0.35) : null);
-                    poly([[34, 37], [36, 32], [38, 37]], 0x2a140c, null, true);
-                    rect(47, 22, 2, 16, 0x8a5a2a); disc(48, 20, 3, 0xe8c050, (x, y, c) => (x + y) % 3 === 0 ? mix(c, 0xa07020, 0.4) : null);
-                    rect(45, 26, 7, 1, 0x8a5a2a); disc(48, 30, 2, 0xe0e0e0, null, true); set(48, 30, 0xc83a2a);
-                    rect(5, 8, 1, 22, 0x6a4a2a); const fl = [0, 1, 0, -1][f];
-                    poly([[6, 8], [16, 10 + fl], [14, 12 + fl], [16, 14 + fl], [6, 14]], 0x3a6ac8);
-                    rect(22, 40, 8, 2, 0x6a3a1a); rect(23, 39, 6, 1, 0x8a5a2a);
-                    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + f; lite(26 + Math.cos(a) * 1.5, 37 - (f + k) % 4 - Math.sin(a), k % 2 ? 0xffd860 : 0xff7a2a); }
-                    lite(26, 38, 0xffffff); for (let k = 0; k < 9; k++) lite(26 + (k % 3) - 1, 34 - (k >> 1) - f % 2, 0xff9a3a, 0.7);
-                },
-                storm: () => {
-                    const rock = (x, y, c) => noise(x * 0.4, y * 0.2) > 0.62 ? mix(c, 0x000000, 0.18) : null;
-                    poly([[0, 47], [14, 18], [24, 32], [32, 12], [44, 30], [50, 22], [56, 30], [56, 47]], 0x6a6a80, rock);
-                    poly([[32, 12], [37, 21], [34, 20], [31, 23], [28, 19]], 0xeef4ff, null);
-                    poly([[14, 18], [18, 25], [15, 23], [11, 26]], 0xeef4ff, null);
-                    poly([[50, 22], [53, 27], [50, 26], [48, 28]], 0xeef4ff, null);
-                    for (const [x, y, r] of [[12, 7, 6], [21, 5, 7], [31, 6, 7], [40, 8, 6], [47, 9, 4]]) disc(x, y, r, 0x4a4a62);
-                    for (const [x, y, r] of [[17, 10, 5], [27, 11, 6], [37, 11, 5]]) disc(x, y, r, 0x343448);
-                    if (f % 2 === 0) {
-                        const bolt = [[27, 13], [23, 22], [26, 22], [21, 32], [30, 20], [27, 20], [30, 13]];
-                        poly(bolt, 0xffe060, null, true);
-                        for (let k = 0; k < 14; k++) lite(24 + (k % 5) - 2 + (k >> 2), 15 + k, 0xfff6c0, 0.45);
-                    }
-                },
-                rift: () => {
-                    const p = [0, 1, 2, 1][f];
-                    for (let r = 14 + p; r > 0; r--) {
-                        const c = r > 11 ? 0x5a2a9a : r > 7 ? 0x7a3ac8 : r > 4 ? 0x3a1068 : 0x0c0418;
-                        for (let a = 0; a < 64; a++) { const t = a / 64 * Math.PI * 2; set(28 + Math.cos(t) * r * 0.62, 22 + Math.sin(t) * r, c); }
-                    }
-                    for (let k = 0; k < 8; k++) { const t = k / 8 * Math.PI * 2 + f * 0.5; lite(28 + Math.cos(t) * (11 + p), 22 + Math.sin(t) * (17 + p), k % 2 ? 0xe0c8ff : 0xb07aff); }
-                    lite(28, 22, 0xffffff); lite(27, 20, 0xd8b8ff); lite(29, 25, 0xd8b8ff);
-                    for (const [x, y, w] of [[8, 36, 12], [47, 40, 10], [46, 9, 8], [10, 10, 7]]) {
-                        const b = (f + x) % 2 ? 1 : 0;
-                        poly([[x - w / 2, y + b], [x + w / 2, y + b], [x + w / 4, y + 7 + b], [x - w / 5, y + 6 + b]], 0x7a5a3a, (xx, yy, c) => (yy + xx) % 4 === 0 ? mix(c, 0x000000, 0.25) : null);
-                        rect(x - w / 2, y - 1 + b, w, 2, 0x5a9a3a);
-                    }
-                },
-                chasm: () => {
-                    poly([[0, 22], [56, 16], [56, 47], [0, 47]], 0x9a7a4a, (x, y, c) => (y + Math.round(noise(x * 0.3, 2) * 3)) % 5 === 0 ? mix(c, 0x5a3a1a, 0.35) : null);
-                    poly([[0, 22], [56, 16], [56, 20], [0, 26]], 0xc8a870);
-                    const crack = [[4, 47], [14, 31], [21, 35], [28, 22], [35, 29], [45, 19], [49, 23], [39, 35], [32, 33], [25, 44], [18, 40], [11, 47]];
-                    poly(crack, 0x1a0c06, null, true);
-                    const gl = [0.6, 0.8, 1, 0.8][f];
-                    for (let k = 0; k < 40; k++) { const t = k / 40; const x = 14 + t * 32, y = 34 - t * 13 + Math.sin(k) * 1.5; lite(x, y, k % 3 ? 0xff7a2a : 0xffd060, gl); }
-                    for (const [x, y, h] of [[7, 32, 11], [47, 36, 9], [26, 46, 7], [52, 27, 6]]) {
-                        poly([[x - 3, y], [x, y - h], [x + 3, y]], 0x4ac8e0);
-                        poly([[x - 1, y], [x + 1, y - h + 3], [x + 2, y]], 0x9af0ff, null, true);
-                    }
-                    if (f % 2) lite(47, 27, 0xffffff);
-                },
-                fort: () => {
-                    const st = bricks(5, 3, 0x2a2a38);
-                    rect(3, 24, 50, 22, 0x8a8aa0, st);
-                    for (let x = 3; x < 53; x += 7) rect(x, 19, 5, 5, 0x8a8aa0, st);
-                    rect(20, 8, 16, 38, 0x9a9ab0, st);
-                    for (let x = 20; x < 36; x += 5) rect(x, 4, 3, 4, 0x9a9ab0);
-                    poly([[23, 46], [23, 37], [28, 32], [33, 37], [33, 46]], 0x1a1420, (x, y, c) => (x % 2 === 0 || y % 3 === 0) ? 0x4a3a2a : null, true);
-                    for (const [x, y] of [[9, 31], [45, 31], [25, 15], [30, 15], [27, 23]]) { rect(x, y, 2, 3, 0x2a1a0a, null, true); lite(x, y, 0xffd060); lite(x + 1, y + 1, 0xffb030); }
-                    const a0 = f * Math.PI / 12, cx = 47, cy = 10;
-                    disc(cx, cy, 6, 0xc89a3a); disc(cx, cy, 2.5, 0x6a4a1a, null, true);
-                    for (let k = 0; k < 8; k++) { const t = a0 + k * Math.PI / 4; rect(cx + Math.cos(t) * 7 - 1, cy + Math.sin(t) * 7 - 1, 3, 3, 0xd8aa4a, null, true); }
-                    rect(4, 15, 9, 4, 0x3a3a48); rect(12, 14, 6, 2, 0x2a2a34);
-                    const fl = [0, 1, 0, -1][f]; rect(37, 0, 1, 9, 0x5a3a1a); poly([[38, 0], [45, 1 + fl], [38, 4]], 0xc83a2a);
-                },
-                sunken: () => {
-                    for (let y = 12; y < H; y++) for (let x = 0; x < W; x++) set(x, y, mix(0x2a6ab0, 0x0c1a3a, (y - 12) / (H - 12) + (bay(x, y) - 0.5) * 0.12));
-                    for (let x = 0; x < W; x++) { const y = 11 + Math.round(Math.sin((x + f * 3) * 0.45) * 1.2); set(x, y, 0xc8f0ff); set(x, y + 1, 0x6ab0e8); set(x, y - 1, 0xffffff); }
-                    const dome = (cx, by, r) => { disc(cx, by, r, 0x3aa0b0, (x, y, c) => (x - cx) % 4 === 0 ? mix(c, 0x0c3a4a, 0.4) : null); rect(cx - r, by, r * 2, 8, 0x2a8090, bricks(4, 3, 0x0c3a4a)); };
-                    dome(14, 38, 10); dome(41, 36, 7);
-                    poly([[25, 48], [25, 26], [29, 21], [33, 26], [33, 48]], 0x8a9aa8, bricks(4, 3, 0x2a3a48));
-                    rect(28, 13, 2, 8, 0x8a9aa8);
-                    for (const [cx, by] of [[14, 38], [41, 36]]) poly([[cx - 2, by + 8], [cx - 2, by + 3], [cx, by + 1], [cx + 2, by + 3], [cx + 2, by + 8]], 0x0c2a3a, null, true);   // arched doors
-                    for (const [x, y] of [[9, 33], [19, 36], [38, 32], [28, 28], [30, 34]]) { lite(x, y, 0xffe080); lite(x, y + 1, 0xffc060, 0.7); }
-                    for (const kx of [5, 50, 22]) for (let y = 47; y > 34; y--) set(kx + Math.round(Math.sin(y * 0.6 + f * 0.8 + kx) * 1.2), y, y % 3 ? 0x3a8a4a : 0x5aaa5a);
-                    const fx = 4 + (f * 11) % 44; poly([[fx, 22], [fx + 5, 20], [fx + 5, 24]], 0xe8b040); set(fx + 6, 22, 0xe8b040); set(fx + 4, 21, 0x2a1a10);
-                    for (let k = 0; k < 4; k++) lite(46 + (k % 2), 30 - ((f + k * 2) % 6) * 3, 0xc8f0ff, 0.8);
-                },
-                castle: () => {
-                    const st = bricks(5, 3, 0x3a3a48);
-                    poly([[1, 47], [55, 47], [50, 41], [6, 41]], 0x5a8a3a);
-                    rect(8, 28, 40, 15, 0x8a8aa0, st); for (let x = 8; x < 48; x += 6) rect(x, 25, 4, 3, 0x8a8aa0);
-                    rect(20, 9, 16, 34, 0x9a9ab0, st);
-                    poly([[17, 10], [28, 0], [39, 10]], 0xb83a2a, (x, y, c) => (y + (x >> 1)) % 3 === 0 ? mix(c, 0x5a1a0a, 0.35) : null);
-                    for (let x = 18; x < 39; x += 2) set(x, 10, 0x6a2a1a);
-                    poly([[24, 43], [24, 36], [28, 32], [32, 36], [32, 43]], 0x2a1a10, (x, y) => x % 2 === 0 ? 0x5a3a1a : null, true);
-                    for (const [x, y] of [[23, 15], [31, 15], [27, 22], [12, 33], [43, 33]]) { rect(x, y, 2, 3, 0x2a1a0a, null, true); if ((f + x) % 3) { lite(x, y, 0xffd060); lite(x + 1, y + 1, 0xffb030); } }
-                    const fl = [0, 1, 0, -1][f];
-                    rect(28, -1, 1, 3, 0x5a3a1a); poly([[29, 0], [35, 1 + fl], [29, 3]], 0xe8c040);
-                    for (const x of [8, 47]) { rect(x, 16, 1, 10, 0x5a3a1a); poly([[x + 1, 16], [x + 7, 17 + fl], [x + 1, 20]], 0xc83a2a); }
-                },
-            }[kind];
-            if (!A) return null;
-            A();
-            // a rim of light on every shape's top and left edge, then the ink outline round it all
-            const out = g.slice();
-            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-                const c = g[y * W + x];
-                if (c != null && (get(x, y - 1) == null || get(x - 1, y) == null)) out[y * W + x] = mix(c, 0xffffff, 0.22);
-                if (c == null && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => get(x + dx, y + dy) != null)) out[y * W + x] = INK;
-            }
-            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (out[y * W + x] != null) P.put(f * W + x, y, out[y * W + x]);
-            for (const [x, y, c, a] of glow) P.put(f * W + x, y, c, a);
-        }
-        const t = P.toTexture(scene, key, false);
-        for (let f = 0; f < F; f++) t.add(String(f), 0, f * W, 0, W, H);
-        anim();
+        const key = 'map_vig_' + kind;
+        if (!scene.textures.exists(key)) return null;
+        if (!scene.anims.exists(key)) scene.anims.create({ key, frames: [0, 1, 2, 3].map(f => ({ key, frame: String(f) })), frameRate: 5, repeat: -1 });
         return key;
     }
-
-    // (the small details below are the older, simpler style: they stay small)
-    // ── OLD ───────────────────────────────────────────────────
-    // A painted scene beside each level (48px, 4 frames, drawn 2x), inked in the map's brown:
-    // what you'll find there. And small details for the empty parchment between them.
-    static mapArt(scene, kind) {
-        const P = { k: '#3b2716', g: '#7a9a4a', G: '#a8c070', e: '#8a6a40', E: '#b08a58', s: '#7a7a8a', S: '#a8a8b8', w: '#f4f0e0', r: '#b8402a', R: '#e06a3a',
-                    y: '#ffd860', o: '#ff8a2a', b: '#3a7ab8', B: '#24507a', c: '#6ae0f0', C: '#c8f8ff', v: '#7a3ab8', V: '#2a1048', d: '#5a5a6a', D: '#3a3a48', f: '#e8c040', n: '#4a3a2a' };
-        const draw = {
-            camp: (m, f) => {
-                m.poly([[2, 40], [46, 40], [42, 46], [6, 46]], 'g'); m.line(4, 40, 44, 40, 'G');
-                m.poly([[6, 39], [15, 22], [24, 39]], 'r'); m.poly([[15, 22], [24, 39], [18, 39]], 'R'); m.poly([[13, 39], [15, 32], [17, 39]], 'n');
-                m.poly([[26, 39], [33, 27], [40, 39]], 'e'); m.poly([[33, 27], [40, 39], [36, 39]], 'E'); m.poly([[31, 39], [33, 34], [35, 39]], 'n');
-                m.rect(43, 26, 1, 14, 'n'); m.disc(43.5, 25, 2.2, 'y'); m.line(41, 29, 46, 29, 'n');   // the dummy
-                m.rect(9, 10, 1, 14, 'n'); const fl = [0, 1, 0, -1][f]; m.poly([[10, 10], [17, 11 + fl], [10, 15]], 'r'); m.set(15, 11 + fl, 'R');   // the flag
-                m.disc(22, 43, 2.2 + (f % 2) * 0.4, 'o'); m.disc(22, 42 - (f % 2), 1.2, 'y'); m.line(19, 45, 25, 45, 'n');
-            },
-            storm: (m, f) => {
-                m.poly([[0, 46], [12, 20], [20, 32], [30, 12], [42, 30], [48, 24], [48, 46]], 's');
-                m.poly([[30, 12], [34, 20], [30, 18], [26, 21]], 'w'); m.poly([[12, 20], [15, 26], [12, 24], [9, 27]], 'w');
-                m.poly([[30, 12], [42, 30], [36, 30]], 'S'); m.poly([[12, 20], [20, 32], [16, 32]], 'S');
-                for (const [x, y, r] of [[14, 6, 5], [22, 4, 6], [31, 6, 5], [38, 8, 4]]) m.disc(x, y, r, 'd');
-                for (const [x, y, r] of [[18, 8, 4], [27, 8, 4]]) m.disc(x, y, r, 'D');
-                if (f % 2 === 0) { m.poly([[24, 10], [20, 18], [23, 18], [19, 26], [27, 16], [24, 16], [27, 10]], 'y'); m.line(23, 11, 21, 17, 'w'); }
-            },
-            rift: (m, f) => {
-                const p = [0, 1, 2, 1][f];
-                m.disc(24, 22, 9 + p * 0.6, 'v'); m.disc(24, 22, 6 + p * 0.4, 'V'); m.ring(24, 22, 11 + p, 1, 'v');
-                for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + f * 0.4; m.set(24 + Math.cos(a) * (13 + p), 22 + Math.sin(a) * (13 + p), 'C'); }
-                for (const [x, y, w] of [[7, 34, 9], [37, 38, 8], [36, 10, 6]]) {
-                    const bob = (f + x) % 2;
-                    m.poly([[x - w / 2, y + bob], [x + w / 2, y + bob], [x + w / 4, y + 6 + bob], [x - w / 4, y + 5 + bob]], 'e');
-                    m.rect(x - w / 2, y - 1 + bob, w, 2, 'g');
-                }
-                m.set(24, 22, 'w');
-            },
-            chasm: (m, f) => {
-                m.poly([[0, 22], [48, 18], [48, 46], [0, 46]], 'e'); m.poly([[0, 22], [48, 18], [48, 21], [0, 25]], 'E');
-                m.poly([[4, 46], [14, 30], [20, 34], [27, 22], [33, 28], [42, 20], [45, 24], [36, 34], [30, 32], [24, 42], [17, 38], [10, 46]], 'k');
-                const gl = f % 2 ? 'o' : 'y'; m.line(14, 32, 20, 36, gl); m.line(27, 24, 32, 30, 'o'); m.line(36, 30, 42, 23, gl);
-                for (const [x, y, h] of [[8, 30, 9], [40, 34, 7], [22, 44, 6]]) { m.poly([[x - 2, y], [x, y - h], [x + 2, y]], 'c'); m.line(x - 1, y - 1, x, y - h + 2, 'C'); }
-                if (f === 1) m.set(31, 26, 'y'); if (f === 3) m.set(18, 35, 'y');
-            },
-            fort: (m, f) => {
-                m.rect(4, 22, 40, 22, 's'); m.rect(4, 22, 40, 3, 'S');
-                for (let x = 4; x < 44; x += 6) m.rect(x, 18, 4, 4, 's');
-                m.rect(18, 10, 12, 34, 'S'); for (let x = 18; x < 30; x += 4) m.rect(x, 6, 3, 4, 'S');
-                m.poly([[20, 44], [20, 36], [24, 32], [28, 36], [28, 44]], 'D');
-                for (const [x, y] of [[9, 30], [36, 30], [22, 16], [26, 16]]) m.rect(x, y, 2, 3, 'y');
-                const a = f * Math.PI / 8; m.disc(40, 12, 5, 'f'); m.disc(40, 12, 2, 'n'); for (let k = 0; k < 6; k++) { const t = a + k * Math.PI / 3; m.rect(40 + Math.cos(t) * 6 - 1, 12 + Math.sin(t) * 6 - 1, 2, 2, 'f'); }
-                m.rect(5, 16, 7, 3, 'D'); m.line(12, 17, 16, 15, 'D');
-            },
-            sunken: (m, f) => {
-                m.rect(0, 12, 48, 34, 'B');
-                for (let x = 0; x < 48; x++) { const y = 11 + Math.round(Math.sin((x + f * 3) * 0.5)); m.set(x, y, 'b'); m.set(x, y - 1, 'C'); }
-                m.disc(14, 40, 9, 'c'); m.rect(5, 40, 18, 6, 'c'); m.disc(14, 40, 6, 'b'); m.set(12, 37, 'y'); m.set(16, 37, 'y'); m.rect(13, 41, 3, 5, 'V');
-                m.disc(34, 36, 6, 'c'); m.rect(28, 36, 12, 10, 'c'); m.rect(33, 26, 2, 6, 'c'); m.set(32, 34, 'y'); m.set(36, 34, 'y'); m.set(34, 39, 'y');
-                m.poly([[22, 46], [22, 32], [26, 28], [30, 32], [30, 46]], 's'); m.poly([[24, 46], [24, 34], [26, 32], [28, 34], [28, 46]], 'B');
-                const fx = 6 + (f * 9) % 36; m.poly([[fx, 22], [fx + 4, 20], [fx + 4, 24]], 'f'); m.set(fx + 5, 22, 'f');
-                for (let k = 0; k < 3; k++) m.set(40 + k, 30 - ((f + k * 2) % 4) * 4, 'C');
-            },
-            castle: (m, f) => {
-                m.poly([[2, 46], [46, 46], [42, 40], [6, 40]], 'g');
-                m.rect(8, 26, 32, 16, 's'); for (let x = 8; x < 40; x += 5) m.rect(x, 23, 3, 3, 's');
-                m.rect(18, 8, 12, 34, 'S'); m.poly([[16, 9], [24, 0], [32, 9]], 'r'); m.poly([[24, 0], [32, 9], [27, 9]], 'R');
-                for (const [x, y] of [[21, 14], [26, 14], [23, 21], [11, 31], [35, 31]]) m.rect(x, y, 2, 3, f % 2 && x === 23 ? 'w' : 'y');
-                m.poly([[21, 42], [21, 35], [24, 32], [27, 35], [27, 42]], 'D');
-                const fl = [0, 1, 0, -1][f];
-                m.rect(24, -0, 1, 1, 'n'); m.poly([[24, 1], [24, 0], [31, 1 + fl], [24, 4]], 'r');
-                for (const x of [8, 37]) { m.rect(x, 18, 1, 8, 'n'); m.poly([[x + 1, 18], [x + 6, 19 + fl], [x + 1, 21]], 'f'); }
-            },
-        }[kind];
-        if (!draw) return null;
-        return ShopScene.icon(scene, 'map_art_' + kind, 48, P, draw, 4);
-    }
     static mapDecor(scene, kind) {
-        const P = { k: '#3b2716', g: '#6a8a40', G: '#90b060', n: '#5a3a1a', s: '#8a8a7a', S: '#b0b0a0', w: '#f0ece0', o: '#ff8a2a', y: '#ffd860', e: '#a08050' };
-        const draw = {
-            pines: (m) => { for (const [x, y, h] of [[6, 22, 12], [13, 20, 15], [19, 23, 11]]) { m.poly([[x - 4, y], [x, y - h], [x + 4, y]], 'g'); m.poly([[x, y - h], [x + 4, y], [x + 1, y]], 'G'); m.rect(x, y, 1, 2, 'n'); } },
-            hills: (m) => { m.poly([[0, 22], [8, 12], [14, 18], [20, 10], [24, 22]], 'e'); m.line(8, 12, 11, 16, 'w'); m.line(20, 10, 22, 14, 'w'); },
-            ruin:  (m) => { m.rect(4, 8, 4, 14, 's'); m.rect(4, 8, 4, 2, 'S'); m.rect(14, 14, 4, 8, 's'); m.rect(3, 22, 18, 2, 's'); m.rect(10, 18, 3, 2, 'S'); },
-            fire:  (m) => { m.line(6, 20, 18, 16, 'n'); m.line(6, 16, 18, 20, 'n'); m.disc(12, 15, 4, 'o'); m.disc(12, 14, 2, 'y'); },
-            skull: (m) => { m.disc(12, 12, 5, 'w'); m.rect(9, 16, 6, 3, 'w'); m.disc(10, 12, 1.4, 'k'); m.disc(14, 12, 1.4, 'k'); m.line(4, 21, 20, 17, 'w'); m.line(4, 17, 20, 21, 'w'); },
-        }[kind];
-        return draw ? ShopScene.icon(scene, 'map_decor_' + kind, 24, P, draw) : null;
+        const key = 'map_decor_' + kind;
+        return scene.textures.exists(key) ? key : null;
     }
 
     // The Enchanter's Isle (EnchantScene), off the route: an inked island out to sea, a dotted
     // sea lane to it from `from`, and its label. Click it (or press I) to sail there.
     // The Training Ground: a sandy ring with two straw dummies, off the path in the map's corner (Training.js). T or a click.
     _drawTraining(m) {
-        const x = m.x + m.w * 0.88, y = m.y + m.h * 0.12, INK = 0x3b2716, g = this.add.graphics().setDepth(2);
-        g.fillStyle(0xd8c08a, 1); g.fillEllipse(x, y, 74, 40); g.lineStyle(2.5, INK, 0.8); g.strokeEllipse(x, y, 74, 40);
-        g.lineStyle(1.5, INK, 0.45); g.strokeEllipse(x, y, 56, 28);
-        for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; g.fillStyle(0x7a5a34, 1); g.fillRect(x + Math.cos(a) * 37 - 1.5, y + Math.sin(a) * 20 - 7, 3, 7); }   // the fence posts
-        for (const dx of [-12, 12]) {   // straw dummies on posts
-            g.fillStyle(0x6a4a24, 1); g.fillRect(x + dx - 1, y - 14, 2, 16);
-            g.fillStyle(0xe8c860, 1); g.fillRect(x + dx - 6, y - 12, 12, 3); g.fillCircle(x + dx, y - 17, 4.5);
-            g.lineStyle(1, INK, 0.8); g.strokeCircle(x + dx, y - 17, 4.5);
-        }
+        const x = m.x + m.w * 0.88, y = m.y + m.h * 0.12;
+        this.add.image(x, y, 'map_kit', 'training').setOrigin(19.5 / 40, 15.5 / 27).setScale(2).setDepth(2);   // its fence and dummies (map_kit)
         const glow = this.add.image(x, y, 'mn_glow').setTint(0xf6d58a).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(130, 80).setAlpha(0.2).setDepth(1.9);
         this.tweens.add({ targets: glow, alpha: 0.4, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         const name = this.add.text(x, y + 34, 'Training Ground', { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3b2716' }).setOrigin(0.5).setDepth(4);
         const tag = this.add.text(x, y + 51, 'TEST ANYTHING  ·  T', { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: '#7a5a34' }).setOrigin(0.5).setDepth(4);
-        const bw = Math.max(name.width, tag.width) + 14, plate = this.add.graphics().setDepth(3);
-        plate.fillStyle(0xe2d0a8, 1); plate.fillRect(x - bw / 2, y + 22, bw, 38); plate.lineStyle(1, 0x9a7a34, 0.7); plate.strokeRect(x - bw / 2, y + 22, bw, 38);
+        const bw = Math.max(name.width, tag.width) + 14;
+        this._scrap(x - bw / 2, y + 22, bw, 38);
         const go = () => {
             if (this._entering || this._settingsOpen) return;
             this._entering = true; Sfx.play(this, 'click'); this.input.enabled = false;   // nothing else answers on the way out
@@ -530,36 +289,23 @@ class LevelSelectScene extends Phaser.Scene {
     }
     _drawIsle(m, from) {
         MenuArt.basics(this);   // the glow
-        const INK = 0x3b2716, x = m.x + m.w * 0.885, y = m.y + m.h * 0.37, R = MenuArt.rng(77);
-        const g = this.add.graphics().setDepth(2);
-        // the sea lane, and waves along it
+        const x = m.x + m.w * 0.885, y = m.y + m.h * 0.37;
+        // the sea lane: dashes of sea ink along it, each turned the way the lane runs (map_kit sl*)
         const c = new Phaser.Curves.QuadraticBezier(new Phaser.Math.Vector2(from.x + 30, from.y - 10), new Phaser.Math.Vector2(x - 10, from.y + 10), new Phaser.Math.Vector2(x - 18, y + 26));
         const pts = c.getSpacedPoints(26);
-        g.lineStyle(2, 0x2a5a7a, 0.6);
-        for (let k = 0; k + 1 < pts.length; k += 2) g.lineBetween(pts[k].x, pts[k].y, pts[k + 1].x, pts[k + 1].y);
-        // water round the island: rings of short strokes
-        for (let r = 0; r < 3; r++) {
-            g.lineStyle(1.5, 0x2a5a7a, 0.4 - r * 0.1);
-            for (let k = 0; k < 14; k++) { const a = k / 14 * Math.PI * 2 + r * 0.2; const rx = 40 + r * 9, ry = 24 + r * 6; g.lineBetween(x + Math.cos(a) * rx, y + Math.sin(a) * ry, x + Math.cos(a + 0.18) * rx, y + Math.sin(a + 0.18) * ry); }
+        for (let k = 0; k + 1 < pts.length; k += 2) {
+            const a = pts[k], b = pts[k + 1], deg = (Math.atan2(a.y - b.y, b.x - a.x) * 180 / Math.PI + 360) % 180;
+            this._inkStamp?.(`sl${Math.round(deg / 22.5) % 8}_${(k >> 1) % 3 === 2 ? 1 : 0}`, (a.x + b.x) / 2 - 4, (a.y + b.y) / 2 - 4, 0.6);
         }
-        // the island: a ragged coastline, hatched hills, the altar's crystals on top
-        const coast = [];
-        for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2, rr = 1 + (R() - 0.5) * 0.35; coast.push({ x: x + Math.cos(a) * 30 * rr, y: y + Math.sin(a) * 17 * rr }); }
-        g.fillStyle(0xc9b083, 0.9); g.fillPoints(coast, true);
-        g.lineStyle(2.5, INK, 0.8); g.strokePoints(coast, true);
-        g.lineStyle(1, INK, 0.3);
-        for (let d = -24; d < 24; d += 5) g.lineBetween(x + d, y + 8, x + d + 8, y - 2);
-        g.fillStyle(0x6a3aa8, 0.85);
-        for (const [dx, h] of [[-8, 14], [0, 20], [8, 14]]) g.fillTriangle(x + dx - 3, y - 2, x + dx + 3, y - 2, x + dx, y - 2 - h);
-        g.lineStyle(1.5, INK, 0.8);
-        for (const [dx, h] of [[-8, 14], [0, 20], [8, 14]]) g.strokeTriangle(x + dx - 3, y - 2, x + dx + 3, y - 2, x + dx, y - 2 - h);
+        // the island: its inked shore, hatched, the altar's crystals on top, and the water round it in rings of short strokes
+        this.add.image(x, y, 'map_kit', 'isle').setOrigin(31.5 / 62, 22.5 / 40).setScale(2).setDepth(2);
         // its label, and a glow so it reads as a place you can go
         const glow = this.add.image(x, y - 6, 'mn_glow').setTint(0xb48cf0).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(130, 90).setAlpha(0.25).setDepth(1.9);
         this.tweens.add({ targets: glow, alpha: 0.5, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         const name = this.add.text(x, y + 40, "Enchanter's Isle", { fontSize: '15px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#4a2a7a' }).setOrigin(0.5).setDepth(4);
         const tag = this.add.text(x, y + 57, 'ENCHANTING  ·  I', { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold', color: '#7a5a34' }).setOrigin(0.5).setDepth(4);
-        const bw = Math.max(name.width, tag.width) + 14, plate = this.add.graphics().setDepth(3);
-        plate.fillStyle(0xe2d0a8, 1); plate.fillRect(x - bw / 2, y + 28, bw, 38); plate.lineStyle(1, 0x6a3aa8, 0.6); plate.strokeRect(x - bw / 2, y + 28, bw, 38);
+        const bw = Math.max(name.width, tag.width) + 14;
+        this._scrap(x - bw / 2, y + 28, bw, 38);
         const go = () => {
             if (this._entering || this._settingsOpen) return;
             this._entering = true; Sfx.play(this, 'click'); this.input.enabled = false;   // nothing else answers on the way out
@@ -575,57 +321,47 @@ class LevelSelectScene extends Phaser.Scene {
     // Aged parchment nailed to the wall: stains, fold lines, a scorched rim; an inked chamber
     // round every level, the dashed path between them, the title and a compass rose.
     _drawMap(m, nodes, legs) {
-        const INK = 0x3b2716, PAPER = 0xd8c39a, R = MenuArt.rng(1337);
+        const R = MenuArt.rng(1337);
         // the parchment (MenuArt.parchment): torn, scorched, stained, creased; its shadow under it
         const pa = MenuArt.parchment(this, `mn_parchment_${m.w}x${m.h}`, m.w, m.h);
         this.add.image(m.x + 7, m.y + 9, pa.key).setOrigin(0).setScale(pa.scale).setDepth(1).setTintFill(0x000000).setAlpha(0.55);
         this.add.image(m.x, m.y, pa.key).setOrigin(0).setScale(pa.scale).setDepth(1);
-        // nails, each with a little tear where the paper pulled against it
-        const g = this.add.graphics().setDepth(1.5);
-        for (const [x, y, tx, ty] of [[m.x + 22, m.y + 22, -1, -1], [m.x + m.w - 24, m.y + 26, 1, -1], [m.x + 26, m.y + m.h - 24, -1, 1], [m.x + m.w - pa.corner - 30, m.y + m.h - 22, 0.4, 1]]) {
-            g.lineStyle(1.5, 0x5a3a18, 0.7); g.lineBetween(x, y, x + tx * 7, y + ty * 5); g.lineBetween(x + tx * 7, y + ty * 5, x + tx * 9, y + ty * 10);
-            g.fillStyle(0x000000, 0.5); g.fillCircle(x + 1, y + 2, 5);
-            g.fillStyle(UIKit.PALETTE.iron, 1); g.fillCircle(x, y, 4.5);
-            g.fillStyle(UIKit.PALETTE.ironHi, 1); g.fillCircle(x - 1.2, y - 1.2, 1.6);
+        // nails, each with a little tear where the paper pulled against it (map_kit, as is everything inked on the sheet)
+        for (const [x, y, t, ox, oy] of [[m.x + 22, m.y + 22, 'tl', 1, 1], [m.x + m.w - 24, m.y + 26, 'tr', 0, 1], [m.x + 26, m.y + m.h - 24, 'bl', 1, 0], [m.x + m.w - pa.corner - 30, m.y + m.h - 22, 'br', 0, 0]]) {
+            this.add.image(x, y, 'map_kit', 'tear_' + t).setOrigin(ox, oy).setScale(2).setDepth(1.5);
+            this.add.image(x, y, 'map_kit', 'nail').setOrigin(2.5 / 6).setScale(2).setDepth(1.5);
         }
-
-        // An inked chamber round every level: a room outline, hatched, with a doorway each way.
-        const ink = this.add.graphics().setDepth(2);
-        nodes.forEach(n => {
-            const w = n.tower ? 96 : 78, h = n.tower ? 80 : 60, x = n.x - w / 2, y = n.y - h / 2;
-            ink.fillStyle(0xc9b083, 0.55); ink.fillRect(x, y, w, h);
-            ink.lineStyle(1, INK, 0.16);
-            // 45° hatching: every point on line d has (px - x) + (py - y) = d, clipped to the room
-            for (let d = 7; d < w + h; d += 7) ink.lineBetween(x + Math.min(d, w), y + Math.max(0, d - w), x + Math.max(0, d - h), y + Math.min(h, d));
-            ink.lineStyle(2.5, INK, 0.75); ink.strokeRect(x, y, w, h);
-            if (n.tower) {   // the Tower: battlements on its roof
-                for (let k = 0; k < 6; k++) ink.fillStyle(INK, 0.75), ink.fillRect(x + 4 + k * (w - 8) / 6, y - 7, (w - 8) / 12, 7);
-            }
-        });
-        // The path: a hand-inked trail along each leg, a line that wavers a little, with a pair of footprints every
+        // The ink on the sheet, at the paper's own pixels: a stamp of a typed piece at (x, y) on the sheet, in screen pixels
+        if (this.textures.exists('mn_ink')) this.textures.remove('mn_ink');
+        const inkT = this.textures.addDynamicTexture('mn_ink', Math.ceil(m.w / 2), Math.ceil(m.h / 2));
+        const stamp = this._inkStamp = (n, x, y, alpha = 1) => inkT.stamp('map_kit', n, Math.round((x - m.x) / 2), Math.round((y - m.y) / 2), { originX: 0, originY: 0, alpha });
+        // An inked chamber round every level: a ruled room, washed and hatched (the Tower's with battlements)
+        nodes.forEach(n => n.tower ? stamp('room_t', n.x - 50, n.y - 50) : stamp('room', n.x - 41, n.y - 32));
+        // The path: a hand-inked trail along each leg, a stroke for each way the road turns, with a pair of footprints every
         // so often pointing the way. The way to a sealed level is only pencilled in: faint and dotted.
         legs.forEach((pts, li) => {
-            const faint = nodes[li + 1].locked, line = pts.map((p, k) => ({ x: p.x + Math.sin(k * 1.7 + li) * 1.2, y: p.y + Math.cos(k * 1.3 + li) * 1.2 }));
-            if (faint) { for (let k = 0; k + 1 < line.length; k += 2) { ink.lineStyle(2, INK, 0.28); ink.lineBetween(line[k].x, line[k].y, line[k + 1].x, line[k + 1].y); } return; }
-            ink.lineStyle(2.5, INK, 0.75); ink.beginPath(); line.forEach((p, k) => (k ? ink.lineTo(p.x, p.y) : ink.moveTo(p.x, p.y))); ink.strokePath();
-            for (let k = 3; k + 1 < line.length - 2; k += 6) {   // footprints, beside the line
-                const a = line[k], b = line[k + 1], ang = Math.atan2(b.y - a.y, b.x - a.x), nx = -Math.sin(ang), ny = Math.cos(ang);
-                for (const [side, f] of [[1, 0], [-1, 0.5]]) {
-                    const fx = a.x + (b.x - a.x) * f + nx * 6 * side, fy = a.y + (b.y - a.y) * f + ny * 6 * side;
-                    ink.fillStyle(INK, 0.55); ink.fillEllipse(fx, fy, 4, 2.6);
-                }
+            const faint = nodes[li + 1].locked, cum = [0];
+            for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y));
+            const L = cum[cum.length - 1], at = d => {   // the point d along the leg
+                let k = 1; while (k < cum.length - 1 && cum[k] < d) k++;
+                const f = Math.max(0, Math.min(1, (d - cum[k - 1]) / Math.max(0.001, cum[k] - cum[k - 1])));
+                return { x: pts[k - 1].x + (pts[k].x - pts[k - 1].x) * f, y: pts[k - 1].y + (pts[k].y - pts[k - 1].y) * f };
+            };
+            for (let d = 0, k = 0; d <= L; d += 14, k++) {   // a 9-pixel stroke every 7 of the sheet's pixels, by its heading
+                if (faint && k % 2) continue;
+                const p = at(d), a0 = at(d - 4), a1 = at(d + 4), deg = (Math.atan2(a0.y - a1.y, a1.x - a0.x) * 180 / Math.PI + 360) % 180;
+                stamp(`rd${Math.round(deg / 22.5) % 8}_${(k * 7 + li) % 3 === 0 ? 1 : 0}`, p.x - 8, p.y - 8, faint ? 0.35 : 1);
+            }
+            if (faint) return;
+            for (let d = 18; d + 12 < L; d += 36) {   // footprints, beside the line
+                const a0 = at(d), a1 = at(d + 2), len = Math.hypot(a1.x - a0.x, a1.y - a0.y) || 1, nx = -(a1.y - a0.y) / len, ny = (a1.x - a0.x) / len;
+                for (const [side, f] of [[1, 0], [-1, 6]]) { const q = at(d + f); stamp('foot', q.x + nx * 6 * side - 2, q.y + ny * 6 * side - 2); }
             }
         });
-        // Doodles beside some levels, in the margin hand.
-        const doodle = (x, y, kind) => {
-            ink.lineStyle(2, INK, 0.55);
-            if (kind === 'bolt') { ink.beginPath(); ink.moveTo(x, y - 10); ink.lineTo(x - 5, y); ink.lineTo(x + 2, y); ink.lineTo(x - 3, y + 10); ink.strokePath(); }
-            if (kind === 'star') for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; ink.lineBetween(x - Math.cos(a) * 7, y - Math.sin(a) * 7, x + Math.cos(a) * 7, y + Math.sin(a) * 7); }
-            if (kind === 'crack') { ink.beginPath(); ink.moveTo(x - 10, y - 6); ink.lineTo(x - 3, y); ink.lineTo(x + 2, y - 4); ink.lineTo(x + 10, y + 5); ink.strokePath(); }
-            if (kind === 'gear') { ink.strokeCircle(x, y, 6); for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; ink.lineBetween(x + Math.cos(a) * 6, y + Math.sin(a) * 6, x + Math.cos(a) * 9, y + Math.sin(a) * 9); } }
-            if (kind === 'wave') for (let r = 0; r < 2; r++) { ink.beginPath(); for (let k = 0; k <= 16; k++) { const px = x - 12 + k * 1.5, py = y + r * 6 + Math.sin(k * 0.8) * 2; k ? ink.lineTo(px, py) : ink.moveTo(px, py); } ink.strokePath(); }
-            if (kind === 'skull') { ink.strokeCircle(x, y - 2, 7); ink.fillStyle(INK, 0.55); ink.fillCircle(x - 3, y - 3, 1.8); ink.fillCircle(x + 3, y - 3, 1.8); ink.lineBetween(x - 3, y + 6, x + 3, y + 6); }
-        };
+        // the compass rose (its N is set in the title's ink below)
+        const cx = m.x + m.w - 70, cy = m.y + 74, rr = 34;
+        stamp('compass', cx - 34, cy - 34);
+        this.add.image(m.x, m.y, 'mn_ink').setOrigin(0).setScale(2).setDepth(2);
         // a painted vignette beside each level, on the side its label isn't (faded while it's sealed)
         const ART = ['camp', 'storm', 'rift', 'chasm', 'fort', 'sunken', 'castle'];
         const taken = [];   // what's on the sheet already, so the small details keep clear of it
@@ -639,7 +375,7 @@ class LevelSelectScene extends Phaser.Scene {
         });
         // small details for the empty parchment: trees, hills, ruins, a campfire, a skull
         const DEC = ['pines', 'hills', 'pines', 'ruin', 'hills', 'pines', 'fire', 'skull', 'ruin', 'pines', 'hills', 'pines'];
-        for (const [x, y] of [[44, 62], [104, 62], [164, 62], [64, 118], [64, 176]]) taken.push([m.x + x, m.y + m.h - y, 34]);   // (kept clear: the corner's doodles, below)
+        for (const [x, y] of [[44, 62], [104, 62], [164, 62], [64, 118], [64, 176], [128, 176]]) taken.push([m.x + x, m.y + m.h - y, 34]);   // (kept clear: the corner's doodles, below)
         const pathPts = legs.flat();
         let placed = 0;
         for (let tries = 0; tries < 400 && placed < DEC.length; tries++) {
@@ -666,109 +402,65 @@ class LevelSelectScene extends Phaser.Scene {
                 fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#7a5a34',
             }).setOrigin(right ? 0 : 1, 0.5).setDepth(4);
             if (!n.locked && Progress.cleared?.(n.id)) {   // cleared: a red-ink tick by its chamber
-                const tk = this.add.graphics().setDepth(6), tx = n.x + (right ? -1 : 1) * ((n.tower ? 48 : 39) - 6), ty = n.y - (n.tower ? 40 : 30);
-                tk.lineStyle(3.5, 0xa02a1a, 0.85); tk.beginPath(); tk.moveTo(tx - 7, ty); tk.lineTo(tx - 2, ty + 6); tk.lineTo(tx + 9, ty - 8); tk.strokePath();
+                const tx = n.x + (right ? -1 : 1) * ((n.tower ? 48 : 39) - 6), ty = n.y - (n.tower ? 40 : 30);
+                this.add.image(tx + 1, ty - 1, 'map_kit', 'tick').setScale(2).setDepth(6);
             }
             const bw = Math.max(name.width, tag.width) + 12, bx = right ? lx - 6 : lx - bw + 6;
             const hit = () => plates.find(([px2, top, pw2]) => bx < px2 + pw2 && bx + bw > px2 && ly - 21 < top + 40 && ly + 19 > top);
             for (let k = 0, o; k < 4 && (o = hit()); k++) ly = ly - 21 >= o[1] ? o[1] + 44 + 21 : o[1] - 44 + 21;   // step past it: below it if it was lower, above if higher
             if (ly !== n.y) { name.setY(ly - 8); tag.setY(ly + 11); }
             plates.push([bx, ly - 21, bw]);
-            const plate = this.add.graphics().setDepth(3);
-            plate.fillStyle(0xe2d0a8, 1); plate.fillRect(bx, ly - 21, bw, 40);
-            plate.lineStyle(1, 0x9c7f52, 0.6); plate.strokeRect(bx, ly - 21, bw, 40);
+            this._scrap(bx, ly - 21, bw, 40);
         });
 
         // A little inked ? by the Tower (its guide again), and a scrawled one in the corner for the whole game's
-        const scrawl = (x, y, size, label, onClick) => {
-            const g = this.add.graphics().setDepth(6).setPosition(x, y);
-            const hook = [[-0.55, -0.55], [-0.4, -0.85], [0, -1], [0.45, -0.85], [0.6, -0.5], [0.4, -0.2], [0.05, 0], [0, 0.25], [0.02, 0.45]];
-            for (const [w, a, j] of [[3.2, 0.85, 0], [1.6, 0.6, 1.2]]) {   // twice over, a little off, like a pen gone back over it
-                g.lineStyle(w, INK, a); g.beginPath();
-                hook.forEach(([hx, hy], k) => { const px2 = hx * size + Math.sin(k * 2.3) * j, py2 = hy * size + Math.cos(k * 1.7) * j; k ? g.lineTo(px2, py2) : g.moveTo(px2, py2); });
-                g.strokePath();
-            }
-            g.fillStyle(INK, 0.85); g.fillCircle(0.04 * size, 0.78 * size, size * 0.11);
-            const t = label ? this.add.text(x, y + size * 1.15, label, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(-6) : null;
-            const z = this.add.zone(x, y, size * 2.2, size * 2.6).setInteractive({ useHandCursor: true }).setDepth(7);
-            z.on('pointerover', () => { g.setScale(1.12); t?.setScale(1.08); });
-            z.on('pointerout', () => { g.setScale(1); t?.setScale(1); });
+        // and in the corner, scrawled in the margin hand (map_kit sc_*): a ?, a book, a page, a podium, a little slime
+        const scrawl = (x, y, frame, oy, label, angle, zw, zh, onClick) => {
+            const g = this.add.image(x, y, 'map_kit', 'sc_' + frame).setOrigin(0.5, oy).setScale(2).setDepth(6);
+            const t = label ? this.add.text(x, y + (frame === 'qbig' ? 21 : 14), label, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(angle) : null;
+            const z = this.add.zone(x, y + (frame === 'qbig' || frame === 'qsmall' ? 0 : 4), zw, zh).setInteractive({ useHandCursor: true }).setDepth(7);
+            z.on('pointerover', () => { g.setScale(2.24); t?.setScale(1.08); });
+            z.on('pointerout', () => { g.setScale(2); t?.setScale(1); });
             z.on('pointerdown', () => { if (!this._settingsOpen) onClick(); });
-            return g;
         };
-        const tw = nodes.find(n => n.tower);
-        if (tw && !tw.locked) scrawl(tw.x + 52, tw.y - 50, 11, null, () => this._towerGuide(() => {}, true));
-        scrawl(m.x + 44, m.y + m.h - 62, 18, 'guide', () => this._gameGuide()).setAngle(-8);
-        {   // and beside it a scrawled little book: every enemy
-            const bx = m.x + 104, by = m.y + m.h - 64, g = this.add.graphics().setDepth(6).setPosition(bx, by).setAngle(5);
-            g.lineStyle(2.4, INK, 0.85); g.strokeRect(-13, -11, 12, 20); g.strokeRect(1, -11, 12, 20); g.lineBetween(0, -11, 0, 9);
-            g.lineStyle(1.2, INK, 0.6); for (const ly of [-6, -2, 2]) { g.lineBetween(-10, ly, -4, ly + 0.5); g.lineBetween(4, ly + 0.5, 10, ly); }
-            g.fillStyle(INK, 0.85); g.fillCircle(7, -6, 2.2);   // a slime face doodled on the page
-            const t = this.add.text(bx, by + 14, 'enemies', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(4);
-            const z = this.add.zone(bx, by + 4, 50, 46).setInteractive({ useHandCursor: true }).setDepth(7);
-            z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
-            z.on('pointerdown', () => this._openIndex());
-        }
-        {   // and a page with an arrow out of it: the guides on the web (every guide and the Compendium), in a new tab
-            const ax = m.x + 164, ay = m.y + m.h - 64, g = this.add.graphics().setDepth(6).setPosition(ax, ay).setAngle(-4);
-            for (const [w, a, j] of [[2.4, 0.85, 0], [1.2, 0.6, 1]]) {   // twice over, a little off
-                g.lineStyle(w, INK, a); g.beginPath(); g.moveTo(-2 + j, -10); g.lineTo(-11, -10); g.lineTo(-11 + j, 10); g.lineTo(9, 10 - j); g.lineTo(9, 1); g.strokePath();
-                g.lineBetween(-3, 3 + j, 11, -11); g.lineBetween(3, -12 + j, 11, -11); g.lineBetween(11, -11, 11 - j, -3);
-            }
-            const t = this.add.text(ax, ay + 14, 'all guides', { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(-3);
-            const z = this.add.zone(ax, ay + 4, 60, 46).setInteractive({ useHandCursor: true }).setDepth(7);
-            z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
-            z.on('pointerdown', () => { if (!this._settingsOpen) window.open('guide/', '_blank', 'noopener'); });
-        }
-        {   // and stacked over the guide: a podium (the leaderboards) and a little slime (your account, saved online)
-            const doodle = (x, y, angle, label, draw, onClick) => {
-                const g = this.add.graphics().setDepth(6).setPosition(x, y).setAngle(angle);
-                for (const [w, a, j] of [[2.4, 0.85, 0], [1.2, 0.6, 1]]) { g.lineStyle(w, INK, a); draw(g, j); }   // (twice over, a little off)
-                const t = this.add.text(x, y + 14, label, { fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#5a3a1a' }).setOrigin(0.5, 0).setDepth(6).setAngle(angle);
-                const z = this.add.zone(x, y + 4, 64, 46).setInteractive({ useHandCursor: true }).setDepth(7);
-                z.on('pointerover', () => { g.setScale(1.12); t.setScale(1.08); }); z.on('pointerout', () => { g.setScale(1); t.setScale(1); });
-                z.on('pointerdown', () => { if (!this._settingsOpen) onClick(); });
-            };
-            doodle(m.x + 64, m.y + m.h - 176, 3, 'leaderboards', (g, j) => { g.strokeRect(-13, -2 + j, 9, 11); g.strokeRect(-4, -10, 9, 19 - j); g.strokeRect(5 + j, -5, 9, 14); }, () => Cloud.open('board'));
-            doodle(m.x + 60, m.y + m.h - 118, -5, 'account', (g, j) => {
-                g.beginPath(); g.moveTo(-11, 9); g.lineTo(-11, 0 + j); g.lineTo(-7, -7); g.lineTo(0, -10 + j); g.lineTo(7, -7); g.lineTo(11, 0); g.lineTo(11 - j, 9); g.closePath(); g.strokePath();
-                g.lineBetween(-4, -2, -4, 1); g.lineBetween(4, -2 + j, 4, 1);   // (its eyes)
-            }, () => Cloud.open('account'));
-        }
+        const tw = nodes.find(n => n.tower);   // a little inked ? by the Tower (its guide again), a big one for the whole game's
+        if (tw && !tw.locked) scrawl(tw.x + 52, tw.y - 50, 'qsmall', 0.55, null, 0, 24, 29, () => this._towerGuide(() => {}, true));
+        scrawl(m.x + 44, m.y + m.h - 62, 'qbig', 0.55, 'guide', -6, 40, 47, () => this._gameGuide());
+        scrawl(m.x + 104, m.y + m.h - 64, 'book', 0.6, 'enemies', 4, 50, 46, () => this._openIndex());   // every enemy
+        scrawl(m.x + 164, m.y + m.h - 64, 'page', 0.55, 'all guides', -3, 60, 46, () => window.open('guide/', '_blank', 'noopener'));   // the guides on the web, in a new tab
+        scrawl(m.x + 64, m.y + m.h - 176, 'podium', 0.6, 'leaderboards', 3, 64, 46, () => Cloud.open('board'));
+        scrawl(m.x + 60, m.y + m.h - 118, 'acct', 0.55, 'account', -5, 64, 46, () => Cloud.open('account'));   // your account, saved online
+        Bounties.mapBoard(this, m.x + 128, m.y + m.h - 176);   // the bounty board (Bounties.js)
 
         // Title cartouche and compass rose.
-        this.add.text(m.x + 34, m.y + 30, 'THE DUNGEON', {
+        const title = this.add.text(m.x + 34, m.y + 30, 'THE DUNGEON', {
             fontSize: '30px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3b2716',
-        }).setDepth(3);
-        this.add.text(m.x + 36, m.y + 66, 'World I  ·  as far as anyone has mapped it', {
+        }).setDepth(3.1);
+        const sub = this.add.text(m.x + 36, m.y + 66, 'World I  ·  as far as anyone has mapped it', {
             fontSize: '12px', fontFamily: UIKit.FONT.title, fontStyle: 'italic', color: '#6a4a26',
-        }).setDepth(3);
-        const cx = m.x + m.w - 70, cy = m.y + 74, rr = 34;
-        ink.lineStyle(1.5, INK, 0.6); ink.strokeCircle(cx, cy, rr); ink.strokeCircle(cx, cy, rr - 6);
-        for (let k = 0; k < 4; k++) {
-            const a = k * Math.PI / 2 - Math.PI / 2, b = a + Math.PI / 2;
-            ink.fillStyle(k === 0 ? 0x8a2a1a : INK, 0.8);
-            ink.fillTriangle(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, cx + Math.cos(b) * 6, cy + Math.sin(b) * 6, cx - Math.cos(b) * 6, cy - Math.sin(b) * 6);
+        }).setDepth(3.1);
+        {   // on a scrap of clean paper, as the levels' names are: the Gauntlet's storm cloud passes behind it, not through the words
+            this._scrap(m.x + 26, m.y + 26, Math.max(title.width, sub.width + 2) + 16, 60);
         }
         this.add.text(cx, cy - rr - 10, 'N', { fontSize: '13px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#3b2716' }).setOrigin(0.5).setDepth(3);
     }
 
+    // A scrap of clean paper glued on the map under a label (map_kit 'plate', nine-sliced, at the sheet's 2x)
+    _scrap(x, y, w, h, depth = 3) {
+        return this.add.nineslice(x, y, 'map_kit', 'plate', Math.ceil(w / 2), Math.ceil(h / 2), 3, 3, 3, 3).setOrigin(0).setScale(2).setDepth(depth);
+    }
+
     // A level's medallion: an iron ring round an enamelled disc with its number (the Tower's,
     // bigger, an infinity sign). Returns setFocus(on) and onClick(fn).
+    // its medal and lock-on ring in map_kit: md_<level> / rg_<level>, md_lock(t) sealed
+    static MEDAL_KEY = ['tut', 'storm', 'rift', 'frac', 'def', 'cist'];
+    _medalKey(n) { return n.tower ? 'tower' : LevelSelectScene.MEDAL_KEY[n.page] || 'tut'; }
     _drawMedal(n) {
         const r = n.tower ? 30 : 24;
         const c = this.add.container(n.x, n.y).setDepth(5);
-        const g = this.add.graphics();
-        g.fillStyle(0x000000, 0.4); g.fillCircle(2, 3, r + 3);
-        g.fillStyle(UIKit.PALETTE.iron, 1); g.fillCircle(0, 0, r + 3);
-        g.fillStyle(n.locked ? 0x2a2622 : MenuArt.mix(n.accent, 0x1b1612, 0.55), 1); g.fillCircle(0, 0, r - 1);
-        g.fillStyle(0xffffff, n.locked ? 0.05 : 0.12); g.fillCircle(-r * 0.3, -r * 0.35, r * 0.45);
-        g.lineStyle(1.5, UIKit.PALETTE.ironHi, 1); g.strokeCircle(0, 0, r + 2);
-        g.lineStyle(2, n.locked ? UIKit.PALETTE.ironHi : n.accent, n.locked ? 0.5 : 0.9); g.strokeCircle(0, 0, r - 1);
-        if (n.locked) {   // a padlock where the number would be
-            g.lineStyle(3, 0x8a8070, 1); g.beginPath(); g.arc(0, -3, 6, Math.PI, 0); g.strokePath();
-            g.fillStyle(0x8a8070, 1); g.fillRoundedRect(-9, -3, 18, 13, 2);
-            g.fillStyle(0x1b1612, 1); g.fillCircle(0, 3, 2); g.fillRect(-1, 3, 2, 4);
+        const half = n.tower ? 16.5 : 13.5, size = half * 2 + 1;   // the disc's middle (its frame has a pixel of shadow beyond it)
+        const g = this.add.image(0, 0, 'map_kit', n.locked ? (n.tower ? 'md_lockt' : 'md_lock') : 'md_' + this._medalKey(n)).setOrigin(half / size).setScale(2);
+        if (n.locked) {   // its padlock is in its frame, where the number would be
             c.add(g);
             const hit0 = this.add.circle(n.x, n.y, r + 8, 0xffffff, 0).setDepth(7).setInteractive({ useHandCursor: true });
             hit0.on('pointerover', () => this.tweens.add({ targets: c, scale: c._focus ? 1.18 : 1.1, duration: 110 }));
@@ -888,6 +580,8 @@ class LevelSelectScene extends Phaser.Scene {
     // Once you've climbed past floor SKIP_BACK + 1, a climb can start higher up for a fee,
     // with a catch-up boon for every one the skipped floors would have given (Tower.js).
     _climb(floor) {
+        if (this._entering) return;
+        this._entering = true;
         Transitions.enterLevel(this, this._introIndexFor(6), () => this.scene.start('Game', { levelIndex: 6, tower: TowerFloors.newRun(floor) }), this._enterFrom);
     }
     // the shop's hover words, for the guide (ShopScene: *keyword* text and its tooltip)
@@ -1241,11 +935,12 @@ class LevelSelectScene extends Phaser.Scene {
         const slider = (label, get, set) => {
             const ry = y;
             txt(lx, ry, label, { fontStyle: 'bold' }).setOrigin(0, 0.5);
-            const bx = lx + 90, bw = lw - 150, bar = keep(this.add.graphics().setDepth(D + 3));
+            const bx = lx + 90, bw = lw - 150;
+            const pips = Array.from({ length: 10 }, (_, k) => keep(this.add.nineslice(bx + k * (bw / 10), ry - 7, 'map_kit', 'pip_off', Math.round((bw / 10 - 3) / 2), 7, 1, 1, 2, 2).setOrigin(0).setScale(2).setDepth(D + 3)));   // (map_kit pips)
             const pct = txt(bx + bw + 40, ry, '', { color: UIKit.CSS.textHi }).setOrigin(0, 0.5);
             const draw = () => {
-                const v = get(); bar.clear();
-                for (let k = 0; k < 10; k++) { bar.fillStyle(k < Math.round(v * 10) ? P.accentBlue : 0x1a2236, 1); bar.fillRect(bx + k * (bw / 10), ry - 7, bw / 10 - 3, 14); }
+                const v = get();
+                pips.forEach((pp, k) => pp.setFrame(k < Math.round(v * 10) ? 'pip_on' : 'pip_off'));
                 pct.setText(Math.round(v * 100) + '%');
             };
             draw();
@@ -1279,6 +974,18 @@ class LevelSelectScene extends Phaser.Scene {
         choice('GRAPHICS', Settings.QUALITY, () => Settings.quality(), v => Settings.setQuality(v));
         choice('GLOW', Settings.GLOW, () => Settings.glow(), v => Settings.setGlow(v));
         choice('FPS', Settings.FPS, () => Settings.fps(), v => Settings.setFps(v));
+        {   // fullscreen: the browser lets a page go fullscreen only from a press (pointerup), so its own two buttons
+            txt(lx, y, 'FULLSCREEN', { fontStyle: 'bold' }).setOrigin(0, 0.5);
+            const cy = y, bw = (lw - 90) / 2, btns = [['ON', true], ['OFF', false]].map(([name, v], k) => {
+                const b = txt(lx + 90 + bw * (k + 0.5), cy, name, { fontSize: '12px', fontStyle: 'bold', backgroundColor: '#141a2a', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+                b.on('pointerup', () => { if (v !== this.scale.isFullscreen) { if (v) this.scale.startFullscreen(); else this.scale.stopFullscreen(); } Sfx.play(this, 'click'); });
+                return [b, v];
+            });
+            const paint = () => btns.forEach(([b, v]) => b.active && b.setColor(this.scale.isFullscreen === v ? '#f6d58a' : UIKit.CSS.textLo).setBackgroundColor(this.scale.isFullscreen === v ? '#2a2414' : '#141a2a'));
+            paint();
+            for (const ev of ['enterfullscreen', 'leavefullscreen']) { this.scale.on(ev, paint); this.events.once('shutdown', () => this.scale.off(ev, paint)); }
+            y += 38;
+        }
         txt(lx, y + 4, 'Keybinds take effect when a level loads.', { fontSize: '11px', color: UIKit.CSS.textLo });
         // your runs, recorded (Telemetry.js)
         y += 44;
@@ -1291,16 +998,19 @@ class LevelSelectScene extends Phaser.Scene {
             b.on('pointerdown', () => { Sfx.play(this, 'click'); fn(); });
         }
         y += 40;
-        const dv = txt(lx, y, 'DEV TOOLS  ›', { fontSize: '13px', fontStyle: 'bold', backgroundColor: '#2a1a2a', padding: { x: 10, y: 5 }, color: '#f0a8ff' }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
-        dv.on('pointerdown', () => { Sfx.play(this, 'click'); this._openDevTools(); });
+        if (Progress.devMode()) {   // only in dev mode (localStorage devMode): a player can't hand themselves the game
+            const dv = txt(lx, y, 'DEV TOOLS  ›', { fontSize: '13px', fontStyle: 'bold', backgroundColor: '#2a1a2a', padding: { x: 10, y: 5 }, color: '#f0a8ff' }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+            dv.on('pointerdown', () => { Sfx.play(this, 'click'); this._openDevTools(); });
+        }
 
         // ── right: keybinds, two columns
         const rx = px + lw + 60, rw = pw - lw - 94, cw = rw / 2 - 10;
         head(rx, py + 70, 'KEYBINDS');
         const rows = [];
         const paintRows = () => rows.forEach(r => r.btn.setText(Settings.label(Settings.key(r.id))).setColor(UIKit.CSS.textHi).setBackgroundColor('#1a2236'));
+        const per = Math.ceil(Settings.ACTIONS.length / 2), rh = Math.min(34, (ph - 112 - 84) / per);   // half each side (a 21st, Mute, had wrapped onto the first row of the second), spaced to fit above the buttons
         Settings.ACTIONS.forEach((a, i) => {
-            const col = i < 10 ? 0 : 1, row = i % 10, x = rx + col * (cw + 20), ry = py + 112 + row * 34;
+            const col = i < per ? 0 : 1, row = i % per, x = rx + col * (cw + 20), ry = py + 112 + row * rh;
             txt(x, ry, a.label, { fontSize: '12px' }).setOrigin(0, 0.5);
             const btn = txt(x + cw - 4, ry, '', { fontSize: '13px', fontStyle: 'bold', backgroundColor: '#1a2236', padding: { x: 10, y: 4 } })
                 .setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
@@ -1416,7 +1126,7 @@ class LevelSelectScene extends Phaser.Scene {
             const x = px + 20 + Math.floor(i / rows) * (cw + 20), y = top + (i % rows) * rh, got = done.has(a.id), col = Achievements.TIER_COL[a.tier];
             const n = Math.min(a.goal, st[a.stat] || 0);
             keep(this.add.rectangle(x, y, cw, rh - 6, got ? 0x1a1426 : P.bgRaised, 1).setOrigin(0).setDepth(D + 2).setStrokeStyle(1, col, got ? 0.8 : 0.2));
-            txt(x + 20, y + (rh - 6) / 2, '★', { fontSize: '20px', color: UIKit._hex(col) }).setOrigin(0.5).setAlpha(got ? 1 : 0.25);
+            keep(this.add.image(x + 20, y + (rh - 6) / 2, 'map_kit', 'star_' + a.tier).setScale(2).setDepth(D + 3).setAlpha(got ? 1 : 0.25));
             txt(x + 40, y + 5, a.name, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: got ? UIKit._hex(col) : UIKit.CSS.textHi });
             txt(x + 40, y + 24, got ? `"${a.desc}"` : a.how, { fontStyle: got ? 'italic' : 'normal', color: got ? '#e8dcc0' : UIKit.CSS.textMid });
             txt(x + cw - 10, y + 7, Achievements.rewardText(a).split('   ').join('  '), { fontSize: '10px', color: got ? UIKit.CSS.textLo : '#9be08a' }).setOrigin(1, 0);
@@ -1433,11 +1143,11 @@ class LevelSelectScene extends Phaser.Scene {
 
     _drawPack(p) {
         const WEAPON_LABELS = {
-            flame_fists: 'Flame Fists', flame_sword: 'Flame Sword', magma_staff: 'Magma Staff', ignition: 'Ignition',
-            ice_fists: 'Ice Fists', icicle_cannon: 'Icicle Cannon', fractal_shard: 'Fractal Shard',
-            lightning_fists: 'Storm Fists', orb_emitter: 'Orb Emitter', ball_lightning: 'Ball Lightning', conductor: 'Circuit Breaker',
+            flame_fists: 'Flame Fists', flame_sword: 'Flame Sword', magma_staff: 'Magma Staff', ignition: 'Ignition', ember_scythe: 'Ember Scythe',
+            ice_fists: 'Ice Fists', icicle_cannon: 'Icicle Cannon', fractal_shard: 'Fractal Shard', rimeguard: 'Rimeguard', boreal_trident: 'Boreal Trident',
+            lightning_fists: 'Storm Fists', orb_emitter: 'Orb Emitter', ball_lightning: 'Ball Lightning', conductor: 'Circuit Breaker', thunder_glaive: 'Thunder Glaive',
             cosmic_fists: 'Void Fists', barrier_staff: 'Barrier Staff', astrolabe: 'Astrolabe',
-            singularity_staff: 'Singularity', void_blade: 'Void Blade',
+            singularity_staff: 'Singularity', void_blade: 'Void Blade', pendulum: 'Pendulum',
         };
         const els = [
             { key: 'fire', label: 'FIRE', color: UIKit.PALETTE.accentOrange, def: 'flame_fists' },
@@ -1488,10 +1198,10 @@ class LevelSelectScene extends Phaser.Scene {
         // the two gadgets you carry (Q, F), animated in their sockets; a click goes to the shop's gadget tab
         const fk = Object.create(FieldKit.prototype), lo = fk.gadgetLoadout(), keys = [Settings.label(Settings.key('gadget1')), Settings.label(Settings.key('gadget2'))];
         lo.forEach((id, i) => {
-            const gx = rx - 12 - 100 - 26 - (1 - i) * 40, gy = p.y + 24, g = this.add.graphics().setDepth(D + 2);
-            g.fillStyle(0x000000, 0.5).fillCircle(gx + 1, gy + 2, 17); g.fillStyle(0x2e2a26, 1).fillCircle(gx, gy, 16); g.fillStyle(0x1b1612, 1).fillCircle(gx, gy, 14);
+            const gx = rx - 12 - 100 - 26 - (1 - i) * 40, gy = p.y + 24;
+            this.add.image(gx, gy, 'map_kit', 'sock').setScale(2).setDepth(D + 2);   // its socket (map_kit), ringed in the gadget's colour
             const def = id && fk._gadgetDefs()[id];
-            if (def) { g.lineStyle(1.5, def.color, 0.9).strokeCircle(gx, gy, 15); const k = ShopScene.gadgetIcon(this, id); if (k) { const sp = this.add.sprite(gx, gy, k, '0').setScale(1.1).setDepth(D + 3); if (this.anims.exists(k)) sp.play(k); } }
+            if (def) { this.add.image(gx, gy, 'map_kit', 'sock_ring').setScale(2).setTint(def.color).setDepth(D + 2); const k = ShopScene.gadgetIcon(this, id); if (k) { const sp = this.add.sprite(gx, gy, k, '0').setScale(1.1).setDepth(D + 3); if (this.anims.exists(k)) sp.play(k); } }
             this.add.text(gx + 12, gy + 9, keys[i], { fontSize: '9px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d2bf98', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5).setDepth(D + 4);
             this.add.zone(gx, gy, 32, 32).setInteractive({ useHandCursor: true }).setDepth(D + 5).on('pointerdown', () => this.scene.start('Shop', { tab: 3 }));
         });

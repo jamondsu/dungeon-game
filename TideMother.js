@@ -38,7 +38,7 @@
 class TideMother {
     static CFG = {
         COL: 0x3fd0ff, COL_PART: 0x6fe8ff, COL_TIDE: 0x2a7fff, COL_DROP: 0x7fd0ff,
-        MOTHER_SCALE: 1.8, MOTHER_HUE: 205, RIYAL_HUE: 165, RIYAL_SCALE: 1.35,
+        MOTHER_SCALE: 1.8, MOTHER_HUE: 205, RIYAL_SCALE: 1.35,
         FIRST_MS: 1800, GAP: [1700, 1300, 1000],   // her first move after the card, and the breath between moves (by phase)
         PULSE_MS: 7000,
         RUNES: [['fire', -150], ['ice', 150], ['lightning', 90], ['cosmic', 30], ['tide', -30]], RUNE_R: 8.5,   // each rune and its angle (degrees, 0 = east) round the middle
@@ -73,9 +73,8 @@ class TideMother {
         (S._bossIntroSeen ||= {}).tide = true;   // her card comes at the end of the scene below, not when her bar first shows
         // Riyal, held down in the middle
         const rx = (o.cx + 0.5) * TS, ry = (o.cy + 0.5) * TS + (S.SLIME_Y_OFFSET || 0);
-        const riyal = T.riyal = S.add.sprite(rx, ry, 'slime_red', 0).setScale(S.SLIME_SCALE * C.RIYAL_SCALE, S.SLIME_SCALE * C.RIYAL_SCALE * 0.82).setDepth(1.6);
-        if (S.anims.exists('red_idle')) riyal.play('red_idle');
-        if (riyal.preFX) riyal.preFX.addColorMatrix().hue(C.RIYAL_HUE); else riyal.setTint(0x6fffd8);
+        const riyal = T.riyal = S.add.sprite(rx, ry, TideMother.riyalKey(S), '0').setScale(S.SLIME_SCALE * C.RIYAL_SCALE, S.SLIME_SCALE * C.RIYAL_SCALE * 0.82).setDepth(1.6);
+        riyal.play('riyal_idle');
         S._vfxSort?.(riyal);
         if (typeof CreatureFX !== 'undefined') CreatureFX.face(S, riyal, { mood: 'kind' });
         T.riyalShiver = S.tweens.add({ targets: riyal, x: rx + 1.5, duration: 90, yoyo: true, repeat: -1 });
@@ -88,6 +87,12 @@ class TideMother {
         for (const s of [-1, 1]) TideMother._add(S, q, 'smasher', o.cx + s * 3, o.cy - o.R + 5);
         for (const e of T.smashers) e.tutorialRoomIndex = -1;
         return q;
+    }
+
+    // Riyal's body: her own sheet (assets/art/slime_riyal, the slime sheet's layout, a water slime), idling as a slime does
+    static riyalKey(S) {
+        if (!S.anims.exists('riyal_idle')) S.anims.create({ key: 'riyal_idle', frames: [{ key: 'slime_riyal', frame: '0' }, { key: 'slime_riyal', frame: '18' }], frameRate: 2, repeat: -1 });
+        return 'slime_riyal';
     }
 
     // One rune statue at (x, y), its sign floating over it, its chain to Riyal
@@ -104,10 +109,19 @@ class TideMother {
         const sym = S.add.image(px, py - 46, TideMother._symKey(el), '0').setScale(1.6).setAlpha(0).setDepth(3.35);
         S.tweens.add({ targets: [sym, glow], y: py - 50, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         // the chain, Riyal to the statue
-        const rx = (T.cx + 0.5) * TS, ry = (T.cy + 0.5) * TS, len = Math.hypot(px - rx, py - ry);
-        const chain = S.add.tileSprite(rx, ry, len, 10, 'tm_chain').setOrigin(0, 0.5).setRotation(Math.atan2(py - ry, px - rx))
-            .setTileScale(2).setTint(col).setAlpha(0.55).setDepth(0.9);
+        const chain = TideMother._chain(S, (T.cx + 0.5) * TS, (T.cy + 0.5) * TS, px, py, col).setAlpha(0.55);
         return { el, tileX: x, tileY: y, cx: px, cy: py - 10, hits: 0, done: false, container, img, glyph, glow, sym, chain };
+    }
+    // A chain laid link by link from (x0, y0) to (x1, y1): the piece (assets/art/tm_chain) for the nearest twelfth of a
+    // turn, flipped for the other ways, never turned
+    static _chain(S, x0, y0, x1, y1, col) {
+        const a = Math.atan2(y1 - y0, x1 - x0), q = Math.round(a / (Math.PI / 6)), k = Math.abs(q), fx = k > 3, Z = 2;
+        const [frame, dx, dy] = [['e', 8, 0], ['se', 7, 4], ['sse', 4, 7], ['s', 0, 8]][fx ? 6 - k : k], sx = fx ? -Z : Z, sy = q < 0 ? -Z : Z;
+        const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / (Math.hypot(dx, dy) * Z)));
+        const c = S.add.container(0, 0).setDepth(0.9);
+        for (let i = 0; i < n; i++) c.add(S.add.image(x0 + sx * dx * (i + 0.5), y0 + sy * dy * (i + 0.5), 'tm_chain', frame).setFlip(fx, q < 0).setScale(Z).setTint(col));
+        c._dir = [Math.cos(a), Math.sin(a)];
+        return c;
     }
     static _symKey(el) { return el === 'tide' ? 'tm_sym_tide' : 'el_icon_' + el; }
     static _symFrame(S, img, el, now, k = 0) { if (el !== 'tide' && img?.active) img.setFrame(String((Math.floor(now / 140) + k) % 4)); }
@@ -199,8 +213,9 @@ class TideMother {
             // after you, turning slowly: lead it round
             let turn = Math.atan2(py - b.y, px - b.x) - b.a;
             turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-            b.a += Math.max(-B.TURN * dt, Math.min(B.TURN * dt, turn));
-            b.x += Math.cos(b.a) * B.SPEED * TS * dt; b.y += Math.sin(b.a) * B.SPEED * TS * dt;
+            const sd = dt * Trident.slow(S, b.x, b.y);   // (the Boreal Trident's aura: it turns slower too)
+            b.a += Math.max(-B.TURN * sd, Math.min(B.TURN * sd, turn));
+            b.x += Math.cos(b.a) * B.SPEED * TS * sd; b.y += Math.sin(b.a) * B.SPEED * TS * sd;
             const d = Math.hypot(b.x - cx, b.y - cy);
             if (d > lim) { b.x = cx + (b.x - cx) * lim / d; b.y = cy + (b.y - cy) * lim / d; }
             const wob = 1 + 0.06 * Math.sin(now * 0.012 + b.t0);
@@ -261,10 +276,9 @@ class TideMother {
         // its chain snaps in two and falls away
         const c = r.chain;
         if (c?.active) {
-            const half = c.width / 2, a = c.rotation;
-            const tail = S.add.tileSprite(c.x + Math.cos(a) * half, c.y + Math.sin(a) * half, half, 10, 'tm_chain').setOrigin(0, 0.5).setRotation(a).setTileScale(2).setTint(col).setDepth(0.9);
-            c.setSize(half, 10);
-            S.tweens.add({ targets: [c, tail], alpha: 0, y: '+=10', duration: 700, ease: 'Quad.easeIn', onComplete: () => { c.destroy(); tail.destroy(); } });
+            const [ux, uy] = c._dir;   // its far half jerks away from the near one
+            S.tweens.add({ targets: c.list.slice(c.list.length >> 1), x: `+=${ux * 8}`, y: `+=${uy * 8}`, duration: 180, ease: 'Quad.easeOut' });
+            S.tweens.add({ targets: c, alpha: 0, y: '+=10', duration: 700, ease: 'Quad.easeIn', onComplete: () => c.destroy() });
         }
         const rr = T.riyal;
         if (rr?.active) {
@@ -451,13 +465,12 @@ class TideMother {
             const c = q.container, x = c.x, y = c.y - 30 * C.MOTHER_SCALE, spin = a0 + dir * C.SPIN * (n - t0) / 1000;
             for (let i = 0; i < C.ARMS; i++) {
                 const a = spin + i * Math.PI * 2 / C.ARMS, v = C.DROP_SPEED * TS;
-                const g = BossFX.shot(S, 'volt', x, y, a, 2.8);
-                g.setTint?.(C.COL_DROP);
+                const g = S.textures.exists('boss_tide') && BossFX.anims(S) ? S.add.sprite(x, y, 'boss_tide', 'drop_0').setScale(1.5).setDepth(2.8).play('bt_drop')   // (a drop of her water, wobbling)
+                    : BossFX.shot(S, 'volt', x, y, a, 2.8).setTint(C.COL_DROP);
+                S._vfxSort?.(g);
                 S.enemyProjectiles.push({ gfx: g, vx: Math.cos(a) * v, vy: Math.sin(a) * v, damage: C.DROP_DMG * (S.enemyDamageScale || 1),
-                                          startX: x, startY: y, maxDist: C.DROP_RANGE * TS, _bfxKind: 'volt', _tideDrop: true });
-                // where it comes down it leaves a puddle (the room's water is hers)
-                const lx = Math.floor((x + Math.cos(a) * C.DROP_RANGE * TS) / TS), ly = Math.floor((y + Math.sin(a) * C.DROP_RANGE * TS) / TS);
-                S.time.delayedCall(C.DROP_RANGE / C.DROP_SPEED * 1000, () => { if (q.active && !q.tide.over) S.addWater(lx, ly, C.DROP_WET_MS); });
+                                          startX: x, startY: y, maxDist: C.DROP_RANGE * TS, _bfxKind: 'volt', _tideDrop: true, srcName: 'tide mother',
+                                          onEnd: (ex, ey) => { if (q.active && !q.tide.over) for (let k = 0; k <= 4; k++) if (S.addWater(Math.floor((ex - Math.cos(a) * k * TS / 2) / TS), Math.floor((ey - Math.sin(a) * k * TS / 2) / TS), C.DROP_WET_MS)) break; } });   // where it comes down (whenever that is), a puddle: on the last floor it crossed, if that was a wall (her rim fills up) (the room's water is hers)
             }
         } });
         return C.SPRAY_MS + 300;
@@ -570,6 +583,7 @@ class TideMother {
                     if (S.world?.[x]?.[y] === S.FLOOR && !seen.has(x + ',' + y)) { seen.add(x + ',' + y); s.tiles.push([x, y]); }
                 }
                 s.state = 'wind'; s.until = now + K.WIND_MS;
+                EnemyManager.playAtk?.(S, sp, K.WIND_MS, fx < 0, 'wind_');   // wound back
                 e._moveCdMult = 99;   // it plants itself for the swing
                 s.m = BossFX.mark(S, s.tiles, 0xff8a3a, K.WIND_MS, { fill: 0.14 });
                 Sfx.play(S, 'tell', { ms: K.WIND_MS });
@@ -580,13 +594,16 @@ class TideMother {
         if (now < s.until) return;
         // the strike: faster than you can see
         s.state = 'idle'; s.readyAt = now + K.CD; s.struckAt = now; e._moveCdMult = K.MOVE;
+        sp._atkTw?.stop(); EnemyManager.playAtk?.(S, sp, 220, s.dir[0] < 0, 'smash_');   // the strike, too fast to see
         s.m?.done(120);
         Sfx.play(S, 'swing'); Sfx.play(S, 'slam');
         S.cameras.main.shake(70, 0.004);
-        if (now >= (S._dashInvulnUntil || 0) && s.tiles.some(([x, y]) => x === S.playerX && y === S.playerY)) {
-            S.takeDamage(K.DMG * (S.enemyDamageScale || 1));
-            S.showStatusText(S.player.x, S.player.y - 30, 'SMASH', '#ffb070');
-        }
+        CombatSystem.tauntBoth(S, () => {   // (the ally it swung at, and you if you're in the swing)
+            if (now >= (S._dashInvulnUntil || 0) && s.tiles.some(([x, y]) => x === S.playerX && y === S.playerY)) {
+                S.takeDamage(K.DMG * (S.enemyDamageScale || 1), e);
+                S.showStatusText(S.player.x, S.player.y - 30, 'SMASH', '#ffb070');
+            }
+        });
         // the cavitation bubble the strike leaves: dormant, drifting on a tile, then a wide burst (LevelManager._cavBubble: a
         // Ripplerunner near it takes it and sends it at you)
         const [dx, dy] = s.dir, sx = (e.x + dx + 0.5) * TS, sy = (e.y + dy + 0.5) * TS, n = Math.hypot(dx, dy) || 1;
@@ -618,7 +635,7 @@ class TideMother {
     // Lines in turn, each with its speaker's face, then done()
     static _talk(S, lines, done) {
         const name = TideMother._hero(S), LOOKS = {
-            Riyal: { key: 'slime_red', anim: 'red_idle', hue: TideMother.CFG.RIYAL_HUE, mood: 'kind' },
+            Riyal: { key: TideMother.riyalKey(S), anim: 'riyal_idle', mood: 'kind' },
             hero: { key: 'slime_blue', anim: 'idle', mood: 'friend' },
         };
         const go = i => {
@@ -654,6 +671,7 @@ class TideMother {
                 const y0 = mum.y;
                 mum.y = y0 + 40;
                 S.tweens.add({ targets: mum, alpha: 1, y: y0, duration: 1100, ease: 'Cubic.easeOut' });
+                BossFX.pose(q, 'cast', 1500);   // (rising, arms of her water raised)
                 Sfx.play(S, 'roar', { big: true }); S.cameras.main.shake(600, 0.01);
                 S._vfxFlash?.(mum.x, mum.y, 160, TideMother.CFG.COL, 600, 0.8);
             });
@@ -699,19 +717,26 @@ class TideMother {
         at(700, () => {   // every drop in the room comes to her
             const k = S.SLIME_SCALE * C.RIYAL_SCALE;
             S.tweens.add({ targets: r, scaleX: k * 1.5, scaleY: k * 1.5, duration: 1300, ease: 'Back.easeOut' });
+            const drawn = S.textures.exists('boss_tide') ? S.add.particles(0, 0, 'boss_tide', { frame: ['drop_0', 'drop_1'], emitting: false, lifespan: 700,   // (her drops, the room's water, drawn in to her)
+                moveToX: r.x, moveToY: r.y, scale: { start: 1.6, end: 1 }, alpha: { start: 0.4, end: 1 } }).setDepth(3.2) : null;
             for (let i = 0; i < 3; i++) at(i * 380, () => {
-                const ring = S.add.image(r.x, r.y, 'vfx_ring').setBlendMode(Phaser.BlendModes.ADD).setTint(0x6fffd8).setDepth(3.2).setScale(T.R * TS / 26.5);
-                S.tweens.add({ targets: ring, scale: 0.2, alpha: 0.2, duration: 700, ease: 'Quad.easeIn', onComplete: () => ring.destroy() });
+                if (drawn) { for (let j = 0; j < 22; j++) { const a = Math.random() * Math.PI * 2, d = (T.R - Math.random() * 3) * TS; drawn.emitParticleAt(r.x + Math.cos(a) * d, r.y + Math.sin(a) * d, 1); } }
+                else {
+                    const ring = S.add.image(r.x, r.y, 'vfx_ring').setBlendMode(Phaser.BlendModes.ADD).setTint(0x6fffd8).setDepth(3.2).setScale(T.R * TS / 26.5);
+                    S.tweens.add({ targets: ring, scale: 0.2, alpha: 0.2, duration: 700, ease: 'Quad.easeIn', onComplete: () => ring.destroy() });
+                }
                 Sfx.play(S, 'bubbles');
             });
+            if (drawn) at(2000, () => drawn.destroy());
         });
         at(2300, () => {   // one wave, straight through her mother
             TideMother._look(S, { x: (r.x + mum.x) / 2, y: (r.y + mum.y) / 2 }, 400);
             const n = 9;
-            for (let i = 1; i <= n; i++) at(i * 55, () => BossFX.blast(S, r.x + (mum.x - r.x) * i / n, r.y + (mum.y - r.y) * i / n, 60 + i * 6, 'volt'));
+            for (let i = 1; i <= n; i++) at(i * 55, () => TideMother._splash(S, r.x + (mum.x - r.x) * i / n, r.y + (mum.y - r.y) * i / n, 60 + i * 6));
             at(n * 55 + 60, () => {
                 Sfx.play(S, 'splash', { big: true }); Sfx.play(S, 'bossdie');
-                S.cameras.main.shake(700, 0.02); S._vfxFlash?.(mum.x, mum.y, 260, 0xffffff, 700, 1);
+                S.cameras.main.shake(700, 0.02); S._vfxFlash?.(mum.x, mum.y, 200, TideMother.CFG.COL, 700, 0.9);
+                if (q._bfxArt && q.sprite?.active) { q._bfxDying = true; q.sprite.setFrame('sink'); }   // struck: she sinks back to the deep
                 S.showStatusText(mum.x, mum.y - 120, 'ONE BLOW', '#ffffff');
                 S.tweens.add({ targets: mum, alpha: 0, y: mum.y + 50, scaleY: mum.scaleY * 0.3, duration: 1600, ease: 'Quad.easeIn' });   // back to the deep
             });
@@ -734,6 +759,14 @@ class TideMother {
                 });
             }));
         });
+    }
+    // A wave breaking at (x, y), r across: her drops thrown up and falling (typed), a little light; without the art, the old blast
+    static _splash(S, x, y, r) {
+        if (!S.textures.exists('boss_tide')) return BossFX.blast(S, x, y, r, 'volt');
+        const E = S._tmSplash?.active ? S._tmSplash : (S._tmSplash = S.add.particles(0, 0, 'boss_tide', { frame: ['drop_0', 'drop_1'], emitting: false, lifespan: { min: 350, max: 650 },
+            speed: { min: 60, max: 180 }, angle: { min: 200, max: 340 }, gravityY: 420, scale: { start: 1.6, end: 1 }, alpha: { start: 1, end: 0 } }).setDepth(3.3));
+        for (let i = 0; i < 10; i++) E.emitParticleAt(x + (Math.random() - 0.5) * r * 0.6, y + (Math.random() - 0.5) * r * 0.3, 1);
+        S._vfxFlash?.(x, y, r * 0.8, TideMother.CFG.COL, 240, 0.45);
     }
     // RIYAL'S CALL, across the middle of the screen
     static _unlockCard(S) {
@@ -797,9 +830,8 @@ class TideMother {
         if (!spot) return say('NO ROOM');
         S._riyalReadyAt = now + C.CD;
         const [sx, sy] = spot, px = (sx + 0.5) * TS, py = (sy + 0.5) * TS + (S.SLIME_Y_OFFSET || 0), k = S.SLIME_SCALE * TideMother.CFG.RIYAL_SCALE, rise = wet ? C.RISE_WET_MS : C.RISE_MS;
-        const s = S.add.sprite(px, py + 16, 'slime_red', 0).setScale(k, k * 0.2).setAlpha(0).setDepth(S.player.depth - 0.02);
-        if (S.anims.exists('red_idle')) s.play('red_idle');
-        if (s.preFX) s.preFX.addColorMatrix().hue(TideMother.CFG.RIYAL_HUE); else s.setTint(0x6fffd8);
+        const s = S.add.sprite(px, py + 16, TideMother.riyalKey(S), '0').setScale(k, k * 0.2).setAlpha(0).setDepth(S.player.depth - 0.02);
+        s.play('riyal_idle');
         S._vfxSort?.(s);
         if (typeof CreatureFX !== 'undefined') CreatureFX.face(S, s, { mood: 'kind' });
         Sfx.play(S, 'bubbles');
@@ -838,8 +870,7 @@ class TideMother {
         const W = S.scale.width, cx = W / 2 - 236 - 54, cy = S.scale.height - 34, R = 21;   // left of the gadgets (right of them is the gems)
         if (!H || !H.g.active) {
             const g = S.add.graphics().setScrollFactor(0).setDepth(40);
-            const face = S.add.sprite(cx, cy + 4, 'slime_red', 0).setScrollFactor(0).setDepth(40.5).setScale(1.1);
-            if (face.preFX) face.preFX.addColorMatrix().hue(TideMother.CFG.RIYAL_HUE); else face.setTint(0x6fffd8);
+            const face = S.add.sprite(cx, cy + 4, TideMother.riyalKey(S), '0').setScrollFactor(0).setDepth(40.5).setScale(1.1);
             const key = S.add.text(cx, cy + R + 7, Settings.label(Settings.key('call')), { fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#d2bf98', stroke: '#000', strokeThickness: 2 }).setOrigin(0.5).setScrollFactor(0).setDepth(41);
             const txt = S.add.text(cx, cy, '', { fontSize: '16px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setScrollFactor(0).setDepth(41);
             S._riyalSock = { g, face, key, txt };
@@ -875,11 +906,12 @@ class TideMother {
             S.showStatusText(S.player.x, S.player.y - 30, 'RIYAL CAUGHT IT', '#9ff8e4');
             return;
         }
-        S.takeDamage(dmg * (S.enemyDamageScale || 1));
+        S.takeDamage(dmg * (S.enemyDamageScale || 1), 'tide mother');
     }
     // Her move's name over her, and on her boss bar
     static _say(S, q, name, hint) {
         q.tide.line = `${name}  ·  ${hint}`;
+        BossFX.pose(q, 'cast', 700);   // (she raises her water as she calls it)
         const c = q.container;
         S.showStatusText(c.x, c.y - 70 * TideMother.CFG.MOTHER_SCALE, '≋ ' + name, '#7fe0ff');
     }

@@ -86,10 +86,10 @@
   <div class="wrap">
     <table class="numbers">
       <tr><th>Element</th><th>Weapons, cheapest first (glorps)</th></tr>
-      <tr><td class="fire">Fire</td><td>Flame Fists (starter), Flame Sword 150, Magma Staff 400, Ignition 700</td></tr>
-      <tr><td class="ice">Ice</td><td>Ice Fists (starter), Icicle Cannon 400, Fractal Shard 700</td></tr>
-      <tr><td class="bolt">Lightning</td><td>Storm Fists (starter), Orb Emitter 150, Ball Lightning 400, Circuit Breaker 700</td></tr>
-      <tr><td class="cosmic">Cosmic</td><td>Void Fists (starter), Barrier Staff 150, Astrolabe 200, Singularity 250, Void Blade 300</td></tr>
+      <tr><td class="fire">Fire</td><td>Flame Fists (starter), Flame Sword 150, Magma Staff 400, Ignition 700, Ember Scythe 1000</td></tr>
+      <tr><td class="ice">Ice</td><td>Ice Fists (starter), Icicle Cannon 150, Fractal Shard 400, Rimeguard 700, Boreal Trident 1000</td></tr>
+      <tr><td class="bolt">Lightning</td><td>Storm Fists (starter), Orb Emitter 150, Ball Lightning 400, Circuit Breaker 700, Thunder Glaive 1000</td></tr>
+      <tr><td class="cosmic">Cosmic</td><td>Void Fists (starter), Barrier Staff 150, Astrolabe 200, Singularity 250, Void Blade 300, Pendulum 400</td></tr>
     </table>
   </div>
   <h3>Cosmic's boons</h3>
@@ -102,6 +102,7 @@
       <tr><td>Astrolabe</td><td>Starfall, in a room with enemies: stars crash round the room, dazing where they land. Pick them up within 5s. Each one marks 2 enemies (10 at most). Hitting a mark pops it for 6% of the gem of the element you hold and 2% of each other one.</td><td class="n">40s</td></tr>
       <tr><td>Singularity</td><td>A well at the cursor pulls enemies in for 5s, adding a Hex stack every 2s they stay inside. While it's out and for 5s after, you take 30% less damage.</td><td class="n">12s</td></tr>
       <tr><td>Void Blade</td><td>Hold to charge (up to 3.5s), let go to slash: 3 to 18 tiles long, stunning for 0.6 to 3.5s, leaving cosmic fluid whose Hex lasts 6 to 14s, longer than any other. The longer the charge, the more of all of it.</td><td class="n">12s</td></tr>
+      <tr><td>Pendulum</td><td>No attack. A click flings it onto the cursor (6 tiles at most), where it grows into a great pendulum and lands as a <span class="term">Time Lock</span>, a 7x7 with its corners cut: for 4s time stops in it for everything but you. Enemies in it can't act or be moved and take nothing; every hit on them is stored and lands at once when it ends. Shots stop at its edge and fly on after. Bosses only slow. R: <span class="term">Rewind</span>, back to where you were 3s ago with the HP you've lost since. One cooldown for both: 12s after the Time Lock, 30s after Rewind.</td><td class="n">12s / 30s</td></tr>
     </table>
   </div>
   <ul>
@@ -192,11 +193,13 @@
     <table class="numbers">
       <tr><th>Status</th><th>What it does</th><th>How long</th></tr>
       <tr><td class="fire">Burn</td><td>Stacks up to 5 and ticks every half second. Per second: 2, 4.5, 8, 13 or 20 damage at 1 to 5 stacks, plus 0.2% to 1% of the enemy's max HP (bosses take a quarter of that share). Every fire weapon feeds it; lava adds a stack every 0.8s to anything standing in it.</td><td>Holds 4s after the last stack, then loses one a second</td></tr>
-      <tr><td class="fire">Super Burn</td><td>Scorch's burn. Up to 3 stacks, ticking five times a second: at 3 stacks, 30 a second plus 2.5% of max HP. Only the fire ult adds stacks, but any Burn landing on it keeps it alight.</td><td>Holds 8s, then loses one every 2.5s</td></tr>
+      <tr><td class="fire">Super Burn</td><td>Burn's bigger form, from Scorch and the Ember Scythe. Up to 3 stacks, ticking five times a second: at 3 stacks, 30 a second plus 2.5% of max HP. It takes over from Burn: landing, it puts out any Burn stacks, and while it lasts the enemy can't Burn (Burn landing on it only keeps it alight).</td><td>Holds 8s, then loses one every 2.5s</td></tr>
       <tr><td class="ice">Chill</td><td>Fills a bar. A direct ice hit fills about a fifth of it, so about five hits fill it.</td><td>Holds 5s after the last hit, then drains (a full bar in 5s)</td></tr>
       <tr><td class="ice">Ice cube</td><td>What a full chill bar makes. It moves at about half speed and is <span class="term">Brittle</span>: 20% of its max HP is cut off at once (6% on bosses; never enough to kill). Then it shatters by itself for 10, plus 28% of whatever the other elements dealt it while it held, and leaves a small puddle of water for 6s.</td><td class="n">3.5s</td></tr>
-      <tr><td class="bolt">Amped</td><td>Lightning chains and forks further from it. The Orb Emitter's forks, Ball Lightning and the Circuit Breaker give it.</td><td class="n">5s</td></tr>
+      <tr><td class="ice">Frostbite</td><td>The Boreal Trident's: only its slam and the Squall Frostkin give it. The enemy's chill keeps growing on its own until it freezes into a cube.</td><td>A few seconds, longer the more it's hit</td></tr>
+      <tr><td class="bolt">Amped</td><td>Lightning chains and forks further from it. The Orb Emitter's forks, Ball Lightning, the Circuit Breaker and the Thunder Glaive give it. Armoured enemies and lightning elementals are insulated: the Thunder Glaive can't Amp them.</td><td class="n">5s</td></tr>
       <tr><td class="cosmic">Hex</td><td>Up to 3 stacks: it takes +10%, +25% or +45% damage from everything, and moves 40% slower.</td><td>Depends on the source; when it runs out, a stack falls off every second</td></tr>
+      <tr><td class="ice">Taunted</td><td>From the Rimeguard's slam. It comes for you, forgetting decoys and allies, 40% faster, and attacks 40% faster. Bosses shrug it off.</td><td class="n">3s</td></tr>
       <tr><td>Dazed, Stunned</td><td>Can't move or attack. A daze does no damage by itself.</td><td>A moment: 0.35s from Fork's thumps, 2s from a Smite Charge</td></tr>
     </table>
   </div>
@@ -225,12 +228,14 @@
   <div class="wrap">
     <table class="numbers">
       <tr><th>On you</th><th>What it does</th><th>How long</th></tr>
-      <tr><td>Dripping</td><td>Every tile you step on turns to water, and stays water until fire dries it. It doesn't hurt; it just floods the floor for the water enemies.</td><td class="n">8s</td></tr>
-      <tr><td>Bleed</td><td>Every tile you move costs health: 2 a tile at first, more on harder floors, and half that per tile in a dash. Standing still costs nothing. From a Hunter Slime's slashes, a Torpedo Diver, and a water bubble bursting on you.</td><td>6s from a Hunter, 4s from a Diver, 3s from a bubble</td></tr>
+      <tr><td>Dripping</td><td>Every tile you step off turns to water (never the one you're standing on: standing still lays none, and a dash wets the tiles it crosses but not where you land), and stays water until fire dries it. It doesn't hurt; it just floods the floor for the water enemies.</td><td class="n">8s (4s from a Torpedo Diver)</td></tr>
+      <tr><td>Bleed</td><td>Every tile you move costs health: 2 a tile at first, more on harder floors, and half that per tile in a dash. Standing still costs nothing. From a Hunter Slime's slashes and a water bubble bursting on you.</td><td>6s from a Hunter, 3s from a bubble</td></tr>
       <tr><td>Poison</td><td>Damage every 0.6s, and any healing you get is cut by 60%. One dose at a time: a new one restarts the clock, it never stacks.</td><td>4s from the last dose</td></tr>
       <tr><td>Rooted</td><td>You can't move or dash. You can still attack.</td><td>A moment</td></tr>
       <tr><td>Burning</td><td>1 damage a second for each stack, up to 5. From an Ult Absorber's stolen fire.</td><td class="n">3s</td></tr>
       <tr><td>Hexed</td><td>You take 1.5 times damage. From an Ult Absorber's stolen cosmic.</td><td class="n">4s</td></tr>
+      <tr><td>Winded</td><td>Your stamina doesn't refill; dashes cost what they always do, so spend them carefully. Your stamina bar goes grey and cracked. It doesn't stack: the longest wins. From a Blinder's lunge and a Drowner's strike.</td><td class="n">3s from a Blinder, 2.5s from a Drowner</td></tr>
+      <tr><td>Nearsighted</td><td>You see only about two tiles round you; past that is haze, then dark, and nothing out there shows, burning or not. Afterwards nothing blinds you again for a moment. From a Blinder's haze and the mist it leaves.</td><td class="n">5s from the haze, 2s from the mist</td></tr>
     </table>
   </div>
   <p><span class="term">Chevrons</span> over you or an enemy show it moving faster (pointing up) or slower (pointing down) than usual. <strong>GLU</strong> pops up when something stops you dashing for a while: a Frost Slime's lit tiles while you stand in them, or an Ult Absorber's stolen lightning.</p>
@@ -254,6 +259,7 @@
       <tr><td>Fog</td><td>Water your fire dried</td><td>Holds for 15s. Nothing can turn it back into water until it clears.</td></tr>
       <tr><td class="fire">Lava</td><td>Fire weapons, the fire dash, Scorch</td><td>Deals no damage itself: it gives a Burn stack to an enemy standing on it every 0.8s.</td></tr>
       <tr><td class="green">Poison pool</td><td>Rooters and Budding Slimes, in a ring round them</td><td>Doses you with Poison while you stand in it. Gone after 12s.</td></tr>
+      <tr><td>Live panels</td><td>The Gauntlet's floors: a little on 2-1, a lot on 2-2, all of it on 2-3, all of it in patterns on 2-4 (rings, sweeps, cascades)</td><td>A panel glows for a moment, then zaps: a small hit and a 0.6s daze (then not again for a while). A dash carries you through untouched: the cascades on 2-4 that sweep faster than you walk can only be dashed. Enemies walk them unharmed. A room's panels only run while you're in it, and go dark for good once its enemies are dead.</td></tr>
       <tr><td class="cosmic">Cosmic fluid</td><td>The cosmic dash, the Void Blade, Ascend</td><td>Gives Hex to enemies standing in it, the moment they step in and every 2s after. How long the fluid and its Hex last depends on what left it: a fully charged Void Blade's lasts longest.</td></tr>
     </table>
   </div>
@@ -265,7 +271,7 @@
     <li>A <strong>Wave Rider</strong> in water winds up its charge faster.</li>
     <li><strong>Ripplerunners</strong> are quick on water and sluggish on dry stone.</li>
     <li>A <strong>Tidal Guard</strong> aims faster standing in water, and its hit then pins you and leaves you dripping.</li>
-    <li>A <strong>Drowner</strong> that strikes while you're in water lands at once and holds you under. On dry ground you get a moment to step off the mark.</li>
+    <li>A <strong>Drowner</strong> that strikes while you're in water lands at once and holds you under. On dry ground you get a moment to step off the mark. A strike that lands leaves you Winded.</li>
     <li>A <strong>Tidecaller</strong> makes every enemy near it attack faster: a little on dry floor, far faster standing in water.</li>
     <li>Everything else is slowed by it: its steps take a quarter longer.</li>
   </ul>
@@ -309,13 +315,14 @@
       <tr><td>Mortar</td><td>Lobs shells over walls at where you stand, from up to 13 steps away. Inside its glow you're safe.</td></tr>
       <tr><td>Armored Slime</td><td>Plated on three sides that never turn. One side is open and glows when you stand on it. Go round.</td></tr>
       <tr><td>Leech</td><td>Picks one of your elements and steals that gem if you're still holding it when its ring closes. Kill it to get the gem back.</td></tr>
+      <tr><td>Blinder</td><td>Keeps its distance, swells up and throws a wide, slow bank of haze that drifts through whatever stands in the room, almost across it (never out of it), and leaves a low mist along its way for a few seconds. Both sting while you're in them. The haze leaves you seeing only two tiles round you for five seconds, the mist for two. Get two tiles out of its way or dash clear, and keep off the mist. While you can't see, it stalks you: its eyes glint at the edge of your sight, then it lunges and leaves you Winded. Dash as they glint, or hit it then; sometimes it feints.</td></tr>
       <tr><td>Adaptive Shade</td><td>Turns into whatever element hits it and barely feels it after. Hex slides off it. Keep swapping.</td></tr>
     </table>
   </div>
 
   <!-- ───────────────────────────── TYPES ───────────────────────────── -->
   <h2 id="types">Enemy types</h2>
-  <p>The book of enemies sorts them into seven types, and one enemy can be several at once (a Torpedo Diver is an aggressor, a controller and a water enemy).</p>
+  <p>The book of enemies sorts them into seven types, and one enemy can be several at once (a Drowner is an aggressor, a water enemy and a trickster).</p>
   <div class="cards">
     <div><b class="red">Aggressors</b>Come at you directly: contact, charges, lunges.</div>
     <div><b class="gold">Controllers</b>Take space from range with shots, lanes and lit tiles.</div>
@@ -339,7 +346,7 @@
     <li><strong>Lit squares</strong> mark an area about to go off. Look for the gaps: they stay safe.</li>
     <li>A <strong>lit lane</strong> marks a line something is about to shoot or charge down. Step out of it sideways.</li>
     <li>A <strong>glass dome</strong> is a safe zone from the Gem (below).</li>
-    <li>A <strong>red zone</strong> round an enemy blocks ults: you can't cast one inside it (<strong>ULT BLOCKED!</strong>).</li>
+    <li>A <strong>red zone</strong> round an enemy blocks ults: you can't cast one inside it (a red ban sign shows over your gems).</li>
     <li>A <strong>violet zone</strong> belongs to an Ult Absorber. You can't cast inside it either, and while you're in it, every 7 seconds it tears a quarter of a gem out of your fullest one, heals the enemies near it, and throws a weak copy of that ult back at you.</li>
   </ul>
   <figure id="fig-zones">
@@ -395,9 +402,13 @@
       <tr><th>Weapon</th><th>Ability</th><th>Ready when</th><th>What it does</th></tr>
       <tr><td>Icicle Cannon</td><td>Frost Shield</td><td>28 icicles have hit</td><td>5s of 35% less damage taken, and whoever hits you is chilled.</td></tr>
       <tr><td>Magma Staff</td><td>Magma Surge</td><td>The staff is at its second tier of heat or more, from fireballs that land</td><td>Dumps the heat: everything round you is thrown back and set burning, and a ring of lava rolls out. More heat, bigger: 2 to 5 tiles, 1 to 3 tiles of knockback, 1 to 3 Burn stacks. The staff drops back to its first tier.</td></tr>
-      <tr><td>Ignition</td><td>Blue Flame</td><td>16s after you last used it</td><td>5s of blue-hot flame: it ticks half again as fast, ignores resistance, and now and then lays a <span class="term">Blue Burn</span> stack that bursts later for 25 plus 2% of max HP.</td></tr>
-      <tr><td>Fractal Shard</td><td>The gamble</td><td>5 fans have each hit an enemy its spikes marked</td><td>6s of one of two: <strong>Deadly Accuracy</strong> (five shards circle you; click and they converge on the spot and fly on through, every hit a crit) or <strong>Shard Storm</strong> (heals 10% of your max HP, doubles ice ult charge, every shot a wide fan of chip shards).</td></tr>
+      <tr><td>Ignition</td><td>Blue Flame</td><td>16s after you last used it</td><td>5s of blue-hot flame: it ticks half again as fast, ignores resistance, and now and then lays a <span class="term">Blue Burn</span> stack that bursts later for 14 plus 1.2% of max HP.</td></tr>
+      <tr><td>Ember Scythe</td><td>Heat Wave</td><td>You carry 5 ember souls (enemies the scythe cuts drop them; you hold up to 30)</td><td>A narrow crescent of heat, 3 tiles across, pulses 9 tiles out along your aim, then two crescents of fire: each gives what it reaches a <span class="term">Super Burn</span> stack, and the ground they cross flares white-hot for 2s, and three embers are left burning along it for 12s, keeping it going. It heals you 4% of your max HP. After it, and after every swing, if you're moving you slide 3 tiles toward the crosshair for free, which leaves you a shield of 10% of your max HP for 3s.</td></tr>
+      <tr><td>Fractal Shard</td><td>Fractal Bloom</td><td>5 shots whose chain broke all the way down (or hit an ice cube)</td><td>A seed crystal flies to where you aim and blooms: a snowflake of crystal bursting out of the floor (six arms, each forking twice), cracking and chilling what it grows under, its tips freezing what they reach into a cube. A moment later the whole flake shatters for a second hit.</td></tr>
+      <tr><td>Rimeguard</td><td>Shatterback</td><td>Rime reaches 8 and it goes off by itself; or press <kbd>R</kbd> from 3. While the Rimeguard is your ice weapon, every hit an enemy lands on you is a charge of <span class="term">rime</span> (more for a big hit or one the raised shield took), whatever element you hold.</td><td>Ice spikes burst out of the floor round you, 2.5 tiles (3.5 at full): each enemy takes 15 plus up to 40% of your max HP, by how full the rime was, and half a Chill bar, so anything already chilled cubes.</td></tr>
+      <tr><td>Boreal Trident</td><td>Frostkin</td><td>Every enemy the combo hits is frost; 48 calls them</td><td>Three ice wisps, one of each kind, fight beside you till they're killed (nine at most): a melee one that draws the enemies within 3 tiles of it and nips them, a hail one that drives ice spears onto the tiles round its target, and a Squall whose gust gives everything in it <span class="term">Frostbite</span>. Their health is a share of yours, and they get half your defence and half your damage bonus. Each call also puts a frost shell round you worth a fifth of your max HP, taking hits before your health till it breaks. A full combo whose thrust, swipe and slam each hit something raises a Frost Shield for 3s, like the Icicle Cannon's; not again while it's up, nor for 3s after (the combo pips dim till it's back).</td></tr>
       <tr><td>Circuit Breaker</td><td>Current</td><td>Any time you have a wire on an enemy</td><td>Turns the current on: down the wire nearest your aim, again each time it's ready, until you press <kbd>R</kbd> again or no wire is left.</td></tr>
+      <tr><td>Thunder Glaive</td><td>Tesla coil</td><td>1 <span class="term">volt</span> a coil (every enemy a pivot strike hits is a volt, and a streak's boom gives two back a link; 24 in the tank)</td><td>A coil stands at your feet for 15s, up to 3 at once (a 4th takes the oldest's place). Your ropes (the line of current each dash leaves), the <span class="term">cage</span> a streak leaves and the coils are one network: twice a second its current runs into every Amped enemy touching it and jumps on from Amped enemy to Amped enemy, harder the more of them there are. Each coil also zaps the five enemies nearest it every second, and coils within 8 tiles of each other are joined by live fences that shock what crosses them. It all runs on volts: a volt a second while the current is reaching anyone, and one a second for each coil with an enemy near it, so keep dashing; at 0 the coils go dark until you do. A boss takes the current and the zaps too, at 40%, and passes nothing on. A streak of two links or more overloads it (twice as fast and hard for a while) and brings a bolt from the sky down on every coil.</td></tr>
     </table>
   </div>
 
@@ -520,9 +531,9 @@
   <div class="wrap">
     <table class="numbers">
       <tr><th></th><th>Constellation <span class="when">(two layers)</span></th><th>Constellation+ <span class="when">(three)</span></th></tr>
-      <tr><td>Going in</td><td>1.5s turning, rooted (you can be hit). Then pick where to drop, within 14 tiles: click, or wait 3s.</td><td>The same, but nothing can hurt you from the hold to the slam.</td></tr>
-      <tr><td>The slam</td><td>2.5 tiles round where you land: 20 damage and a 2s slow.</td><td>3 tiles: 30 damage, and Dazed for 1.5s.</td></tr>
-      <tr><td>Your attack</td><td><span class="term">Twin Collapse</span>: click to place the anchor (right-click moves it); every click after throws a pair of stars and its mirror, 4 in all, rushing together where you clicked, pulling enemies in and Hexing what they pass. The farther from the anchor, the harder.</td><td>8 stars a throw, crashing in through walls, dragging what they pierce and Hexing what they hit.</td></tr>
+      <tr><td>Going in</td><td>1s turning, rooted (you can be hit). Then pick where to drop, within 14 tiles: click, or wait 3s.</td><td>The same, but nothing can hurt you from the hold to the slam.</td></tr>
+      <tr><td>The slam</td><td>2.5 tiles round where you land: 20 damage and a 2s slow. Then the <span class="term">Big Crunch</span>: every Hexed enemy within 6 tiles is pulled in, and each Hex stack on it is cashed in as damage, 12 plus 6% of its max HP a stack (1.5% on bosses). The stacks are gone after.</td><td>3 tiles: 30 damage, and Dazed for 1.5s. The Big Crunch reaches 8 tiles.</td></tr>
+      <tr><td>Your attack</td><td><span class="term">Twin Collapse</span>: click to place the anchor (right-click moves it); every click after throws a pair of stars and its mirror, 4 in all, rushing together where you clicked, pulling enemies in and Hexing what they pass. The farther from the anchor, the harder. These never cash Hex in.</td><td>8 stars a throw, crashing in through walls and dragging what they pierce. Where they land they cash in the Hex on what's there, as the Big Crunch does; anything with none is Hexed for the next throw.</td></tr>
       <tr><td>Allies</td><td>2 <span class="term">voidlets</span>, a warrior and a voidbeam. They draw enemies off you and stay until they fall.</td><td>5 voidlets: 3 warriors and 2 voidbeams.</td></tr>
       <tr><td>How long</td><td>9s, plus 0.5s for each collapse that lands (1s if it hits three or more), 16s at most. No switching elements.</td><td>11s, up to 18s, and you regenerate 1.6% of your max HP a second.</td></tr>
     </table>
@@ -537,6 +548,7 @@
   </div>
   <ul>
     <li><strong>Hex before it ends.</strong> The supernova pays 8 for every stack in reach, and Ascend's own fluid is the easiest way to lay them.</li>
+    <li><strong>Hex them before you drop.</strong> The Big Crunch pays for every stack within 6 tiles of where you land, so a Void Blade cut or a Singularity well first makes the transformation's slam a big hit.</li>
     <li><strong>Ascend first, then the rest.</strong> It doesn't start the shared cooldown, so cast it and follow straight up with another ult.</li>
     <li><strong>Switch freely while it runs.</strong> No wait between elements means reactions on every hit.</li>
   </ul>
@@ -568,7 +580,8 @@
       <tr><td>Grounding Spike</td><td class="n">240</td><td class="n">20s</td><td>Strips resistance from everything within 3 tiles for 6s. Their rings turn grey.</td></tr>
       <tr><td>Mend Totem</td><td class="n">150</td><td class="n">35s</td><td>Planted where it lands, for 6s. Stand within 2.5 tiles to heal 2% of your max HP each second (10% in all). The one gadget that heals.</td></tr>
       <tr><td>Bulwark</td><td class="n">200</td><td class="n">26s</td><td>Three tiles of wall across the line you threw it on, for 4s. Enemies have to go round, and it stops shots. It never lands on anyone.</td></tr>
-      <tr><td>Decoy Slime</td><td class="n">220</td><td class="n">28s</td><td>A pink copy of you. Enemies within 5 tiles (not bosses) go for it instead of you for 3s. It has 40 HP, so heavy hitters break it early, and it pops for 8 when it goes.</td></tr>
+      <tr><td>Decoy Slime</td><td class="n">220</td><td class="n">28s</td><td>A pink copy of you. Enemies within 5 tiles (not bosses) go for it instead of you for 6s. It has 40 HP, so heavy hitters break it early, and it pops for 8 when it goes.</td></tr>
+      <tr><td>Cleansing Bell</td><td class="n">200</td><td class="n">26s</td><td>Rung where you stand: every ailment on you is gone at once (Burn, poison, bleed, dripping, Hex, Winded, nearsighted, a root, Glu, a slow, a daze), and for 1s after anything new is shaken off as it lands.</td></tr>
     </table>
   </div>
   <p>You buy them and choose your two in the <strong>GADGETS</strong> tab of the shop. Smite Charge is yours from the start.</p>
@@ -720,7 +733,7 @@
     <table class="numbers">
       <tr><th>Slots</th><th>Weapons</th></tr>
       <tr><td class="n">1</td><td>Flame Fists, Ice Fists, Void Fists, Barrier Staff</td></tr>
-      <tr><td class="n">2</td><td>Flame Sword, Magma Staff, Icicle Cannon, Storm Fists, Orb Emitter, Astrolabe, Singularity, Void Blade</td></tr>
+      <tr><td class="n">2</td><td>Flame Sword, Magma Staff, Icicle Cannon, Storm Fists, Orb Emitter, Astrolabe, Singularity, Void Blade, Pendulum</td></tr>
       <tr><td class="n">3</td><td>Ignition, Fractal Shard, Ball Lightning, Circuit Breaker</td></tr>
     </table>
   </div>

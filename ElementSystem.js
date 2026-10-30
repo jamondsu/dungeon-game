@@ -17,6 +17,8 @@ class ElementSystem {
     // encased by the ice ult's end: no moving, attacking, dashing, switching, ults or gadgets till you've thawed
     _encased() { return (this._iceShellUntil || 0) > this.time.now || !!this._forkStop; }   // (and while Fork has time stopped)
     activateUlt(element = null) {
+        const _lk = 'ult_' + (element || this.currentElement);
+        if (this.actionLocked?.(_lk)) return this._actionDenied(_lk);   // locked (HUD.lockActions): its gem's ban sign flashes
         if (this._encased()) return;
         // Check for ult inhibitors and absorbers nearby — both block activation
         if (this.enemies) {
@@ -143,7 +145,7 @@ class ElementSystem {
             COLORS: { fire: 0xff6a2a, ice: 0x72dcff, lightning: 0xffe14a, cosmic: 0xb47cff },
             // A short shared cooldown after any cast, so four full gems are a sequence rather
             // than one button-mash nuke.
-            LOCKOUT_MS: 5000,
+            LOCKOUT_MS: 3000,
             // A hit on an enemy carrying another element's status charges this much more.
             REACTION_MULT: 3,
             // Residue: a hit on an enemy that another element HIT (not statused) in the last RESIDUE_MS charges
@@ -169,19 +171,24 @@ class ElementSystem {
                 flame_sword:       0.2308,   // raw 9.63/s (was 33.11)
                 magma_staff:       0.1016,   // raw 21.87/s (was 51.4)
                 ignition:          0.0827,   // raw 26.9/s as the flamethrower (2026-10-20; it filled in 98s at 0.038)
+                ember_scythe:      0.09,     // (first guess, unmeasured)
                 ice_fists:         0.2788,   // raw 7.97/s
                 icicle_cannon:     0.1475,   // raw 15.07/s
                 fractal_shard:     0.0278,   // raw 79.9/s
+                rimeguard:         0.09,     // (first guess, unmeasured)
+                boreal_trident:    0.09,     // (first guess, unmeasured)
                 lightning_fists:   0.1599,   // raw 13.9/s
                 orb_emitter:       0.131,    // raw 16.96/s (was 5.9: its forks amp now)
                 ball_lightning:    0.074,    // raw 30.03/s
                 conductor:         0.09,     // (first guess, unmeasured)
+                thunder_glaive:    0.09,     // (first guess, unmeasured)
                 // The cosmic gem fills with time (Cosmic.js), never from hits, so these are moot.
                 cosmic_fists:      0,
                 barrier_staff:     0,
                 astrolabe:         0,
                 singularity_staff: 0,
                 void_blade:        0,
+                pendulum:          0,
             },
             // The one knob for all of the above: 1.5 fills every gem in ~30s of camping, 0.75 in
             // ~60s. Rotating stays about twice as fast either way.
@@ -202,13 +209,109 @@ class ElementSystem {
         }
     }
 
+    // The fire and ice ults' art (assets/art/fx_ult_fi, typed by hand: meteors, their blast and crater, the tornado, the Deep
+    // Freeze's crown, runes and cracks, the ice shell, meltwater) and its animations, made once
+    static ultArt(S) {
+        const A = S.anims, n = (p, k) => Array.from({ length: k }, (_, i) => p + i);
+        const mk = (key, names, rate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: names.map(f => ({ key: 'fx_ult_fi', frame: f })), frameRate: rate, repeat }); };
+        mk('uf_met', n('met_', 3), 9, -1); mk('uf_boom', n('boom_', 4), 16); mk('uf_tor', n('tor_', 4), 12, -1);
+        mk('uf_dcrown', ['dcrown_0', 'dcrown_0', 'dcrown_1', 'dcrown_0', 'dcrown_0', 'dcrown_2'], 6, -1); mk('uf_drune', n('drune_', 4), 7, -1); mk('uf_drop', n('wdrop_', 3), 9);
+        return 'fx_ult_fi';
+    }
+    // A ring of ice spikes bursting out of the floor round (x, y), radius r px, n of them, after `delay` (the Rimeguard's spikes)
+    static iceSpikeRing(S, x, y, r, n, scale = 1, delay = 0) {
+        Rimeguard.st(S);
+        for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2 + Math.random() * 0.4, rr = r * (0.85 + Math.random() * 0.3), sy = y + Math.sin(a) * rr * 0.5;
+            Rimeguard.spike(S, x + Math.cos(a) * rr, sy, scale * (0.8 + Math.random() * 0.4), delay + Math.random() * 90, sy >= y); }
+    }
+
+    // The Magma Armor and the Ice King, the suits the fire and ice ults put on you while they run (or a part of one on a creature
+    // that stole one, `target`): your slime darkened to basalt (fire) or iced pale (ice), a rim of its light, the hand-drawn
+    // pieces on it (fire: magma glowing in its seams, a crown of flames, lava dripping off it; ice: a crown of frost spires, flakes
+    // circling it), a ring of runes turning on the floor under it and motes rising off the ring
+    static armour(scene, el, ms, target = null) {
+        const p = target || scene.player, part = !!target, holder = part ? target : scene, fire = el === 'fire';
+        if (!p?.active) return;
+        holder._ultArmor?.end?.();
+        ElementSystem.ultArt(scene); WeaponSystem.fireArt(scene); WeaponSystem.iceArt(scene);
+        const ADD = Phaser.BlendModes.ADD, t0 = scene.time.now, fw = p.frame.width, fh = p.frame.height;
+        const K = fire ? { tint: 0x1e100c, a: 0.9, rim: 0xff7a2a, floor: 0xff5a1a, rune: 0xff8a3a } : { tint: 0x9ad8ff, a: 0.55, rim: 0x8fd0ff, floor: 0x6fb8e8, rune: 0xbff0ff };
+        const shell = scene.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(K.tint);
+        const rim = scene.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setTintFill(K.rim).setBlendMode(ADD);
+        const floor = scene.add.image(p.x, p.y, 'vfx_glow').setTint(K.floor).setBlendMode(ADD);
+        const runes = scene.add.sprite(p.x, p.y, 'fx_ult_fi', 'drune_0').setTint(K.rune).setBlendMode(ADD).setVisible(!part).play('uf_drune');
+        const crown = scene.add.sprite(p.x, p.y, 'fx_ult_fi', fire ? 'fcrown_0' : 'dcrown_0').setOrigin(0.5, 1);
+        if (!fire) crown.play('uf_dcrown');
+        const seam = fire ? scene.add.image(p.x, p.y, 'fx_ult_fi', 'seam_0').setBlendMode(ADD) : null;
+        const flakes = fire ? [] : Array.from({ length: 6 }, (_, k) => ({ a: k / 6 * Math.PI * 2, s: 0.6 + Math.random() * 0.5, img: scene.add.sprite(p.x, p.y, 'fx_ice_w', 'flake_' + (k % 3)).setBlendMode(ADD) }));
+        const motes = part ? null : scene.add.particles(0, 0, fire ? 'fx_fire_w' : 'fx_ice_w', { frame: fire ? ['sp_0', 'sp_1', 'sp_1'] : ['flake_0', 'flake_1', 'flake_2'], lifespan: { min: 600, max: 1000 }, frequency: 60,
+            speedY: { min: -46, max: -20 }, speedX: { min: -10, max: 10 }, scale: { start: 1.4, end: 0.7 }, alpha: { start: 0.9, end: 0 },
+            color: fire ? [0xfff2c0, 0xffb040, 0xd8401a] : [0xffffff, 0xbff0ff, 0x5fb8e0], blendMode: 'ADD', emitZone: { type: 'random', source: new Phaser.Geom.Ellipse(0, 0, 64, 20) } });
+        let dripAt = t0 + 300;
+        const tick = () => {
+            const now = scene.time.now, tt = now - t0;
+            if (!shell.active || !rim.active) { scene.events.off('postupdate', tick); if (holder._ultArmor === A) holder._ultArmor = null; return; }   // destroyed under it (a floor change, a death)
+            if (!p.active || tt >= ms) return A.end();
+            const fade = Math.min(1, tt / 200, (ms - tt) / 300), d = p.depth ?? 1, sx = p.scaleX, sy = p.scaleY, vis = p.visible, al = (p.alpha ?? 1) * fade;
+            for (const [o, ds, a, k] of [[shell, 0.0004, K.a * (part ? 0.6 : 1), 1], [rim, -0.01, 0.5 * (0.7 + 0.3 * Math.sin(now * 0.01)), 1.12]])
+                o.setTexture(p.texture.key, p.frame.name).setPosition(p.x, p.y).setOrigin(p.originX, p.originY).setScale(sx * k, sy * k).setFlipX(p.flipX).setDepth(d + ds).setAlpha(a * al).setVisible(vis);
+            const ox = fw * p.originX, oy = fh * p.originY, px = Math.max(1, Math.abs(sx));
+            const wx = u => p.flipX ? p.x + (ox - u * fw) * Math.abs(sx) : p.x + (u * fw - ox) * Math.abs(sx), wy = v => p.y + (v * fh - oy) * Math.abs(sy);
+            const cx = wx(0.5), feet = wy(1.0), W = fw * Math.abs(sx) * 0.42, on = vis && al > 0.05;
+            floor.setPosition(cx, feet - px * 2).setDisplaySize(W * 3.2, W * 1.1).setDepth(d - 0.02).setAlpha((0.35 + 0.15 * Math.sin(now * 0.006)) * al).setVisible(vis);
+            runes.setPosition(cx, feet).setScale(px * 2).setDepth(d - 0.03).setAlpha(al * (0.65 + 0.25 * Math.sin(now * 0.006))).setVisible(vis && !part);
+            crown.setPosition(Math.round(cx), Math.round(wy(0.74))).setScale(px).setFlipX(p.flipX).setDepth(d + 0.0009).setAlpha(al).setVisible(vis);
+            if (fire) {
+                crown.setFrame('fcrown_' + (Math.floor(tt / 110) % 3));
+                const beat = Math.pow(0.5 + 0.5 * Math.sin(now * 0.009), 3);   // a heartbeat in the magma
+                seam.setPosition(cx, wy(0.86)).setScale(px).setFlipX(p.flipX).setFrame(Math.floor(tt / 140) % 2 ? 'seam_1' : 'seam_0').setDepth(d + 0.0007).setAlpha(al * (0.55 + 0.45 * beat)).setVisible(vis);
+                if (on && now > dripAt) {   // lava dripping off it
+                    dripAt = now + 280 + Math.random() * 400;
+                    const dr = scene.add.sprite(wx(0.28 + Math.random() * 0.44), wy(0.95), 'fx_fire_w', 'drip_0').setScale(px * 1.2).setDepth(d + 0.02).play('fw_drip');
+                    scene.tweens.add({ targets: dr, y: dr.y + 8, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => dr.destroy() });
+                }
+            } else for (const q of flakes) {   // flakes circling it, the far ones behind
+                const a = q.a + tt * 0.0012 * q.s, front = Math.sin(a) > 0;
+                q.img.setPosition(Math.round(cx + Math.cos(a) * W * 1.3), Math.round(wy(0.84) + Math.sin(a) * W * 0.45)).setScale(px).setDepth(front ? d + 0.002 : d - 0.005).setAlpha(al * (front ? 1 : 0.55)).setVisible(vis);
+            }
+            if (motes) { motes.setPosition(cx, feet).setDepth(d + 0.01); motes.emitting = on; }
+        };
+        const A = holder._ultArmor = { el, end: () => {
+            scene.events.off('postupdate', tick);
+            for (const o of [shell, rim, floor, runes, crown, seam, ...flakes.map(q => q.img)]) o?.destroy();
+            if (motes?.active) { motes.stop(); scene.time.delayedCall(1100, () => motes.destroy()); }
+            if (holder._ultArmor === A) holder._ultArmor = null;
+        } };
+        scene.events.on('postupdate', tick); scene.events.once('shutdown', A.end);   // after the scene's own update, where the step glide moves the slime
+        tick();
+        // putting it on: the slime flashing the element's colour (the cast's flames or spikes are the rest)
+        const flash = scene.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setOrigin(p.originX, p.originY).setScale(p.scaleX * 1.3, p.scaleY * 1.3).setFlipX(p.flipX).setTintFill(K.rim).setBlendMode(ADD).setDepth((p.depth ?? 1) + 0.03).setAlpha(0.9);
+        scene.tweens.add({ targets: flash, scaleX: p.scaleX, scaleY: p.scaleY, alpha: 0, duration: 320, onComplete: () => flash.destroy() });
+        if (!part) scene.cameras.main.shake(180, 0.006);
+    }
+
     // The cast flourish: two rings off the player in the gem's colour (the ults bring their
-    // own big effects; this just says which gem went).
+    // own big effects; this just says which gem went). Fire's is a ring of flames racing out and a column of fire; ice's a
+    // ring of ice spikes bursting up round you.
     _ultCastFx(el) {
         const col = this._ultCfg().COLORS[el];
         this._ultCastAt[el] = this.time.now;     // the HUD bursts that gem
         this._vfxUltBanner?.(el);                // its name, big, in its colour (Visuals.js)
-        if (!this.player) return;
+        if (!this.player || el === 'lightning') return;   // (Fork's snap is its flourish: rings started now would hang in its stopped time)
+        const p = this.player, fy = p.y + 8;
+        if (el === 'fire') {
+            WeaponSystem.fireRing(this, p.x, fy, 8, 78, 360, 12, false, 0.5);
+            const pil = this.add.sprite(p.x, fy, WeaponSystem.fireArt(this), 'pillar_0').setOrigin(0.5, 1).setScale(2).setTint(0xffd890, 0xffd890, 0xff6a1a, 0xff6a1a).setAlpha(0.85).setDepth(p.depth + 0.05).play('fw_pillar');
+            pil.once('animationcomplete', () => pil.destroy());
+            for (let i = 0; i < 14; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, v = 70 + Math.random() * 110; WeaponSystem.ember(this, p.x, fy - 6, Math.cos(a) * v, Math.sin(a) * v, 400 + Math.random() * 400); }
+            return;
+        }
+        if (el === 'ice') {
+            ElementSystem.iceSpikeRing(this, p.x, fy, 26, 9, 1.1); ElementSystem.iceSpikeRing(this, p.x, fy, 50, 13, 0.9, 90);
+            const F = WeaponSystem.frost(this);
+            for (let i = 0; i < 12; i++) { const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 50; F.glint.emitParticleAt(p.x + Math.cos(a) * d, fy + Math.sin(a) * d * 0.5 - 6, 1); }
+            return;
+        }
         for (let i = 0; i < 2; i++) {
             const ring = this.add.circle(this.player.x, this.player.y, 8, col, 0).setDepth(6);
             ring.setStrokeStyle(3 - i, col, 0.9);
@@ -273,9 +376,10 @@ class ElementSystem {
         const C = this._scorchCfg(), T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
         const puffs = Array.from({ length: 16 }, (_, i) => ({ img: this.add.image(0, 0, 'vfx_glow').setTint([0xff6a1a, 0xff9a3a, 0xc8401a][i % 3]).setBlendMode(ADD).setDepth(0.9),
             a: Math.random() * Math.PI * 2, d: 0.35 + 0.65 * Math.sqrt(Math.random()), spin: (Math.random() - 0.5) * 0.0012, s: 0.7 + Math.random() * 0.6, ph: Math.random() * 6 }));
-        const embers = this.add.particles(0, 0, 'vfx_dot', { lifespan: { min: 700, max: 1300 }, speedY: { min: -60, max: -25 }, speedX: { min: -12, max: 12 }, scale: { start: 0.35, end: 0 },
-            alpha: { start: 0.9, end: 0 }, tint: [0xffd27a, 0xff8a2a, 0xff5a1a], blendMode: 'ADD', frequency: 40,
+        const embers = this.add.particles(0, 0, WeaponSystem.fireArt(this), { frame: ['sp_0', 'sp_1', 'sp_1'], lifespan: { min: 700, max: 1300 }, speedY: { min: -60, max: -25 }, speedX: { min: -12, max: 12 }, scale: { start: 1.3, end: 0.5 },
+            alpha: { start: 0.9, end: 0 }, color: [0xfff2c0, 0xffb040, 0xff6a1a, 0x8a1a0c], colorEase: 'quad.out', blendMode: 'ADD', frequency: 40,   // (the hand-drawn embers, cooling as they rise)
             emitZone: { type: 'random', source: new Phaser.Geom.Ellipse(0, 0, C.AURA_R * T * 2, C.AURA_R * T * 0.9) } }).setDepth(4.4);
+        const F = WeaponSystem.flames(this); let lickAt = 0;
         const t0 = this.time.now; let next = t0 + C.AURA_EVERY;
         const tick = () => {
             const now = this.time.now;
@@ -283,9 +387,13 @@ class ElementSystem {
             const px = this.player.x, py = this.player.y, grow = Math.min(1, (now - t0) / 500), R = C.AURA_R * T * grow;
             for (const p of puffs) {
                 p.a += p.spin * 16;
-                p.img.setPosition(px + Math.cos(p.a) * R * p.d, py + Math.sin(p.a) * R * p.d * 0.55).setScale(p.s * (1.6 + 0.3 * Math.sin(now * 0.002 + p.ph))).setAlpha(0.13 + 0.05 * Math.sin(now * 0.003 + p.ph));
+                p.img.setPosition(px + Math.cos(p.a) * R * p.d, py + Math.sin(p.a) * R * p.d * 0.55).setScale(p.s * (1.2 + 0.2 * Math.sin(now * 0.002 + p.ph))).setAlpha(0.06 + 0.025 * Math.sin(now * 0.003 + p.ph));   // (faint: stacked, brighter ones hazed the fight white)
             }
             embers.setPosition(px, py);
+            if (now > lickAt) {   // now and then a tongue of fire on the floor, out toward its edge: the heat's reach
+                lickAt = now + 70; const a = Math.random() * Math.PI * 2, d = R * (0.55 + 0.45 * Math.sqrt(Math.random()));
+                F.lick.emitParticleAt(px + Math.cos(a) * d, py + 8 + Math.sin(a) * d * 0.45, 1);
+            }
             if (now < next) return;
             next = now + C.AURA_EVERY;
             const L = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && Math.hypot(e.x - this.playerX, e.y - this.playerY) <= C.AURA_R);
@@ -313,8 +421,6 @@ class ElementSystem {
         const cam = this.cameras.main, z0 = cam.zoom;
         this.tweens.add({ targets: cam, zoom: z0 * C.ZOOM, duration: 320, ease: 'Cubic.easeOut', onComplete: () => this.tweens.add({ targets: cam, zoom: z0, duration: 520, delay: 520, ease: 'Sine.easeInOut' }) });
         Sfx.play(this, 'laugh');
-        const flash = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0xff3300, 0.35).setScrollFactor(0).setDepth(20);
-        this.tweens.add({ targets: flash, alpha: 0, duration: 500, onComplete: () => flash.destroy() });
         this.player.setTint(0xff6600);
         // the opening volley, then one now and then
         const ri = this.getCurrentPlayerRoom?.() ?? -1, RM = ri >= 0 ? this.rooms?.[ri] : null;
@@ -342,39 +448,27 @@ class ElementSystem {
         }
         if (tx == null) return;
         const size = B ? B.SIZE * (0.9 + Math.random() * 0.2) : C.SIZE[0] + Math.random() * (C.SIZE[1] - C.SIZE[0]), x = tx * T + T / 2, y = ty * T + T / 2, ADD = Phaser.BlendModes.ADD;
-        // falling: its shadow grows on the floor; the rock comes down on a slant, spinning, trailing fire
-        const shadow = this.add.ellipse(x, y + 4, T * 2 * size, T * size, 0x000000, 0.45).setDepth(0.6).setScale(0.2);
-        this.tweens.add({ targets: shadow, scale: 1, duration: C.FALL_MS, ease: 'Quad.easeIn' });
-        const key = ElementSystem.meteorKey(this, Math.floor(Math.random() * 3));
-        const rock = this.add.image(x + 140, y - 300, key).setScale(1.8 * size).setDepth(6);
+        // falling: its shadow grows on the floor; the rock comes down on a slant, tumbling, a trail of fire and smoke behind it
+        ElementSystem.ultArt(this);
+        const sh = this.add.image(x, y + 4, 'vfx_shadow').setDepth(0.6).setAlpha(0.8), shX = T * 2 * size / 64, shY = T * size / 64;
+        sh.setScale(shX * 0.2, shY * 0.2); this.tweens.add({ targets: sh, scaleX: shX, scaleY: shY, duration: C.FALL_MS, ease: 'Quad.easeIn' });
+        const rock = this.add.sprite(x + 140, y - 300, 'fx_ult_fi', 'met_0').setScale(1.6 * size).setFlipX(Math.random() < 0.5).setDepth(6).play({ key: 'uf_met', startFrame: Math.floor(Math.random() * 3) });
         Sfx.play(this, 'meteor_fall', { ms: C.FALL_MS, small: !!B });
-        const glow = this.add.image(rock.x, rock.y, 'vfx_glow').setTint(0xff6a1a).setBlendMode(ADD).setDepth(5.9).setScale(0.6 * size);
-        const f = { t: 0 };
+        const glow = this.add.image(rock.x, rock.y, 'vfx_glow').setTint(0xff6a1a).setBlendMode(ADD).setDepth(5.9).setScale(0.6 * size).setAlpha(0.6);
+        const F = WeaponSystem.flames(this), f = { t: 0 }; let lx = rock.x, ly = rock.y;
         this.tweens.add({ targets: f, t: 1, duration: C.FALL_MS, ease: 'Quad.easeIn', onUpdate: () => {
             const px = x + 140 * (1 - f.t), py = y - 300 * (1 - f.t);
-            rock.setPosition(px, py).setRotation(f.t * 6); glow.setPosition(px, py);
-            for (let k = 0; k < 2; k++) { const e = this.add.rectangle(px + Math.random() * 6, py - Math.random() * 6, 3 * size, 3 * size, k ? 0xffb040 : 0xff5a1a).setDepth(5.8).setBlendMode(ADD); this.tweens.add({ targets: e, x: e.x + 14, y: e.y - 24, alpha: 0, scale: 0.3, duration: 320, onComplete: () => e.destroy() }); }
-        }, onComplete: () => { shadow.destroy(); this._scorchImpact(x, y, tx, ty, size, rock, glow, B); } });
-    }
-    // A meteor of molten rock, 32 x 32 (v: three of them): a ball of black basalt crust split into plates by cracks of lava,
-    // orange at their edges and white-hot down the middle; lit molten from the upper left, a glowing rim all round
-    static meteorKey(scene, v = 0) {
-        return MenuArt.tex(scene, 'fx_meteor_' + v, 32, 32, P => {
-            const R = MenuArt.rng(91 + v * 37), n = MenuArt.noise(17 + v), M = MenuArt.mix, cx = 16, cy = 16;
-            const seeds = Array.from({ length: 8 }, () => [cx + (R() - 0.5) * 22, cy + (R() - 0.5) * 22]);
-            for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-                const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy), edge = 11 + n(x * 0.35, y * 0.35) * 2.5 - 1;
-                if (d > edge + 1.6) continue;
-                if (d > edge) { P.put(x, y, 0xc8401a, 0.35 * (1 - (d - edge) / 1.6)); continue; }   // a faint molten halo
-                const ds = seeds.map(([sx, sy]) => Math.hypot(x + 0.5 - sx, y + 0.5 - sy)).sort((a, b) => a - b), crack = ds[1] - ds[0];
-                const lit = Math.max(0, (-dx - dy) / (edge * 1.4)), shade = Math.max(0, (dx + dy) / (edge * 1.4));
-                let c;
-                if (crack < 0.55) c = 0xffb040; else if (crack < 1.2) c = 0xff6a1a; else if (crack < 1.7) c = 0xa8320e;   // the lava in the cracks, thin (bright ones hid what it hit)
-                else { c = M(0x3a1a12, 0x1a0806, shade); if (n(x * 0.8, y * 0.8) > 0.66) c = 0x4a2418; c = M(c, 0xc85a2a, lit * 0.3); }   // the crust, lit warm from above
-                if (d > edge - 1.2) c = M(c, 0xc8501a, 0.4);   // its rim, warm
-                P.put(x, y, c);
+            rock.setPosition(px, py); glow.setPosition(px, py);
+            for (let k = 0; k < 5; k++) {   // its fire streaming off along the way it came, thickest right behind it
+                const u = Math.random(), qx = lx + (px - lx) * u + (Math.random() - 0.5) * 9 * size, qy = ly + (py - ly) * u + (Math.random() - 0.5) * 9 * size;
+                (k < 2 ? F.flame : k < 4 ? F.small : F.glow).emitParticleAt(qx, qy, 1);
             }
-        });
+            F.lick.emitParticleAt(px + 4 * size, py - 4 * size, 1);
+            if (Math.random() < 0.3) WeaponSystem.ember(this, px, py, 40 + Math.random() * 60, -60 - Math.random() * 60, 300 + Math.random() * 200);
+            if (Math.random() < 0.35) { const sm = this.add.image(lx + (Math.random() - 0.5) * 6, ly, 'fx_smoke').setTint(0x2a201c).setScale(0.1 * size).setAlpha(0.4).setDepth(5.7);   // and a dark trail of smoke above it
+                this.tweens.add({ targets: sm, y: sm.y - 10, scale: 0.26 * size, alpha: 0, duration: 520, ease: 'Sine.easeOut', onComplete: () => sm.destroy() }); }
+            lx = px; ly = py;
+        }, onComplete: () => { sh.destroy(); this._scorchImpact(x, y, tx, ty, size, rock, glow, B); } });
     }
     // ── METEOR BARRAGE ── the fire ult's attack once its opening volley is down: N huge meteors fired at the crosshair
     _meteorBarrage(sx, sy) {
@@ -395,56 +489,38 @@ class ElementSystem {
         }); };
         this._asUlt ? this._asUlt('fire', go) : go();   // ult damage
     }
-    // one barrage meteor: fired straight from the slime toward (tx, ty), spinning, trailing fire; it bursts on the first
-    // enemy or wall in its way, else where you aimed
-    _barrageMeteor(tx, ty, B) {
-        const T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD, size = B.SIZE * (0.9 + Math.random() * 0.2), px0 = this.playerX, py0 = this.playerY;
-        const n = Math.max(1, Math.ceil(Math.hypot(tx - px0, ty - py0) * 2));
-        let ex = tx, ey = ty;
-        for (let k = 1; k <= n; k++) {   // its line, half a tile at a time
-            const cx = Math.round(px0 + (tx - px0) * k / n), cy = Math.round(py0 + (ty - py0) * k / n);
-            if (this.world?.[cx]?.[cy] !== this.FLOOR) break;
-            ex = cx; ey = cy;
-            if (this.getEnemyAt?.(cx, cy)) break;
-        }
-        const x0 = this.player.x, y0 = this.player.y - 6, x = ex * T + T / 2, y = ey * T + T / 2;
-        const key = ElementSystem.meteorKey(this, Math.floor(Math.random() * 3));
-        const rock = this.add.image(x0, y0, key).setScale(1.5 * size).setDepth(6);
-        const glow = this.add.image(x0, y0, 'vfx_glow').setTint(0xff6a1a).setBlendMode(ADD).setDepth(5.9).setScale(0.5 * size).setAlpha(0.45);
-        const dur = Math.max(90, Math.hypot(x - x0, y - y0) / T * 1000 / B.SPEED), f = { t: 0 }, ang = Math.atan2(y - y0, x - x0);
-        const tail = this.add.image(x0, y0, 'vfx_glow').setTint(0xff4a10).setBlendMode(ADD).setDepth(5.85).setOrigin(0.15, 0.5).setRotation(ang + Math.PI).setScale(1.6 * size, 0.42 * size).setAlpha(0.45);   // a comet's tail of fire
-        const tail2 = this.add.image(x0, y0, 'vfx_glow').setTint(0xffd060).setBlendMode(ADD).setDepth(5.86).setOrigin(0.15, 0.5).setRotation(ang + Math.PI).setScale(0.9 * size, 0.22 * size).setAlpha(0.5);
-        this.tweens.add({ targets: f, t: 1, duration: dur, ease: 'Linear', onUpdate: () => {
-            const px = x0 + (x - x0) * f.t, py = y0 + (y - y0) * f.t;
-            rock.setPosition(px, py).setRotation(f.t * 10); glow.setPosition(px, py); tail.setPosition(px, py).setScale((1.6 + Math.random() * 0.4) * size, 0.42 * size); tail2.setPosition(px, py);
-            if (Math.random() < 0.5) { const d = this.add.circle(px, py, 2 * size, 0xff8a2a).setDepth(5.7).setBlendMode(ADD); this.tweens.add({ targets: d, y: d.y + 10 + Math.random() * 8, alpha: 0, scale: 0.3, duration: 320, onComplete: () => d.destroy() }); }   // lava dripping off it
-            const e = this.add.rectangle(px + (Math.random() - 0.5) * 6, py + (Math.random() - 0.5) * 6, 3 * size, 3 * size, Math.random() < 0.5 ? 0xffb040 : 0xff5a1a).setDepth(5.8).setBlendMode(ADD);
-            this.tweens.add({ targets: e, alpha: 0, scale: 0.2, duration: 240, onComplete: () => e.destroy() });
-        }, onComplete: () => { tail.destroy(); tail2.destroy(); this._scorchImpact(x, y, ex, ey, size, rock, glow, B); } });
-    }
     _scorchImpact(x, y, tx, ty, size, rock, glow, B = null) {   // B: a barrage meteor (its own reach, damage and daze; Super Burn on what it lands on)
         const C = this._scorchCfg(), T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD, R = B ? B.R : C.R[0] + C.R[1] * size, now = this.time.now;
         Sfx.play(this, 'meteor_hit', { small: !!B }); this.cameras.main.shake(B ? 60 : 110 + 90 * size, B ? 0.002 : 0.004 + 0.004 * size);
         for (let ox = -Math.ceil(R); ox <= Math.ceil(R); ox++) for (let oy = -Math.ceil(R); oy <= Math.ceil(R); oy++) if (Math.hypot(ox, oy) <= R) this._evaporate?.(tx + ox, ty + oy, 6);   // it boils the water off to fog
-        this._vfxFlash?.(x, y, R * T * (B ? 0.9 : 1.3), 0xff7a2a, B ? 220 : 340, B ? 0.35 : 0.55);   // a barrage's flash kept low: five of them blinded the fight
-        VisualFX.impact(this, x, y, 'fire', B ? 10 + 6 * size : 16 + 14 * size);
-        const wave = this.add.ellipse(x, y + 4, T, T * 0.5).setStrokeStyle(3, 0xffb040, 1).setBlendMode(ADD).setDepth(3.5);
-        this.tweens.add({ targets: wave, scale: R * 2.2, alpha: 0, duration: 420, ease: 'Quad.easeOut', onComplete: () => wave.destroy() });
-        for (let i = 0; i < 14; i++) { const a = Math.random() * Math.PI * 2, d = R * T * (0.5 + Math.random() * 0.7), c = i % 3 ? 0x5a4a44 : 0xff8a2a, ch = this.add.rectangle(x, y, 3 + Math.random() * 3, 3, c).setDepth(5.5); this.tweens.add({ targets: ch, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.6 - 10, angle: 300, alpha: 0, duration: 520, ease: 'Quad.easeOut', onComplete: () => ch.destroy() }); }
-        // the crater: scorched ground, cracks glowing out of it, a raised rim
-        const cr = this.add.graphics().setDepth(0.62).setPosition(x, y + 4), CR = T * (0.7 + 0.45 * size);
-        cr.fillStyle(0x140a06, 0.75); cr.fillEllipse(0, 0, CR * 2.4, CR * 1.3);
-        cr.lineStyle(3, 0x3a2a22, 0.9); cr.strokeEllipse(0, 0, CR * 2.4, CR * 1.3);
-        const crk = this.add.graphics().setDepth(0.63).setPosition(x, y + 4).setBlendMode(ADD);
-        for (let k = 0; k < 7; k++) { let a = Math.random() * Math.PI * 2, px = Math.cos(a) * CR * 0.6, py = Math.sin(a) * CR * 0.35; crk.lineStyle(2, 0xff6a1a, 0.9); crk.beginPath(); crk.moveTo(px, py); for (let j = 0; j < 3; j++) { a += (Math.random() - 0.5) * 0.7; px += Math.cos(a) * CR * 0.4; py += Math.sin(a) * CR * 0.22; crk.lineTo(px, py); } crk.strokePath(); }
+        this._vfxFlash?.(x, y, R * T * (B ? 0.6 : 0.85), 0xff7a2a, B ? 200 : 300, B ? 0.2 : 0.35);   // kept low: a volley of them stacked into a white-out
+        // the strike: its blast (the dome of fire bursting and tearing into tongues), a ring of flames racing out over the floor,
+        // a column of fire (the big ones), rock and embers thrown
+        const F = WeaponSystem.flames(this);
+        const boom = this.add.sprite(x, y + 6, 'fx_ult_fi', 'boom_0').setOrigin(0.5, 0.8).setScale(B ? 1.4 : 1.5 + 0.6 * size).setFlipX(Math.random() < 0.5).setDepth(5.5).play('uf_boom');
+        boom.once('animationcomplete', () => boom.destroy());
+        WeaponSystem.fireRing(this, x, y + 4, T * 0.3, R * T * 0.9, B ? 260 : 340, B ? 6 : 10, false, 0.5);
+        for (let i = 0; i < (B ? 2 : 4); i++) F.flame.emitParticleAt(x + (Math.random() - 0.5) * T, y + (Math.random() - 0.5) * T * 0.5, 1);
+        if (!B) { const pil = this.add.sprite(x, y + 6, 'fx_fire_w', 'pillar_0').setOrigin(0.5, 1).setScale(1.2 + 0.5 * size).setTint(0xffd890, 0xffd890, 0xff6a1a, 0xff6a1a).setAlpha(0.85).setDepth(5.45).play('fw_pillar');
+            pil.once('animationcomplete', () => pil.destroy()); }
+        for (let i = 0; i < (B ? 5 : 9); i++) {   // lumps of rock flung out, still glowing
+            const a = Math.random() * Math.PI * 2, d = R * T * (0.4 + Math.random() * 0.6), ch = this.add.sprite(x, y, 'fx_fire_w', 'pebble_0').setScale(1 + Math.random() * 0.5).setDepth(5.5).play({ key: 'fw_pebble', startFrame: i % 4 });
+            this.tweens.add({ targets: ch, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.6 - 4, duration: 460 + Math.random() * 160, ease: 'Quad.easeOut', onComplete: () => this.tweens.add({ targets: ch, alpha: 0, duration: 260, onComplete: () => ch.destroy() }) });
+        }
+        for (let i = 0; i < (B ? 5 : 10); i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.8, v = 80 + Math.random() * 120; WeaponSystem.ember(this, x, y, Math.cos(a) * v, Math.sin(a) * v, 350 + Math.random() * 350); }
+        // the crater: scorched ground and a broken rim, the magma in it glowing and cooling
+        const k = T * (0.7 + 0.45 * size) * 2.4 / 34;
+        const cr = this.add.image(x, y + 4, 'fx_ult_fi', 'crater').setScale(k).setFlipX(Math.random() < 0.5).setDepth(0.62);
+        const crk = this.add.image(x, y + 4, 'fx_ult_fi', 'crater_hot').setScale(k).setFlipX(cr.flipX).setBlendMode(ADD).setDepth(0.63);
         // the rock, half-buried, cooling from white-hot to dark; smoke off it
-        rock.setPosition(x, y - 2).setRotation(0.4).setDepth(1.02).setCrop(0, 0, rock.frame.width, rock.frame.height * 0.72);
-        glow.setPosition(x, y).setTint(0xff9a4a).setScale((B ? 0.5 : 0.9) * size).setAlpha(B ? 0.4 : 0.9);
+        rock.anims?.stop(); rock.setPosition(x, y - 2).setDepth(1.02).setCrop(0, 0, rock.frame.width, rock.frame.height * 0.72);
+        glow.setPosition(x, y).setTint(0xff8a3a).setScale((B ? 0.4 : 0.7) * size).setAlpha(B ? 0.25 : 0.55);
         const cool = { k: 0 };
         this.tweens.add({ targets: cool, k: 1, duration: C.EMBED_MS, onUpdate: () => {
             const c = Phaser.Display.Color.Interpolate.ColorWithColor(Phaser.Display.Color.ValueToColor(0xffffff), Phaser.Display.Color.ValueToColor(0x6a5048), 100, Math.round(cool.k * 100));
-            rock.setTint(Phaser.Display.Color.GetColor(c.r, c.g, c.b)); glow.setAlpha(0.9 * (1 - cool.k)); crk.setAlpha(1 - cool.k * 0.8);
-            if (Math.random() < 0.15) { const sm = this.add.circle(x + (Math.random() - 0.5) * T, y - 6, 3 + 2 * size, 0x2a2420, 0.4).setDepth(5.4); this.tweens.add({ targets: sm, y: sm.y - 30, x: sm.x + 6, scale: 2.4, alpha: 0, duration: 1000, onComplete: () => sm.destroy() }); }
+            rock.setTint(Phaser.Display.Color.GetColor(c.r, c.g, c.b)); glow.setAlpha((B ? 0.25 : 0.55) * (1 - cool.k)); crk.setAlpha(0.8 * (1 - cool.k * 0.85));
+            if (Math.random() < 0.12) { const sm = this.add.image(x + (Math.random() - 0.5) * T, y - 6, 'fx_smoke').setTint(0x3a2a26).setScale(0.1 + 0.04 * size).setAlpha(0.4).setDepth(5.4);
+                this.tweens.add({ targets: sm, y: sm.y - 30, x: sm.x + 6, scale: sm.scale * 2.4, alpha: 0, duration: 1000, ease: 'Sine.easeOut', onComplete: () => sm.destroy() }); }
         }, onComplete: () => this.tweens.add({ targets: [rock, glow, cr, crk], alpha: 0, duration: 400, onComplete: () => [rock, glow, cr, crk].forEach(o => o.destroy()) }) });
         // the hit: damage, Dazed for 2s, a Super Burn stack (stage 2: the supernova fuse too)
         if (B?.hostile) { B.hostile(tx, ty, R); return; }   // an Ult Absorber's stolen meteor: it lands on you, not them
@@ -552,23 +628,31 @@ class ElementSystem {
         const ADD = Phaser.BlendModes.ADD, start = now, puffs = Array.from({ length: 22 }, (_, i) => ({
             img: this.add.image(0, 0, 'vfx_glow').setTint(i % 3 ? 0xb8dcf0 : 0xe8f6ff).setDepth(0.9),   // (normal blend: mist, added glows stacked to a white-out)
             a: Math.random() * Math.PI * 2, d: Math.sqrt(Math.random()), spin: (Math.random() - 0.5) * 0.0008, s: 0.7 + Math.random() * 0.6 }));
-        const snow = this.add.particles(0, 0, 'vfx_dot', { lifespan: 1600, speed: { min: 4, max: 16 }, scale: { start: 0.3, end: 0 }, alpha: { start: 0.7, end: 0 }, tint: [0xffffff, 0xbff0ff], frequency: 50,
-            emitZone: { type: 'random', source: new Phaser.Geom.Circle(0, 0, F.R * T) } }).setDepth(5);
+        // snow (the hand-drawn flakes) falling all through it, and frost mist curling along its edge: where the cold reaches
+        let zr = F.R * T;
+        const zone = rim => ({ getRandomPoint: v => { const a = Math.random() * Math.PI * 2, d = zr * (rim ? 0.93 + Math.random() * 0.12 : Math.sqrt(Math.random())); v.x = Math.cos(a) * d; v.y = Math.sin(a) * d * 0.8; return v; } });
+        WeaponSystem.iceArt(this); Rimeguard.st(this);
+        const snow = this.add.particles(0, 0, 'fx_ice_w', { frame: ['flake_0', 'flake_1', 'flake_2'], lifespan: 1600, speedX: { min: -10, max: 10 }, speedY: { min: 4, max: 18 }, scale: { start: 1.3, end: 0.7 },
+            alpha: { start: 0.8, end: 0 }, color: [0xffffff, 0xbff0ff, 0x7fc8ff], frequency: 50, emitZone: { type: 'random', source: zone(false) } }).setDepth(5);
+        const rim = this.add.particles(0, 0, 'fx_rimeguard', { frame: ['mist_0', 'mist_1'], lifespan: { min: 700, max: 1200 }, speed: { min: 4, max: 14 }, scale: { start: 1.4, end: 2.2 },
+            alpha: { start: 0.16, end: 0 }, color: [0xbfeaff, 0x6fb8e8, 0x2a5a8a], blendMode: 'ADD', frequency: 28, emitZone: { type: 'random', source: zone(true) } }).setDepth(0.95);
+        const rimSnow = this.add.particles(0, 0, 'fx_ice_w', { frame: ['flake_0', 'flake_1', 'flake_2'], lifespan: { min: 500, max: 900 }, speed: { min: 6, max: 24 }, scale: { start: 1.4, end: 0.6 },
+            alpha: { start: 0.9, end: 0 }, color: [0xffffff, 0xbff0ff, 0x7fc8ff], frequency: 22, emitZone: { type: 'random', source: zone(true) } }).setDepth(4.9);
         const tick = () => {
             const t = this.time.now, left = this._iceFrostUntil - t;
-            if (!this.player?.active) { this.events.off('update', tick); puffs.forEach(p => p.img.destroy()); snow.destroy(); return; }
+            if (!this.player?.active) { this.events.off('update', tick); puffs.forEach(p => p.img.destroy()); snow.destroy(); rim.destroy(); rimSnow.destroy(); return; }
             if (left <= 0 && !this._iceShellUntil) this._iceShellBegin();
             const shell = this._iceShellUntil ? Math.max(0, (this._iceShellUntil - t) / F.SHELL_MS) : 1;   // 1 → 0 as the shell holds
-            if (this._iceShellUntil && t >= this._iceShellUntil) { this.events.off('update', tick); puffs.forEach(p => p.img.destroy()); snow.destroy(); this._iceShellEnd(); return; }
+            if (this._iceShellUntil && t >= this._iceShellUntil) { this.events.off('update', tick); puffs.forEach(p => p.img.destroy()); snow.destroy(); rim.destroy(); rimSnow.destroy(); this._iceShellEnd(); return; }
             const grow = Math.min(1, (t - start) / F.SPREAD_MS), k = this._iceShellUntil ? shell : 1 - Math.pow(1 - grow, 3);   // its reach, as a share of R
             const r = Math.max(0.05, k) * F.R * T, dense = Math.min(2.6, 1 / Math.max(0.38, k));   // thicker the smaller it is
             const x = this.player.x, y = this.player.y;
             for (const p of puffs) {
                 p.a += p.spin * 16;
                 const px = x + Math.cos(p.a) * p.d * r, py = y + Math.sin(p.a) * p.d * r * 0.8, sz = (r / T) * 0.55 * p.s + 0.6;
-                p.img.setPosition(px, py).setScale(sz * (0.9 + 0.1 * Math.sin(t * 0.002 + p.a))).setAlpha(Math.min(0.5, 0.07 * dense * (1.1 - p.d * 0.4)));
+                p.img.setPosition(px, py).setScale(sz * (0.9 + 0.1 * Math.sin(t * 0.002 + p.a))).setAlpha(Math.min(this._iceShellUntil ? 0.15 : 0.3, 0.035 * dense * (1.1 - p.d * 0.4)));
             }
-            snow.setPosition(x, y); const z = snow.emitZones?.[0]?.source || snow.emitZone?.source; if (z) z.radius = r;
+            snow.setPosition(x, y); rim.setPosition(x, y); rimSnow.setPosition(x, y); zr = r;
             if (!this._iceShellUntil && this.player.tintTopLeft !== 0x9ad8ff) this.player.setTint(0x9ad8ff);   // you, gone blue with cold
         };
         this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));   // (a restart keeps scene listeners: this one would run on into the next level)
@@ -598,60 +682,6 @@ class ElementSystem {
         const gale = () => { if (this.time.now >= this._iceFrostUntil || !this.player?.active) { this.events.off('update', gale); return; } if (this.time.now >= this._galeNext && this._iceFrostUntil - this.time.now > F.GALE.FORM * (this._galeBest / F.GALE.R0)) { this._galeNext = this.time.now + F.GALE.EVERY; this._galeSpawn(); } };   // (none that would still be gathering on you when the shell closes)
         this.events.on('update', gale); this.events.once('shutdown', () => this.events.off('update', gale));   // (a restart keeps scene listeners: this one would run on into the next level)
     }
-    // The Gale Storm's tornado, side on: an animated sheet of 8 frames, 48 x 72. A funnel narrow at the ground and wide at
-    // the top, swaying, its wind wound round it in bands that climb as they turn (lit on the left, shadowed at the edges,
-    // see-through at its rim), a cloud of snow at its crown and spray kicked up at its foot.
-    // Cracks across a frozen block: jagged lines out from the middle, white with a dark shadow (baked once)
-    static blockCrackKey(scene) {
-        const key = 'fx_blockcrack', N = 32;
-        if (scene.textures.exists(key)) return key;
-        const t = scene.textures.createCanvas(key, N, N), c = t.getContext(), R = MenuArt.rng(331);
-        for (let k = 0; k < 6; k++) {
-            let a = k / 6 * Math.PI * 2 + R() * 0.5, x = N / 2, y = N / 2;
-            const pts = [[x, y]];
-            for (let i = 0; i < 5; i++) { a += (R() - 0.5) * 0.9; x = Math.max(0, Math.min(N, x + Math.cos(a) * 3.4)); y = Math.max(0, Math.min(N, y + Math.sin(a) * 3.4)); pts.push([x, y]); }
-            for (const [off, col, w] of [[1, 'rgba(10,42,88,0.9)', 2], [0, '#ffffff', 1]]) { c.beginPath(); c.moveTo(pts[0][0] + off, pts[0][1] + off); for (const [px, py] of pts) c.lineTo(px + off, py + off); c.strokeStyle = col; c.lineWidth = w; c.stroke(); }
-        }
-        t.refresh(); return key;
-    }
-    static tornadoKey(scene) {
-        const key = 'fx_tornado3', W = 64, H = 52, N = 8;   // squat and thick: about as wide as tall
-        if (scene.textures.exists(key)) return key;
-        const t = scene.textures.createCanvas(key, W * N, H), ctx = t.getContext(), img = ctx.createImageData(W * N, H), d = img.data;
-        const put = (f, x, y, c, a) => { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W * N + f * W + x) * 4, A = d[i + 3] / 255, na = a + A * (1 - a);
-            d[i] = ((c >> 16 & 255) * a + d[i] * A * (1 - a)) / na; d[i + 1] = ((c >> 8 & 255) * a + d[i + 1] * A * (1 - a)) / na; d[i + 2] = ((c & 255) * a + d[i + 2] * A * (1 - a)) / na; d[i + 3] = na * 255; };
-        const R = MenuArt.rng(77), nz = MenuArt.noise(41);
-        for (let f = 0; f < N; f++) {
-            const ph = f / N * Math.PI * 2;
-            for (let y = 3; y < H - 3; y++) {
-                const v = (y - 3) / (H - 6), w = 8 + 20 * Math.pow(1 - v, 1.1) + (nz(y * 0.4, f * 1.3) - 0.5) * 6;   // thick, its edge ragged and twitching
-                const cx = W / 2 + Math.sin(v * 4 - ph) * 4 + Math.sin(v * 11 + ph * 2) * 1.6;   // a wobble on a wobble: unsteady
-                for (let x = Math.floor(cx - w); x <= cx + w; x++) {
-                    const u = (x + 0.5 - cx) / w; if (Math.abs(u) > 1) continue;
-                    const ang = Math.asin(u), band = (ang * 1.8 + v * 7 - ph * 2 + 20 + nz(x * 0.3, y * 0.3 + f) * 0.6) % 2;
-                    const lit = 0.55 + 0.45 * Math.cos(ang + 0.5), edge = Math.abs(u);
-                    let c = band < 0.25 ? 0xf2fcff : band < 0.75 ? 0xbfeaff : band < 1.3 ? 0x6cc8f4 : 0x2e8cd0;   // frost colours: white, ice-blue, glacier, deep
-                    c = MenuArt.mix(c, 0x1a4a78, (1 - lit) * 0.5);
-                    if (edge < 0.35) c = MenuArt.mix(c, 0xe8faff, (0.35 - edge) * 1.2);   // its dense core, brighter
-                    put(f, x, y, edge > 0.9 ? MenuArt.mix(c, 0x1a3a60, 0.35) : c, edge > 0.92 ? 0.75 : 1);   // solid, a darker rim so it reads round
-                }
-            }
-            for (let k = 0; k < 7; k++) {   // ice shards whirling round it, catching the light
-                const a = ph * 1.5 + k * 0.9, yy = 8 + (k * 6.3) % (H - 16), ww = 10 + 20 * (1 - yy / H), sx = W / 2 + Math.cos(a) * (ww + 3), front = Math.sin(a) > 0;
-                for (const [dx, dy, c] of [[0, -2, 0xffffff], [0, -1, 0xd8f4ff], [-1, 0, 0x9ad8ff], [0, 0, 0xffffff], [1, 0, 0x9ad8ff], [0, 1, 0x6ab8e0], [0, 2, 0x6ab8e0]]) put(f, sx + dx, yy + dy, c, front ? 1 : 0.5);
-            }
-            for (let k = 0; k < 10; k++) {   // its crown, a churning lip of frost cloud
-                const a = k / 10 * Math.PI * 2 + ph * 0.6, px = W / 2 + Math.cos(a) * 24, py = 6 + Math.sin(a) * 3, pr = 4 + (k % 3);
-                for (let yy = -pr; yy <= pr; yy++) for (let xx = -pr; xx <= pr; xx++) { if (xx * xx + yy * yy > pr * pr) continue; put(f, px + xx, py + yy, yy < -pr * 0.3 ? 0xffffff : yy > pr * 0.4 ? 0x9ac0dc : 0xe2f0fa, 0.85); }
-            }
-            for (let k = 0; k < 14; k++) { const a = R() * Math.PI * 2, r = 4 + R() * 12; put(f, W / 2 + Math.cos(a - ph * 2) * r, H - 4 + Math.sin(a - ph * 2) * r * 0.3, 0xe8f6ff, 0.8); }   // snow kicked up at its foot
-            for (let k = 0; k < 18; k++) put(f, W / 2 + (R() - 0.5) * 60, 4 + R() * (H - 8), 0xffffff, 0.7);   // flurries
-        }
-        ctx.putImageData(img, 0, 0); t.refresh();
-        for (let f = 0; f < N; f++) t.add(f, 0, f * W, 0, W, H);
-        if (!scene.anims.exists(key)) scene.anims.create({ key, frames: Array.from({ length: N }, (_, f) => ({ key, frame: f })), frameRate: 18, repeat: -1 });
-        return key;
-    }
     // The ult's end: encased in ice for SHELL_MS, untouchable and held still, a crust of ice over your own shape; then it
     // melts off (drips, a crack, a puff of mist) and you're yourself again
     _iceShellBegin() {
@@ -661,47 +691,24 @@ class ElementSystem {
         this._staggerUntil = Math.max(this._staggerUntil || 0, this._iceShellUntil);   // held still
         this._dashInvulnUntil = Math.max(this._dashInvulnUntil || 0, this._iceShellUntil);   // untouchable
         this._applyGlu(F.SHELL_MS, null);   // and no dashing out of it (it says ENCASED itself)
-        // the crust: a block of ice in your own shape, thick, the cube's ice (deep blue, a bright upper face, gloss, facets, cracks)
-        const key = this._iceShellTex(p), img = this.add.image(p.x, p.y, key).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setDepth(p.depth + 0.02).setAlpha(0);
-        img.setDisplayOrigin(p.displayOriginX + 6, p.displayOriginY + 6);   // (its 6px border round the frame)
-        this.tweens.add({ targets: img, alpha: 0.92, duration: 220 });
+        // the crust: a chunk of thick ice over you (deep blue, a bright upper face, gloss, facets), shut with a crunch of spikes;
+        // cracks creep across it as it melts
+        ElementSystem.ultArt(this);
+        const img = this.add.image(p.x, p.y, 'fx_ult_fi', 'shell').setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX).setDepth(p.depth + 0.02).setAlpha(0);
+        const crk = this.add.image(p.x, p.y, 'fx_ult_fi', 'shell_crk').setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX).setDepth(p.depth + 0.025).setAlpha(0);
+        this.tweens.add({ targets: img, alpha: 0.95, duration: 220 });
+        ElementSystem.iceSpikeRing(this, p.x, p.y + 8, 18, 7, 0.75);
+        const FR = WeaponSystem.frost(this);
         const glint = this.add.image(p.x, p.y, 'vfx_glow').setTint(0xd8f4ff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35).setAlpha(0.35).setDepth(p.depth + 0.03);
         this.tweens.add({ targets: glint, alpha: 0.12, duration: 700, yoyo: true, repeat: -1 });
-        this._iceShell = { rim: img, body: glint, cracks: this.add.graphics(), follow: () => { img.setPosition(p.x, p.y); glint.setPosition(p.x - 6, p.y - p.displayHeight * 0.25); } };
+        this._iceShell = { rim: img, body: glint, cracks: crk, follow: () => {
+            img.setPosition(p.x, p.y); crk.setPosition(p.x, p.y).setAlpha(Phaser.Math.Clamp(1 - ((this._iceShellUntil || 0) - this.time.now) / 1200, 0, 1)); glint.setPosition(p.x - 6, p.y - p.displayHeight * 0.25);
+            if (Math.random() < 0.04) FR.glint.emitParticleAt(p.x + (Math.random() - 0.5) * 22, p.y + Math.random() * 10, 1);   // a glint off it now and then
+        } };
         this._iceShell.follow();
         const follow = this._iceShell.follow;   // every frame, after the step glide: a step still under way carried the slime out of its shell
         this.events.on('postupdate', follow); this.events.once('shutdown', () => this.events.off('postupdate', follow));
         this.showStatusText(p.x, p.y - 40, 'ENCASED', '#d8f4ff'); Sfx.play(this, 'shatter'); this.cameras.main.shake(120, 0.004);
-    }
-    // The shell's texture for the player's current frame: its silhouette grown 5px all round, filled with cube ice
-    _iceShellTex(p) {
-        const fr = p.frame, key = 'fx_iceshell_' + p.texture.key + '_' + fr.name;
-        if (this.textures.exists(key)) return key;
-        const W = fr.cutWidth, H = fr.cutHeight, B = 6, CW = W + B * 2, CH = H + B * 2;
-        const src = document.createElement('canvas'); src.width = W; src.height = H;
-        const sctx = src.getContext('2d'); sctx.drawImage(fr.source.image, fr.cutX, fr.cutY, W, H, 0, 0, W, H);
-        const sd = sctx.getImageData(0, 0, W, H).data, inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H && sd[(y * W + x) * 4 + 3] > 40;
-        const dist = new Float32Array(CW * CH).fill(99);   // distance from each pixel to the slime (pixels), for its thickness
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inside(x, y)) for (let dy = -B; dy <= B; dy++) for (let dx = -B; dx <= B; dx++) { const i = (y + B + dy) * CW + (x + B + dx), dd = Math.hypot(dx, dy); if (dd < dist[i]) dist[i] = dd; }
-        let top = CH, bot = 0, lft = CW, rgt = 0; for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) if (dist[y * CW + x] <= 5) { top = Math.min(top, y); bot = Math.max(bot, y); lft = Math.min(lft, x); rgt = Math.max(rgt, x); }
-        const t = this.textures.createCanvas(key, CW, CH), ctx = t.getContext(), img = ctx.createImageData(CW, CH), d = img.data, nz = MenuArt.noise(5);
-        for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
-            const dd = dist[y * CW + x], R = 4.6 + nz(x * 0.4, y * 0.4) * 1.2;   // a rough, chipped outline
-            if (dd > R) continue;
-            const u = (x - lft) / Math.max(1, rgt - lft), v = (y - top) / Math.max(1, bot - top), edge = R - dd;
-            let c = 0x336699, a = 0.62;                                        // the cube's deep ice
-            if (u + v < 0.75) { c = 0x5a9ad0; a = 0.62; }                     // lighter toward the upper left
-            if (u < 0.5 && v < 0.45) { c = 0xa8d8f4; a = 0.58; }              // its bright face
-            if (edge < 1.1) { c = 0xaaddff; a = 0.95; }                       // its border
-            else if (edge < 2) { c = 0x2a5a8a; a = 0.75; }                    // the thick wall seen edge-on
-            const g = (x - y) - (lft - top) - (rgt - lft) * 0.25;              // gloss streaks across it
-            if (edge >= 1.1 && Math.abs(g) < 1.2 && v < 0.7) { c = 0xffffff; a = 0.7; }
-            if (edge >= 1.1 && Math.abs(g - 7) < 0.6 && v < 0.6) { c = 0xffffff; a = 0.4; }
-            if (edge >= 2 && ((x * 7 + y * 3) % 23 === 0 || Math.abs((x + y * 2) % 19 - 9) < 0.5 && v > 0.4)) { c = 0xd8f4ff; a = 0.55; }   // facet lines, frost
-            const i = (y * CW + x) * 4; d[i] = c >> 16 & 255; d[i + 1] = c >> 8 & 255; d[i + 2] = c & 255; d[i + 3] = a * 255;
-        }
-        ctx.putImageData(img, 0, 0); t.refresh();
-        return key;
     }
     _iceShellEnd() {
         const S = this._iceShell; this._iceShellUntil = 0; this._iceShell = null;
@@ -709,7 +716,9 @@ class ElementSystem {
         if (!S) return;
         this.events.off('postupdate', S.follow);
         const p = this.player;
-        for (let k = 0; k < 10; k++) { const d = this.add.circle(p.x + (Math.random() - 0.5) * 24, p.y - Math.random() * 16, 2, 0x9ad8ff).setDepth(p.depth + 0.05); this.tweens.add({ targets: d, y: d.y + 18 + Math.random() * 10, alpha: 0, duration: 500, onComplete: () => d.destroy() }); }   // meltwater
+        for (let k = 0; k < 10; k++) { const d = this.add.sprite(p.x + (Math.random() - 0.5) * 24, p.y - Math.random() * 12, 'fx_ult_fi', 'wdrop_0').setScale(1.4).setDepth(p.depth + 0.05);   // meltwater, dripping and splashing
+            this.tweens.add({ targets: d, y: d.y + 12 + Math.random() * 8, duration: 260 + Math.random() * 160, ease: 'Quad.easeIn', onComplete: () => { d.play('uf_drop'); d.once('animationcomplete', () => d.destroy()); } }); }
+        WeaponSystem.iceChips(this, p.x, p.y, 8, 22);   // the crust breaking off
         this.tweens.add({ targets: [S.rim, S.body, S.cracks], alpha: 0, scaleX: '*=1.15', duration: 380, onComplete: () => { S.rim.destroy(); S.body.destroy(); S.cracks.destroy(); } });
         this._vfxFlash?.(p.x, p.y, 70, 0xd8f4ff, 300, 0.5);
         p.clearTint(); Sfx.play(this, 'e_dip');
@@ -718,11 +727,18 @@ class ElementSystem {
     _galeSpawn() {
         const G = this._iceFrostCfg().GALE, T = this.TILE_SIZE, ADD = Phaser.BlendModes.ADD;
         const t = { r: this._galeBest, x: this.player.x, y: this.player.y, born: this.time.now, form: G.FORM * (this._galeBest / G.R0), vx: 0, vy: 0, tickAt: 0, flung: false };
-        t.g = this.add.graphics().setDepth(0.9).setBlendMode(ADD);   // snow whipped round its foot, flattened to the floor's perspective
+        ElementSystem.ultArt(this); WeaponSystem.iceArt(this);
         t.sh = this.add.image(t.x, t.y, 'vfx_glow').setTint(0x06121f).setAlpha(0.5).setDepth(0.88);   // its shadow: what stands it on the floor
-        const tk = ElementSystem.tornadoKey(this); t.spr = this.add.sprite(t.x, t.y, tk, 0).setOrigin(0.5, 0.94).setTint(0xc8daea).play(tk);   // (a touch under white: the glow pass bloomed full white into glare)
-        t.snow = this.add.particles(0, 0, 'vfx_dot', { lifespan: 700, speedX: { min: -25, max: 25 }, speedY: { min: -70, max: -30 }, gravityY: -60, scale: { start: 0.4, end: 0 }, alpha: { start: 0.9, end: 0 }, tint: [0xffffff, 0xbff0ff, 0x8ad8ff], frequency: 18,
-            emitZone: { type: 'random', source: new Phaser.Geom.Ellipse(0, 0, t.r * T * 2, t.r * T * 0.6) } }).setDepth(4.5);   // lifted off the floor round its foot
+        t.spr = this.add.sprite(t.x, t.y, 'fx_ult_fi', 'tor_0').setOrigin(0.5, 0.94).setTint(0xb0d4f0).play('uf_tor');   // (under white, ice blue: the glow pass bloomed white into glare)
+        let zw = t.r * T, zh = t.r * T * 0.3;
+        // snow racing round its foot in three arcs, flat to the floor, as wide as its reach: each flake stays where it's thrown down
+        // and fades, so the arcs trail behind their heads
+        t.g = this.add.particles(0, 0, 'fx_ice_w', { frame: ['flake_0', 'flake_1', 'flake_2'], lifespan: { min: 220, max: 360 }, speed: { min: 0, max: 6 }, scale: { start: 1.5, end: 0.6 },
+            alpha: { start: 0.95, end: 0 }, color: [0xffffff, 0xd8f4ff, 0x7fc8ff], blendMode: 'ADD', frequency: 6,
+            emitZone: { type: 'random', source: { getRandomPoint: v => { const a = this.time.now * 0.009 + Math.floor(Math.random() * 3) * 2.094 - Math.random() * 1.1, d = 0.9 + Math.random() * 0.12; v.x = Math.cos(a) * zw * d; v.y = Math.sin(a) * zw * d * 0.32; return v; } } } }).setDepth(0.9);
+        t.snow = this.add.particles(0, 0, 'fx_ice_w', { frame: ['flake_0', 'flake_1', 'flake_2'], lifespan: 700, speedX: { min: -25, max: 25 }, speedY: { min: -70, max: -30 }, gravityY: -60, scale: { start: 1.3, end: 0.5 }, alpha: { start: 0.9, end: 0 }, color: [0xffffff, 0xbff0ff, 0x8ad8ff], frequency: 18,
+            emitZone: { type: 'random', source: { getRandomPoint: v => { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()); v.x = Math.cos(a) * d * zw; v.y = Math.sin(a) * d * zh; return v; } } } }).setDepth(4.5);   // lifted off the floor round its foot
+        const FR = WeaponSystem.frost(this);
         Sfx.play(this, 'gale');
         const tick = () => {
             const now = this.time.now, alive = now - t.born < t.form + G.LIFE && this.player?.active;
@@ -761,16 +777,14 @@ class ElementSystem {
                 }
             }
             // the look: the funnel standing on its spot, as wide as its reach; under it a faint swirl of frost on the ground
-            const r = t.r * T * (t.flung ? 1 : Math.min(1, (now - t.born) / t.form)), sp = now * 0.006;
+            const r = t.r * T * (t.flung ? 1 : Math.min(1, (now - t.born) / t.form));
             const jx = (Math.random() - 0.5) * r * 0.06;   // unsteady
             const vr = Math.min(r, 2.2 * T + (r - 2.2 * T) * 0.25);   // the funnel's drawn size: it stops growing much past 2.2 tiles (the reach keeps growing, shown by the swirl at its foot) or it hides the fight
-            t.spr.setPosition(t.x + jx, t.y + vr * 0.3).setAlpha(r > 2.2 * T ? 0.8 : 1).setScale(Math.max(0.05, vr * 2.1 / 64)).setAngle(Math.sin(now * 0.011) * 4).setDepth(t.y + r * 0.3 + 1);
+            t.spr.setPosition(t.x + jx, t.y + vr * 0.3).setAlpha(r > 2.2 * T ? 0.8 : 1).setScale(Math.max(0.05, Math.min(2.4, vr * 1.45 / 30))).setDepth(t.y + r * 0.3 + 1);
             const fx = t.x + jx, fy = t.y + vr * 0.3;   // its foot
             t.sh.setPosition(fx, fy).setDisplaySize(vr * 2.6, vr * 0.8);
-            t.g.clear();   // three arcs of snow racing round the foot, an ellipse a third as tall as wide (the floor seen at a slant)
-            for (let k = 0; k < 3; k++) { const a0 = sp * 2.2 + k * 2.1, rr = r * (0.55 + k * 0.22); t.g.lineStyle(Math.max(1, r * 0.06), 0xd8f4ff, 0.35 - k * 0.08).beginPath();
-                for (let j = 0; j <= 10; j++) { const a = a0 + j * 0.14, px = fx + Math.cos(a) * rr, py = fy + Math.sin(a) * rr * 0.32; j ? t.g.lineTo(px, py) : t.g.moveTo(px, py); } t.g.strokePath(); }
-            t.snow.setPosition(fx, fy); const z = t.snow.emitZones?.[0]?.source || t.snow.emitZone?.source; if (z) { z.width = r * 2; z.height = r * 0.6; }
+            t.g.setPosition(fx, fy); t.snow.setPosition(fx, fy); zw = r; zh = r * 0.3;
+            if (Math.random() < 0.3) FR.glint.emitParticleAt(fx + (Math.random() - 0.5) * vr * 1.6, fy - Math.random() * vr * 1.6, 1);   // ice whirling in it, catching the light
         };
         this.events.on('update', tick); this.events.once('shutdown', () => this.events.off('update', tick));   // (a restart keeps scene listeners: this one would run on into the next level)
     }
@@ -780,8 +794,6 @@ class ElementSystem {
         if (!this._iceZoomed) {
             this._iceZoomed = true;
             this.tweens.add({ targets: cam, zoom: z0 * F.ZOOM, duration: 300, ease: 'Cubic.easeOut', onComplete: () => this.tweens.add({ targets: cam, zoom: z0, duration: 420, delay: 200, ease: 'Sine.easeInOut' }) });
-            const fl = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0xbff0ff, 0.3).setScrollFactor(0).setDepth(20);
-            this.tweens.add({ targets: fl, alpha: 0, duration: 500, onComplete: () => fl.destroy() });
             Sfx.play(this, 'blizzard'); this.cameras.main.shake(160, 0.004);
             this.tsunamiActive = true;   // (held through the zoom: no second cast)
             this._iceFrostBegin();
@@ -804,9 +816,6 @@ class ElementSystem {
         const pauseDur = 200;                      // how long water sits before retracting
         const retractDur = 500;                    // retract phase duration
 
-        // Screen flash — deep blue
-        const screenFlash = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x003366, 0.5).setScrollFactor(0).setDepth(20);
-        this.tweens.add({ targets: screenFlash, alpha: 0, duration: 400, onComplete: () => screenFlash.destroy() });
 
         const tilesHit = new Set();
         const wetEnemies = new Set(); // enemies touched by water
@@ -953,9 +962,6 @@ class ElementSystem {
         this.time.delayedCall(waveDur + pauseDur + retractDur + 100, () => {
             if (!this.tsunamiActive) return;
 
-            // Screen flash white
-            const freezeFlash = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0xffffff, 0.65).setScrollFactor(0).setDepth(20);
-            this.tweens.add({ targets: freezeFlash, alpha: 0, duration: 350, onComplete: () => freezeFlash.destroy() });
 
             // Flash-freeze ice tile overlay — briefly cover the whole tsunami area with ice tiles
             const iceTileOverlays = [];
@@ -1021,18 +1027,19 @@ class ElementSystem {
             // Single scatter burst erupting from player on flash freeze. For show only now: real
             // shards shattered the pack the instant it froze (any ice hit on a frozen enemy
             // shatters it), so up close the 4s hold and the shatter below never happened.
+            // (the hand-drawn icicles, drawn the way they fly to the nearest eighth of a turn) and two rings of ice spikes bursting up round you
             const shardsPerWave = 18;
             const px = this.player.x, py = this.player.y;
-            const wRing = this.add.circle(px, py, 6, 0xffffff, 0).setDepth(5);
-            wRing.setStrokeStyle(2.5, 0xffffff, 1.0);
-            this.tweens.add({ targets: wRing, radius: 62, alpha: 0, duration: 280, ease: 'Quad.easeOut', onComplete: () => wRing.destroy() });
+            WeaponSystem.iceArt(this);
             for (let s = 0; s < shardsPerWave; s++) {
                 const angle = (Math.PI * 2 / shardsPerWave) * s + (Math.random() - 0.5) * 0.15;
                 const dist = 90 + Math.random() * 70;
-                const shard = this.add.triangle(px, py, 0, -3, 10, 0, 0, 3, 0xdff6ff, 0.95).setDepth(5).setRotation(angle);
+                const shard = WeaponSystem.aim8(this.add.sprite(px, py, 'fx_ice_w', 'ice_e').setScale(1.4).setDepth(5), angle, s % 2 ? 'isl_' : 'ice_');
                 this.tweens.add({ targets: shard, x: px + Math.cos(angle) * dist, y: py + Math.sin(angle) * dist, alpha: 0,
                                   duration: 260 + Math.random() * 90, ease: 'Cubic.easeOut', onComplete: () => shard.destroy() });
             }
+            ElementSystem.iceSpikeRing(this, px, py + 8, 30, 10, 1.2); ElementSystem.iceSpikeRing(this, px, py + 8, 62, 16, 1, 80);
+            this._vfxFlash?.(px, py, 110, 0xbff0ff, 300, 0.6);
 
             // Clean up any remaining water tiles
             for (const t of this.tsunamiTiles) {
@@ -1064,7 +1071,7 @@ class ElementSystem {
                 this._iceUltDomainActive = false; this._iceUltDetonate = null;
                 const T = this.TILE_SIZE, cx = this.player.x, cy = this.player.y;
                 this._deepShatterFx(this.tsunamiFrozenEnemies, cx, cy, maxR);
-                this._vfxFlash?.(cx, cy, maxR * T * 0.7, 0xbff0ff, 520, 1);   // Visuals.js
+                this._vfxFlash?.(cx, cy, maxR * T * 0.35, 0x9fdcff, 480, 0.3);   // Visuals.js (kept soft: bigger and brighter, it whited out the pack)
                 this.showStatusText(cx, cy - 34, 'SHATTER!', '#bff0ff');
                 const DC = this._iceCubeCfg();
                 for (const enemy of [...this.tsunamiFrozenEnemies]) {
@@ -1098,66 +1105,66 @@ class ElementSystem {
         });
     }
 
-    // The Deep Freeze's look, so it never reads as an ordinary cube: the block darkened to deep-sea blue, a crown of
-    // frost crystals grown on top, and a ring of frost runes turning slowly under it. Added to the freeze visual's own
-    // layers, so every path that clears a freeze clears these too.
-    // Just before the Deep Freeze breaks: every block shudders and cracks spread across it, a groan of ice
+    // The block CreatureFX draws round a frozen enemy (cfx_ice), else the old freeze visual's
+    _iceBlockOf(e) { const b = e._cfxFx?.ice?.[0]; return b?.active ? b : e.freezeVisuals?.iceBlock?.active ? e.freezeVisuals.iceBlock : null; }
+    // Just before the Deep Freeze breaks: every block shudders and cracks spread across it in two jerks, a groan of ice
     _deepCreak(list) {
         Sfx.play(this, 'freeze');
         for (const e of list || []) {
-            const b = e.freezeVisuals?.iceBlock, s = e.sprite; if (!s?.active || !b?.active) continue;
-            const key = ElementSystem.blockCrackKey(this), g = this.add.image(b.x, b.y, key).setDepth(4.35).setDisplaySize(b.displayWidth || 28, b.displayHeight || 28).setAlpha(0).setFlipX(Math.random() < 0.5);
-            // (not in freezeVisuals._extraLayers: CreatureFX draws the block itself and mutes those)
-            const t0 = this.time.now, x0 = b.x, sx0 = s.x;
+            const b = this._iceBlockOf(e), s = e.sprite; if (!s?.active || !b) continue;
+            const g = this.add.image(b.x, b.y, 'fx_ult_fi', 'bcrack_0').setScale(b.scaleX || 1).setDepth((b.depth || 4.3) + 0.02).setAlpha(0).setFlipX(Math.random() < 0.5);
+            const t0 = this.time.now, sx0 = s.x;
             const step = () => {
                 if (!g.active || !s.active || !e.isFrozen || e.health <= 0) { this.events.off('update', step); g.destroy(); if (s.active) s.x = sx0; return; }
-                const k = Math.min(1, (this.time.now - t0) / 380), j = (Math.random() - 0.5) * 2.5 * k;
-                g.setAlpha(k < 0.3 ? 0.5 : k < 0.65 ? 0.8 : 1).setX(x0 + j); s.x = sx0 + j;   // splitting in two jerks, shuddering harder as it goes
+                const k = Math.min(1, (this.time.now - t0) / 380), j = (Math.random() - 0.5) * 2.5 * k, b2 = this._iceBlockOf(e) || b;
+                s.x = sx0 + j;   // shuddering harder as it goes
+                g.setFrame(k < 0.55 ? 'bcrack_0' : 'bcrack_1').setAlpha(k < 0.25 ? 0.6 : 1).setPosition(b2.x + j, b2.y).setDepth((b2.depth || 4.3) + 0.02);
             };
             this.events.on('update', step); this.events.once('shutdown', () => this.events.off('update', step));   // (a restart keeps scene listeners: this one would run on into the next level)
         }
     }
-    // The Deep Freeze breaking: a white-out, the camera punching in, every block blowing apart in a burst of frost (a flash
-    // of its shape, a cloud of mist, a ring along the floor, glitter falling) and the frozen screen's cracks jumping out
+    // The Deep Freeze breaking: the camera punching in, every block blowing apart (a flash of its shape, chips and glints
+    // flung out, a cloud of frost, ice spikes bursting up where it stood) and the frozen screen's cracks jumping out
     _deepShatterFx(list, cx, cy, maxR) {
-        const T = this.TILE_SIZE, W = this.scale.width, H = this.scale.height, cam = this.cameras.main, z0 = cam.zoom;
-        const wo = this.add.rectangle(W / 2, H / 2, W, H, 0xe8faff, 0.55).setScrollFactor(0).setDepth(20);
-        this.tweens.add({ targets: wo, alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => wo.destroy() });
+        const T = this.TILE_SIZE, cam = this.cameras.main, z0 = cam.zoom, ADD = Phaser.BlendModes.ADD;
         this.tweens.add({ targets: cam, zoom: z0 * 1.07, duration: 70, yoyo: true, hold: 60, ease: 'Quad.easeOut', onComplete: () => cam.setZoom(z0) });
         cam.shake(260, 0.011);
         this._iceCrackKickAt = this.time.now;   // read by the frozen screen (_iceFrostBegin)
-        this._vfxFlash?.(cx, cy, T * 5, 0xbff0ff, 420, 0.6);
+        this._vfxFlash?.(cx, cy, T * 5, 0x9fdcff, 420, 0.35);
+        const RG = Rimeguard.fx(this), FR = WeaponSystem.frost(this);
         for (const e of list || []) {
             const s = e.sprite; if (!s?.active) continue;
-            const x = s.x, y = s.y, b = e.freezeVisuals?.iceBlock, bw = b?.displayWidth || 28, bh = b?.displayHeight || 28;
-            const shape = this.add.rectangle(x, y, bw, bh, 0xd8f4ff, 0.8).setDepth(4.6).setBlendMode(Phaser.BlendModes.ADD);
-            this.tweens.add({ targets: shape, scaleX: 1.7, scaleY: 1.7, alpha: 0, duration: 240, ease: 'Quad.easeOut', onComplete: () => shape.destroy() });
-            for (let k = 0; k < 5; k++) {   // the frost cloud (blue-grey: white stacks into a bloomed blob)
-                const a = k / 5 * Math.PI * 2 + Math.random(), m = this.add.image(x, y, 'vfx_glow').setTint(k % 2 ? 0x9cc8e4 : 0xb8dcf0).setDepth(4.5).setAlpha(0.4).setScale(0.2);
-                this.tweens.add({ targets: m, x: x + Math.cos(a) * 26, y: y + Math.sin(a) * 14 - 6, scale: 0.5 + Math.random() * 0.2, alpha: 0, duration: 700 + Math.random() * 300, ease: 'Cubic.easeOut', onComplete: () => m.destroy() });
-            }
-            const ring = this.add.graphics().setDepth(0.96).setPosition(x, y + 10);   // along the floor, so flattened
-            this.tweens.addCounter({ from: 0, to: 1, duration: 420, ease: 'Cubic.easeOut', onUpdate: tw => { const v = tw.getValue(); ring.clear().lineStyle(3 * (1 - v) + 1, 0xbff0ff, 1 - v).strokeEllipse(0, 0, 20 + v * 90, (20 + v * 90) * 0.36); }, onComplete: () => ring.destroy() });
-            const glit = this.add.particles(x, y - 6, 'vfx_dot', { lifespan: { min: 500, max: 900 }, speedX: { min: -40, max: 40 }, speedY: { min: -70, max: -10 }, gravityY: 160, scale: { start: 0.4, end: 0 },
-                alpha: { start: 1, end: 0 }, tint: [0xffffff, 0xcff4ff, 0x8ad8ff], blendMode: 'ADD', emitting: false }).setDepth(4.7);
-            glit.explode(18); this.time.delayedCall(1000, () => glit.destroy());
+            const b = this._iceBlockOf(e), x = b ? b.x : s.x, y = b ? b.y : s.y + 10, k = b?.scaleX || 1;
+            const shape = this.add.image(x, y, 'cfx_ice', 'ice').setScale(k).setTintFill(0x9fdcff).setBlendMode(ADD).setAlpha(0.45).setDepth(4.6);
+            this.tweens.add({ targets: shape, scaleX: k * 1.6, scaleY: k * 1.6, alpha: 0, duration: 240, ease: 'Quad.easeOut', onComplete: () => shape.destroy() });
+            WeaponSystem.iceChips(this, x, y - 4, 10, 30);
+            for (let i = 0; i < 4; i++) RG.mist.emitParticleAt(x + (Math.random() - 0.5) * 16, y - 2 + (Math.random() - 0.5) * 8, 1);
+            for (let i = 0; i < 6; i++) FR.glint.emitParticleAt(x + (Math.random() - 0.5) * 30, y - 8 + (Math.random() - 0.5) * 20, 1);
+            ElementSystem.iceSpikeRing(this, x, y + 8, 20, list.length > 5 ? 3 : 5, 0.7);
         }
     }
+    // The Deep Freeze's look, so it never reads as an ordinary cube: the block darkened to deep-sea blue, a crown of frost
+    // spires on top of it, glinting, and a ring of runes turning on the floor under it. They follow the block (CreatureFX
+    // draws it and mutes the freeze visual's layers) and go when the Deep Freeze does, whatever ends it.
     _deepFreezeFx(e) {
-        const fv = e.freezeVisuals, s = e.sprite; if (!s?.active) return;
-        const layers = fv ? (fv._extraLayers ||= []) : [];
-        fv?.iceBlock?.setTint?.(0x4a8ad8);
-        const x = s.x, y = s.y, d = (fv?.iceBlock?.depth ?? s.depth ?? 2.9) + 0.06;
-        const crown = this.add.graphics().setDepth(d).setPosition(x, y - 12);
-        for (const [dx, h] of [[-7, 6], [-3, 9], [0, 13], [3, 9], [7, 6]]) { crown.fillStyle(0x3a78c8, 1); crown.fillTriangle(dx - 2, 0, dx, -h, dx + 2, 0); crown.fillStyle(0xd8f4ff, 1); crown.fillTriangle(dx - 2, 0, dx, -h, dx, 0); }
-        const runes = this.add.graphics().setDepth(0.95).setPosition(x, y + 10).setBlendMode(Phaser.BlendModes.ADD);
-        runes.lineStyle(1.5, 0x8ad8ff, 0.8); runes.strokeEllipse(0, 0, 34, 12);
-        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, rx = Math.cos(a) * 17, ry = Math.sin(a) * 6; runes.lineBetween(rx - 2, ry, rx + 2, ry); runes.lineBetween(rx, ry - 1.5, rx, ry + 1.5); }
-        crown.setScale(0.2); this.tweens.add({ targets: crown, scale: 1, duration: 260, ease: 'Back.easeOut' });
-        this.tweens.add({ targets: runes, angle: 360, duration: 6000, repeat: -1 });
-        this.tweens.add({ targets: runes, alpha: 0.45, duration: 700, yoyo: true, repeat: -1 });
-        layers.push(crown, runes);
-        if (!fv) this.time.delayedCall(this.tsunamiFreezeDuration || 4000, () => { crown.destroy(); runes.destroy(); });
+        const s = e.sprite; if (!s?.active) return;
+        ElementSystem.ultArt(this);
+        const crown = this.add.sprite(s.x, s.y, 'fx_ult_fi', 'dcrown_0').setOrigin(0.5, 1).play({ key: 'uf_dcrown', startFrame: Math.floor(Math.random() * 6) });
+        const runes = this.add.sprite(s.x, s.y, 'fx_ult_fi', 'drune_0').setTint(0x8ad8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.95).play({ key: 'uf_drune', startFrame: Math.floor(Math.random() * 4) });
+        const pop = { v: 0.2 }; this.tweens.add({ targets: pop, v: 1, duration: 260, ease: 'Back.easeOut' });
+        let tinted = null;
+        const step = () => {
+            const b = this._iceBlockOf(e);
+            if (!crown.active || !s.active || !e._deepFrozen || !e.isFrozen || e.health <= 0) {
+                this.events.off('update', step); crown.destroy(); runes.destroy(); if (tinted?.active && tinted.texture?.key === 'cfx_ice') tinted.clearTint(); return;
+            }
+            const k = b?.scaleX || 1, bx = b ? b.x : s.x, by = b ? b.y : s.y + 10, now = this.time.now;
+            if (b && b !== tinted && b.texture?.key === 'cfx_ice') { b.setTint(0x7aa8e8); tinted = b; }   // deep-sea blue
+            crown.setPosition(bx, by - 7.5 * k).setScale(k * pop.v).setDepth((b?.depth ?? s.depth ?? 2.9) + 0.01).setVisible(s.visible);
+            runes.setPosition(bx, by + 9 * k).setScale(k * 1.2).setAlpha(0.55 + 0.3 * Math.sin(now * 0.008)).setVisible(s.visible);
+        };
+        this.events.on('update', step); this.events.once('shutdown', () => this.events.off('update', step));   // (a restart keeps scene listeners: this one would run on into the next level)
+        step();
     }
 
     deactivateTsunami() {
@@ -1313,41 +1320,20 @@ class ElementSystem {
     }
     // where a bolt should land on an enemy: the middle of its body, not its feet or its head
     _forkAim(e) { const s = e.sprite, c = s.getCenter ? s.getCenter() : { x: s.x, y: s.y }; return { x: c.x, y: c.y, top: c.y - (s.displayHeight || 20) * 0.5 }; }
-    // a lightning line from a to b: jagged, with a side branch or two, drawn as a glow, a body and a white-hot core
+    // a lightning line from a to b for this frame, laid from the hand-drawn pieces (WeaponSystem.bolt): g says how deep and how
+    // faded; thick picks them (1.1 up the ult's heavier ones, fx_fork; 1.6 up white-hot; under 0.5 all twig). Its shape holds
+    // 60ms of real time and then crackles anew (it's redrawn every frame, in stopped time too).
     _forkBolt(g, a, b, thick = 1, branches = true) {
-        const L = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(3, Math.round(L / 12)), nx = -(b.y - a.y) / (L || 1), ny = (b.x - a.x) / (L || 1), pts = [a];
-        for (let i = 1; i < n; i++) { const k = i / n, o = (Math.random() - 0.5) * Math.min(14, L * 0.12); pts.push({ x: a.x + (b.x - a.x) * k + nx * o, y: a.y + (b.y - a.y) * k + ny * o }); }
-        pts.push(b);
-        const strokes = [[9 * thick, 0xffb820, 0.22], [4.5 * thick, 0xffe14a, 0.75], [2 * thick, 0xffffff, 1]];
-        for (const [w, col, al] of strokes) { g.lineStyle(w, col, al).beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const q of pts) g.lineTo(q.x, q.y); g.strokePath(); }
-        if (branches) for (let k = 1; k < pts.length - 1; k++) {
-            if (Math.random() > 0.3) continue;
-            const q = pts[k], ang = Math.atan2(b.y - a.y, b.x - a.x) + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6), len = 10 + Math.random() * 16;
-            const m = { x: q.x + Math.cos(ang) * len * 0.5 + (Math.random() - 0.5) * 5, y: q.y + Math.sin(ang) * len * 0.5 }, e = { x: q.x + Math.cos(ang) * len, y: q.y + Math.sin(ang) * len };
-            for (const [w, col, al] of [[3 * thick, 0xffe14a, 0.5], [1.2 * thick, 0xffffff, 0.9]]) { g.lineStyle(w, col, al).beginPath(); g.moveTo(q.x, q.y); g.lineTo(m.x, m.y); g.lineTo(e.x, e.y); g.strokePath(); }
-        }
+        WeaponSystem._vrS = (Math.round(a.x) * 73856093 ^ Math.round(a.y) * 19349663 ^ Math.round(b.x / 16) * 83492791 ^ Math.round(b.y / 16) * 2654435761 ^ Math.floor(this.game.loop.time / 60) * 40503) | 0;
+        WeaponSystem.bolt(this, a.x, a.y, b.x, b.y, thick >= 1.6 ? 'w' : 'y', { a: g?.alpha ?? 1, d: g?.depth ?? 4.6, thin: thick < 0.5, br: branches ? 1 : 0, key: thick >= 1.1 ? 'fx_fork' : 'fx_storm' });
     }
-    // The snap of the fingers: the world drops to deep blue for a blink, then a white flash, a shockwave off you, lightning
-    // cracking out round you and the camera jolted. (New tweens still run in stopped time: only the ones already playing pause.)
-    // (Not a camera postFX colour flip: alongside the bloom pipeline it rendered the screen black.)
+    // The snap of the fingers: a white-hot flare off your hand, bolts cracking out every way, a ring of sparks racing off,
+    // the camera jolted (Fork.snap; it plays out in stopped time). No flash over the whole screen.
     _forkSnapFx(x, y) {
-        const cam = this.cameras.main, W = this.scale.width, H = this.scale.height, ADD = Phaser.BlendModes.ADD;
         Sfx.play(this, 'snap');
-        const blue = this.add.rectangle(W / 2, H / 2, W, H, 0x3a4cff, 1).setScrollFactor(0).setDepth(19.4).setBlendMode(Phaser.BlendModes.MULTIPLY);
-        this.tweens.addCounter({ duration: 90, onComplete: () => {
-            blue.destroy();
-            const fl = this.add.rectangle(W / 2, H / 2, W, H, 0xfff6d8, 0.7).setScrollFactor(0).setDepth(19.5);
-            this.tweens.add({ targets: fl, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
-        } });
-        for (const [r, w, col, ms] of [[40, 3, 0xfff2a0, 560], [26, 2, 0xffffff, 380]]) {   // the shockwave: two rings racing out
-            const ring = this.add.graphics({ x, y }).setDepth(4.8).setBlendMode(ADD).lineStyle(w, col, 1).strokeCircle(0, 0, r);
-            this.tweens.add({ targets: ring, scale: 300 / r, alpha: 0, duration: ms, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
-        }
-        const cr = this.add.graphics().setDepth(4.75).setBlendMode(ADD);
-        for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2 + Math.random() * 0.5, L = 46 + Math.random() * 50; this._forkBolt(cr, { x, y }, { x: x + Math.cos(a) * L, y: y + Math.sin(a) * L }, 0.8, true); }
-        this.tweens.add({ targets: cr, alpha: 0, duration: 420, ease: 'Quad.easeIn', onComplete: () => cr.destroy() });
-        this._vfxFlash?.(x, y, 80, 0xffffff, 240, 1);
-        cam.shake(160, 0.008);
+        Fork.snap(this, x, y);
+        this._vfxFlash?.(x, y, 40, 0xfff6c0, 240, 0.6);   // (lights in stopped time hold till it ends: kept small, or they white out the pack)
+        this.cameras.main.shake(160, 0.008);
     }
     _forkBegin() {
         if (this._forkStop) return;
@@ -1361,13 +1347,14 @@ class ElementSystem {
         const W = this.scale.width, H = this.scale.height, ADD = Phaser.BlendModes.ADD, home = { x: p.x, y: p.y - 6 };
         const cam = this.cameras.main, z0 = cam.zoom, f0 = cam._follow, lx = cam.lerp.x, ly = cam.lerp.y;
         const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x0a0a24, 0).setScrollFactor(0).setDepth(19);
-        const web = this.add.graphics().setDepth(4.6), head = this.add.image(p.x, p.y, 'vfx_glow').setTint(0xfff6a0).setBlendMode(ADD).setScale(0).setDepth(4.7);
+        const web = this.add.graphics().setDepth(4.6), head = this.add.image(p.x, p.y, 'vfx_glow').setTint(0xffd23a).setBlendMode(ADD).setScale(0).setDepth(4.7).setAlpha(0.4);
+        const ball = this.add.image(p.x, p.y, 'fx_fork', 'ball_0').setDepth(4.72).setScale(0), streak = this.add.image(p.x, p.y, 'fx_fork', 'streak_e').setBlendMode(ADD).setDepth(4.71).setVisible(false);   // you, as lightning (Fork.head)
         const segs = [], combos = [];
-        const drawWeb = (thick) => { web.clear(); for (const s of segs) this._forkBolt(web, s.a, s.b, thick, true); };   // re-jagged every frame: it crackles
+        const drawWeb = (thick) => { web.clear(); for (const s of segs) this._forkBolt(web, s.a, s.b, thick, true); };   // laid every frame: it crackles
         let stage = 'stop', t0 = this.game.loop.time, at = { ...home }, i = 0, from = at, hopMs = 0;
         this._forkSnapFx(home.x, home.y);   // the snap comes first: it's what stops everything
         cam.startFollow(head, false, 0.12, 0.12);   // the camera rides the bolt
-        const done = () => { this.events.off('update', step); web.destroy(); head.destroy(); dim.destroy(); };
+        const done = () => { this.events.off('update', step); web.destroy(); head.destroy(); ball.destroy(); streak.destroy(); dim.destroy(); };
         const restoreCam = () => { if (f0) cam.startFollow(f0, false, lx, ly); };
         const step = () => {
             const now = this.game.loop.time, e = now - t0;   // (real time: the scene clock is stopped)
@@ -1378,15 +1365,15 @@ class ElementSystem {
             } else if (stage === 'transform') {   // the camera closes in, the slime goes white-hot and becomes a ball of lightning
                 const k = Math.min(1, e / C.TRANSFORM_MS);
                 cam.setZoom(z0 * (1 + (C.ZOOM - 1) * Phaser.Math.Easing.Cubic.Out(k)));
-                head.setPosition(home.x, home.y).setScale(0.7 * k); p.setAlpha(1 - k);
+                head.setPosition(home.x, home.y).setScale(0.7 * k); p.setAlpha(1 - k); Fork.head(ball, streak, home.x, home.y, 0, 0, now, 1.75 * k);
                 if (k >= 1) { stage = 'hop'; t0 = now; from = at; hopMs = 0; }
             } else if (stage === 'hop' || stage === 'return') {
                 const tgt = stage === 'hop' ? order[i] : null, live = tgt?.sprite?.active, to = tgt ? (live ? this._forkAim(tgt) : from) : home;
                 const esc = Math.min(C.ESC_MAX, 1 + C.ESC * i);   // it escalates: every enemy through, the next hop's quicker
                 if (!hopMs) hopMs = Math.max(C.HOP_FLOOR, Phaser.Math.Clamp(Math.hypot(to.x - from.x, to.y - from.y) / (C.SPEED * esc) * 1000, C.HOP_MIN / esc, C.HOP_MAX / esc));
                 const k = Phaser.Math.Easing.Quadratic.In(Math.min(1, e / hopMs)); at = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
-                head.setPosition(at.x, at.y).setScale(0.6 + Math.random() * 0.2);
-                drawWeb(1); this._forkBolt(web, from, at, 1.2, false);
+                head.setPosition(at.x, at.y).setScale(0.6 + Math.random() * 0.2); Fork.head(ball, streak, at.x, at.y, to.x - from.x, to.y - from.y, now, 1.75);
+                drawWeb(1); this._forkBolt(web, from, at, 1.7, false);   // the strike itself white-hot, the path behind it gold
                 if (e >= hopMs) {
                     segs.push({ a: { x: from.x, y: from.y }, b: { x: to.x, y: to.y } });
                     if (tgt) {   // through it: its combo count goes up, just over its head
@@ -1396,10 +1383,10 @@ class ElementSystem {
                             const tx = this.add.text(to.x, to.y - 10, 'x' + n, { fontFamily: UIKit.FONT.title, fontSize: Math.round(12 + 18 * big) + 'px', fontStyle: 'bold',   // bigger and whiter the higher the combo
                                 color: Phaser.Display.Color.RGBToString(col.r, col.g, col.b), stroke: n >= 10 ? '#5a2a00' : '#2a1a00', strokeThickness: 4 + Math.round(2 * big), resolution: 2 }).setOrigin(0.5, 1).setDepth(6 + n * 0.001).setScale(1.5 + big);
                             this.tweens.add({ targets: tx, scale: 1, duration: 140 + 80 * big, ease: 'Back.easeOut' }); combos.push(tx); tgt._forkCombo = n;
-                            Sfx.play(this, 'zap'); this._vfxFlash?.(to.x, to.y, 46, 0xfff27a, 180, 0.7); this.cameras.main.shake(60, 0.002);
+                            Sfx.play(this, 'zap'); this._vfxFlash?.(to.x, to.y, 28, 0xfff27a, 180, 0.4); this.cameras.main.shake(60, 0.002); Fork.hit(this, to.x, to.y, n >= 10);
                         }
                         i++; if (i >= order.length) stage = 'return';
-                    } else { stage = 'snap'; head.setScale(0); p.setAlpha(1).clearTint?.(); }
+                    } else { stage = 'snap'; head.setScale(0); ball.setScale(0); streak.setVisible(false); p.setAlpha(1).clearTint?.(); }
                     from = to; t0 = now; hopMs = 0;
                 }
             } else if (stage === 'snap') {   // back where you began; the camera pulls back out; a snap of the fingers
@@ -1409,7 +1396,7 @@ class ElementSystem {
                 if (e >= C.SNAP_MS + C.BOOM_MS) { this._forkSnapped = false; cam.setZoom(z0); stage = 'boom'; t0 = now; this._forkStop = false; this._freezeClock?.(false); Music.duck(false, 'fork'); this._forkIgnite(order, segs, combos); }
             } else if (stage === 'boom') {   // the web goes off: white-hot and thick, then fading
                 const k = e / 700; dim.setAlpha(Math.max(0, 0.4 - k));
-                drawWeb(2.4 - k * 1.6); web.setAlpha(Math.max(0, 1 - k));
+                web.setAlpha(Math.max(0, 1 - k)); drawWeb(2.4 - k * 1.6);
                 if (k >= 1) done();
             }
         };
@@ -1420,13 +1407,11 @@ class ElementSystem {
     _forkThump(A) {
         const C = this._forkCfg(), T = this.TILE_SIZE, now = this.time.now, px = this.playerX, py = this.playerY, R = C.THUMP_R;
         const inSquircle = (dx, dy) => Math.abs(dx) <= R && Math.abs(dy) <= R && !(Math.abs(dx) === R && Math.abs(dy) === R);   // the squircle: a square, corners off
-        const g = this.add.graphics().setDepth(0.27).setBlendMode(Phaser.BlendModes.ADD);
-        for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {
+        for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {   // the floor lit with current (Fork.floor), brightest under you
             if (!inSquircle(dx, dy) || this.world?.[px + dx]?.[py + dy] !== this.FLOOR) continue;
-            const k = 1 - (Math.abs(dx) + Math.abs(dy)) / (R + 2);
-            g.fillStyle(0xffe14a, 0.15 + 0.3 * k).fillRect((px + dx) * T + 1, (py + dy) * T + 1, T - 2, T - 2);
+            Fork.floor(this, (px + dx) * T + T / 2, (py + dy) * T + T / 2, 0.35 + 0.65 * (1 - (Math.abs(dx) + Math.abs(dy)) / (R + 2)), T);
         }
-        this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
+        this._vfxFlash?.(px * T + T / 2, py * T + T / 2, T * 2.6, 0xffe14a, 260, 0.5);   // its light on the floor
         this.cameras.main.shake(50, 0.0015); Sfx.play(this, 'zap');
         const ri = this.getCurrentPlayerRoom?.() ?? -1, gated = this._roomGated?.() && ri >= 0;   // only your room: its zaps went through walls into rooms still under fog
         const live = (this.enemies || []).filter(e => !this._phasedOut?.(e) && e.sprite?.active && e.health > 0 && (!gated || e.tutorialRoomIndex === undefined || e.tutorialRoomIndex === ri));
@@ -1435,7 +1420,7 @@ class ElementSystem {
         const zap = (e, mult, from) => {
             const raw = (C.ZAP * this.damageScaling + C.ZAP_PCT * (e.isBoss ? C.BOSS_PCT : 1) * (e.maxHealth || 0)) * mult;
             const d = this.resolveElementalHit(e, raw, 'lightning', true); if (d === null || !(d > 0)) return;
-            e.health -= d; A.forks.push({ a: from, b: this._forkAim(e), until: now + 140 });
+            const at = this._forkAim(e); e.health -= d; A.forks.push({ a: from, b: at, until: now + 140 }); WeaponSystem.zapFlare(this, at.x, at.y, 'y', 1.1);
             this.showDamageNumber(e.sprite.x, e.sprite.y - 20, d, '#fff27a'); this.updateEnemyHealthBar(e); if (e.health <= 0) this.killEnemy(e);
         };
         this._asUlt('lightning', () => {
@@ -1450,9 +1435,8 @@ class ElementSystem {
         });
     }
     _forkIgnite(order, segs, combos) {
-        const C = this._forkCfg(), T = this.TILE_SIZE, W = this.scale.width, H = this.scale.height;
-        const fl = this.add.rectangle(W / 2, H / 2, W, H, 0xfff6c0, 0.5).setScrollFactor(0).setDepth(20);
-        this.tweens.add({ targets: fl, alpha: 0, duration: 320, onComplete: () => fl.destroy() });
+        const C = this._forkCfg(), T = this.TILE_SIZE;
+        for (const e of order) if (e.sprite?.active) { const c = this._forkAim(e); Fork.hit(this, c.x, c.y, true); }   // each one it went through goes off (not the whole screen whiting out)
         this.cameras.main.shake(320, 0.012); Sfx.play(this, 'e_thunder'); Sfx.play(this, 'blburst');
         combos.forEach(c => this.tweens.add({ targets: c, y: c.y - 18, alpha: 0, duration: 600, onComplete: () => c.destroy() }));
         const near = (e) => { const c = this._forkAim(e); return segs.some(s => { const ax = s.a.x, ay = s.a.y, bx = s.b.x, by = s.b.y, L2 = (bx - ax) ** 2 + (by - ay) ** 2 || 1;
@@ -3243,169 +3227,16 @@ class ElementSystem {
         }
     }
 
+    // A chain's bolt between two things shaped { sprite: { x, y } } (yours, and the enemies' arcs): the hand-drawn pieces
+    // (WeaponSystem.bolt, fx_storm), a strike flaring where it lands, sparks off it.
     drawLightningBolt(fromEnemy, toEnemy) {
         Sfx.play(this, 'zap');   // every fork crackles (Sound.js spaces them out)
-        const fromX = fromEnemy.sprite.x;
-        const fromY = fromEnemy.sprite.y + 8;
-        const toX = toEnemy.sprite.x;
-        const toY = toEnemy.sprite.y + 8;
-
-        const graphics = this.add.graphics();
-
-        // MAIN BOLT - bright yellow core
-        graphics.lineStyle(4, 0xffff00, 1);
-
-        const segments = 8; // More segments for more jagged look
-        const points = [];
-
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            const x = fromX + (toX - fromX) * t;
-            const y = fromY + (toY - fromY) * t;
-
-            if (i > 0 && i < segments) {
-                const dx = toX - fromX;
-                const dy = toY - fromY;
-                const length = Math.sqrt(dx * dx + dy * dy);
-
-                const perpX = -dy / length;
-                const perpY = dx / length;
-
-                // More aggressive jagged offsets
-                const offset = (Math.random() - 0.5) * 20;
-
-                points.push({
-                    x: x + perpX * offset,
-                    y: y + perpY * offset
-                });
-            } else {
-                points.push({ x, y });
-            }
-        }
-
-        // OUTER GLOW (white/cyan)
-        graphics.lineStyle(12, 0xaaffff, 0.3);
-        graphics.beginPath();
-        graphics.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            graphics.lineTo(points[i].x, points[i].y);
-        }
-        graphics.strokePath();
-
-        // MIDDLE LAYER (bright white)
-        graphics.lineStyle(8, 0xffffff, 0.6);
-        graphics.beginPath();
-        graphics.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            graphics.lineTo(points[i].x, points[i].y);
-        }
-        graphics.strokePath();
-
-        // CORE BOLT (bright yellow)
-        graphics.lineStyle(4, 0xffff00, 1);
-        graphics.beginPath();
-        graphics.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            graphics.lineTo(points[i].x, points[i].y);
-        }
-        graphics.strokePath();
-
-        // INNER BRIGHT LINE (pure white)
-        graphics.lineStyle(2, 0xffffff, 1);
-        graphics.beginPath();
-        graphics.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            graphics.lineTo(points[i].x, points[i].y);
-        }
-        graphics.strokePath();
-
-        // SECONDARY FORKS — travel visibly fast (60ms) instead of instant
-        for (let i = 1; i < points.length - 1; i++) {
-            if (Math.random() < 0.5) {
-                const forkLength = 15 + Math.random() * 25;
-                const angle = Math.random() * Math.PI * 2;
-                const forkMidX = points[i].x + Math.cos(angle) * (forkLength * 0.6);
-                const forkMidY = points[i].y + Math.sin(angle) * (forkLength * 0.6);
-                const forkEndX = points[i].x + Math.cos(angle + (Math.random() - 0.5) * 0.5) * forkLength;
-                const forkEndY = points[i].y + Math.sin(angle + (Math.random() - 0.5) * 0.5) * forkLength;
-
-                // Draw fork as a separate graphics that fades slightly slower than main bolt
-                // giving a visible "travel" effect — appears just after main bolt, fades after
-                const forkGfx = this.add.graphics().setAlpha(0);
-                forkGfx.lineStyle(6, 0xaaffff, 0.3);
-                forkGfx.beginPath(); forkGfx.moveTo(points[i].x, points[i].y); forkGfx.lineTo(forkMidX, forkMidY); forkGfx.lineTo(forkEndX, forkEndY); forkGfx.strokePath();
-                forkGfx.lineStyle(2, 0xffff00, 0.9);
-                forkGfx.beginPath(); forkGfx.moveTo(points[i].x, points[i].y); forkGfx.lineTo(forkMidX, forkMidY); forkGfx.lineTo(forkEndX, forkEndY); forkGfx.strokePath();
-                forkGfx.lineStyle(1, 0xffffff, 1);
-                forkGfx.beginPath(); forkGfx.moveTo(points[i].x, points[i].y); forkGfx.lineTo(forkMidX, forkMidY); forkGfx.lineTo(forkEndX, forkEndY); forkGfx.strokePath();
-
-                // Flash in quickly then fade — fast enough to look like travel, slow enough to see
-                this.tweens.add({
-                    targets: forkGfx, alpha: 0.9, duration: 25,
-                    onComplete: () => {
-                        this.tweens.add({ targets: forkGfx, alpha: 0, duration: 140, onComplete: () => forkGfx.destroy() });
-                    }
-                });
-            }
-        }
-
-        // IMPACT SPARKS at destination
-        const numSparks = 8;
-        for (let i = 0; i < numSparks; i++) {
-            const angle = (Math.PI * 2 / numSparks) * i + Math.random() * 0.3;
-            const length = 8 + Math.random() * 12;
-            const endX = toX + Math.cos(angle) * length;
-            const endY = toY + Math.sin(angle) * length;
-
-            graphics.lineStyle(2, 0xffff00, 0.8);
-            graphics.beginPath();
-            graphics.moveTo(toX, toY);
-            graphics.lineTo(endX, endY);
-            graphics.strokePath();
-        }
-
-        // ORIGIN GLOW
-        const originGlow = this.add.circle(fromX, fromY, 8, 0xffff00, 0.6);
-        originGlow.setStrokeStyle(2, 0xffffff, 0.8);
-
-        // DESTINATION IMPACT
-        const impactFlash = this.add.circle(toX, toY, 12, 0xffffff, 0.9);
-        const impactRing = this.add.circle(toX, toY, 12, 0xffff00, 0);
-        impactRing.setStrokeStyle(3, 0xffff00, 1);
-
-        // Animate impact
-        this.tweens.add({
-            targets: [impactFlash, impactRing],
-            scaleX: 2,
-            scaleY: 2,
-            alpha: 0,
-            duration: 200,
-            ease: 'Quad.easeOut',
-            onComplete: () => {
-                impactFlash.destroy();
-                impactRing.destroy();
-            }
-        });
-
-        // Fade out origin glow
-        this.tweens.add({
-            targets: originGlow,
-            alpha: 0,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            duration: 150,
-            onComplete: () => originGlow.destroy()
-        });
-
-        // Main bolt fade out (faster)
-        this.tweens.add({
-            targets: graphics,
-            alpha: 0,
-            duration: 120,
-            onComplete: () => {
-                graphics.destroy();
-            }
-        });
+        if (!this.textures.exists('fx_storm')) return;
+        const x0 = fromEnemy.sprite.x, y0 = fromEnemy.sprite.y + 8, x1 = toEnemy.sprite.x, y1 = toEnemy.sprite.y + 8;
+        WeaponSystem.bolt(this, x0, y0, x1, y1, 'y', { life: 180, br: 2 });
+        WeaponSystem.zapGlow(this, x0, y0, 0.3, 0xffd23a, 0.45, 150);
+        WeaponSystem.zapFlare(this, x1, y1, 'y', 1.4);
+        WeaponSystem.zapSparks(this, 'y').explode(6, x1, y1);
     }
 
     deployStormField(targetX, targetY) {
@@ -4954,8 +4785,7 @@ class ElementSystem {
             const far = Math.max(1, ...ice.map(c => c[2]));
             for (const [tx, ty, a, off] of ice) {   // (the tiles playerDash froze: the path and a tile either side of it)
                 if (this.world?.[tx]?.[ty] !== this.FLOOR) continue;
-                const g = this.add.graphics().setDepth(0.25).setPosition(tx * T + T / 2, ty * T + T / 2).setScale(0.5).setAlpha(0);
-                VisualFX.iceTile?.(g, T, tx * 31 + ty * 17);
+                const g = this.add.image(tx * T + T / 2, ty * T + T / 2, 'fx_ground', 'iceslab' + ((tx * 31 + ty * 17) & 3)).setDepth(0.25).setScale(0.5).setAlpha(0);
                 this.tweens.add({ targets: g, scale: 1, alpha: 1, duration: 120, delay: a / far * 540 + off * 40, ease: 'Back.easeOut' });
                 this.tweens.add({ targets: g, alpha: 0, scaleY: 0.92, delay: 1300 + a * 60, duration: 800, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
             }
@@ -5166,7 +4996,7 @@ class ElementSystem {
         this.updateHUD();
         this._checkRoomNameDisplay();
         if (this.isLevel4) this._onPlayerStepCrumble(landX, landY);
-        this._onPlayerStepWater(landX, landY, now);
+        this._onPlayerStepWater(landX, landY, now, path.slice(0, path.findIndex(([x, y]) => x === landX && y === landY)));   // (dripping: water on the tiles it passed, not where it lands)
         return true;
     }
 
