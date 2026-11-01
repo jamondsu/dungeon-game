@@ -103,9 +103,9 @@ class TouchControls {
         window.dispatchEvent(e);
     }
 
-    // o.move: the four keys the stick holds (up, left, down, right); o.repeat: held, they repeat as a held key does. o.zig():
-    // where you stand, for a game that steps one way at a time: pushed on a diagonal, it steps one way then the other (null: the
-    // nearer of the two). o.aim: the right stick's home ({ x, y }), for a game that aims; o.direct(): a tap is for the world now;
+    // o.move: the four keys the stick holds (up, left, down, right); o.repeat: held, they repeat as a held key does. o.dpad: a game
+    // that steps one way at a time: the stick holds one of the four, like a D-pad, and its middle stays near the thumb, so a turn
+    // back is a short flick. o.aim: the right stick's home ({ x, y }), for a game that aims; o.direct(): a tap is for the world now;
     // o.world(): so is one anywhere, the stick's side too.
     // o.hidden(): nothing new taken while it's true (a menu is up). o.slot(k): where the k-th small button goes. o.buttons: see draw().
     constructor(S, o) {
@@ -113,7 +113,7 @@ class TouchControls {
         this.u = TouchControls.u(S);
         this.R = 46 * this.u;   // a stick's reach
         this.btns = (o.buttons || []).map(b => ({ ...b, r: b.r * this.u }));
-        this.mv = null; this.am = null; this.down = new Set(); this.zigH = false;
+        this.mv = null; this.am = null; this.down = new Set();
         this.dir = { x: 1, y: 0 }; this.dist = 3; this.target = null;
         // where the right stick points, standing in for the mouse: what the game reads as the cursor
         this.vp = { id: -1, pid: null, x: 0, y: 0, worldX: 0, worldY: 0, button: 0, isDown: false, wasTouch: true,
@@ -184,9 +184,10 @@ class TouchControls {
     _move(p) {
         for (const s of [this.mv, this.am]) {
             if (!s || s.id !== p.id) continue;
-            const dx = p.x - s.ox, dy = p.y - s.oy, d = Math.hypot(dx, dy) || 1;
-            s.mag = Math.min(1, d / this.R);
+            const dx = p.x - s.ox, dy = p.y - s.oy, d = Math.hypot(dx, dy) || 1, reach = s === this.mv && this.o.dpad ? this.R * 0.5 : this.R;
+            s.mag = Math.min(1, d / reach);
             if (d > 10 * this.u) { s.dx = dx / d; s.dy = dy / d; } else s.mag = 0;
+            if (reach < this.R && d > reach) { s.ox += s.dx * (d - reach); s.oy += s.dy * (d - reach); }   // (the middle dragged along behind the thumb)
         }
         if (this.am?.id === p.id) this._aimTick();
     }
@@ -245,15 +246,14 @@ class TouchControls {
         const M = this.mv, o = this.o, want = new Set();
         if (M && M.mag > 0) {
             const [up, left, down, right] = o.move, D = 0.38;   // (sin 22.5°: eight ways)
-            const v = M.dy < -D ? up : M.dy > D ? down : null, h = M.dx < -D ? left : M.dx > D ? right : null;
-            if (v && h && o.zig) {
-                const at = o.zig(), now = Date.now();
-                if (at === null) want.add(Math.abs(M.dy) > Math.abs(M.dx) ? v : h);
-                else {
-                    if (at !== this.zigAt || now - this.zigT > 240) { this.zigAt = at; this.zigT = now; this.zigH = !this.zigH; }   // stepped (or stuck): the other way now
-                    want.add(this.zigH ? h : v);
-                }
-            } else { if (v) want.add(v); if (h) want.add(h); }
+            if (o.dpad) {
+                const x = Math.abs(M.dx), y = Math.abs(M.dy);
+                if (x > y * 1.25) M.axis = 'x'; else if (y > x * 1.25) M.axis = 'y'; else M.axis ||= x > y ? 'x' : 'y';   // (near the diagonal, the way it was: no flicker between two)
+                want.add(M.axis === 'x' ? (M.dx < 0 ? left : right) : (M.dy < 0 ? up : down));
+            } else {
+                if (M.dy < -D) want.add(up); else if (M.dy > D) want.add(down);
+                if (M.dx < -D) want.add(left); else if (M.dx > D) want.add(right);
+            }
         }
         const now = Date.now();
         for (const k of this.down) if (!want.has(k)) { this.down.delete(k); TouchControls.key(k, false); }
@@ -278,7 +278,7 @@ class TouchControls {
             g.fillStyle(0x000000, s ? 0.3 : 0.18); g.fillCircle(x, y, R);
             g.lineStyle(3, P.iron, s ? 0.9 : 0.45); g.strokeCircle(x, y, R);
             g.lineStyle(1.5, accent, s ? 0.7 : 0.3); g.strokeCircle(x, y, R - 4);
-            const kx = x + (s ? s.dx * s.mag * R : 0), ky = y + (s ? s.dy * s.mag * R : 0), r = 21 * u;
+            const way = s?.axis, kx = x + (s && way !== 'y' ? (way ? Math.sign(s.dx) : s.dx) * s.mag * R : 0), ky = y + (s && way !== 'x' ? (way ? Math.sign(s.dy) : s.dy) * s.mag * R : 0), r = 21 * u;   // (a D-pad's knob: square on its way)
             g.fillStyle(0x000000, 0.4); g.fillCircle(kx + 1, ky + 3, r);
             g.fillStyle(s ? P.bgHover : P.bgRaised, s ? 0.95 : 0.55); g.fillCircle(kx, ky, r);
             g.fillStyle(0xffffff, s ? 0.1 : 0.05); g.fillRect(kx - r * 0.5, ky - r + 4, r, 2);
@@ -350,9 +350,9 @@ class TouchControls {
         });
         return new TouchControls(S, {
             move: ['up', 'left', 'down', 'right'].map(id => Settings.key(id)),
-            zig: () => S._rtrial || S._gravZone?.() ? null : S.playerX + ',' + S.playerY,   // (the rhythm run: a step a push; the gravity room: a fall a push)
+            dpad: true,
             aim: home, slot: k => k < 5 ? at(190 + k * 24, 176) : at(205 + (k - 5) * 24, 232),
-            direct: () => !!(S.displacerPending?.() || S._isClickOnActiveWeakPoint?.()),
+            direct: () => !!(S.displacerPending?.() || S._isClickOnActiveWeakPoint?.() || Training.placing(S)),
             hidden: () => !!(S._pauseMenuOpen || S._deathScreenActive),
             buttons: [
                 // (the rhythm run: Space jumps there, Shift dashes)
@@ -386,7 +386,7 @@ class TouchControls {
         const by = (x, y) => Math.abs(S._myX - x) + Math.abs(S._myY - y) <= 3;
         const world = () => !!(S._placementMode || S.towers?.some(t => t._settingWaveDir));
         return new TouchControls(S, {
-            move: ['W', 'A', 'S', 'D'], zig: () => S._myX + ',' + S._myY,
+            move: ['W', 'A', 'S', 'D'], dpad: true,
             aim: home, world, slot: k => at(240 + k * 30, 120),
             hidden: () => !!(S._buildMenuOpen || S._upgradeMenuOpen || S._wispRosterOpen || S._wispTreeOpen || S._glurpShopOpen || S._waveTVOpen
                 || S._pauseMenuOpen || S._aimPickerClose || S._powerupPending || S.gameOver),
@@ -423,7 +423,7 @@ class TouchControls {
         const kit = f => () => ['mt_kit', f, 3];
         const play = () => !S.ending && !S.caught && !S.escaped;
         return new TouchControls(S, {
-            move: ['W', 'A', 'S', 'D'], zig: () => null, repeat: true,
+            move: ['W', 'A', 'S', 'D'], dpad: true, repeat: true,
             hidden: () => !!(S.reading || S.leaving),
             slot: k => at(195 + k * 30, 178),
             buttons: [

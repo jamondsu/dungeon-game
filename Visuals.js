@@ -1539,32 +1539,34 @@ void main() {
         if (!amount || amount <= 0) return true;
         const now = this.time.now, list = this._vfxNums || (this._vfxNums = []);
         const fmt = v => v >= 9.95 ? String(Math.round(v)) : v.toFixed(1);
-        const size = v => Math.round(10 + Math.min(8, Math.log2(1 + v) * 1.3));   // world px, so x1.5 on screen
+        const size = (v, k = 1) => Math.round(Math.min(40, Math.min(28, 9 + Math.log2(1 + v) * 2.4) * k));   // world px, so x1.5 on screen
+        const K = this._numK || 1, heft = s => Math.max(0, Math.min(1, (s - 15) / 15));   // (_numK: this hit's own scale, the Boreal Trident's Crest; heft: how hard a number lands)
         for (let i = list.length - 1; i >= 0; i--) {
             const n = list[i];
             if (!n.txt.active || now - n.t > 1000) { list.splice(i, 1); continue; }
             // (30px: an AoE landing on a packed crowd sums into one number instead of a column)
             if (n.color === color && now - n.t < 300 && Math.abs(n.x - x) < 30 && Math.abs(n.y - y) < 30) {
-                n.total += amount; n.t = now;
+                n.total += amount; n.t = now; n.k = K;
+                const s = size(n.total, K);
                 this.tweens.killTweensOf(n.txt);
-                n.txt.setText(fmt(n.total)).setFontSize(size(n.total)).setAlpha(1).setPosition(n.x, n.y0).setScale(1.35);
-                this._vfxFloat(n.txt);
+                n.txt.setText(fmt(n.total)).setFontSize(s).setAlpha(1).setPosition(n.x, n.y0).setScale(1.35 + heft(s) * 0.8);
+                this._vfxFloat(n.txt, heft(s));
                 return true;
             }
         }
         // a different number already popping right here (another element, a burn tick): sit above it
         let y0 = y - 16;
         for (let k = 0; k < 3; k++) {
-            const hit = list.find(n => now - n.t < 300 && Math.abs(n.x - x) < 30 && Math.abs(n.y0 - y0) < size(n.total) * 1.2);
+            const hit = list.find(n => now - n.t < 300 && Math.abs(n.x - x) < 30 && Math.abs(n.y0 - y0) < size(n.total, n.k) * 1.2);
             if (!hit) break;
-            y0 = hit.y0 - size(hit.total) * 1.3 - 2;   // a step as tall as that number (a big one is drawn ~1.5x its font size)
+            y0 = hit.y0 - size(hit.total, hit.k) * 1.3 - 2;   // a step as tall as that number (a big one is drawn ~1.5x its font size)
         }
-        const txt = this.add.text(x + (Math.random() - 0.5) * 10, y0, fmt(amount), {
-            fontSize: `${size(amount)}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
+        const s = size(amount, K), txt = this.add.text(x + (Math.random() - 0.5) * 10, y0, fmt(amount), {
+            fontSize: `${s}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
             color, stroke: '#05060a', strokeThickness: 4, resolution: 2,
-        }).setOrigin(0.5).setDepth(10).setScale(1.5);
-        list.push({ txt, x: txt.x, y, y0, t: now, total: amount, color });
-        this._vfxFloat(txt);
+        }).setOrigin(0.5).setDepth(10).setScale(1.5 + heft(s) * 0.9).setAngle((Math.random() - 0.5) * 12 * heft(s));
+        list.push({ txt, x: txt.x, y, y0, t: now, total: amount, color, k: K });
+        this._vfxFloat(txt, heft(s));
         return true;
     }
     // Status words (WET, BRITTLE, SLOWED...). The same word popping on several enemies at once
@@ -1609,9 +1611,9 @@ void main() {
                           onComplete: () => txt.destroy() });
     }
 
-    _vfxFloat(txt) {
-        this.tweens.add({ targets: txt, scale: 1, duration: 140, ease: 'Back.easeOut' });
-        this.tweens.add({ targets: txt, y: txt.y - 26, alpha: 0, duration: 650, delay: 260, ease: 'Quad.easeIn',
+    _vfxFloat(txt, heft = 0) {   // (heft: 0 to 1, the bigger a hit the harder it lands and the longer it stays)
+        this.tweens.add({ targets: txt, scale: 1, duration: 140 + 70 * heft, ease: 'Back.easeOut', easeParams: [1.7 + 2.5 * heft] });
+        this.tweens.add({ targets: txt, y: txt.y - 26, alpha: 0, duration: 650, delay: 260 + 220 * heft, ease: 'Quad.easeIn',
                           onComplete: () => txt.destroy() });
     }
 

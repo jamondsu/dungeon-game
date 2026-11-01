@@ -537,9 +537,14 @@ class EnemyManager {
                 continue;
             }
             if (enemy.isStunned && currentTime < enemy.stunnedUntil) {
+                // its step, its hit and its shot wait for it: left running, a daze shorter than a step cost it nothing
+                const dt = currentTime - (enemy._stunTick ?? currentTime);
+                enemy._stunTick = currentTime;
+                enemy.lastMoveTime += dt;
+                for (const k of ['prefireStart', 'prefireEnd', 'nextShotAt', 'cooldownEnd']) if (enemy[k]) enemy[k] += dt;
                 continue;
             } else if (enemy.isStunned && currentTime >= enemy.stunnedUntil) {
-                enemy.isStunned = false;
+                enemy.isStunned = false; enemy._stunTick = undefined;
                 if (typeof this._clearStunIndicator === 'function') this._clearStunIndicator(enemy);
             }
             // Surge knockback — suppress pathfinding until arc fully settles

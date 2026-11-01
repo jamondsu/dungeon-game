@@ -403,15 +403,18 @@ class Trident {
     static rimK(dx, dy) { const x = Math.abs(dx), y = Math.abs(dy); return Math.max(x, y, (x + y) * 0.75) / Trident.CFG.SLAM_R; }
     // a hit of the combo, k of the way out: its number dim when it's weak, bright when it's a crest hit
     static hitFar(S, e, dmg, chill, k) {
-        const hot = k >= Trident.CFG.FAR_HOT, x = e.sprite?.x, y = e.sprite?.y, r = Trident.hit(S, e, dmg * Trident.far(k), chill, hot ? '#f2feff' : k < 0.5 ? '#6f9fc4' : '#aaeeff');
+        const hot = k >= Trident.CFG.FAR_HOT, x = e.sprite?.x, y = e.sprite?.y;
+        S._numK = Trident.far(k) ** 1.2;   // (the number itself says how far out it landed: small and dim up close, huge and white on the crest)
+        const r = Trident.hit(S, e, dmg * Trident.far(k), chill, hot ? '#f2feff' : k < 0.5 ? '#6f9fc4' : '#aaeeff');
+        S._numK = 0;
         if (r && hot) Trident.crestFx(S, x, y);
         return r;
     }
-    // a crest hit landing: a burst, a ring of frost round it, and (no more than every 350ms) the word and a crack
+    // a crest hit landing: a burst, a ring of frost round it, and (no more than every 350ms) a crack
     static crestFx(S, x, y) {
         const st = Trident.st(S), now = S.time.now;
         Trident.nova(S, x, y - 6, 1.25); Trident.ring(S, x, y + 2, 0.9, 0);
-        if (now - (st.crestAt || -1e9) > 350) { st.crestAt = now; S.showStatusText(x, y - 40, 'CREST', '#7ff4ff'); Sfx.play(S, 'tri_crack'); }
+        if (now - (st.crestAt || -1e9) > 350) { st.crestAt = now; Sfx.play(S, 'tri_crack'); }
     }
     // bosses and queens on the tiles (once), kOf(x, y) how far out a tile is if the hit is one of the combo's
     static tiles(S, cells, dmg, kOf) {
@@ -466,7 +469,7 @@ class Trident {
         for (let i = 0, n = Math.round(Math.PI * HW(0) / C.CREST_GAP); i < n; i++) { const phi = Math.PI / 2 + Math.PI * (i + 0.5) / n, c = Trident.crest(S, gx + ux * (8 + Math.cos(phi) * HW(0) * 0.6) + nx * Math.sin(phi) * HW(0), gy + uy * (8 + Math.cos(phi) * HW(0) * 0.6) + ny * Math.sin(phi) * HW(0), ang + phi, i, 0.98); c._d = 8; jet.push(c); }   // (the tail cap, round)
         const wave = t => end * (1 - (1 - Math.min(1, t / TJ)) ** 2);   // (the water's front, t ms on: surging out, slowing as it gets there)
         let laid = 8, o3 = 0;
-        Sfx.play(S, 'splash', { soft: true });
+        Sfx.play(S, 'tri_surge');
         const k0 = Trident.clock(S), jt = S.time.addEvent({ delay: 16, loop: true, callback: () => {
             if (!S.sys?.isActive()) { jt.remove(); return; }
             const t = Trident.clock(S) - k0, d = Math.max(16, wave(t) + (t > TJ ? 8 * (1 - Math.exp(-(t - TJ) / 260)) : 0)), R = HW(d), L = C.NOSE * R, c0 = d - L;   // (the nose: from c0 out to the front d)
@@ -562,7 +565,7 @@ class Trident {
     // spreads over its floor with the blast, which ends in a ROW of great spines along the crest, with the boom
     static swipe(S, aim) {
         const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, pc = Trident.pace(S), st = Trident.st(S), HW = C.WAVE_W / 2, R = C.WAVE_R, PITCH = 18 / T;
-        Sfx.play(S, 'swing'); Sfx.play(S, 'splash', { big: true });
+        Sfx.play(S, 'swing'); Sfx.play(S, 'tri_surge', { big: true });
         const dmg = C.SWIPE_DMG * (S.damageScaling || 1), chill = S._chillCfg().DIRECT * C.HIT_CHILL, ox = S.playerX, oy = S.playerY;
         const ux = Math.cos(aim), uy = Math.sin(aim), nx = -uy, ny = ux, gx = ox * T + T / 2, gy = oy * T + T / 2 + 4;
         const at = (q, al) => [gx + (ux * al + nx * q) * T, gy + (uy * al + ny * q) * T];   // (q tiles across it, al tiles out, in the world)
@@ -894,7 +897,7 @@ class Trident {
         // the frost chases it out from where you came down, faster, and catches its crest at the rim just as it gets there; at
         // AFTER_SLAM the frozen ring EXPLODES upward into the rime (erupt)
         const pc = Trident.pace(S), sea = (L.pool || []).filter(w => w.active), R1 = (C.SLAM_R + 0.4) * T, hk = Math.min(1.2, hn), TW = C.SLAM_WAVE * pc, TF = C.SLAM_FROST * pc, oy4 = cy + 4;
-        Sfx.play(S, 'splash', { big: true });
+        Sfx.play(S, 'tri_surge', { big: true });
         for (const f of ['e', 's']) Trident.once(S, cx, cy - 4, 'tri_spray_' + f, 2.6 + 0.6 * hk, 3.4, false);
         for (let i = 0; i < 14; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, v = 80 + Math.random() * 110; Trident.drop(S, sea, cx, cy - 6, Math.cos(a) * v, Math.sin(a) * v, 3.4); }
         const wave = t => 6 + (R1 - 6) * (1 - (1 - Math.min(1, t / TW)) ** 2), lob = Trident.wavy([0.04, 0.025], [7, 13]), far = R1 * 1.08;   // (round, small local lumps of its own)
@@ -1133,7 +1136,7 @@ class Trident {
         let stop = D; for (let d = 10; d <= D; d += 4) if (S.world[Math.floor((x + ux * d) / S.TILE_SIZE)]?.[Math.floor((y + uy * d) / S.TILE_SIZE)] !== S.FLOOR) { stop = d; break; }
         st.out = { spr, glow, core, shadow, ux, uy, a: aim, x0: x, y0: y, gx: x + ux * 10, gy: y + uy * 10, D, stop, arcH: Math.min(12, 4 + 0.04 * stop), trav: 10, leg: 'out', held: [], hit: new Set(), boss: false, tile: null, t0: now, ghostAt: 0, wakeAt: 10, water: [], lane: [] };
         S._gearFiredAt = now;
-        Sfx.play(S, 'swing'); Sfx.play(S, 'w_boreal_trident'); Sfx.play(S, 'splash', { big: true });
+        Sfx.play(S, 'swing'); Sfx.play(S, 'w_boreal_trident'); Sfx.play(S, 'tri_surge', { big: true });
         // the launch: frost torn off the tines and thrown back past you; the sea opens ahead of it (fly)
         F.dir = [aim * 180 / Math.PI, 40]; F.spark.emitParticleAt(x + ux * 14, y + uy * 14, full ? 10 : 6);
         F.dir = [aim * 180 / Math.PI + 180, 70]; F.shard.emitParticleAt(x, y, full ? 6 : 4); F.dir = null;
@@ -1189,7 +1192,6 @@ class Trident {
             e._surgeKnockedBack = true; e._triFrom = [e.sprite.x, e.sprite.y]; e._triAt = time;
             o.held.push(e);
             Trident.drag(S, e.sprite.x, e.sprite.y + 4, x1, y1 + 6);   // (the sea caving in drags it onto the tines)
-            Sfx.play(S, 'splash', { soft: true });
         }
         // the carried: yanked in onto the tines, a heap riding ahead of it
         o.held = o.held.filter(e => e.sprite?.active && e.health > 0);
@@ -1306,7 +1308,7 @@ class Trident {
         Glaive.hitstop(S, big ? C.END_STOP + 30 : C.CRASH_STOP);
         if (o.hit.size) { o.rush = true; if (st.ride) st.ride.rush = true; else Trident.rush(S, now + C.RUSH_MS); }   // (riding: the rush starts as you land)   // (it caught something: FROST RUSH, the clump's for dumping the combo into)
         S.cameras.main.shake(big ? 200 : 140, big ? 0.014 : 0.008);
-        Sfx.play(S, 'splash', { big: true }); Sfx.play(S, 'slam', { small: !big });
+        Sfx.play(S, 'tri_surge', { big: true }); Sfx.play(S, 'slam', { small: !big });
         if (!n) {
             Trident.rideLand(S, x, y, o, []);
             for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; Rimeguard.spike(S, x + Math.cos(a) * 15, y + Math.sin(a) * 11 + 4, 0.85, 60 + 20 * k, Math.sin(a) > -0.3); }
@@ -1388,7 +1390,7 @@ class Trident {
         const board = S.add.sprite(p.x, p.y - off + 6, 'fx_trident', 'ride_e_0').setScale(1.5).setDepth(0.99).setAlpha(0.95);
         st.ride = { x: p.x, y: p.y - off, t0: now, room, board, f: null, land: null, trailAt: 0, hx: o.ux, hy: o.uy };
         S.lockActions?.('riptide', ['dash', 'ult', 'gadget', 'swap']);
-        Sfx.play(S, 'splash'); Sfx.play(S, 'whoosh', { soft: true });
+        Sfx.play(S, 'tri_surge'); Sfx.play(S, 'whoosh', { soft: true });
         Trident.once(S, p.x, p.y - off + 2, 'tri_spray_e', 1.6, 3.3, false); Trident.once(S, p.x, p.y - off + 2, 'tri_spray_s', 1.4, 3.3, false);
     }
     // a frame of the ride: on toward the spot behind the trident (or, once it's stopped, the one rideLand chose); the wave under
@@ -1453,7 +1455,7 @@ class Trident {
         p.setPosition(tx * T + T / 2, ty * T + T / 2 + off);
         S._checkRoomNameDisplay?.();
         Trident.once(S, p.x, p.y - off + 2, 'tri_spray_e', 1.5, 3.3, false); Trident.once(S, p.x, p.y - off + 2, 'tri_spray_s', 1.5, 3.3, false);
-        Sfx.play(S, 'splash', { soft: true });
+        Sfx.play(S, 'tri_surge', { soft: true });
     }
     // e sealed in a block of ice till `until` (the pin's daze): it rises round it, holds, cracks and bursts as the daze ends (tick)
     static seal(S, e, until) {

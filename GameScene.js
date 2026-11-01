@@ -814,7 +814,7 @@ class GameScene extends Phaser.Scene {
             if (this._dialogueObjects) return;   // a click on Glerp's box only moves the talk on
             if (this._towerPicking) return;      // Tower.js: choosing a pick
             if (this._train && Training.overPanel(this, pointer)) return;   // Training.js: a click on its panel
-            if (this._train && Training.place(this, pointer)) return;   // Training.js: placing (or taking away) an enemy
+            if (this._train && (!this._touch || this._touch.aimPointer(pointer) === pointer) && Training.place(this, pointer)) return;   // Training.js: placing (or taking away) an enemy (a touch screen: never a thumb on a stick or a button)
             if (this._touch && !(pointer = this._touch.aimPointer(pointer))) return;   // a touch screen: only the aiming thumb attacks, where it aims (TouchControls.js)
             if (pointer.button === 2 && this._cs?.tf) { this._csPointerDown?.(pointer); return; }   // Cosmic.js: right-click moves the Twin Collapse anchor
             if (pointer.button !== 0) return;

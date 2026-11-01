@@ -113,6 +113,8 @@ class Training {
         }
         return true;
     }
+    // Is a tap on the floor for PLACE or a brush?
+    static placing(S) { const T = S._train; return !!(T?.brush || (T?.count === 'place' && T.placeKind != null)); }
     // HOW MANY: PLACE. A click on the floor puts the chosen kind there (one a click); a right-click takes away the enemy under
     // the pointer. GameScene's pointerdown asks first: true if the click was spent here (no attack).
     static place(S, p) {
@@ -140,7 +142,7 @@ class Training {
     // the pointer down or moved with a brush: each tile from the last one it painted to the one under it now
     static stroke(S, p) {
         const T = S._train, K = T?.stroke;
-        if (!K) return;
+        if (!K || (S._touch && S._touch.aimPointer(p) !== p)) return;   // (a touch screen: the other thumb, moving on its stick, isn't the brush)
         if (!p.isDown) { T.stroke = null; return; }
         if (Training.overPanel(S, p)) return;
         const TS = S.TILE_SIZE, w = S.cameras.main.getWorldPoint(p.x, p.y), x = Math.floor(w.x / TS), y = Math.floor(w.y / TS);
@@ -361,7 +363,7 @@ class Training {
         T.marker.setPosition(Math.floor(w.x / TS) * TS + TS / 2, Math.floor(w.y / TS) * TS + TS / 2).setTint(b ? b[2] : 0xff8a7a).setVisible(true);
     }
 
-    // The panel, on the HUD camera at the left, in its frames (ui_tr: a 9-slice panel, the buttons' three states): a title,
+    // The panel, on the HUD camera at the left (a phone: past the stick), in its frames (ui_tr: a 9-slice panel, the buttons' three states): a title,
     // tabs, the tab's page (ENEMIES: how many, how strong, what they carry, the options, a card each with its portrait; BOSSES;
     // ARENA: terrain brushes; TRIAL), and under every page your damage and LEAVE. Short enough for a 720-high window.
     static TABS = [['enemies', 'ENEMIES'], ['bosses', 'BOSSES'], ['arena', 'ARENA'], ['trial', 'TRIAL'], ['rooms', 'ROOMS']];
@@ -383,7 +385,7 @@ class Training {
         return (C[id] = x1 < 0 ? { x: 0, y: 0, w: f.width, h: f.height } : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
     }
     static panel(S) {
-        const PW = 300, P = 10, IW = PW - 2 * P, x0 = 12, y0 = 84, D = 40, objs = [], page = new Map(), all = [];
+        const PW = 300, P = 10, IW = PW - 2 * P, touch = TouchControls.on(), x0 = touch ? Math.round(190 * TouchControls.u(S)) : 12, y0 = 84, D = touch ? 44 : 40, objs = [], page = new Map(), all = [];   // (a phone: clear of the left thumb, the stick's home, and so over the HUD's bottom row)
         let cur = null, y = y0 + P;
         const pin = (o, d) => { o.setScrollFactor(0).setDepth(D + d); objs.push(o); if (cur) page.set(o, cur); return o; };
         const text = (x, yy, t, size = 11, col = '#9fb0d0', o = {}) => pin(S.add.text(x, yy, t, { fontFamily: 'monospace', fontSize: size + 'px', fontStyle: 'bold', color: col, ...o }), 0.2);
@@ -423,7 +425,7 @@ class Training {
         row('HOW MANY');
         [1, 3, 5, 10, 'place'].forEach((n, i) => btn(x0 + P + 66 + i * 43, y, 40, 20, n === 'place' ? 'PLACE' : '×' + n, () => {
             T.count = n;
-            if (n === 'place') S.showStatusText?.(S.player.x, S.player.y - 40, 'PICK ONE, THEN CLICK THE FLOOR · RIGHT-CLICK REMOVES', '#ffe14a');
+            if (n === 'place') S.showStatusText?.(S.player.x, S.player.y - 40, TouchControls.on() ? 'PICK ONE, THEN TAP THE FLOOR · CLEAR ALL REMOVES' : 'PICK ONE, THEN CLICK THE FLOOR · RIGHT-CLICK REMOVES', '#ffe14a');
         }, () => T.count === n, { size: 10 }));
         y += 24; row('FLOOR');
         const fl = text(x0 + P + 66 + 2 * 39 + 21, y + 4, `${Training.floor()}`, 11, '#ffffff').setOrigin(0.5, 0);
@@ -470,7 +472,7 @@ class Training {
             const bx = x0 + P + (i % 4) * (t4 + 4), by = y + Math.floor(i / 4) * 37;
             btn(bx, by, t4, 34, l, () => {
                 T.brush = T.brush === id ? null : id;
-                if (T.brush) { T.placeKind = null; S.showStatusText?.(S.player.x, S.player.y - 40, id === 'floor' ? 'CLICK OR DRAG: BACK TO BARE FLOOR' : `${l.toUpperCase()}: CLICK OR DRAG TO PAINT · RIGHT-CLICK ERASES`, '#ffe14a'); }
+                if (T.brush) { T.placeKind = null; S.showStatusText?.(S.player.x, S.player.y - 40, id === 'floor' ? 'CLICK OR DRAG: BACK TO BARE FLOOR' : `${l.toUpperCase()}: ${TouchControls.on() ? 'TAP OR DRAG TO PAINT · FLOOR ERASES' : 'CLICK OR DRAG TO PAINT · RIGHT-CLICK ERASES'}`, '#ffe14a'); }
             }, () => T.brush === id, { size: 9, top: 26 });
             const [k, f, tint] = key ? [key, frame] : ['vfx_atlas', S._vfxTileFrame?.(A.cx, id === 'wall' ? wy - 1 : A.cy)?.frame, id === 'wall' ? TH.wall : TH.floor];
             if (!f || !S.textures.get(k).has(f)) return;

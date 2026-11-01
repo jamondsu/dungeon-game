@@ -16,7 +16,7 @@
 
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
-           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, tri_boom: 80, tri_crack: 70, tri_hit: 45, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
+           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, tri_boom: 80, tri_crack: 70, tri_hit: 45, tri_surge: 120, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
            lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 400, sear: 450, blip: 60, bosshit: 70,
            tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
     _last: {},
@@ -716,6 +716,13 @@ const Sfx = {
             this._noise(ctx, t, { filter: 'bandpass', f0: 3200 * j, f1: 900, q: 0.5, dur: 0.07, vol: 0.6 * v });
             if (this._rec(ctx, t, { name: 'thud', rate: 1.4 * j, vol: 0.24 * v })) return;
             this._tone(ctx, t, { type: 'triangle', f0: 260 * j, f1: 120, dur: 0.07, vol: 0.14 * v });
+        },
+        tri_surge(ctx, t, o, j) {          // the sea driven at them: water roaring up and crashing on, low and long, no plop in it (o.big: a whole wave; o.soft: its edge)
+            const d = o.big ? 1.8 : 1.3, v = o.soft ? 0.6 : 1;
+            this._noise(ctx, t, { filter: 'lowpass', f0: 1300 * j, f1: 420, q: 0.7, dur: d, vol: (o.big ? 1.25 : 1.1) * v, attack: 0.06 });   // (the roar, up where a phone can play it)
+            this._noise(ctx, t + 0.04, { filter: 'bandpass', f0: 3400 * j, f1: 1500, q: 0.7, dur: d * 0.6, vol: 0.12 * v, attack: 0.03 });   // (the spray off it)
+            this._noise(ctx, t, { filter: 'lowpass', f0: 320, f1: 90, dur: d, vol: 0.4 * v, attack: 0.04 });
+            this._rec(ctx, t, { name: 'splash_big', rate: (o.big ? 0.8 : 0.95) * j, vol: 0.32 * v, lp: 2800 });
         },
         tri_hit(ctx, t, o, j) {            // a Boreal Trident hit: a blow landing, no note in it (the ice `hit`'s sine pings over the eruptions)
             this._noise(ctx, t, { filter: 'lowpass', f0: 1800, f1: 300, dur: 0.07, vol: 0.18 });
