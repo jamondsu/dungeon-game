@@ -230,7 +230,7 @@ const WeaponLevels = {
                             ['hurl', 'Long Hurl', 3, 220, 1.8, p => `the hurl flies +${p} tile${p === 1 ? '' : 's'}`],
                             ['recall', 'Swift Recall', 5, 250, 1.7, p => `the hurl is ready again in ${(7 - 0.6 * p).toFixed(1)}s`],
                             ['aura', 'Wider Aura', 2, 500, 2, p => `the aura reaches ${3.5 + 0.5 * p} tiles`],
-                            ['pack', 'Frostkin Pack', 2, 500, 2, p => `${3 + p} Frostkin a call (one of each kind${['', ', and a hail one', ', a hail one and a Squall'][p]})`],
+                            ['pack', 'Frostkin Pack', 2, 500, 2, p => `${3 + p} Frostkin at your side at once`],
                             ['tide', 'Glacial Tide', 1, 4000, 1, () => 'the slam\'s Frostbite lasts twice as long'],
                             ['riptide', 'Riptide', 1, 4000, 1, () => 'click again while the hurl flies to ride its wake behind it', { hurl: 3 }]],
         lightning_fists:   [['speed', 'Quick Jabs', 3, 180, 1.8, p => `${8 * p}% faster punches`]],

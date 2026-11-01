@@ -26,15 +26,13 @@
 // second) until it freezes into a cube.
 // FROST, R's charge, comes only from the combo: each hit gives PTS (thrust, swipe, slam) for each enemy it struck (PTS_N at most).
 // AURA, while you hold it: enemy shots within AURA tiles of you fly at SLOW of their speed (Trident.slow: every shot's step reads it).
-// R, for KIN_COST frost: FROSTKIN, ice wisps fighting beside you till they're killed (KIN_CAP at most: the oldest shatter away;
-// their HP a share of your max HP, KIN_STATS of your defence and of your damage bonus), one of each kind a call (KINDS). MELEE
-// (KIN_HP, a KIN_TAUNT pull): nips an enemy (KIN_DMG) from a tile of its own beside it, chilling what's within KIN_AURA tiles
-// KIN_CHILL stacks a second. HAIL (SEER_HP): keeps SEER_MIN to SEER_MAX tiles off with a clear line and every SEER_CD calls hail
-// on its target: a ring of frost under it, then a spear of ice slanting down on each of the 3x3 tiles round it (the middle last),
-// HAIL_DMG (HAIL_MID the middle) and a ninth of HAIL_CHILL of a splash's chill to what's on each. SQUALL (SQUALL_HP): SQUALL_MIN to SQUALL_MAX tiles off, breathes in (SQUALL_TELL) and every
-// SQUALL_CD blows a GUST SQUALL_W tiles wide and SQUALL_RANGE long through everything: SQUALL_DMG and Frostbite, no push.
-// Frostkin Pack adds one a level, a hail one then a squall.
-// FROSTBITE comes only from the slam's hit and the Squall Frostkin; all the rime is only its look. Glacial Tide (a perk): the slam's Frostbite twice as long.
+// R, for KIN_COST frost: you drive the trident down (R_UP, R_DOWN) and the sea answers. A GEYSER bursts up under the GEY_N enemies
+// nearest you (within GEY_R tiles): GEY_DMG, a daze, GEY_MARKS Rime marks and a share (a GEY_SHELL'th) of your frost shell (KIN_SHIELD
+// of your max HP at most, till it's broken); it freezes from the ground up, GEY_MS later and over GEY_FROST, and bursts: GEY_BURST.
+// And a FROSTKIN comes to float beside you for KIN_LIFE (KIN_CAP at most, Frostkin Pack more: past that the oldest shatters). It
+// takes no hits and picks no fights: each thrust, swipe and slam of yours it does too, small, from where it floats (KIN_HIT, a
+// KIN_BITE of Frostbite). A full combo, all three hits landing, gives each one KIN_FEED more life (KIN_LIFE_MAX at most).
+// FROSTBITE comes from the slam's hit and the Frostkin; all the rime is only its look. Glacial Tide (a perk): the slam's Frostbite twice as long.
 // Art: assets/art/fx_trident (tri_* (32 ways), sea_*/ice_*/foam_*/drop_*/crk_* (the sea and its freeze), spine_*/tip_*/spur_* (the thrust's spine), ride_*, kin_*, seer_*, bite_*, mote/spark/shard/chunk/glint/mist, ring_*, tail_*, core_*,
 // wake/trough/spray_*, tell/spear/spot/crater_*, squall_*, gust_*, crystal_*, mark_*, lane_*, pip_*, ico_hurl) and Rimeguard's fx_rimeguard
 // (slam_*, spike_*, crys_*, shard/mist: the rime and the bursts).
@@ -54,9 +52,8 @@ class Trident {
         FAR_NEAR: 0.7, FAR_EDGE: 1.5, FAR_THRUST: 7, FAR_HOT: 0.8,   // Crest (FAR_HOT: how far out, of the reach, a hit shows as one)
         MARK_THRUST: 2, MARK_SWIPE: 1, MARK_MAX: 3, MARK_MS: 4000, MARK_K: 0.4, MARK_BITE: 1000,   // Rime marks: the thrust's and the swipe's, shattered by the slam's eruption
         PTS: [1, 1, 2], PTS_N: 5, KIN_COST: 48, KIN_MAX: 96,
-        KIN_N: 3, KIN_CAP: 9, KIN_STATS: 0.5, KIN_HP: 0.25, KIN_TAUNT: 3, KIN_DMG: 3, KIN_STEP: 150, KIN_NIP: 650, KIN_SEEK: 8, KIN_AURA: 2, KIN_CHILL: 0.3,
-        SEER_HP: 0.15, SEER_TAUNT: 2, SEER_STEP: 220, SEER_MIN: 3, SEER_MAX: 5, SEER_CD: 1600, HAIL_GAP: 70, HAIL_TELL: 350, HAIL_FALL: 170, HAIL_DMG: 0.6, HAIL_MID: 1.6, HAIL_CHILL: 0.5,   // (the hail: a spear on each of the 3x3 tiles round its target, the middle one last)
-        SQUALL_HP: 0.15, SQUALL_MIN: 3, SQUALL_MAX: 6, SQUALL_CD: 4500, SQUALL_TELL: 400, SQUALL_W: 4, SQUALL_RANGE: 9.5, SQUALL_DMG: 2,
+        KIN_CAP: 3, KIN_LIFE: 10000, KIN_FEED: 3000, KIN_LIFE_MAX: 16000, KIN_R: 1.5, KIN_HIT: [5, 4.5, 9.5], KIN_BITE: 600, KIN_REACH: 4,   // the Frostkin
+        R_UP: 130, R_DOWN: 90, GEY_N: 3, GEY_R: 6, GEY_DMG: 8, GEY_BURST: 20, GEY_DAZE: 900, GEY_MARKS: 2, GEY_SHELL: 3, GEY_H: 72, GEY_RISE: 170, GEY_MS: 420, GEY_FROST: 260,   // R's slam and its geysers
         RUSH: 0.85, RUSH_MS: 4000, RUSH_BACK: 3000,   // FROST RUSH: a throw that lands having caught something, the combo RUSH faster for RUSH_MS from the landing (RUSH_BACK after it's back in hand, if that's later)
         RIME_MS: 450, RIME_FAST: 300 };   // the rime (only its look): it stands RIME_MS (the throw's lane), RIME_FAST (the slam's and the swipe's), then melts
     // eighths of a turn clockwise from east: the frame, flipped across, flipped up
@@ -66,7 +63,7 @@ class Trident {
     static grow() { return Trident.CFG.GROW * (1 + Trident.CFG.GROW_UP * Trident.perk('bite')); }
     static st(S) {
         if (!S._tri) {
-            S._tri = { at: -1e9, cd: 0, combo: 0, press: null, buffer: 0, out: null, leap: null, charges: 0, kin: [], hails: [], marked: new Set(), seals: [], bitten: new Set(), crests: new Set(), rAt: 0, fx: null };
+            S._tri = { at: -1e9, cd: 0, combo: 0, press: null, buffer: 0, out: null, leap: null, charges: 0, kin: [], marked: new Set(), seals: [], bitten: new Set(), crests: new Set(), rAt: 0, fx: null };
             S.events.once('shutdown', () => { if (S._tri?.locked) S.unlockActions?.('trident_leap'); if (S._tri?.ride) S.unlockActions?.('riptide'); S._tri = null; S._triBar = null; S._triAura = null; });
             const A = S.anims, mk = (key, frames, rate, repeat = 0) => { if (!A.exists(key)) A.create({ key, frames: frames.map(f => ({ key: 'fx_trident', frame: f })), frameRate: rate, repeat }); };
             const n = (b, k) => Array.from({ length: k }, (_, i) => `${b}_${i}`);
@@ -74,13 +71,6 @@ class Trident {
             mk('tri_kin_dart', ['kin_dart_0', 'kin_dart_1'], 12, -1);
             mk('tri_kin_nip', ['kin_nip_0', 'kin_nip_1', 'kin_nip_1'], 16);
             mk('tri_kin_die', n('kin_die', 4), 10);
-            mk('tri_squall_idle', ['squall_idle_0', 'squall_idle_0', 'squall_idle_1', 'squall_idle_1'], 6, -1);
-            mk('tri_squall_tell', ['squall_tell_0', 'squall_tell_1'], 8, -1);
-            mk('tri_squall_blow', ['squall_blow_0', 'squall_blow_0', 'squall_blow_0'], 8);
-            mk('tri_squall_die', ['squall_die_0', 'kin_die_2', 'kin_die_3'], 9);
-            mk('tri_seer_idle', ['seer_idle_0', 'seer_idle_1', 'seer_idle_0', 'seer_idle_1', 'seer_idle_0', 'seer_idle_2'], 5, -1);
-            mk('tri_seer_cast', ['seer_cast_0', 'seer_cast_0', 'seer_cast_1', 'seer_cast_2'], 12);
-            mk('tri_seer_die', ['seer_die_0', 'seer_die_1', 'kin_die_2', 'kin_die_3'], 10);
             mk('tri_tell', n('tell', 3), 9);
             Rimeguard.st(S);   // (its rime: rg_slam, rg_spike)
             if (!A.exists('tri_crys')) A.create({ key: 'tri_crys', frames: [0, 1, 2].map(i => ({ key: 'fx_rimeguard', frame: 'crys_' + i })), frameRate: 9 });
@@ -449,6 +439,7 @@ class Trident {
         if (Trident.tiles(S, cells, dmg, outK)) struck++;
         const st0 = Trident.st(S); if (st0.comboHits) st0.comboHits[0] = struck > 0;
         if (struck) { Glaive.hitstop(S, C.HIT_STOP); Trident.gain(S, struck, 0); }
+        Trident.kinCombo(S, 0, aim);
         // the look: a quick poke straight down the aim and a JET of seawater driven down the line to the end of the reach (JET_MS):
         // one body of water three tiles wide, foam along its edges and a foam head riding its front, spray off it (only drawn: see
         // water). Its aftershock: the jet flash-freezes from you out, and the spine erupts out of it, blowing it apart as it goes
@@ -557,6 +548,7 @@ class Trident {
                 S.tweens.add({ targets: [p, sh], alpha: 0, delay: 250, duration: 350, onComplete: () => { p.destroy(); sh.destroy(); } });
             });
         });
+        return p;
     }
     // 2. The swell: the trident brought down and a WAVE rises across your front and rolls straight out over SWEEP_MS, WAVE_W tiles
     // wide, WAVE_R out, a crescent: its ends trail the middle (WAVE_BOW) and start further out (WAVE_TAIL); a wall stops the stretch that meets it. What its crest reaches takes
@@ -567,6 +559,7 @@ class Trident {
     static swipe(S, aim) {
         const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, pc = Trident.pace(S), st = Trident.st(S), HW = C.WAVE_W / 2, R = C.WAVE_R, PITCH = 18 / T;
         Sfx.play(S, 'swing'); Sfx.play(S, 'tri_surge', { big: true });
+        Trident.kinCombo(S, 1, aim);
         const dmg = C.SWIPE_DMG * (S.damageScaling || 1), chill = S._chillCfg().DIRECT * C.HIT_CHILL, ox = S.playerX, oy = S.playerY;
         const ux = Math.cos(aim), uy = Math.sin(aim), nx = -uy, ny = ux, gx = ox * T + T / 2, gy = oy * T + T / 2 + 4;
         const at = (q, al) => [gx + (ux * al + nx * q) * T, gy + (uy * al + ny * q) * T];   // (q tiles across it, al tiles out, in the world)
@@ -898,7 +891,7 @@ class Trident {
         // the frost chases it out from where you came down, faster, and catches its crest at the rim just as it gets there; at
         // AFTER_SLAM the frozen ring EXPLODES upward into the rime (erupt)
         const pc = Trident.pace(S), sea = (L.pool || []).filter(w => w.active), R1 = (C.SLAM_R + 0.4) * T, hk = Math.min(1.2, hn), TW = C.SLAM_WAVE * pc, TF = C.SLAM_FROST * pc, oy4 = cy + 4;
-        Sfx.play(S, 'tri_surge', { big: true });
+        Sfx.play(S, 'tri_surge', { big: true }); Trident.kinCombo(S, 2, Trident.aim(S));
         for (const f of ['e', 's']) Trident.once(S, cx, cy - 4, 'tri_spray_' + f, 2.6 + 0.6 * hk, 3.4, false);
         for (let i = 0; i < 14; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, v = 80 + Math.random() * 110; Trident.drop(S, sea, cx, cy - 6, Math.cos(a) * v, Math.sin(a) * v, 3.4); }
         const wave = t => 6 + (R1 - 6) * (1 - (1 - Math.min(1, t / TW)) ** 2), lob = Trident.wavy([0.04, 0.025], [7, 13]), far = R1 * 1.08;   // (round, small local lumps of its own)
@@ -930,6 +923,7 @@ class Trident {
         // a full combo whose thrust, swipe and slam each struck something: the Icicle Cannon's own Frost Shield (its 35% less damage, its
         // chill back, its bubble) for TRI_SHIELD_MS; never refreshed while it's up (whoever raised it), and not again for TRI_SHIELD_CD after it ends
         if (st.comboHits) st.comboHits[2] = struck > 0;
+        if (st.comboHits?.every(h => h)) for (const k of st.kin) { k.until = Math.min(now + C.KIN_LIFE_MAX, k.until + C.KIN_FEED); Trident.once(S, k.x, k.y, 'tri_glint', 2, 3.35); }   // (landed whole: the Frostkin last longer)
         if (st.comboHits?.every(h => h) && now >= (S._frostShieldUntil || 0) && now >= (st.shieldBack || 0)) {
             S._frostShieldUntil = now + C.TRI_SHIELD_MS; S._frostShieldMs = C.TRI_SHIELD_MS; st.shieldBack = now + C.TRI_SHIELD_MS + C.TRI_SHIELD_CD;
             S._frostShieldFx?.(); S.showStatusText?.(p.x, p.y - 30, 'FROST SHIELD', '#bff4ff'); Sfx.play(S, 'frost_shield');
@@ -989,8 +983,8 @@ class Trident {
     // scale, and the path it had committed to (a step from that path, after the move, is the snap back to where it was caught)
     // the Frostkin shell topped up to KIN_SHIELD of your max HP (never above), a little burst of it re-forming round you
     static feedShell(S) {
-        const st = Trident.st(S), cap = Trident.CFG.KIN_SHIELD * (S.maxHealth || 100), was = st.shell?.hp || 0;
-        st.shell = { hp: Math.max(was, cap), max: cap };
+        const C = Trident.CFG, st = Trident.st(S), cap = C.KIN_SHIELD * (S.maxHealth || 100), was = st.shell?.hp || 0;
+        st.shell = { hp: Math.min(cap, was + cap / C.GEY_SHELL), max: cap };
         const p = S.player;
         if (p && st.shell.hp > was) { Trident.once(S, p.x, p.y - 4, 'tri_glint', 2, 3.4); Rimeguard.fx(S).shard.emitParticleAt(p.x, p.y - 4, 4); }
     }
@@ -1518,61 +1512,90 @@ class Trident {
     }
     static hash(a) { let t = (a ^ 0x9e3779b9) >>> 0; t = Math.imul(t ^ (t >>> 16), 0x85ebca6b); t = Math.imul(t ^ (t >>> 13), 0xc2b2ae35); return ((t ^ (t >>> 16)) >>> 0) / 4294967296; }
 
-    // ── R: the Frostkin ──
+    // ── R: the slam, the geysers, a Frostkin ──
     static r(S) {
         const C = Trident.CFG, st = Trident.st(S), now = S.time.now;
         if (st.charges < C.KIN_COST) {
             Sfx.play(S, 'deny');
-            S.showStatusText?.(S.player.x, S.player.y - 34, `FROST ${st.charges}/${C.KIN_COST}: THE COMBO'S HITS CALL FROSTKIN`, '#9fdcff');
+            S.showStatusText?.(S.player.x, S.player.y - 34, `FROST ${st.charges}/${C.KIN_COST}: THE COMBO'S HITS CALL THE SEA`, '#9fdcff');
             return;
         }
         if (now < st.rAt) return;
-        st.rAt = now + 400; st.charges -= C.KIN_COST;
-        Trident.feedShell(S);   // (the shell: up to KIN_SHIELD of your max HP till it's broken; a call tops it back up, never above)
-        const T = S.TILE_SIZE, F = Trident.fx(S), extra = Trident.perk('pack'), n = C.KIN_N + extra;
-        S.showStatusText?.(S.player.x, S.player.y - 34, 'FROSTKIN', '#d8fff4');
-        Sfx.play(S, 'frost_shield'); Sfx.play(S, 'spawn');
-        Trident.nova(S, S.player.x, S.player.y - 6, 1.4); Trident.ring(S, S.player.x, S.player.y + 2, 1.4);
-        const spots = [[1, 0], [-1, 0], [0, -1], [0, 1], [1, -1], [-1, -1], [1, 1], [-1, 1], [2, 0], [-2, 0], [0, 2], [0, -2]]
-            .map(([dx, dy]) => [S.playerX + dx, S.playerY + dy]).filter(([x, y]) => Trident.open(S, x, y));
-        for (let i = 0; i < n; i++) {
-            // the call's own: one of each kind; Frostkin Pack's extras a hail one, then a squall
-            const kind = Trident.KIN_ORDER[i < C.KIN_N ? i % 3 : (i - C.KIN_N + 1) % 3], KD = Trident.KINDS[kind], ranged = kind !== 'melee';
-            const [x, y] = spots[i] || [S.playerX, S.playerY];
-            const k = { kind, ranged, b: { x: x * T + T / 2, y: y * T + T / 2 }, lx: 0, ly: 0, ph: Math.random() * 6, stepAt: now + 250 + i * 60, nipAt: now + 400 + (ranged ? 300 : 0), e: null, goal: null };
-            k.spr = S.add.sprite(k.b.x, k.b.y - 10, 'fx_trident', KD.look + '_idle_0').setScale(0.2).setDepth(3.3).play(`tri_${KD.look}_idle`);
-            k.glow = S.add.image(k.b.x, k.b.y + 4, 'vfx_glow').setTint(KD.tint).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.9).setScale(0.22).setAlpha(0.5);
-            k.bar = S.add.graphics().setDepth(5);
-            S.tweens.add({ targets: k.spr, scale: 1.25, duration: 240, delay: i * 60, ease: 'Back.easeOut' });
-            S.time.delayedCall(i * 60, () => { if (!S.sys?.isActive()) return; Trident.once(S, k.b.x, k.b.y - 10, 'tri_glint', 2, 3.35); Trident.mist(S, k.b.x, k.b.y + 2, 2, T * 0.7); });
-            F.dir = null; F.spark.emitParticleAt(k.b.x, k.b.y - 10, 6); F.shard.emitParticleAt(k.b.x, k.b.y - 6, 3);
-            const hp = C[KD.hp] * (S.maxHealth || 100);
-            k.ally = S._addAlly({ x, y, hp, maxHp: hp, taunt: C[KD.taunt], until: Infinity,
-                hurt: amt => Trident.kinHurt(S, k, amt), onEnd: () => Trident.kinEnd(S, k) });
-            st.kin.push(k);
-        }
-        // at most KIN_CAP of them: the oldest shatter away to make room
-        const live = st.kin.filter(o => !o.gone);
-        for (let j = 0; j < live.length - C.KIN_CAP; j++) { live[j].gone = true; live[j].ally.until = 0; }
-        Trident.bar(S);
+        st.rAt = now + 500; st.charges -= C.KIN_COST;
+        S._scytheSpinUntil = now + C.R_UP + C.R_DOWN + 260;   // (the one in your hand is the one coming down)
+        const p = S.player, x = p.x, y = p.y, spr = Trident.face(S.add.sprite(x, y - 30, 'fx_trident', 'tri_e'), Math.PI / 2, 1).setScale(C.SCALE * 1.15).setDepth(3.4).setAlpha(0);
+        Sfx.play(S, 'swing');
+        S.tweens.add({ targets: spr, y: y - 56, alpha: 1, duration: C.R_UP, ease: 'Quad.easeOut', onComplete: () =>
+            S.tweens.add({ targets: spr, y: y - 6, duration: C.R_DOWN, ease: 'Quad.easeIn', onComplete: () => {
+                if (!S.sys?.isActive()) return;
+                Trident.call(S);
+                S.tweens.add({ targets: spr, alpha: 0, duration: 200, delay: 120, onComplete: () => spr.destroy() });
+            } }) });
     }
-    // A hit on a Frostkin (a taunted enemy's, CombatSystem.takeDamage): KIN_STATS of your defence is theirs: of the damage reduction
-    // you have (damageReductionMultiplier), your armour (statTakenMult) and Bulwark on what you hold (Enchants.taken); Bedrock caps a
-    // hit at a fifth of its HP over KIN_STATS
-    static kinHurt(S, k, amt) {
-        const a = k.ally, share = Trident.CFG.KIN_STATS;
-        amt *= 1 - share * (1 - (S.damageReductionMultiplier ?? 1) * (S.statTakenMult ?? 1) * Enchants.taken(S.equippedWeapons?.[S.currentElement]));
-        if (S._tal?.has?.has('bedrock')) amt = Math.min(amt, a.maxHp * 0.2 / share);
-        if (!(amt > 0)) return;
-        a.hp -= amt;
-        if (k.spr.active) {
-            k.spr.setTintFill(0xffffff); S.time.delayedCall(70, () => k.spr.active && k.spr.clearTint());
-            S._vfxDamageNumber?.(k.spr.x, k.spr.y - 8, amt, '#ff8a9a');
-        }
+    // the trident strikes the floor: the shock, the geysers under the nearest, and a Frostkin
+    static call(S) {
+        const C = Trident.CFG, st = Trident.st(S), p = S.player;
+        if (!p?.active) return;
+        const x = p.x, y = p.y, RF = Rimeguard.fx(S);
+        Glaive.hitstop(S, 50); S.cameras.main.shake(130, 0.008);
+        Sfx.play(S, 'slam', { small: true }); Sfx.play(S, 'tri_surge', { big: true });
+        Trident.nova(S, x, y - 6, 1.4); Trident.ring(S, x, y + 2, 1.4); Trident.once(S, x, y + 2, 'tri_crk', 1.6, 3.3);
+        S.add.sprite(x, y, 'fx_rimeguard', 'slam_0').setScale(1).setBlendMode(Phaser.BlendModes.ADD).setDepth(3.05).play('rg_slam').once('animationcomplete', function () { this.destroy(); });
+        const near = (S.enemies || []).filter(e => Trident.prey(S, e) && Math.hypot(e.x - S.playerX, e.y - S.playerY) <= C.GEY_R)
+            .sort((a, b) => Math.hypot(a.x - S.playerX, a.y - S.playerY) - Math.hypot(b.x - S.playerX, b.y - S.playerY)).slice(0, C.GEY_N);
+        near.forEach((e, i) => S.time.delayedCall(i * 70, () => S.sys?.isActive() && Trident.geyser(S, e)));
+        if (near.length < C.GEY_N) { const B = Glaive.bosses(S).find(b => Math.hypot(b.x - S.playerX, b.y - S.playerY) <= C.GEY_R + b.r); if (B) Trident.geyser(S, null, B); }
+        Trident.kinAdd(S); Trident.bar(S);
     }
-    static open(S, x, y, self) {
-        return S.world?.[x]?.[y] === S.FLOOR && !S.getEnemyAt(x, y) && !(x === S.playerX && y === S.playerY) && !S.isInLockedRoom?.(x, y)
-            && !(S._tri?.kin || []).some(k => k !== self && k.ally.alive && k.ally.x === x && k.ally.y === y);
+    // A geyser up through `e` (or boss `B`), its foot on the floor under it: the water gushes up over GEY_RISE and keeps climbing, foam
+    // on its crown, spray off it; GEY_MS later the frost climbs it from the floor to the crown, freezing it where it stands; then it bursts
+    static geyser(S, e, B = null) {
+        if (!B && !e?.sprite?.active) return;
+        const C = Trident.CFG, T = S.TILE_SIZE, ds = S.damageScaling || 1, x = B ? B.x * T + T / 2 : e.sprite.x, y = B ? B.y * T + T / 2 + 8 : e.sprite.y + 8, H = C.GEY_H, sea = [], F = Trident.fx(S);
+        const hurt = d => B ? S.damageBossAtTile?.(B.x, B.y, d, undefined, 'ice') : (e.sprite?.active && e.health > 0 ? Trident.hit(S, e, d, 0) : false);
+        Trident.once(S, x, y, 'tri_crk', 1.3, 3.3).setFlip(Math.random() < 0.5, false);
+        const r = hurt(C.GEY_DMG * ds);
+        if (r) { Trident.feedShell(S); if (r === true && !B) { Trident.daze(S, e, C.GEY_DAZE); Trident.mark(S, e, C.GEY_MARKS); CombatSystem.essence(S, x, y - 14, 'fx_trident', 'shard_1', 0x9fe8ff, 1.3); } }
+        const glow = S.add.image(x, y - H * 0.45, 'vfx_glow').setTint(0x1a5aa6).setAlpha(0.32).setScale(0.55, 1).setDepth(3.1); glow._kind = 'glow'; sea.push(glow);
+        const k0 = Trident.clock(S); let laid = 0;
+        const ev = S.time.addEvent({ delay: 16, loop: true, callback: () => {
+            if (!S.sys?.isActive()) { ev.remove(); return; }
+            const t = Trident.clock(S) - k0, top = H * Math.min(1, t / C.GEY_RISE);
+            for (; laid <= top; laid += 7) {
+                const hw = T * (0.5 - 0.22 * laid / H) * (1 + 0.14 * Math.sin(laid / 9));
+                for (let i = 0; i < 3; i++) {
+                    const w = Trident.water(S, x + (i - 1) * hw * 0.8 + (Math.random() - 0.5) * 3, y - laid, 1.15 + Math.random() * 0.35, 3.2);
+                    S.tweens.add({ targets: w, alpha: 0.9, duration: 50 }); S.tweens.add({ targets: w, y: w.y - 9, duration: 700, ease: 'Sine.easeOut' });   // (still climbing till the frost has it)
+                    sea.push(w);
+                }
+            }
+            if (t < C.GEY_MS && Math.random() < 0.55) { const sd = Math.random() < 0.5 ? 1 : -1, v = 40 + Math.random() * 70; Trident.drop(S, sea, x + sd * 6, y - top, sd * v, -90 - Math.random() * 70, 3.3); }
+            if (t >= C.GEY_RISE) ev.remove();
+        } });
+        for (let i = 0; i < 5; i++) { const c = Trident.crest(S, x + (i - 2) * 7, y - H, -Math.PI / 2 + (i - 2) * 0.5, i, 3.3).setAlpha(0); S.time.delayedCall(C.GEY_RISE, () => c.active && c.setAlpha(1)); sea.push(c); }
+        S.time.delayedCall(C.GEY_MS, () => S.sys?.isActive() && Trident.chase(S, sea, x, y, t => (H + 12) * t / C.GEY_FROST, H + 12, r => [[x + (Math.random() - 0.5) * 16, y - r]]));
+        S.time.delayedCall(C.GEY_MS + C.GEY_FROST + 40, () => {
+            if (!S.sys?.isActive()) return;
+            for (const w of sea) Trident.fling(S, w, x, y - H * 0.5, T * 0.9, false, 180);
+            Trident.vertebra(S, x, y, 'tip', 1.2, 240); Trident.boom(S, x, y - 24, 1.4); Trident.nova(S, x, y - 30, 1);
+            F.dir = [-90, 130]; F.chunk.emitParticleAt(x, y - 20, 4); F.dir = null;
+            S.cameras.main.shake(70, 0.004); Sfx.play(S, 'tri_boom');
+            const r2 = hurt(C.GEY_BURST * ds);
+            if (r2 === true && e?.sprite?.active) Trident.burst(S, e.sprite.x, e.sprite.y - 6, 1.2);
+        });
+    }
+    static KIN_COLORS = [[0xff8fa3, '#ffa8b8'], [0xfff4dc, '#fff4dc'], [0x5a68ff, '#a3adff']];   // coral, pearl, the abyss: the sea past the ice (the tint, its numbers)
+    static KIN_SLOTS = [Math.PI / 2, -Math.PI / 2, Math.PI, Math.PI * 0.75, -Math.PI * 0.75];   // (round you from your aim: your two sides, then behind)
+    static kinAdd(S) {
+        const C = Trident.CFG, st = Trident.st(S), p = S.player;
+        if (st.kin.length >= C.KIN_CAP + Trident.perk('pack')) Trident.kinEnd(S, st.kin[0]);
+        const i = Trident.KIN_COLORS.findIndex((c, n) => !st.kin.some(o => o.c === n)), k = { x: p.x, y: p.y - 10, ph: Math.random() * 6, until: S.time.now + C.KIN_LIFE, c: i < 0 ? st.kin.length % 3 : i }, col = Trident.KIN_COLORS[k.c][0];
+        k.spr = S.add.sprite(k.x, k.y, 'fx_trident', 'kin_idle_0').setScale(0.2).setDepth(3.3).setTint(col).play('tri_kin_idle');
+        k.glow = S.add.image(k.x, k.y + 14, 'vfx_glow').setTint(col).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.9).setScale(0.22).setAlpha(0.65);
+        k.bar = S.add.graphics().setDepth(5);
+        S.tweens.add({ targets: k.spr, scale: 1.25, duration: 240, ease: 'Back.easeOut' });
+        Trident.once(S, k.x, k.y, 'tri_glint', 2, 3.35); Trident.fx(S).spark.emitParticleAt(k.x, k.y, 6);
+        st.kin.push(k);
     }
     // a clear line from tile (x0, y0) to (x1, y1): floor all the way
     static clear(S, x0, y0, x1, y1) {
@@ -1580,252 +1603,63 @@ class Trident {
         for (let i = 1; i < n; i++) if (S.world[Math.round(x0 + (x1 - x0) * i / n)]?.[Math.round(y0 + (y1 - y0) * i / n)] !== S.FLOOR) return false;
         return true;
     }
-    // what a Frostkin's hit is scaled by: KIN_STATS of your damage bonus (the hit itself then takes all of it, _dmgOutMult)
-    static kinPow(S, e = null) {
-        const m = S._dmgOutMult?.(e, 'ice') || 1;
-        return (1 + Trident.CFG.KIN_STATS * (m - 1)) / m;
-    }
     static kinEnd(S, k) {
         const st = S._tri, i = st ? st.kin.indexOf(k) : -1;
-        if (st && i < 0) return;   // (already gone: a second onEnd mustn't take another one with it)
+        if (st && i < 0) return;   // (already gone)
         if (st) st.kin.splice(i, 1);
-        S.tweens.killTweensOf([k, k.spr, k.b]);
+        S.tweens.killTweensOf(k.spr);
         k.glow?.destroy(); k.bar?.destroy();
         if (!k.spr.active) return;
-        k.spr.setScale(1.25).clearTint().play(`tri_${Trident.KINDS[k.kind].look}_die`);
+        k.spr.setScale(1.25).play('tri_kin_die');
         Trident.fx(S).shard.emitParticleAt(k.spr.x, k.spr.y, 4);
         Sfx.play(S, 'tri_crack', { soft: true });
         k.spr.once('animationcomplete', () => k.spr.destroy());
     }
     // something a Frostkin will go for: alive, here, in this room, and hurt by ice
     static prey(S, e) { return !!(e?.sprite?.active && e.health > 0 && !S._phasedOut?.(e) && S.isInCurrentRoom(e.x, e.y) && !e.iceImmune); }
-    // A route from tile (x0, y0): breadth-first, eight ways (no cutting a wall's corner), R tiles out at most, round what `blocked`
-    // says, to the nearest tile `goal` takes. { step: the first step or null if it's there, goal: [x, y] }, or null.
-    static route(S, x0, y0, goal, blocked, R = 14) {
-        if (goal(x0, y0)) return { step: null, goal: [x0, y0] };
-        const W = 2 * R + 1, o = R * W + R, from = new Int32Array(W * W).fill(-1), q = [o];
-        from[o] = o;
-        for (let h = 0; h < q.length; h++) {
-            const c = q[h], cx = ((c / W) | 0) - R + x0, cy = (c % W) - R + y0;
-            for (const [dx, dy] of Trident.D8) {
-                const nx = cx + dx, ny = cy + dy, ix = nx - x0 + R, iy = ny - y0 + R;
-                if (ix < 0 || iy < 0 || ix >= W || iy >= W) continue;
-                const n = ix * W + iy;
-                if (from[n] >= 0 || blocked(nx, ny)) continue;
-                if (dx && dy && (S.world[cx + dx]?.[cy] !== S.FLOOR || S.world[cx]?.[cy + dy] !== S.FLOOR)) continue;
-                from[n] = c;
-                if (goal(nx, ny)) { let s = n; while (from[s] !== o) s = from[s]; return { step: [((s / W) | 0) - R, (s % W) - R], goal: [nx, ny] }; }
-                q.push(n);
-            }
-        }
-        return null;
-    }
-    static D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-    // The Frostkin, a frame. Each keeps its target till it dies or can't be reached. A melee one claims a free tile of its own next
-    // to it, a seer a spot of its own SEER_MIN to SEER_MAX tiles off with a clear line, and each walks there by a real route
-    // (round walls, water, enemies, you and each other); there, the melee one nips, the seer calls hail. With no target it can
-    // reach it takes the nearest one it can, and with none it keeps by you or holds where it is (never a step and straight back).
-    // HP follows your max HP (the same share); a bar over each.
+    // Every frame: each Frostkin floats to its place beside you, bobbing, and goes when its time's up
     static kinTick(S, time) {
         const st = S._tri;
-        if (st?.hails.length) Trident.hails(S, time);
         if (!st?.kin.length) return;
-        const C = Trident.CFG, T = S.TILE_SIZE, F = Trident.fx(S), ds = S.damageScaling || 1, K = (x, y) => x * 4096 + y;
-        const occ = new Set([K(S.playerX, S.playerY)]);
-        for (const e of S.enemies || []) if (e.sprite?.active && e.health > 0) occ.add(K(e.x, e.y));
-        const kinAt = new Map(), claims = new Map();
-        for (const k of st.kin) if (k.ally.alive && !k.gone) { kinAt.set(K(k.ally.x, k.ally.y), k); if (k.goal) claims.set(K(...k.goal), k); }
-        for (const k of [...st.kin]) {
-            const a = k.ally;
-            if (!a.alive || !k.spr.active || k.gone) continue;
-            const KD = Trident.KINDS[k.kind], max = C[KD.hp] * (S.maxHealth || 100);   // (your max HP changed: the same share of it)
-            if (a.maxHp !== max) { a.hp *= max / (a.maxHp || max); a.maxHp = max; }
-            const bob = Math.sin(time * 0.007 + k.ph) * 1.5;
-            k.spr.setPosition(k.b.x + k.lx, k.b.y - 10 + k.ly + bob);
-            k.glow.setPosition(k.b.x, k.b.y + 5).setAlpha(0.4 + 0.1 * Math.sin(time * 0.01 + k.ph));
-            k.bar.clear().fillStyle(0x06121e, 0.75).fillRect(k.b.x - 10, k.b.y - 28, 20, 3).fillStyle(KD.tint, 1).fillRect(k.b.x - 10, k.b.y - 28, 20 * Math.max(0, a.hp) / a.maxHp, 3);
-            if (Math.random() < 0.08) F.mote.emitParticleAt(k.spr.x + (Math.random() - 0.5) * 10, k.spr.y + 4, 1);
-            if (!k.ranged && time - (k.auraAt ??= time) >= C.BITE_TICK) {   // its aura: KIN_CHILL stacks a second on what's within KIN_AURA tiles, frost motes drifting round it
-                const dt = Math.min(500, time - k.auraAt), r = C.KIN_AURA * T; k.auraAt = time;
-                for (const e of S.enemies || []) if (Math.hypot(e.x - a.x, e.y - a.y) <= C.KIN_AURA) S.applyChill(e, C.KIN_CHILL * dt / 1000 / S._chillCfg().RATE);
-                for (let n = Math.floor(dt / 1000 * 6 + Math.random()); n > 0; n--) {
-                    const ang = Math.random() * Math.PI * 2, rr = r * (0.55 + Math.random() * 0.45);
-                    F.dir = [ang * 180 / Math.PI + 90, 30];
-                    F.mote.emitParticleAt(k.b.x + Math.cos(ang) * rr, k.b.y + Math.sin(ang) * rr * 0.9, 1);
-                }
-                F.dir = null;
-            }
-            if (Math.hypot(a.x - S.playerX, a.y - S.playerY) > 12) {   // left far behind: it blinks to you
-                const s = [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0]].map(([dx, dy]) => [S.playerX + dx, S.playerY + dy]).find(([x, y]) => Trident.open(S, x, y, k));
-                if (s) { F.spark.emitParticleAt(k.spr.x, k.spr.y, 5); kinAt.delete(K(a.x, a.y)); a.x = s[0]; a.y = s[1]; kinAt.set(K(a.x, a.y), k); k.b.x = a.x * T + T / 2; k.b.y = a.y * T + T / 2; k.e = null; k.goal = null; }
-                continue;
-            }
-            if (k.e && !Trident.prey(S, k.e)) { k.e = null; k.goal = null; }
-            // in place: the melee one beside it nips, the hail one in its band calls hail, the squall in its band blows
-            const e = k.e;
-            if (k.blowAt) { if (time >= k.blowAt) Trident.gust(S, k); continue; }   // (breathing in: it holds still)
-            if (e && Trident.post(S, k, a.x, a.y, e)) {
-                k.spr.setFlipX(e.x < a.x);
-                if (k.kind === 'hail') { if (time >= k.nipAt) Trident.hail(S, k, e, time); }
-                else if (k.kind === 'squall') { if (time >= k.nipAt) Trident.inhale(S, k, e, time); }
-                else if (time >= k.nipAt) {   // a nip: lunge, bite, back
-                    k.nipAt = time + C.KIN_NIP;
-                    k.spr.play('tri_kin_nip');
-                    k.spr.once('animationcomplete', () => k.spr.active && k.spr.play('tri_kin_idle'));
-                    S.tweens.add({ targets: k, lx: (e.x - a.x) * 7, ly: (e.y - a.y) * 7, duration: 70, yoyo: true, ease: 'Quad.easeOut' });
-                    Trident.hit(S, e, C.KIN_DMG * ds * Trident.kinPow(S, e), 0);
-                    if (e.sprite?.active) { Trident.burst(S, e.sprite.x, e.sprite.y - 6, 0.6); F.dir = [Math.atan2(e.y - a.y, e.x - a.x) * 180 / Math.PI, 80]; F.spark.emitParticleAt(e.sprite.x, e.sprite.y - 6, 3); F.dir = null; }
-                    Sfx.play(S, 'tri_crack', { soft: true });
-                }
-                continue;
-            }
-            if (time < k.stepAt) continue;
-            k.stepAt = time + (k.ranged ? C.SEER_STEP : C.KIN_STEP);
-            const blocked = (x, y) => S.world[x]?.[y] !== S.FLOOR || S.isWaterAt?.(x, y) || S.isInLockedRoom?.(x, y) || occ.has(K(x, y)) || (kinAt.get(K(x, y)) || k) !== k;
-            const spot = t => (x, y) => (claims.get(K(x, y)) || k) === k && Trident.post(S, k, x, y, t);
-            let r = e ? Trident.route(S, a.x, a.y, spot(e), blocked) : null;
-            if (!r) {   // its target out of reach (or none): the nearest it can reach, the ones fewest kin are on first
-                k.e = null;
-                const on = t => st.kin.filter(o => o !== k && o.e === t).length;
-                const cands = (S.enemies || []).filter(t => Trident.prey(S, t) && Math.hypot(t.x - a.x, t.y - a.y) <= C.KIN_SEEK + 4)
-                    .sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) + 2 * on(p) - Math.hypot(q.x - a.x, q.y - a.y) - 2 * on(q)).slice(0, 4);
-                for (const t of cands) if ((r = Trident.route(S, a.x, a.y, spot(t), blocked))) { k.e = t; break; }
-                if (!r && Math.hypot(S.playerX - a.x, S.playerY - a.y) > 2) r = Trident.route(S, a.x, a.y, (x, y) => (claims.get(K(x, y)) || k) === k && Math.hypot(x - S.playerX, y - S.playerY) <= 2, blocked);
-            }
-            if (k.goal) claims.delete(K(...k.goal));
-            k.goal = r?.goal || null;
-            if (k.goal) claims.set(K(...k.goal), k);
-            if (!r?.step) {   // there, or nowhere to go: it holds where it is
-                const idle = `tri_${KD.look}_idle`, cur = k.spr.anims.currentAnim?.key;
-                if (cur !== idle && cur !== 'tri_seer_cast' && cur !== 'tri_kin_nip' && cur !== 'tri_squall_blow') k.spr.play(idle);
-                continue;
-            }
-            const ox = k.b.x, oy = k.b.y;
-            kinAt.delete(K(a.x, a.y)); a.x += r.step[0]; a.y += r.step[1]; kinAt.set(K(a.x, a.y), k);
-            if (r.step[0]) k.spr.setFlipX(r.step[0] < 0);
-            if (!k.ranged && k.spr.anims.currentAnim?.key !== 'tri_kin_dart') k.spr.play('tri_kin_dart');
-            const dur = (k.ranged ? C.SEER_STEP : C.KIN_STEP) * 0.9;
-            S.tweens.add({ targets: k.b, x: a.x * T + T / 2, y: a.y * T + T / 2, duration: dur, ease: 'Sine.easeInOut' });
-            if (!k.ranged) Trident.wake(S, ox, oy - 8, a.x * T + T / 2, a.y * T + T / 2 - 8, 1, 1);
-        }
-    }
-    // the three kinds: their look (frames look_*), HP share, pull, pace, colour, and (the two that keep off) how far off
-    static KIN_ORDER = ['melee', 'hail', 'squall'];
-    static KINDS = { melee: { look: 'kin', hp: 'KIN_HP', taunt: 'KIN_TAUNT', tint: 0x7fd0ff }, hail: { look: 'seer', hp: 'SEER_HP', taunt: 'SEER_TAUNT', tint: 0xd8fff4, min: 'SEER_MIN', max: 'SEER_MAX' },
-        squall: { look: 'squall', hp: 'SQUALL_HP', taunt: 'SEER_TAUNT', tint: 0xa8ffe0, min: 'SQUALL_MIN', max: 'SQUALL_MAX' } };
-    // where kin k can do its work on e from tile (x, y): a melee one beside it; the others their min to max tiles off with a clear line
-    static post(S, k, x, y, e) {
-        const KD = Trident.KINDS[k.kind], C = Trident.CFG;
-        if (!KD.min) return Math.max(Math.abs(e.x - x), Math.abs(e.y - y)) <= 1;
-        const d = Math.hypot(e.x - x, e.y - y); return d >= C[KD.min] - 0.5 && d <= C[KD.max] + 0.5 && Trident.clear(S, x, y, e.x, e.y);
-    }
-    // A hail kin's HAIL on e: its shard raised and flaring, a ring of frost forming over the 3x3 tiles round e (HAIL_TELL), then
-    // a spear of ice driven down on each of the nine (HAIL_GAP apart, in a shuffled order, the middle one last and heaviest),
-    // each striking what's on its tile (hails, shard)
-    static hail(S, k, e, time) {
-        const C = Trident.CFG, T = S.TILE_SIZE;
-        k.nipAt = time + C.SEER_CD;
-        k.spr.play('tri_seer_cast').once('animationcomplete', () => k.spr.active && k.spr.play('tri_seer_idle'));
-        Trident.once(S, k.spr.x + (k.spr.flipX ? -9 : 9), k.spr.y - 4, 'tri_glint', 1.6, 3.55);   // (its shard raised, flaring)
-        const tiles = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]].map(([dx, dy]) => [e.x + dx, e.y + dy]);
-        for (let i = tiles.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tiles[i], tiles[j]] = [tiles[j], tiles[i]]; }
-        tiles.push([e.x, e.y]);   // (the middle last)
-        Trident.once(S, e.x * T + T / 2, e.y * T + T / 2 + 2, 'tri_tell', 3.6, 0.97).setAlpha(0.8);
-        S._tri.hails.push({ tiles: tiles.filter(([x, y]) => S.world[x]?.[y] === S.FLOOR), at: time + C.HAIL_TELL, n: 0 });
-        Sfx.play(S, 'w_icicle_cannon', { soft: true });
-    }
-    static hails(S, time) {
-        const st = S._tri, C = Trident.CFG;
-        for (let i = st.hails.length - 1; i >= 0; i--) {
-            const h = st.hails[i];
-            while (h.n < h.tiles.length && time >= h.at + h.n * C.HAIL_GAP) { Trident.shard(S, h.tiles[h.n], h.n === h.tiles.length - 1); h.n++; }
-            if (h.n >= h.tiles.length) st.hails.splice(i, 1);
-        }
-    }
-    // a spear of ice driven down at a steep slant (all from up-left, wind-driven: the typed spear frames, no turning) onto tile
-    // (tx, ty), a long streak and a short afterimage behind it; its shadow growing on the tile under it as it comes
-    static shard(S, [tx, ty], last) {
-        const C = Trident.CFG, T = S.TILE_SIZE, x = tx * T + T / 2, y = ty * T + T / 2 + 4, H = 96, k = last ? 2 : 1.5;
-        const spot = S.add.sprite(x, y, 'fx_trident', 'spot_0').setScale(last ? 2 : 1.6).setDepth(0.93).setAlpha(0.6);
-        S.tweens.add({ targets: spot, alpha: 0.75, duration: C.HAIL_FALL });
-        S.time.delayedCall(C.HAIL_FALL * 0.5, () => spot.active && spot.setFrame('spot_1'));
-        const s = S.add.sprite(x - H * 0.4, y - H, 'fx_trident', 'spear_0').setOrigin(10 / 12, 29.5 / 30).setScale(k).setDepth(3.5).play('tri_spear');
-        S.time.delayedCall(C.HAIL_FALL * 0.45, () => {   // (an afterimage of it, a beat behind)
-            if (!s.active) return;
-            const g = S.add.image(s.x, s.y, 'fx_trident', 'spear_1').setOrigin(10 / 12, 29.5 / 30).setScale(k).setDepth(3.49).setTint(0x9fe4ff).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.45);
-            S.tweens.add({ targets: g, alpha: 0, duration: 120, onComplete: () => g.destroy() });
+        const C = Trident.CFG, T = S.TILE_SIZE, p = S.player;
+        for (const k of [...st.kin]) if (!k.spr.active || time >= k.until || !p?.active) Trident.kinEnd(S, k);
+        if (!p?.active) return;
+        const a = Trident.aim(S), e = 1 - Math.exp(-(S.game.loop.delta || 16) / 90);
+        st.kin.forEach((k, i) => {
+            const b = a + Trident.KIN_SLOTS[i % Trident.KIN_SLOTS.length], tx = p.x + Math.cos(b) * C.KIN_R * T, ty = p.y - 10 + Math.sin(b) * C.KIN_R * T * 0.8 + Math.sin(time / 240 + k.ph) * 3, left = k.until - time;
+            k.x += (tx - k.x) * e; k.y += (ty - k.y) * e;
+            k.spr.setPosition(k.x, k.y).setFlipX(Math.cos(a) < 0).setAlpha(left < 1500 && Math.floor(time / 110) % 2 ? 0.5 : 1);
+            k.glow.setPosition(k.x, k.y + 14);
+            k.bar.clear().fillStyle(0x06121e, 0.85).fillRect(k.x - 11, k.y + 13, 22, 3).fillStyle(left < 2500 ? 0xff9a3a : 0x9fe8ff, 1).fillRect(k.x - 10, k.y + 14, 20 * Math.min(1, left / C.KIN_LIFE_MAX), 1);
         });
-        S.tweens.add({ targets: s, x, y, duration: C.HAIL_FALL, ease: 'Quad.easeIn', onComplete: () => { spot.setFrame('spot_2'); if (S.sys?.isActive()) Trident.hailHit(S, tx, ty, s, spot, last); else { s.destroy(); spot.destroy(); } } });
     }
-    // where a spear lands: HAIL_DMG (the middle one HAIL_MID) and a ninth of HAIL_CHILL of a splash's chill to what's on its tile,
-    // which flinches (a pixel or two, no knockback). It slams in: a white-blue flash, a shockwave ring, the spear stuck in the floor a
-    // moment before it shatters into chunks thrown on along the slant, a crack left in the floor a second; the middle one bigger, a
-    // hitstop and a shake
-    static hailHit(S, tx, ty, spr, spot, last) {
-        const C = Trident.CFG, T = S.TILE_SIZE, ds = S.damageScaling || 1, chill = S._chillCfg().SPLASH * C.HAIL_CHILL / 9, x = tx * T + T / 2, y = ty * T + T / 2 + 4, dmg = (last ? C.HAIL_MID : C.HAIL_DMG) * ds;
-        for (const e of [...(S.enemies || [])]) {
-            if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || e.x !== tx || e.y !== ty) continue;
-            Trident.hit(S, e, dmg * Trident.kinPow(S, e), chill);
-            if (e.sprite?.active && !S.tweens.isTweening(e.sprite)) S.tweens.add({ targets: e.sprite, x: e.sprite.x + (last ? 2 : 1), y: e.sprite.y + (last ? 2 : 1), duration: 45, yoyo: true });   // (a flinch)
+    // The Frostkin's own go at the hit you just made (step 0 the thrust, 1 the swipe, 2 the slam), each a beat after the last
+    static kinCombo(S, step, aim) {
+        const st = S._tri;
+        if (st?.kin.length) st.kin.forEach((k, i) => S.time.delayedCall(40 + i * 70, () => S.sys?.isActive() && k.spr.active && Trident.kinHit(S, k, step, aim)));
+    }
+    static kinHit(S, k, step, aim) {
+        const C = Trident.CFG, T = S.TILE_SIZE, x = k.x, y = k.y + 10, ux = Math.cos(aim), uy = Math.sin(aim), tx = Math.floor(x / T), ty = Math.floor(y / T), dmg = C.KIN_HIT[step] * (S.damageScaling || 1), cells = [], [col, num] = Trident.KIN_COLORS[k.c];
+        const free = (a, b) => S.world[a]?.[b] === S.FLOOR && Trident.clear(S, tx, ty, a, b), at = (d, w) => [Math.round(tx + ux * d - uy * w), Math.round(ty + uy * d + ux * w)];
+        if (step === 0) for (let d = 1; d <= C.KIN_REACH; d++) {
+            const [a, b] = at(d, 0);
+            if (!free(a, b)) break;
+            cells.push([a, b]);
+            S.time.delayedCall(d * 35, () => S.sys?.isActive() && Trident.vertebra(S, (a + 0.5) * T, (b + 0.5) * T, 'spur', 0.7 + 0.08 * d, 340)?.setTint(col));
+        } else if (step === 1) {
+            for (let d = 1; d <= 3; d++) for (const w of [-1, 0, 1]) { const [a, b] = at(d, w); if (free(a, b)) cells.push([a, b]); }
+            const [fx, fy, fz] = [Trident.dir(aim)[0], Trident.dir(aim)[1], Trident.dir(aim)[2]];
+            Trident.once(S, x + ux * T * 1.6, y + uy * T * 1.6, 'tri_spray_' + fx, 1.5, 3.3, false).setFlip(!!fy, !!fz).setTint(col);
+            Trident.burst(S, x + ux * T * 2.4, y + uy * T * 2.4, 0.8);
+        } else {
+            for (let a = tx - 1; a <= tx + 1; a++) for (let b = ty - 1; b <= ty + 1; b++) if (S.world[a]?.[b] === S.FLOOR) cells.push([a, b]);
+            Trident.nova(S, x, y, 0.9); Trident.ring(S, x, y + 2, 0.75, 0);
         }
-        S.damageBossAtTile?.(tx, ty, dmg * Trident.kinPow(S), undefined, 'ice');
-        S._vfxFlash?.(x, y - 4, last ? 40 : 26, 0xd8fff4, 180, last ? 0.5 : 0.32);
-        Trident.nova(S, x, y - 3, last ? 1.3 : 0.8);
-        Trident.ring(S, x, y, last ? 1.3 : 0.75);
-        spr.setPosition(x, y + 3);   // (driven into the floor a moment)
-        S.time.delayedCall(last ? 140 : 90, () => {
-            if (!S.sys?.isActive()) { spr.destroy(); return; }
-            const RF = Rimeguard.fx(S); RF.dir = [-55, 50];
-            RF.shard.emitParticleAt(x, y - 6, last ? 7 : 3);
-            Trident.fx(S).dir = [-55, 50]; Trident.fx(S).chunk.emitParticleAt(x, y - 4, last ? 6 : 3); Trident.fx(S).dir = null; RF.dir = null;
-            spr.destroy();
-        });
-        S.tweens.add({ targets: spot, alpha: 0, duration: 260, onComplete: () => spot.destroy() });
-        const c = S.add.image(x, y - 1, 'fx_trident', last ? 'crater_1' : 'crater_0').setScale(last ? 1.8 : 1.4).setDepth(0.94).setAlpha(0.85).setFlipX(Math.random() < 0.5);
-        S.tweens.add({ targets: c, alpha: 0, duration: 400, delay: 800, onComplete: () => c.destroy() });
+        const on = new Set(cells.map(c => c.join(',')));
+        for (const e of [...(S.enemies || [])]) if (Trident.prey(S, e) && on.has(e.x + ',' + e.y) && Trident.hit(S, e, dmg, 0, num) === true) Trident.bite(S, e, C.KIN_BITE);
+        Trident.tiles(S, cells, dmg);
+        k.spr.play('tri_kin_nip').once('animationcomplete', () => k.spr.active && k.spr.play('tri_kin_idle'));
         Sfx.play(S, 'tri_crack', { soft: true });
-        if (last) { Sfx.play(S, 'slam', { small: true }); Glaive.hitstop(S, 35); S.cameras.main.shake(80, 0.004); }
-    }
-    // A squall's breath in (SQUALL_TELL): puffed up, frost drawn in to it; then the gust (kinTick calls gust when it's done)
-    static inhale(S, k, e, time) {
-        const C = Trident.CFG, F = Trident.fx(S);
-        k.nipAt = time + C.SQUALL_TELL + C.SQUALL_CD; k.blowAt = time + C.SQUALL_TELL; k.blowAt0 = [e.x, e.y];
-        k.spr.play('tri_squall_tell');
-        for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; F.dir = [a * 180 / Math.PI + 180, 10]; F.mote.emitParticleAt(k.spr.x + Math.cos(a) * 16, k.spr.y + Math.sin(a) * 12, 1); }
-        F.dir = null;
-        Sfx.play(S, 'whoosh', { soft: true });
-    }
-    // The GUST: a band SQUALL_W tiles wide from the squall toward its target, SQUALL_RANGE tiles long (short of a wall), through
-    // everything in it: SQUALL_DMG and Frostbite, a frost mark popping on each one; no push. Curls of wind and snow fill the band.
-    static gust(S, k) {
-        const C = Trident.CFG, T = S.TILE_SIZE, a = k.ally, F = Trident.fx(S), ds = S.damageScaling || 1;
-        k.blowAt = 0;
-        if (!a.alive || !k.spr.active) return;
-        const [tx, ty] = k.e?.sprite?.active ? [k.e.x, k.e.y] : k.blowAt0, aim = Math.atan2(ty - a.y, tx - a.x), ux = Math.cos(aim), uy = Math.sin(aim);
-        let reach = C.SQUALL_RANGE;
-        for (let d = 0.5; d <= C.SQUALL_RANGE; d += 0.25) if (S.world[Math.round(a.x + ux * d)]?.[Math.round(a.y + uy * d)] !== S.FLOOR) { reach = d - 0.25; break; }
-        for (const e of [...(S.enemies || [])]) {
-            if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y)) continue;
-            const dx = e.x - a.x, dy = e.y - a.y, along = dx * ux + dy * uy, across = Math.abs(dy * ux - dx * uy);
-            if (along < 0.4 || along > reach + 0.3 || across > C.SQUALL_W / 2) continue;
-            if (Trident.hit(S, e, C.SQUALL_DMG * ds * Trident.kinPow(S, e), 0) !== true) continue;
-            Trident.bite(S, e, C.BITE_MS);
-            if (e.sprite?.active) { const m = S.add.image(e.sprite.x, e.sprite.y - 20, 'fx_trident', 'bite_1').setScale(0.4).setDepth(4.6); S.tweens.add({ targets: m, scale: 1.6, duration: 140, ease: 'Back.easeOut', onComplete: () => S.tweens.add({ targets: m, alpha: 0, y: m.y - 6, duration: 360, delay: 200, onComplete: () => m.destroy() }) }); }
-        }
-        const cells = [];
-        for (let d = 1; d <= reach; d += 0.5) for (const w of [-1.5, -0.5, 0.5, 1.5]) cells.push([Math.round(a.x + ux * d - uy * w), Math.round(a.y + uy * d + ux * w)]);
-        Trident.tiles(S, cells, C.SQUALL_DMG * ds * Trident.kinPow(S));
-        // the look: it blows; curls of wind sweep down the band, rows of them across its width, snow driven along it
-        k.spr.setFlipX(ux < 0).play('tri_squall_blow').once('animationcomplete', () => k.spr.active && k.spr.play('tri_squall_idle'));
-        Sfx.play(S, 'whoosh'); Sfx.play(S, 'frost_shield', { soft: true });
-        const i8 = Math.round(aim / (Math.PI / 4)), [f, fx, fy] = Trident.DIRS[((i8 % 8) + 8) % 8], x0 = a.x * T + T / 2, y0 = a.y * T + T / 2, deg = aim * 180 / Math.PI;
-        for (let d = 0.8; d <= reach; d += 1.2) for (const w of [-1.5, -0.5, 0.5, 1.5]) S.time.delayedCall(40 * d + Math.random() * 40, () => {
-            if (!S.sys?.isActive()) return;
-            const px = x0 + (ux * d - uy * w) * T, py = y0 + (uy * d + ux * w) * T - 6;
-            const g = S.add.image(px, py, 'fx_trident', 'gust_' + f).setFlip(!!fx, !!fy).setScale(1.5).setBlendMode(Phaser.BlendModes.ADD).setDepth(3.32).setAlpha(0.9);
-            S.tweens.add({ targets: g, x: px + ux * T * 1.4, y: py + uy * T * 1.4, alpha: 0, duration: 300, ease: 'Sine.easeOut', onComplete: () => g.destroy() });
-            F.dir = [deg, 12]; F.spark.emitParticleAt(px + (Math.random() - 0.5) * T, py + (Math.random() - 0.5) * T, 1); F.mote.emitParticleAt(px, py, 1); F.dir = null;
-        });
     }
     // A shot's step this frame, times this: SLOW inside your aura while you hold the trident, else 1 (every enemy shot reads it).
     // A slowed shot frosts over and trails ice.
@@ -2014,6 +1848,6 @@ class Trident {
         const rush = Math.max(0, Math.min(1, ((st.rushUntil || 0) - now) / C.RUSH_MS));
         if (rush > 0) b.g.fillStyle(0x06121e, 0.85).fillRect(px + 31, py - 8, 26, 3).fillStyle(0xffffff, 0.75 + 0.25 * Math.sin(now / 60)).fillRect(px + 32, py - 7, 24 * rush, 1);
         const quiet = st.leap || (st.comboEnd && now - st.comboEnd < C.AFTER_SLAM + 400);   // (the leap and the slam: faint, over the ring)
-        b.label.setPosition(px, py - 13).setAlpha(quiet ? 0.25 : 1).setText(`FROST ${st.charges}/${C.KIN_MAX}  ·  KIN ${st.kin.filter(k => !k.gone).length}/${C.KIN_CAP}  ·  FROSTKIN [${Settings.label(Settings.key('surge'))}]`).setColor(ready ? '#d8fff4' : '#7fd0ff');
+        b.label.setPosition(px, py - 13).setAlpha(quiet ? 0.25 : 1).setText(`FROST ${st.charges}/${C.KIN_MAX}  ·  KIN ${st.kin.length}/${C.KIN_CAP + Trident.perk('pack')}  ·  FROSTKIN [${Settings.label(Settings.key('surge'))}]`).setColor(ready ? '#d8fff4' : '#7fd0ff');
     }
 }

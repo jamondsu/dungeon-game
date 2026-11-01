@@ -72,7 +72,7 @@ const Sfx = {
     // synth version until it's in (or if it never loads).
     // (CC0 from Freesound, Pixabay for the snap: see assets/sfx/CREDITS.md)
     SAMPLES: Object.fromEntries(['evil_laugh', 'snap', 'roar', 'roar_big', 'bossdie', 'lava_loop', 'lava_pop1', 'lava_pop2', 'sear', 'crackle',
-        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_dash', 'ice_dash', 'frost_shield', 'fire_burst', 'zap', 'magic_whoosh',
+        'ice_crack', 'ice_crack2', 'coin', 'page', 'splash', 'splash_big', 'wave_crash', 'bubbles', 'dash_whoosh', 'fire_whoosh', 'fire_dash', 'ice_dash', 'frost_shield', 'fire_burst', 'zap', 'magic_whoosh',
         'splat1', 'splat2', 'splat_big', 'squelch', 'punch', 'sword', 'potion', 'boom1', 'boom2', 'eshot', 'block', 'door', 'gust', 'wind',
         'lava_erupt', 'slam', 'thud', 'powerup', 'buzz', 'click',
         // the Hall's children (hv_), who never say a word: giggles, the hunting giggle, a gasp, and the sounds their looks make
@@ -102,7 +102,7 @@ const Sfx = {
         if (!buf) return false;
         const g = ctx.createGain(), end = t + buf.duration / rate + 0.2, dest = out || this._master;
         g.gain.value = vol;
-        if (len) { g.gain.setValueAtTime(vol, t + len - 0.03); g.gain.linearRampToValueAtTime(0, t + len); }
+        if (len) { g.gain.setValueAtTime(vol, t + len * 0.5); g.gain.linearRampToValueAtTime(0, t + len); }   // (its second half fading out: a cut would click)
         if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; g.connect(f); f.connect(dest); }   // (lp: its top end off, Hz)
         else g.connect(dest);
         if (space && this._space) { const sg = ctx.createGain(); sg.gain.value = space; g.connect(sg); sg.connect(this._space); }
@@ -717,12 +717,10 @@ const Sfx = {
             if (this._rec(ctx, t, { name: 'thud', rate: 1.4 * j, vol: 0.24 * v })) return;
             this._tone(ctx, t, { type: 'triangle', f0: 260 * j, f1: 120, dur: 0.07, vol: 0.14 * v });
         },
-        tri_surge(ctx, t, o, j) {          // the sea driven at them: water roaring up and crashing on, low and long, no plop in it (o.big: a whole wave; o.soft: its edge)
-            const d = o.big ? 1.8 : 1.3, v = o.soft ? 0.6 : 1;
-            this._noise(ctx, t, { filter: 'lowpass', f0: 1300 * j, f1: 420, q: 0.7, dur: d, vol: (o.big ? 1.25 : 1.1) * v, attack: 0.06 });   // (the roar, up where a phone can play it)
-            this._noise(ctx, t + 0.04, { filter: 'bandpass', f0: 3400 * j, f1: 1500, q: 0.7, dur: d * 0.6, vol: 0.12 * v, attack: 0.03 });   // (the spray off it)
-            this._noise(ctx, t, { filter: 'lowpass', f0: 320, f1: 90, dur: d, vol: 0.4 * v, attack: 0.04 });
-            this._rec(ctx, t, { name: 'splash_big', rate: (o.big ? 0.8 : 0.95) * j, vol: 0.32 * v, lp: 2800 });
+        tri_surge(ctx, t, o, j) {          // the sea: a real wave crashing on rock (o.big: all of it; else its first break; o.soft: further off)
+            const v = o.soft ? 0.6 : 1;
+            if (this._rec(ctx, t, { name: 'wave_crash', rate: (o.big ? 0.95 : 1.05) * j, vol: (o.big ? 0.55 : 0.5) * v, len: o.big ? 0 : 1.2 })) return;
+            this._noise(ctx, t, { filter: 'lowpass', f0: 1300 * j, f1: 420, q: 0.7, dur: o.big ? 1.8 : 1.3, vol: (o.big ? 1.25 : 1.1) * v, attack: 0.06 });
         },
         tri_hit(ctx, t, o, j) {            // a Boreal Trident hit: a blow landing, no note in it (the ice `hit`'s sine pings over the eruptions)
             this._noise(ctx, t, { filter: 'lowpass', f0: 1800, f1: 300, dur: 0.07, vol: 0.18 });

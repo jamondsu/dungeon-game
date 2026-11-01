@@ -19,6 +19,7 @@ Trimmed, levelled and resampled for the game. All free to use; none require cred
 | page.wav | freesound.org/s/676674 "Page flip" | cameronpride | CC0 |
 | splash.wav | freesound.org/s/189499 "water splash 2" | VacekH | CC0 |
 | splash_big.wav | freesound.org/s/50623 "water_splash_10shots" | vibe_crc | CC0 |
+| wave_crash.wav | freesound.org/s/376801 "Crashing Waves into Rocks 2" | amholma | CC0 |
 | bubbles.wav | freesound.org/s/539823 "Bubbles 001" | ristooooo1 | CC0 |
 | dash_whoosh.wav | freesound.org/s/389458 "Whoosh_1" | lzmraul | CC0 |
 | fire_whoosh.wav | freesound.org/s/260555 "Basic Fire Whoosh 2" | LookIMadeAThing | CC0 |
