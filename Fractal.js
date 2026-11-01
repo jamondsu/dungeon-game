@@ -136,6 +136,7 @@ class Fractal {
         S._fracCharge = Math.min(N, (S._fracCharge || 0) + 1);
         if (S._fracCharge >= N) Sfx.play(S, 'rready', { el: 'ice' });
         S._vfxFlash?.(x, y, 36, 0x9fe8ff, 160, 0.7);
+        CombatSystem.essence(S, x, y, 'fx_fractal', 'glass_0', 0xbff4ff, 1.4);
         S.showStatusText?.(x, y - 30, S._fracCharge >= N ? 'R READY' : `+1  ${S._fracCharge}/${N}`, '#bff4ff');
     }
 

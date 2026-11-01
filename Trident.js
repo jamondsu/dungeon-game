@@ -393,7 +393,7 @@ class Trident {
     }
     // a struck enemy: the hit and a burst; true if it took it
     static strike(S, e, dmg, chill, aim, k, far) {
-        const r = Trident.hitFar(S, e, dmg, chill, far), F = Trident.fx(S);
+        const r = Trident.hitFar(S, e, dmg, chill, far, true), F = Trident.fx(S);
         if (r && e.sprite?.active) { F.dir = [aim * 180 / Math.PI, 70]; Trident.burst(S, e.sprite.x, e.sprite.y - 4, k); F.dir = null; }
         return !!r;
     }
@@ -402,11 +402,12 @@ class Trident {
     // how far out on the slam a tile is, dx, dy from where you came down: 1 all round its squircle's rim, its corners too
     static rimK(dx, dy) { const x = Math.abs(dx), y = Math.abs(dy); return Math.max(x, y, (x + y) * 0.75) / Trident.CFG.SLAM_R; }
     // a hit of the combo, k of the way out: its number dim when it's weak, bright when it's a crest hit
-    static hitFar(S, e, dmg, chill, k) {
+    static hitFar(S, e, dmg, chill, k, frost = false) {   // (frost: this hit pays Frost, and you see it come)
         const hot = k >= Trident.CFG.FAR_HOT, x = e.sprite?.x, y = e.sprite?.y;
         S._numK = Trident.far(k) ** 1.2;   // (the number itself says how far out it landed: small and dim up close, huge and white on the crest)
         const r = Trident.hit(S, e, dmg * Trident.far(k), chill, hot ? '#f2feff' : k < 0.5 ? '#6f9fc4' : '#aaeeff');
         S._numK = 0;
+        if (r && frost) CombatSystem.essence(S, x, y - 6, 'fx_trident', 'shard_1', 0x9fe8ff, hot ? 1.5 : 1);
         if (r && hot) Trident.crestFx(S, x, y);
         return r;
     }
@@ -441,7 +442,7 @@ class Trident {
         let struck = 0;
         for (const e of [...(S.enemies || [])]) {
             if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y) || inLine(e) < 0) continue;
-            if (Trident.hitFar(S, e, dmg, chill, inLine(e) / C.FAR_THRUST)) { struck++; Trident.mark(S, e, C.MARK_THRUST); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 4, 'tri_spray_' + Trident.dir(aim)[0], 1.1, 3.3, false).setFlip(!!Trident.dir(aim)[1], !!Trident.dir(aim)[2]); }   // (a splash of the jet: the ice comes with the freeze)
+            if (Trident.hitFar(S, e, dmg, chill, inLine(e) / C.FAR_THRUST, true)) { struck++; Trident.mark(S, e, C.MARK_THRUST); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 4, 'tri_spray_' + Trident.dir(aim)[0], 1.1, 3.3, false).setFlip(!!Trident.dir(aim)[1], !!Trident.dir(aim)[2]); }   // (a splash of the jet: the ice comes with the freeze)
         }
         const cells = [], outK = (x, y) => Math.hypot(x - ox, y - oy) / C.FAR_THRUST;
         for (let d = 0.5; d <= reach + 0.01; d += 0.5) for (const w of [-1, 0, 1]) cells.push([Math.round(ox + ux * d - uy * w), Math.round(oy + uy * d + ux * w)]);
@@ -870,7 +871,7 @@ class Trident {
         for (const e of [...(S.enemies || [])]) {
             if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y)) continue;
             if (!foot.has(e.x + ',' + e.y)) continue;
-            const r = Trident.hitFar(S, e, dmg, 0, Trident.rimK(e.x - tx, e.y - ty));
+            const r = Trident.hitFar(S, e, dmg, 0, Trident.rimK(e.x - tx, e.y - ty), true);
             if (!r) continue;
             struck++;
             if (r === true) { Trident.bite(S, e, C.BITE_MS * (1 + Trident.perk('tide'))); Trident.burst(S, e.sprite.x, e.sprite.y - 4, 1.1); }   // (Glacial Tide: twice as long)

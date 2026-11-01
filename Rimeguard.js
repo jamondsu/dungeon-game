@@ -179,6 +179,7 @@ class Rimeguard {
         if (now - (st.countAt || -1e9) >= C.GAP) {
             st.countAt = now;
             st.rime = Math.min(C.HITS, st.rime + (amount >= C.BIG * (S.maxHealth || 100) ? 2 : 1) + (front ? 1 : 0));
+            if (Rimeguard.held(S)) CombatSystem.essence(S, src.x, src.y - 6, 'fx_rimeguard', 'shard_1', 0x9fe8ff);
             if (Rimeguard.held(S) && was < C.RIME_MIN && st.rime >= C.RIME_MIN) Sfx.play(S, 'rready', { el: 'ice' });
             if (st.rime >= C.HITS) S.time.delayedCall(120, () => Rimeguard.release(S, true));
         }

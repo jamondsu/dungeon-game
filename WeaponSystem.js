@@ -3932,7 +3932,7 @@ class WeaponSystem {
                     }
 
                     // each icicle that lands is one of the 28 that charge the Frost Shield
-                    if (!(this._frostShieldUntil > this.time.now)) this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1);   // (not while the shield is up)
+                    if (!(this._frostShieldUntil > this.time.now)) { this._icicleHitCounter = Math.min(28, (this._icicleHitCounter || 0) + 1); if (enemy.sprite?.active) CombatSystem.essence(this, enemy.sprite.x, enemy.sprite.y - 6, 'fx_fractal', 'shard_1', 0x9fe8ff, 0.8); }   // (not while the shield is up)
                     this._updateIcicleChargeBar();
                 }
             });

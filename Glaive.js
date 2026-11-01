@@ -42,8 +42,8 @@ class Glaive {
         FUSE_MS: 250, SPOKE_MS: 90, STOP_MS: 70, PIERCE_STOP: 35,   // the fuse down the ropes, then down the spokes to a coil; the hitstops (ms, real time)
         PLANT: 1, COIL_MS: 15000, COIL_MAX: 3, LINK_R: 8, COIL_R: 2.5, COIL_UP: 0.15, COIL_DMG: 2, SKY_UP: 0.25, SKY_L: 2,   // the coils: cost, time, how many, fence reach, burst (COIL_UP tiles a link; SKY_L links for it)
         ZAP_MS: 1000, ZAP_N: 5, ZAP_R: 3, ZAP_DMG: 5, BOSS_MUL: 0.4,   // a coil's zaps (BOSS_MUL: a boss takes this much of a zap, or of the current)
-        ROPE_LIFE: 6000, ROPE_CAP: 16, NET_R: 1, PULSE_MS: 500, PULSE_DMG: 9, CHAIN_R: 2.5, FORKS: 3, CHAIN_UP: 0.1, CHAIN_MAX: 1.5, CHAIN_CAP: 12, FRONT_R: 0.5, FRONT_UP: 0.05, FRONT_MAX: 0.15,   // the network (a level of Storm Front: FRONT_R tiles, FRONT_UP on CHAIN_UP, FRONT_MAX on CHAIN_MAX)
-        VOLT_MAX: 24, LOW: 6, PULSE_COST: 0.5, DRAIN_MS: 1000, REFUND: 2, OVL_MS: 600, OVL_RATE: 2, OVL_MUL: 2,   // the fuel, and the boom's overload (OVL_MS a link past the first)
+        ROPE_LIFE: 6000, ROPE_CAP: 16, NET_R: 1, PULSE_MS: 500, PULSE_DMG: 6, CHAIN_R: 2.5, FORKS: 3, CHAIN_UP: 0.1, CHAIN_MAX: 1.5, CHAIN_CAP: 12, FRONT_R: 0.5, FRONT_UP: 0.05, FRONT_MAX: 0.15,   // the network (a level of Storm Front: FRONT_R tiles, FRONT_UP on CHAIN_UP, FRONT_MAX on CHAIN_MAX)
+        VOLT_MAX: 24, LOW: 6, PULSE_COST: 0.5, DRAIN_MS: 1000, REFUND: 0.5, OVL_MS: 200, OVL_RATE: 2, OVL_MUL: 1.5,   // the fuel, and the boom's overload (OVL_MS a link past the first)
         CAGE_MS: 6000, FENCE_DMG: 6, FENCE_DAZE: 400, FENCE_CD: 1000, FENCE_MS: 80, POST_S: 1.25, POST_TOP: 17 };   // the cage (POST_TOP: px from a post's foot up to its insulator, where the fences hang)
     // eighths of a turn clockwise from east: the frame, and whether it's flipped both ways
     static DIRS = [['e', 0], ['se', 0], ['s', 0], ['ne', 1], ['e', 1], ['se', 1], ['s', 1], ['ne', 0]];
@@ -304,9 +304,7 @@ class Glaive {
     }
     // a volt flying from (x, y) to you
     static volt(S, x, y) {
-        const m = S.add.image(x, y, 'fx_glaive', 'mote_3').setScale(1.8).setTint(0xffe14a).setBlendMode(Phaser.BlendModes.ADD).setDepth(4.4);
-        S.tweens.add({ targets: m, x: { getEnd: () => S.player?.x ?? x }, y: { getEnd: () => (S.player?.y ?? y) - 4 }, scale: 1, duration: 260, delay: 60, ease: 'Quad.easeIn',
-            onComplete: () => { m.destroy(); if (S.player?.active) Glaive.fx(S).gold.emitParticleAt(S.player.x, S.player.y - 4, 2); } });
+        CombatSystem.essence(S, x, y, 'fx_glaive', 'mote_3', 0xffe14a);
     }
 
 

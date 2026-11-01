@@ -635,6 +635,35 @@ class CombatSystem {
         }
     }
 
+    // A weapon's R resource collected off an enemy: a piece of its art (key, frame) flying from (x, y) to you on a curve, quicker as
+    // it comes, a trail behind it and a flash as it lands; k: how big. One every 45ms at most: a crowd gives a stream, not a swarm.
+    static essence(S, x, y, key, frame, tint, k = 1) {
+        const now = S.time.now;
+        if (!S.player?.active || now - (S._essenceAt ?? -1e9) < 45) return;
+        S._essenceAt = now;
+        const ADD = Phaser.BlendModes.ADD, m = S.add.image(x, y, key, frame).setTint(tint).setDepth(5.6).setScale(2.8 * k).setVisible(false), o = { t: 0 };   // (not ADD itself: it would wash out over a bright attack)
+        const halo = S.add.image(x, y, 'vfx_glow').setTint(tint).setBlendMode(ADD).setDepth(5.5).setScale(0.34 * k).setAlpha(0.85).setVisible(false);
+        const side = Math.random() < 0.5 ? -1 : 1, bend = 34 + Math.random() * 40;
+        let trail = 0;
+        S.tweens.add({ targets: o, t: 1, delay: 90 + Math.random() * 80, duration: 340 + Math.random() * 120, ease: 'Quad.easeIn',   // (a beat after the hit: it reads as its own thing)
+            onUpdate: () => {
+                const px = S.player?.x ?? x, py = (S.player?.y ?? y) - 6, dx = px - x, dy = py - y, d = Math.hypot(dx, dy) || 1, t = o.t, u = 1 - t;
+                const cx = x + dx / 2 - dy / d * side * bend, cy = y + dy / 2 + dx / d * side * bend;
+                m.setVisible(true).setPosition(u * u * x + 2 * u * t * cx + t * t * px, u * u * y + 2 * u * t * cy + t * t * py).setScale((2.8 - 1.2 * t) * k).setRotation(t * 6 * side);
+                halo.setVisible(true).setPosition(m.x, m.y);
+                if (S.time.now - trail < 22) return;
+                trail = S.time.now;
+                const g = S.add.image(m.x, m.y, key, frame).setTint(tint).setBlendMode(ADD).setDepth(5.4).setScale(m.scale * 0.9).setAlpha(0.7).setRotation(m.rotation);
+                S.tweens.add({ targets: g, alpha: 0, scale: 0.2, duration: 220, onComplete: () => g.destroy() });
+            },
+            onComplete: () => {
+                m.destroy(); halo.destroy();
+                if (!S.player?.active) return;
+                const f = S.add.image(S.player.x, S.player.y - 6, 'vfx_glow').setTint(tint).setBlendMode(ADD).setDepth(5.5).setScale(0.35 * k).setAlpha(0.9);
+                S.tweens.add({ targets: f, alpha: 0, scale: 0.95 * k, duration: 200, onComplete: () => f.destroy() });
+            } });
+    }
+
     // A hit landing on enemy: it flashes and its tint comes back, the hit's sound, its sparks (_vfxHit). `own`: a weapon that draws
     // its own hits (the Boreal Trident, Fractal Shard, Thunder Glaive, Rimeguard, which skip damageEnemy): the flash, the sound (a name: its own in place of `hit`) and
     // the flinch (_vfxHitAt: the wince, and what breaks a Blinder's or a Sniper's aim), not the sparks
