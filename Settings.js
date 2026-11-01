@@ -98,8 +98,9 @@ const Settings = {
     // the share of the window's pixels the game draws at (1: all of them): everything a little closer than the window's own
     // pixels (UI_ZOOM; the text and art bigger and clearer), and LOW (chosen by hand) fewer still; never under 1280x720
     UI_ZOOM: 1.15,
-    renderScale() {
-        const w = window.innerWidth || 1280, h = window.innerHeight || 720;
+    PHONE_W: 1280, PHONE_H: 600,   // a phone on its side is smaller than any menu: it's drawn at least this big and stretched down to fit (the touch controls stay their own size)
+    renderScale(w = window.innerWidth || 1280, h = window.innerHeight || 720) {
+        if ((w < this.PHONE_W || h < this.PHONE_H) && TouchControls.device()) return Math.max(this.PHONE_W / w, this.PHONE_H / h);
         return Math.min(1, Math.max((this.quality() === 'low' ? 0.6 : 1) / this.UI_ZOOM, 1280 / w, 720 / h));
     },
     // a frame counter in the corner (fpsMeter): the frame rate, and the worst frame of the last second

@@ -80,8 +80,8 @@ class WeaponSystem {
             // Unreachable in the overworld -- no shop card, no equip path. Kept because
             // TowerDefenseScene sets this id and routes its Wrench upgrade tree through it.
             case 'engineering_degree': this.engineeringDegreeAttack(targetX, targetY); break;
-            // Cosmic.js casts all six (each one a boon); the old two stay for a scene without it.
-            case 'cosmic_fists': case 'barrier_staff': case 'astrolabe': case 'singularity_staff': case 'void_blade': case 'pendulum':
+            // Cosmic.js casts all five (each one a boon); the old two stay for a scene without it.
+            case 'cosmic_fists': case 'barrier_staff': case 'astrolabe': case 'singularity_staff': case 'void_blade':
                 if (this._csCast) { this._csCast?.(weapon, targetX, targetY); break; }
                 if (weapon === 'singularity_staff') this.singularityStaffFire(targetX, targetY);
                 else this.cosmicFistsAttack(targetX, targetY);

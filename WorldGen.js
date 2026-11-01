@@ -564,6 +564,7 @@ class WorldGen {
         this.tutorialDoorsLocked = this.rooms.map((r, i) => {
             if (i === 0) return false;
             if (r.isChestRoom) return false;
+            if (LevelLayouts.T[r.tpl]?.open) return false;   // (the gravity room: never sealed, you can always walk out)
             return true;
         });
         this.tutorialRoomCleared[0] = true;

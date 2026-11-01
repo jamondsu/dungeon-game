@@ -329,6 +329,7 @@ class HUD {
             ['#rooted', this._playerRooted, ['dash']],
             ['#glued', this._glued?.(), ['dash']],               // a Glu, a Frost Slime's grid
             ['#lift', this._lifting, ['dash']],                  // riding between floors
+            ['#gravity', this._gravZone?.(), ['dash', 'ult_cosmic']],   // the gravity room's fall: no dash, no cosmic drop
         ]) on ? this.lockActions(id, kinds) : this.unlockActions(id);
     }
     // Every frame, paused or in stopped time too: the locks, then each sign over its piece, popping in as the lock starts, fading
@@ -377,8 +378,6 @@ class HUD {
             const ast = cs?.astral?.get(e);
             if (ast?.active) row(16, cy => ast.setY(cy));
             if (e._rmIcon?.active) row(6, cy => e._rmIcon.setY(cy));   // (the Boreal Trident's Rime marks)
-            if (e._tlMark?.active) row(11, cy => e._tlMark.setY(cy));   // (held in the Pendulum's Time Lock: its stopped clock, and what it's stored over it)
-            if (e._tlTally?.active && e._tlTally.visible) row(12, cy => e._tlTally.setY(cy));
             if (e._stunIndicator?.active) row(10, cy => e._stunIndicator.setY(cy));
         }
     }
@@ -905,10 +904,12 @@ class HUD {
             this._pauseObjs.push(t, bar, btn(bx - 16, '−', -0.1), btn(bx + bw + 14, '+', 0.1));
         });
 
-        const hint = this.add.text(W / 2, pyy + panelH - 26, 'ESC to resume', {
+        const touch = TouchControls.on(), said = () => Sfx.muted() ? 'SOUND OFF' : 'SOUND ON';   // (a phone has no M, and no ESC)
+        const hint = this.add.text(W / 2, pyy + panelH - 26, touch ? said() : 'ESC to resume', {
             fontSize: '13px', fontFamily: 'monospace',
             color: UIKit.CSS.textLo, stroke: '#000', strokeThickness: 2
         }).setOrigin(0.5).setScrollFactor(0).setDepth(503);
+        if (touch) hint.setInteractive({ useHandCursor: true }).on('pointerdown', () => { Sfx.toggleMute(); hint.setText(said()); });
         this._pauseObjs.push(hint);
         this._pauseObjs.push(...Bounties.pausePanel(this, pxx + panelW + 16, pyy, panelH));   // what's up, beside it (Bounties.js)
     }

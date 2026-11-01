@@ -3,7 +3,11 @@
 <head>
     <link rel="icon" href="data:,">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.webmanifest">
     <title>Dungeon Roguelike</title>
     <style>
         body {
@@ -17,28 +21,59 @@
             touch-action: none;           /* a phone: thumbs on the game, not zooming or scrolling the page */
             -webkit-touch-callout: none;
         }
+        /* a phone's covers (TouchControls.cover) */
+        .cover {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background-color: #05060a;
+            color: #f6d58a;
+            font: bold 26px Georgia, serif;
+            text-align: center;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .cover[hidden], .cover small[hidden], #host[hidden] { display: none; }
+        .cover small { margin-top: 14px; color: #9aa4b8; font: 15px Georgia, serif; }
+        /* a phone's game: the part of the screen you can see, clear of the notch (an iPhone's 100vh, which is what Phaser asks for by default, runs under the browser's bars) */
+        #host {
+            position: fixed;
+            top: env(safe-area-inset-top);
+            right: env(safe-area-inset-right);
+            bottom: env(safe-area-inset-bottom);
+            left: env(safe-area-inset-left);
+        }
     </style>
 </head>
 <body>
+    <div id="host" hidden></div>
+    <div id="cover" class="cover" hidden>TAP TO PLAY<small id="addhome" hidden>For full screen: tap Share, then Add to Home Screen</small></div>
+    <div id="turn" class="cover" hidden>TURN YOUR PHONE SIDEWAYS</div>
     <!-- Phaser 3 -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <!-- Supabase (your account: saves online, the leaderboards) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js"></script>
 
     <!-- the release's version tag for the art manifest (BootScene); the ?v= on each script is its own, set with it -->
-    <script>window.BUILD = '334d9d58';</script>
+    <script>window.BUILD = '8fe839a9';</script>
     <!-- Load utility files first -->
     <script src="Utils.js?v=8783fa08"></script>
-    <script src="Sound.js?v=49a4eb3c"></script>
-    <script src="Settings.js?v=be662bf0"></script>
+    <script src="Sound.js?v=f4b4f12a"></script>
+    <script src="Settings.js?v=235953f3"></script>
     <script src="Telemetry.js?v=80e180a9"></script>
     <script src="Cloud.js?v=af8c919e"></script>
     <script src="Relics.js?v=f82f1c92"></script>
-    <script src="Enchants.js?v=aeca7e36"></script>
+    <script src="Enchants.js?v=db935edc"></script>
     <script src="Garden.js?v=e458b538"></script>
     <script src="Achievements.js?v=3ae99ffd"></script>
     <script src="Bounties.js?v=3648c0ae"></script>
-    <script src="Stats.js?v=92fc0477"></script>
+    <script src="Stats.js?v=fe3ea2a4"></script>
     <script src="Progress.js?v=82b735a1"></script>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
@@ -61,73 +96,81 @@
          here directly. Do NOT also load Engine.js or the three separates — each
          defines the same consts and the second definition throws.
          ═══════════════════════════════════════════════════════════════════════ -->
-        <script src="Uikit.js?v=393416d4"></script>
+        <script src="Uikit.js?v=7242da5e"></script>
     <script src="ElementResist.js?v=75d77724"></script>
-    <script src="FieldKit.js?v=d092f72c"></script>
+    <script src="FieldKit.js?v=8b39be70"></script>
     <script src="Transitions.js?v=ff1e53fb"></script>
-    <script src="Menus.js?v=3cdf94e9"></script>
+    <script src="Menus.js?v=03ecf198"></script>
     <script src="Loot.js?v=6d3f571a"></script>
 
     <!-- Load modules (must come before GameScene.js) -->
-    <script src="LevelLayouts.js?v=97bade01"></script>
-    <script src="WorldGen.js?v=bb767a93"></script>
+    <script src="LevelLayouts.js?v=f401d75a"></script>
+    <script src="WorldGen.js?v=812052e2"></script>
     <script src="TutorialManager.js?v=ab2938cb"></script>
-    <script src="EnemyManager.js?v=46172fcb"></script>
-    <script src="WeaponSystem.js?v=05529e8b"></script>
-    <script src="CombatSystem.js?v=58bedd7f"></script>
-    <script src="ElementSystem.js?v=d56145a6"></script>
-    <script src="Cosmic.js?v=6b6d3575"></script>
-    <script src="HUD.js?v=0788f041"></script>
+    <script src="EnemyManager.js?v=75ca0546"></script>
+    <script src="WeaponSystem.js?v=141c60af"></script>
+    <script src="CombatSystem.js?v=d17c15f8"></script>
+    <script src="ElementSystem.js?v=f1635515"></script>
+    <script src="Cosmic.js?v=71d384b2"></script>
+    <script src="HUD.js?v=1d2df58b"></script>
     <script src="Visuals.js?v=7669de0b"></script>
-    <script src="Creatures.js?v=099e3d86"></script>
+    <script src="Creatures.js?v=80d2c810"></script>
     <script src="SlimeModels.js?v=f1d00ac7"></script>
     <script src="EnemyFX.js?v=bf635e40"></script>
     <script src="Bosses.js?v=41f18f49"></script>
     <script src="Tower.js?v=75e6dcbe"></script>
     <script src="Pulse.js?v=490ea050"></script>
     <script src="Breakers.js?v=8ae82d54"></script>
-    <script src="Scythe.js?v=08b0124f"></script>
+    <script src="Scythe.js?v=038d6e01"></script>
     <script src="Rimeguard.js?v=2b5fb81d"></script>
     <script src="Fractal.js?v=8833928a"></script>
-    <script src="Glaive.js?v=6c31f57c"></script>
-    <script src="Trident.js?v=d3f303a3"></script>
+    <script src="Glaive.js?v=16fa0348"></script>
+    <script src="Trident.js?v=eb41fb4c"></script>
     <script src="Fork.js?v=24e86e3d"></script>
-    <script src="Training.js?v=5fdb9cca"></script>
-    <script src="RhythmTrial.js?v=cfad4417"></script>
-    <script src="MirrorTrial.js?v=e6e272e4"></script>
+    <script src="Training.js?v=4e700b2b"></script>
+    <script src="RhythmTrial.js?v=e5aa2a9d"></script>
+    <script src="MirrorTrial.js?v=bef29f99"></script>
     <script src="TideMother.js?v=72fdf003"></script>
     <script src="Blinder.js?v=9b0b1dcb"></script>
     <script src="Sniper.js?v=684fc114"></script>
-    <script src="TouchControls.js?v=98f240f0"></script>
+    <script src="TouchControls.js?v=699c752d"></script>
 
     <!-- Load scene files -->
-    <script src="BootScene.js?v=e996ed4d"></script>
-    <script src="LevelSelectScene.js?v=2c21964e"></script>
-    <script src="ShopScene.js?v=466a13d7"></script>
-    <script src="EnchantScene.js?v=c9bbfd87"></script>
-    <script src="GardenScene.js?v=f5b15aaf"></script>
-    <script src="LevelManager.js?v=8536353f"></script>
-    <script src="TowerDefenseScene.js?v=b9d82fbe"></script>
-    <script src="GameScene.js?v=555ee584"></script>
+    <script src="BootScene.js?v=ea5e1e44"></script>
+    <script src="LevelSelectScene.js?v=156959cb"></script>
+    <script src="ShopScene.js?v=ba63db8e"></script>
+    <script src="EnchantScene.js?v=ab9d6214"></script>
+    <script src="GardenScene.js?v=69e6d870"></script>
+    <script src="LevelManager.js?v=f6782b6c"></script>
+    <script src="TowerDefenseScene.js?v=8ff79d8d"></script>
+    <script src="GameScene.js?v=7fcf20e6"></script>
 
     <!-- Initialize game -->
     <script>
         // No dependency guard here any more: UIKit, ElementResist and Transitions are
         // inlined above, so there is no external file of mine that can go missing. The
         // remaining <script src> tags are the project's own long-standing modules.
-        const RS = Settings.renderScale();   // a big window drawn at fewer pixels (a little closer; fewer on low graphics), stretched to fill it
-        const config = {
-            type: Phaser.AUTO,
-            // drawn at the window's size when it loads and stretched to fill the window or the screen as either changes
-            // (FIT: the same picture bigger, its shape kept; fullscreen from Settings, or the browser's own)
-            scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: Math.round(window.innerWidth * RS), height: Math.round(window.innerHeight * RS) },
-            scene: [BootScene, LevelSelectScene, ShopScene, EnchantScene, GardenScene, UnderwellScene, SkyScene, GameScene, TowerDefenseScene, MirrorTrial],
-            pixelArt: true,
-            backgroundColor: '#000000'
-        };
+        var game;   // (var: Achievements.js asks typeof game, and on a phone there's none till the cover's been tapped)
+        const start = () => {
+            const touch = TouchControls.device(), host = document.getElementById('host');
+            host.hidden = !touch;
+            const box = touch ? host.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+            const RS = Settings.renderScale(box.width, box.height);   // a big window drawn at fewer pixels (a little closer; fewer on low graphics), stretched to fill it
+            const config = {
+                type: Phaser.AUTO,
+                // drawn at the window's size when it loads and stretched to fill the window or the screen as either changes
+                // (FIT: the same picture bigger, its shape kept; fullscreen from Settings, or the browser's own)
+                scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: Math.round(box.width * RS), height: Math.round(box.height * RS),
+                         ...(touch && { parent: host, fullscreenTarget: document.documentElement }) },   // (the whole page, covers and all: Phaser's own would hide them)
+                scene: [BootScene, LevelSelectScene, ShopScene, EnchantScene, GardenScene, UnderwellScene, SkyScene, GameScene, TowerDefenseScene, MirrorTrial],
+                pixelArt: true,
+                backgroundColor: '#000000'
+            };
 
-        const game = new Phaser.Game(config);
-        Settings.fpsMeter(game);   // the frame counter in the corner (Settings > FPS)
+            game = new Phaser.Game(config);
+            Settings.fpsMeter(game);   // the frame counter in the corner (Settings > FPS)
+        };
+        if (TouchControls.device()) TouchControls.cover(start); else start();
         Cloud.init();   // your account, if you're signed in: your save kept online
     </script>
 </body>

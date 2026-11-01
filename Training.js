@@ -51,6 +51,7 @@ class Training {
     // WorldGen: one round room in the middle of the world
     static world(S) {
         if (S._trainLayout === 'breakers') return Training.breakerWorld(S);
+        if (S._trainLayout === 'gravity') return Training.gravityWorld(S);
         const W = S.WORLD_WIDTH, H = S.WORLD_HEIGHT, R = Training.R, cx = W >> 1, cy = H >> 1, world = [];
         for (let x = 0; x < W; x++) { world[x] = []; for (let y = 0; y < H; y++) world[x][y] = S.NOTHING; }
         for (let x = cx - R; x <= cx + R; x++) for (let y = cy - R; y <= cy + R; y++) if (Math.hypot(x - cx, y - cy) <= R + 0.3) world[x][y] = S.FLOOR;
@@ -82,6 +83,7 @@ class Training {
         S.input.on('pointermove', p => Training.stroke(S, p));   // a brush dragged: every tile it crosses
         S.input.on('pointerup', () => { if (S._train) S._train.stroke = null; });
         if (S._trainLayout === 'breakers') Training.breakerRoom(S);
+        else if (S._trainLayout === 'gravity') Training.gravityRoom(S);
         else if (S._trainRoomAt != null) Training.room(S, S._trainRoomAt);
     }
 
@@ -287,6 +289,24 @@ class Training {
         S.showStatusText?.(S.player.x, S.player.y - 40, 'STEP ON A BREAKER TO FLIP IT: FOLLOW THE WIRES', '#9ff6ff');
     }
 
+    // THE GRAVITY ROOM (LevelManager _grav*): the Void Rift's own typed room, walled here on its own, you on its ledge beside the gap
+    static gravityWorld(S) {
+        const W = S.WORLD_WIDTH, H = S.WORLD_HEIGHT, M = LevelLayouts.T.v_gravity, x0 = (W >> 1) - (M.w >> 1), y0 = (H >> 1) - (M.h >> 1), world = [];
+        for (let x = 0; x < W; x++) { world[x] = []; for (let y = 0; y < H; y++) world[x][y] = S.NOTHING; }
+        M.map.forEach((row, ly) => [...row].forEach((c, lx) => { world[x0 + lx][y0 + ly] = c === '#' ? S.WALL : S.FLOOR; }));
+        S.addWalls(world);
+        S.rooms = [{ x: x0, y: y0, w: M.w, h: M.h, isArena: true, tpl: 'v_gravity' }];
+        S._trainArena = { cx: W >> 1, cy: H >> 1 };
+        return world;
+    }
+    static gravityRoom(S) {
+        const R = S.rooms[0], T = S.TILE_SIZE;
+        S._train.room = 'gravity';
+        S.playerX = R.x + 1; S.playerY = R.y + 8; S._step = null;
+        S.player.setPosition(S.playerX * T + T / 2, S.playerY * T + T / 2 + (S.SLIME_Y_OFFSET || 0));
+        S._gravBuild();
+    }
+
     static clear(S) {
         for (const e of [...(S.enemies || [])]) { e._trainImmortal = false; S.killEnemy(e); }
         try { if (S.voltslimeBoss?.active) S.damageVoltslimeBoss(1e9); if (S.voidSovereignBoss?.active) { S.voidSovereignBoss._isInvulnerable = false; S.damageVoidSovereignBoss(1e9); } } catch (e) {}
@@ -299,6 +319,7 @@ class Training {
         const T = S._train;
         if (!T) return;
         Training.mark(S);
+        if (S._grav) S._gravTick();
         if (typeof T.room === 'number' && S._pulse) {   // across the floor, and how many zaps it took (back to the start: again)
             const A = S._trainArena, n = S._pulse.shocks;
             if (!T.crossed && S.playerX >= A.cx + 5) { T.crossed = true; S.showStatusText?.(S.player.x, S.player.y - 40, n ? `ACROSS · ${n} ZAP${n > 1 ? 'S' : ''}` : 'ACROSS · NOT ONE ZAP!', '#ffe14a'); }
@@ -499,6 +520,7 @@ class Training {
         text(x0 + P, y, 'Panels glow, then zap, every few seconds.\nCaught on one: a small hit and a daze.\nA trap for you: the enemies walk it fine.', 10, '#9fb0d0', { lineSpacing: 3 }); y += 50;
         Training.ROOMS.forEach(([label], i) => { btn(x0 + P, y, IW, 24, label, () => Training.room(S, i), () => T.room === i && !!S._pulse, { size: 11 }); y += 28; });
         btn(x0 + P, y, IW, 24, '4 · BREAKERS', () => S._trainLayout === 'breakers' ? Training.breakerRoom(S) : S.scene.restart({ levelIndex: S.currentLevelIndex, training: true, trainLayout: 'breakers' }), () => T.room === 'breakers', { size: 11 }); y += 28;   // (its own walls: the Training Ground is laid out again)
+        btn(x0 + P, y, IW, 24, '5 · GRAVITY ROOM', () => S.scene.restart({ levelIndex: S.currentLevelIndex, training: true, trainLayout: 'gravity' }), () => T.room === 'gravity', { size: 11 }); y += 28;   // (a press lays it out fresh)
         btn(x0 + P, y, IW, 22, 'STOP THE FLOOR', () => { if (S._trainLayout) { S.scene.restart({ levelIndex: S.currentLevelIndex, training: true }); return; } Pulse.stop(S); T.room = null; Training.clear(S); }, null, { size: 10 });
         y += 26;
         foot = Math.max(foot, ends.rooms = y);
@@ -512,15 +534,14 @@ class Training {
         btn(x0 + P, y, IW, 22, 'LEAVE', () => { S.cameras.main.fadeOut(300, 0, 0, 0); S.time.delayedCall(320, () => S.scene.start('LevelSelect')); });
         y += 22 + P;
         const footer = objs.slice(footFrom), fullH = y - y0;
-        footer.forEach(o => { o._y0 = o.y; });
         const bg = S.add.nineslice(x0, y0, 'ui_tr', 'panel', PW, fullH, 6, 6, 6, 6).setOrigin(0).setScrollFactor(0).setDepth(D).setInteractive();
         objs.unshift(bg);
-        for (const o of objs) S._vfxSort?.(o);
+        for (const o of objs) { S._vfxSort?.(o); o._x0 = o.x; o._y0 = o.y; o._sx = o.scaleX; o._sy = o.scaleY; }
         S._trainPanel = objs;
         const show = () => {   // the tab's page; the readout and LEAVE right under it, the frame fitted round them
             const on = T.panelOn !== false, dy = (ends[T.tab] ?? foot) - foot;
-            for (const o of objs) o.setVisible(on && (!page.has(o) || page.get(o) === T.tab));
-            for (const o of footer) o.y = o._y0 + dy;
+            const k = TouchControls.on() ? Math.min(1, (S.scale.height - y0 - 6) / (fullH + dy)) : 1;   // (a phone: the whole panel smaller, to fit under the HUD)
+            for (const o of objs) o.setVisible(on && (!page.has(o) || page.get(o) === T.tab)).setPosition(x0 + (o._x0 - x0) * k, y0 + (o._y0 + (footer.includes(o) ? dy : 0) - y0) * k).setScale(o._sx * k, o._sy * k);
             bg.setSize(PW, fullH + dy); bg.input?.hitArea?.setSize(PW, fullH + dy);
         };
         S._trainPanelShow = show;

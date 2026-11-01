@@ -188,7 +188,6 @@ class ElementSystem {
                 astrolabe:         0,
                 singularity_staff: 0,
                 void_blade:        0,
-                pendulum:          0,
             },
             // The one knob for all of the above: 1.5 fills every gem in ~30s of camping, 0.75 in
             // ~60s. Rotating stays about twice as fast either way.
@@ -5001,10 +5000,11 @@ class ElementSystem {
     }
 
     // Could a step put you on (x, y)? The same rules as walking: floor, no node, not a
-    // sealed room or door, not a Fracture crack while the core lives.
+    // sealed room or door, not a Fracture crack while the core lives. The gravity room you only walk into.
     _dashCanEnter(x, y) {
         if (x < 0 || y < 0 || x >= this.WORLD_WIDTH || y >= this.WORLD_HEIGHT) return false;
         if (this.world[x][y] !== this.FLOOR || this.isNodeAt(x, y)) return false;
+        if (this._gravZone?.(x, y) && !this._gravZone()) return false;
         if (this.isInLockedRoom && this.isInLockedRoom(x, y)) return false;
         if (this._roomGated() && this.lockedDoorTiles?.some(t => t.x === x && t.y === y)) return false;
         if (this.isLevel4 && this._debrisTiles?.length && this.fractureCore?.active

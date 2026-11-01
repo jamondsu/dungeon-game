@@ -257,12 +257,9 @@ const WeaponLevels = {
         void_blade:        [['charge', 'Quick Draw', 3, 200, 1.8, p => `charges ${15 * p}% faster`],
                             ['stun', 'Deep Stun', 3, 220, 1.8, p => `stun up to ${(3.5 + 2.5 * p / 3).toFixed(1)}s`],
                             ['fan', 'Fan Cut', 3, 240, 1.8, p => p >= 3 ? 'a full fan' : p ? 'fans out wider' : 'a thin line']],
-        pendulum:          [['hold', 'Long Lock', 2, 260, 1.8, p => `Time Lock lasts ${(4 + 0.5 * p).toFixed(1)}s`],
-                            ['cd', 'Quick Lock', 3, 220, 1.8, p => `Time Lock's cooldown ${(12 * (1 - 0.1 * p)).toFixed(1)}s`],
-                            ['echo', 'Quick Rewind', 3, 220, 1.8, p => `Rewind's cooldown ${(30 * (1 - 0.1 * p)).toFixed(1)}s`]],   // (the two share one cooldown: each sets it to its own)
     },
     // Cosmic weapons are buffs you cast: no Power levels.
-    NO_POWER: ['cosmic_fists', 'barrier_staff', 'astrolabe', 'singularity_staff', 'void_blade', 'pendulum'],
+    NO_POWER: ['cosmic_fists', 'barrier_staff', 'astrolabe', 'singularity_staff', 'void_blade'],
     _int(k) { try { return Math.max(0, parseInt(localStorage.getItem(k) || '0', 10) || 0); } catch (e) { return 0; } },
     _put(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} },
     _def(id, key) { return (this.PERKS[id] || []).find(d => d[0] === key) || null; },
@@ -290,4 +287,27 @@ const WeaponLevels = {
         }
         return null;
     },
+    // The Pendulum came out on 2026-10-30 (notes.txt). A save that bought it gets back its price, its perks (their prices are
+    // here: PERKS has lost them) and what binding its books cost, and the books themselves. This file's load runs it, before
+    // any scene reads the save; with no Pendulum there it writes nothing. pendulum_refund goes in with the glorps, and the
+    // cloud carries the two together: a snapshot from before has neither and is paid on its own balance, one from after
+    // has both and never is. It's written first: if the storage is full, nothing has changed.
+    retirePendulum() {
+        try {
+            const owned = JSON.parse(localStorage.getItem('unlockedWeapons') || '[]'), had = owned.includes('pendulum');
+            if (had && !localStorage.getItem('pendulum_refund')) {
+                let back = 400;
+                for (const [key, cap, first] of [['hold', 2, 260], ['cd', 3, 220], ['echo', 3, 220]])
+                    for (let p = 0, n = Math.min(cap, this._int('wpk_pendulum_' + key)); p < n; p++) back += Math.round(first * Math.pow(1.8, p));
+                for (const b of Enchants.on('pendulum')) back += Enchants.cost(b);
+                localStorage.setItem('pendulum_refund', String(back));
+                localStorage.setItem('glorps', String(this._int('glorps') + back));
+            }
+            if (had) localStorage.setItem('unlockedWeapons', JSON.stringify(owned.filter(w => w !== 'pendulum')));
+            if (localStorage.getItem('equip_cosmic') === 'pendulum') localStorage.setItem('equip_cosmic', 'cosmic_fists');
+            while (Enchants.take('pendulum', 0));
+            for (const k of Object.keys(localStorage)) if (k === 'ench_pendulum' || /^(wlv|wpk)(_on)?_pendulum(_|$)/.test(k)) localStorage.removeItem(k);
+        } catch (e) { /* corrupt storage must not block the game from loading */ }
+    },
 };
+WeaponLevels.retirePendulum();

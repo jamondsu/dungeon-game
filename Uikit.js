@@ -139,10 +139,14 @@ const UIKit = {
             for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
                 const sw = sx[i + 1] - sx[i], sh = sy[j + 1] - sy[j], dw = dx[i + 1] - dx[i], dh = dy[j + 1] - dy[j];
                 if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) continue;
-                for (let yy = 0; yy < dh; yy += sh) for (let xx = 0; xx < dw; xx += sw) {
-                    const ww = Math.min(sw, dw - xx), hh = Math.min(sh, dh - yy);
-                    c.drawImage(img, f.cutX + sx[i], f.cutY + sy[j], ww, hh, dx[i] + xx, dy[j] + yy, ww, hh);
-                }
+                const ww = Math.min(sw, dw), hh = Math.min(sh, dh), sec = document.createElement('canvas'), q = sec.getContext('2d');
+                sec.width = dw; sec.height = dh;
+                q.drawImage(img, f.cutX + sx[i], f.cutY + sy[j], ww, hh, 0, 0, ww, hh);
+                // the rest by doubling what's laid (on its own canvas: on a small box the sections overlap): a tile at a time, a big panel's
+                // 2px middle was 300,000 draws and a freeze
+                for (let n = ww; n < dw; n *= 2) q.drawImage(sec, 0, 0, Math.min(n, dw - n), hh, n, 0, Math.min(n, dw - n), hh);
+                for (let n = hh; n < dh; n *= 2) q.drawImage(sec, 0, 0, dw, Math.min(n, dh - n), 0, n, dw, Math.min(n, dh - n));
+                c.drawImage(sec, dx[i], dy[j]);
             }
         };
         if (base) paint(ctx, base);

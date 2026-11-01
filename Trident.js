@@ -2,12 +2,14 @@
 // Trident.js — the Boreal Trident (ice, tier 5): a rime-ash trident, three tines of glacier ice, an aurora gem in its collar
 // Click: a three-step combo (each within COMBO_MS of the last; POKE_CD after the thrust, CD after the swipe, SLAM_CD after the
 // slam). THRUST, a quick poke: everything on a line REACH tiles down the exact aim, WIDTH tiles across (short of a wall), takes
-// DMG and a little chill. SWIPE: everything within SWIPE_R tiles and SWIPE_ARC degrees either side of the aim, SWIPE_DMG and a
-// little chill. LEAP: you spring into the air for up to LEAP_MS (untouchable the first LEAP_UP; no dashes, ults, gadgets or swaps
+// DMG and a little chill. SWIPE: a wave WAVE_W tiles wide rolls WAVE_R tiles out down the aim, SWIPE_DMG and a little
+// chill to what it reaches. LEAP: you spring into the air for up to LEAP_MS (untouchable the first LEAP_UP; no dashes, ults, gadgets or swaps
 // while up), steered with the movement keys over enemies, hazards and walls (not out of the room you leapt in, nor through a sealed
 // door), the slam's footprint under you (it comes down on the nearest floor if you're over a wall); a
 // click brings you down early (LAND_MIN at the soonest). The SLAM where you land: SLAM_DMG and FROSTBITE to everything in its
 // footprint (squircle: 7x7 with the corners cut, SLAM_R out), rime erupting over it (only the look).
+// CREST, its passive: a hit of the combo lands harder the further out it lands, from FAR_NEAR of itself at the source of the attack to
+// FAR_EDGE at the edge of its reach: FAR_THRUST tiles down the thrust, the crest of the swell, the rim of the slam.
 // Hold the click and from HOLD_MS it's drawn back over your shoulder, its throw line showing; let go and it's HURLED straight down
 // the aim, skimming low, RANGE tiles (RANGE_FULL drawn to FULL_MS; again after HURL_CD, less RECALL_UP a level of Swift Recall), at
 // SPEED, a rip current tearing a wake through an icy sea behind it (its edges pushed out either side, slamming back together):
@@ -38,8 +40,8 @@
 // (slam_*, spike_*, crys_*, shard/mist: the rime and the bursts).
 // ═══════════════════════════════════════════════════════════════════════════
 class Trident {
-    static CFG = { CD: 650, POKE_CD: 650, COMBO_MS: 1400, REACH: 8, WIDTH: 3, DMG: 4.8, SPIKE_DMG: 12, HIT_CHILL: 2, HIT_DAZE: 500, AFTER_THRUST: 650, SPINE_MS: 500, SPINE_HOLD: 500, CHILL: 0.3, SCALE: 1.25, GRIP: 10, JAB: 1.1,   // (GRIP: art px from the middle back to your hand; JAB: tiles the stab lunges; POKE_CD after the thrust, CD after the swipe)
-        SWIPE_R: 3.5, SWIPE_ARC: 100, SWIPE_DMG: 4.8, SWEEP_MS: 300, SWIPE_SCALE: 1.8, AFTER_SWIPE: 600, SWIPE_FREEZE: 520, SWIPE_SPREAD: 250, SPINE_ROW: 5, SPINE_ROW_MS: 110, SHEET_STEP: 3.5 * Math.PI / 180, FREEZE_V: 0.9, FROZEN_MS: 1600, SHATTER_DMG: 10.2, SHATTER_R: 1.5, HIT_STOP: 30,   // (the swipe's boom, at its giant spine: SWEEP_MS + AFTER_SWIPE + SWIPE_SPREAD, the same as the thrust's, AFTER_THRUST + SPINE_MS)
+    static CFG = { CD: 650, POKE_CD: 650, COMBO_MS: 1400, REACH: 9, WIDTH: 3, DMG: 4.8, SPIKE_DMG: 12, HIT_CHILL: 2, HIT_DAZE: 500, AFTER_THRUST: 650, SPINE_MS: 500, SPINE_HOLD: 500, CHILL: 0.3, SCALE: 1.25, GRIP: 10, JAB: 1.1,   // (GRIP: art px from the middle back to your hand; JAB: tiles the stab lunges; POKE_CD after the thrust, CD after the swipe)
+        WAVE_R: 4.5, WAVE_W: 7, WAVE_BOW: 0.22, WAVE_TAIL: 1.6, SWIPE_DMG: 4.8, SWEEP_MS: 300, AFTER_SWIPE: 450, SWIPE_FREEZE: 520, SWIPE_SPREAD: 400, SPINE_ROW: 5, SPINE_ROW_MS: 110, FREEZE_V: 0.9, FROZEN_MS: 1600, SHATTER_DMG: 10.2, SHATTER_R: 1.5, HIT_STOP: 30,   // (the swipe's boom, at its giant spine: SWEEP_MS + AFTER_SWIPE + SWIPE_SPREAD, the same as the thrust's, AFTER_THRUST + SPINE_MS)
         LEAP_MS: 1000, LAND_MIN: 420, LEAP_UP: 250, LEAP_SPEED: 5, LEAP_H: 48, LEAP_TAU: 320, FALL_MS: 95,   // (the climb: LEAP_H x (1 - e^(-t / LEAP_TAU)), fast off the floor, ever slower toward LEAP_H, never still)
         SLAM_CD: 650, SLAM_R: 3, SLAM_DMG: 10.8, ERUPT_DMG: 21.6, AFTER_SLAM: 750, HEIGHT_K: 0.45, SLAM_STOP: 130,   // (HEIGHT_K: how much more the slam hits from the full base height than from the earliest landing)   // (the hitstops: ms, real time; LEAP_SPEED tiles a second; SLAM_R how far the slam's footprint reaches from where you land)
         SEA_W: 2.6, SEA_GAP: 6, SEA_RUSH: 200, CREST_GAP: 5, CHURN_MS: 110,  CRASH_STOP: 80, LANE_FREEZE: 90, LANE_HOLD: 100, JET_MS: 450, JET_FROST: 330, JET_CATCH: 300, JET_W0: 1, JET_W1: 2.6, NOSE: 0.75, SLAM_WAVE: 690, SLAM_FROST: 40,
@@ -49,6 +51,7 @@ class Trident {
         PULL_R: 2.5, CARRY_DMG: 3, END_DMG: 8.4, END_BIG: 1.4, END_PER: 0.1, WALL_DMG: 7.2, DAZE_MS: 600, LONG_DAZE: 2200, END_STOP: 110, LANE_W: 1,
         BITE_MS: 3000, BITE_MAX: 6000, GROW: 0.45, GROW_UP: 0.2, BITE_TICK: 200,
         AURA: 3.5, AURA_UP: 0.5, SLOW: 0.35,
+        FAR_NEAR: 0.7, FAR_EDGE: 1.5, FAR_THRUST: 7, FAR_HOT: 0.8,   // Crest (FAR_HOT: how far out, of the reach, a hit shows as one)
         MARK_THRUST: 2, MARK_SWIPE: 1, MARK_MAX: 3, MARK_MS: 4000, MARK_K: 0.4, MARK_BITE: 1000,   // Rime marks: the thrust's and the swipe's, shattered by the slam's eruption
         PTS: [1, 1, 2], PTS_N: 5, KIN_COST: 48, KIN_MAX: 96,
         KIN_N: 3, KIN_CAP: 9, KIN_STATS: 0.5, KIN_HP: 0.25, KIN_TAUNT: 3, KIN_DMG: 3, KIN_STEP: 150, KIN_NIP: 650, KIN_SEEK: 8, KIN_AURA: 2, KIN_CHILL: 0.3,
@@ -104,7 +107,8 @@ class Trident {
     // the trident, the nearest of thirty-two ways to `a`: its frame (a quarter's nine, typed: e e2 ese ese2 se sse2 sse s2 s) and the flips
     static T32 = ['e', 'e2', 'ese', 'ese2', 'se', 'sse2', 'sse', 's2', 's'];
     static dir32(a) { const i = ((Math.round(a / (Math.PI / 16)) % 32) + 32) % 32; return i <= 8 ? [i, 0, 0] : i <= 16 ? [16 - i, 1, 0] : i <= 24 ? [i - 16, 1, 1] : [32 - i, 0, 1]; }
-    static face(spr, a) { const [b, fx, fy] = Trident.dir32(a); return spr.setFrame('tri_' + Trident.T32[b]).setFlip(!!fx, !!fy); }
+    static phase(S) { return Math.floor(S.time.now / 90) % 4; }   // (the frost's 4 beats: clean, half crust, full, cracked)
+    static face(spr, a, ph = Trident.phase(spr.scene)) { const [b, fx, fy] = Trident.dir32(a); return spr.setFrame(`tri_${Trident.T32[b]}${fy ? 'u' : ''}_${ph}`).setFlip(!!fx, !!fy); }   // (u: for a frame flipped upright: its icicles are typed to hang down once flipped)
     // a short streak behind it on a fast move: the frame it was on a moment ago, left fading where it was
     static streak(S, spr, alpha = 0.4, ms = 90) {
         if (!spr?.active) return;
@@ -152,7 +156,7 @@ class Trident {
         const [f, fx, fy] = Trident.DIRS[((i8 % 8) + 8) % 8];
         return Trident.once(S, x, y, `tri_${base}_${f}`, k, depth).setFlip(!!fx, !!fy);
     }
-    // THE SEA (the swipe's sheet of water, the throw's wake) is only drawn: sprites, never a water tile (no addWater, nothing in
+    // THE SEA (the swipe's wave, the throw's wake) is only drawn: sprites, never a water tile (no addWater, nothing in
     // waterTiles, no wet flag on anything), so it wets nothing, conducts nothing, feeds no Diver and wakes no Drowner.
     // A piece of water at (x, y): typed, no outline, so a crowd of them is one body of water; its ripples moving
     static water(S, x, y, k, depth, tone) {
@@ -182,37 +186,6 @@ class Trident {
         S.tweens.add({ targets: d, x: x + vx * ms / 1000, duration: ms });
         S.tweens.add({ targets: d, y: { value: y + vy * ms / 1000 + fall, ease: p => p * p + (1 - p) * p * 0 }, duration: ms, onComplete: () => d.destroy() });
         return d;
-    }
-    // The swing's sea, a frame of it: water thrown all across the span the trident swept since the last frame (a0 to a1, R0 to R1 px
-    // out), laid into `water` and `foam` (containers on you: the sheet moves with you as one piece while it's swung): pieces of water
-    // running together into one sheet with a haze of blue under them, a foam crest along the reach, a foam front at the tines (going
-    // in a moment, so it rides with them), drops flung off the crest like embers. Every piece rolls on outward and round the way it
-    // was swung, the further out the further (the sheet curling over). sea: the pieces, for the freeze
-    static sheet(S, sea, a0, a1, water, foam, side, R0, R1) {
-        const T = S.TILE_SIZE, lob = sea._lob ||= Trident.wavy([0.06, 0.04], [4, 9]), torn = sea._torn ||= Trident.wavy([0.5, 0.35], [6, 13]);   // (this cast's own shape)
-        const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / Trident.CFG.SHEET_STEP));   // (every SHEET_STEP of the swing, at its own angle, however long the frame)
-        for (let i = 1; i <= n; i++) {
-            const b = a0 + (a1 - a0) * i / n, c = Math.cos(b), sn = Math.sin(b), tc = -sn * side, ts = c * side, k = sea._k = (sea._k || 0) + 1;
-            const put = (box, w, r, out, round, ms = 640) => { const wx = Math.floor((water.x + c * r) / T), wy = Math.floor((water.y + sn * r + 6) / T); if (S.world[wx]?.[wy] !== S.FLOOR || !Trident.clear(S, S.playerX, S.playerY, wx, wy)) { w.destroy(); return w; } box.add(w); w.setPosition(c * r, sn * r); sea.push(w);
-                const ex = w.x + c * out + tc * round, ey = w.y + sn * out + ts * round, etx = Math.floor((water.x + ex) / T), ety = Math.floor((water.y + ey + 6) / T);
-                if (S.world[etx]?.[ety] !== S.FLOOR || !Trident.clear(S, S.playerX, S.playerY, etx, ety)) { out = 0; round = 0; }   // (its creep stops short of a wall)
-                S.tweens.add({ targets: w, x: w.x + c * out + tc * round, y: w.y + sn * out + ts * round, scaleX: w.scaleX * (1.2 + 1.4 * out / Math.max(20, r)), scaleY: w.scaleY * (1.2 + 1.4 * out / Math.max(20, r)), duration: ms * 2.6, ease: 'Quad.easeOut' }); return w; };   // (still creeping out when the frost comes, growing as it goes: one sheet)   // (still creeping out when the frost comes)
-            if (k % 2) { const g = S.add.image(0, 0, 'vfx_glow').setTint(0x1a5aa6).setAlpha(0.28).setScale(0.4 + Math.random() * 0.2); g._kind = 'glow'; put(water, g, R0 + Math.random() * (R1 - R0), 6, 6); }
-            const Rb = R1 * lob(b), Ra = R0 * Math.max(0.5, torn(b));   // (its reach lumpy, its inner edge torn)
-            for (let j = 0; j < 4; j++) {   // the body: one piece in each of four bands across the span (jittered inside it), bigger further out, so they overlap both ways
-                const r = Ra + (Rb - Ra) * (j + 0.3 + Math.random() * 0.4) / 4, q = r / R1, w = Trident.water(S, 0, 0, 1.4 + 0.5 * q + Math.random() * 0.2, 0);
-                S.tweens.add({ targets: w, alpha: 0.88, duration: 70 });
-                put(water, w, r, 2 + 10 * q, 2 + 12 * q);
-            }
-            put(foam, Trident.crest(S, 0, 0, b, k, 0), Rb + (Math.random() - 0.5) * 4, 10 + Math.random() * 8, 8 + Math.random() * 8);   // (the crest, a piece a step: unbroken, breaking unevenly)
-            if (k % 2) { const rq = Ra + Math.random() * (Rb - Ra), wx = Math.floor((water.x + c * rq) / T), wy = Math.floor((water.y + sn * rq + 6) / T); if (S.world[wx]?.[wy] === S.FLOOR && Trident.clear(S, S.playerX, S.playerY, wx, wy)) Trident.churnBody(S, sea, c * rq, sn * rq, b + side * Math.PI / 2, 0, water); }
-            if (!(k % 2)) {   // (the front, at the tines)
-                const ff = S.add.image(0, 0, 'fx_trident', 'foam_' + Math.floor(Math.random() * 3)).setScale(1.2 + Math.random() * 0.4); ff._kind = 'foam';
-                put(foam, ff, R0 + 4 + Math.random() * (R1 - R0 - 4), 3, 4, 200);
-                S.tweens.add({ targets: ff, alpha: 0, delay: 60, duration: 160 });
-            }
-            if (Math.random() < 0.2 && S.world[Math.floor((water.x + c * R1) / T)]?.[Math.floor((water.y + sn * R1 + 6) / T)] === S.FLOOR && Trident.clear(S, S.playerX, S.playerY, Math.floor((water.x + c * R1) / T), Math.floor((water.y + sn * R1 + 6) / T))) { const v = 50 + Math.random() * 80, u = 20 + Math.random() * 50; Trident.drop(S, sea, water.x + c * R1, water.y + sn * R1, c * v + tc * u, sn * v + ts * u - 70); }
-        }
     }
     // a piece of a wave's crest at (x, y), its front facing a: one of six typed shapes of foam, any of them, flipped along itself at
     // random (the callers laying them overlapping along a front, unevenly, so it's one unbroken edge that never repeats); it churns
@@ -249,11 +222,9 @@ class Trident {
     static wpos(w) { const c = w.parentContainer; return c ? [c.x + w.x, c.y + w.y] : [w.x, w.y]; }
     // THE CHASE: a frost front run out from (ox, oy) from now, at(t) how far it's got t ms on (px), till it's past `far`: each piece
     // of the sea it reaches flash-freezes that instant where it is, moving or not (freezeBit); the front a hard white crackling line
-    // (line(r): points along it at r), a cold shadow running just ahead of it; a crackle rising as it goes, a crack as it's done
+    // (line(r): points along it at r), a cold shadow running just ahead of it; a crack as it's done
     static chase(S, sea, ox, oy, at, far, line) {
         const t0 = Trident.clock(S), F = Trident.fx(S);
-        let half = false;
-        Sfx.play(S, 'freeze', { soft: true });
         const ev = S.time.addEvent({ delay: 16, loop: true, callback: () => {
             if (!S.sys?.isActive()) { ev.remove(); return; }
             const r = at(Trident.clock(S) - t0);
@@ -262,8 +233,7 @@ class Trident {
                 for (const [x, y] of line(r)) { Trident.once(S, x, y, 'tri_crk', 1.2, 3.3).setFlip(Math.random() < 0.5, Math.random() < 0.5); F.spark.emitParticleAt(x, y, 1); }
                 for (const [x, y] of line(r + 14)) { const d = S.add.image(x, y, 'vfx_glow').setTint(0x081830).setAlpha(0.22).setScale(0.35).setDepth(0.99); S.tweens.add({ targets: d, alpha: 0, duration: 160, onComplete: () => d.destroy() }); }
             }
-            if (!half && r >= far / 2) { half = true; Sfx.play(S, 'freeze'); }
-            if (r >= far + 16) { ev.remove(); Sfx.play(S, 'shatter', { soft: true }); }
+            if (r >= far + 16) { ev.remove(); Sfx.play(S, 'tri_crack', { soft: true }); }
         } });
     }
     // The sea FLASH-FROZEN from (ox, oy) out, v px a ms: each piece stopped dead where it is as the front reaches it, gone white as
@@ -275,7 +245,6 @@ class Trident {
             const [x, y] = Trident.wpos(w), ms = Math.hypot(x - ox, y - oy) / v; far = Math.max(far, ms);
             S.time.delayedCall(ms, () => Trident.freezeBit(S, w));
         }
-        Sfx.play(S, 'freeze');
         return far;
     }
     // a piece of the frozen sea blown apart from (cx, cy): flung out fast and gone (up: thrown up off the floor and falling back),
@@ -299,13 +268,12 @@ class Trident {
         if (w._kind === 'sea' && Math.random() < 0.35) { RF.dir = [(up ? -Math.PI / 2 : a) * 180 / Math.PI, 50]; RF.shard.emitParticleAt(wx, wy, 1); RF.dir = null; }
     }
     // an explosion of ice at (x, y), k its size: Rimeguard's burst and a flash (nova), a shockwave, shards and chunks blasted out;
-    // sound 'full' a crack and a boom, 'small' a crack; from k 1 a shake
-    static boom(S, x, y, k, sound) {
+    // from k 1 a shake
+    static boom(S, x, y, k) {
         const F = Trident.fx(S), RF = Rimeguard.fx(S);
         Trident.nova(S, x, y, k);
         if (k >= 1) Trident.ring(S, x, y + 2, 0.8 * k, 0);
         RF.shard.emitParticleAt(x, y - 4, Math.round(5 * k)); F.dir = [-90, 220]; F.chunk.emitParticleAt(x, y, Math.max(1, Math.round(3 * k))); F.dir = null;
-        if (sound) { Sfx.play(S, 'shatter', sound === 'small' ? { soft: true } : undefined); if (sound === 'full') Sfx.play(S, 'slam', { small: k < 1.5 }); }
         if (k >= 1) S.cameras.main.shake(80 + 40 * k, 0.003 * k);
     }
     // a piece of the sea frozen: water to cracked ice (white first), foam to rime, a drop to a bead of ice, a sheet of spray
@@ -318,7 +286,7 @@ class Trident {
         if (k === 'glow') { w.setTint(0x5fb8e8).setAlpha(Math.min(0.18, w.alpha)); return; }
         if (k === 'sea') {
             w.anims.stop(); w.setFrame('flash_' + w._b).setAlpha(0.28);   // (a glance of white as the frost goes through, then clear ice)
-            S.time.delayedCall(35, () => w.active && w.setFrame('ice_' + w._b).setAlpha(0.66));
+            S.time.delayedCall(35, () => w.active && w.setFrame('ice_' + w._b).setAlpha(w._iceA ?? 0.66));
             if (Math.random() < 0.3) Trident.once(S, wx, wy, 'tri_crk', w.scaleX * 0.9, D + 0.05).setFlip(Math.random() < 0.5, Math.random() < 0.5);
         } else if (k === 'foam') w.setFrame('rimefoam_' + (Math.random() < 0.5 ? 0 : 1));
         else if (k === 'crest') w.setFrame('i' + w.frame.name);
@@ -359,14 +327,14 @@ class Trident {
 
     // An ice hit on e: through resistance, brittle and your damage (not damageEnemy: its ice hits have a free chance to cube), then
     // `chill` (applyChill's weight). Ice elementals take no damage, only the chill. 'kill' if it died.
-    static hit(S, e, dmg, chill = 0) {
+    static hit(S, e, dmg, chill = 0, col = '#aaeeff') {
         if (S._roomGated?.() && e.tutorialRoomIndex !== undefined && e.tutorialRoomIndex !== S.getCurrentPlayerRoom()) return false;   // a room you haven't entered
         if (!e.iceImmune) {
             const d = S.resolveElementalHit(e, dmg, 'ice');
             if (d === null) return false;
             e.health -= d;
-            S.showDamageNumber(e.sprite.x, e.sprite.y - 10, Math.round(d), '#aaeeff');
-            CombatSystem.hitFlash(S, e, d, 'ice', true);
+            S.showDamageNumber(e.sprite.x, e.sprite.y - 10, Math.round(d), col);
+            CombatSystem.hitFlash(S, e, d, 'ice', 'tri_hit');
             S.updateEnemyHealthBar(e);
             if (!e._noUlt) S.gainUltCharge?.(S.ultChargePerHit);
             if (e.health <= 0) { S._destroyChillIndicator?.(e); S.killEnemy(e); return 'kill'; }
@@ -420,22 +388,39 @@ class Trident {
         st.holdCombo = 0;
         st.at = now; st.cd = st.combo === 0 ? C.POKE_CD : C.CD; S._gearFiredAt = now; st.comboEnd = 0;
         if (st.combo === 0) { st.comboHits = [null, null, null]; Trident.jab(S, aim); }   // (a new combo: which of its hits struck, for the Frost Shield and the meter)
-        else if (st.combo === 1) Trident.swipe(S, aim);
+        else if (st.combo === 1 || S._gravZone?.()) Trident.swipe(S, aim);   // (the gravity room's fall: no leap, the swipe again)
         else Trident.leap(S, aim);
     }
     // a struck enemy: the hit and a burst; true if it took it
-    static strike(S, e, dmg, chill, aim, k = 1) {
-        const r = Trident.hit(S, e, dmg, chill), F = Trident.fx(S);
+    static strike(S, e, dmg, chill, aim, k, far) {
+        const r = Trident.hitFar(S, e, dmg, chill, far), F = Trident.fx(S);
         if (r && e.sprite?.active) { F.dir = [aim * 180 / Math.PI, 70]; Trident.burst(S, e.sprite.x, e.sprite.y - 4, k); F.dir = null; }
         return !!r;
     }
-    // bosses and queens on the tiles (once)
-    static tiles(S, cells, dmg) {
-        const seen = new Set();
+    // Crest: what a hit is worth k of the way out to the edge of its reach, most of the rise in the last stretch
+    static far(k) { const C = Trident.CFG; return C.FAR_NEAR + (C.FAR_EDGE - C.FAR_NEAR) * Math.min(1, Math.max(0, k)) ** 2; }
+    // how far out on the slam a tile is, dx, dy from where you came down: 1 all round its squircle's rim, its corners too
+    static rimK(dx, dy) { const x = Math.abs(dx), y = Math.abs(dy); return Math.max(x, y, (x + y) * 0.75) / Trident.CFG.SLAM_R; }
+    // a hit of the combo, k of the way out: its number dim when it's weak, bright when it's a crest hit
+    static hitFar(S, e, dmg, chill, k) {
+        const hot = k >= Trident.CFG.FAR_HOT, x = e.sprite?.x, y = e.sprite?.y, r = Trident.hit(S, e, dmg * Trident.far(k), chill, hot ? '#f2feff' : k < 0.5 ? '#6f9fc4' : '#aaeeff');
+        if (r && hot) Trident.crestFx(S, x, y);
+        return r;
+    }
+    // a crest hit landing: a burst, a ring of frost round it, and (no more than every 350ms) the word and a crack
+    static crestFx(S, x, y) {
+        const st = Trident.st(S), now = S.time.now;
+        Trident.nova(S, x, y - 6, 1.25); Trident.ring(S, x, y + 2, 0.9, 0);
+        if (now - (st.crestAt || -1e9) > 350) { st.crestAt = now; S.showStatusText(x, y - 40, 'CREST', '#7ff4ff'); Sfx.play(S, 'tri_crack'); }
+    }
+    // bosses and queens on the tiles (once), kOf(x, y) how far out a tile is if the hit is one of the combo's
+    static tiles(S, cells, dmg, kOf) {
+        const seen = new Set(), T = S.TILE_SIZE;
         let boss = false;
         for (const [x, y] of cells) {
-            if (!boss && S.damageBossAtTile?.(x, y, dmg, undefined, 'ice')) boss = true;
-            const p = S.getPortalAt?.(x, y); if (p && !seen.has(p)) { seen.add(p); S.damagePortal(p, dmg); }
+            const k = kOf?.(x, y), d = k === undefined ? dmg : dmg * Trident.far(k), hot = k >= Trident.CFG.FAR_HOT;
+            if (!boss && S.damageBossAtTile?.(x, y, d, undefined, 'ice')) { boss = true; if (hot) Trident.crestFx(S, x * T + T / 2, y * T + T / 2); }
+            const p = S.getPortalAt?.(x, y); if (p && !seen.has(p)) { seen.add(p); S.damagePortal(p, d); if (hot) Trident.crestFx(S, x * T + T / 2, y * T + T / 2); }
         }
         return boss;
     }
@@ -453,11 +438,11 @@ class Trident {
         let struck = 0;
         for (const e of [...(S.enemies || [])]) {
             if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y) || inLine(e) < 0) continue;
-            if (Trident.hit(S, e, dmg, chill)) { struck++; Trident.mark(S, e, C.MARK_THRUST); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 4, 'tri_spray_' + Trident.dir(aim)[0], 1.1, 3.3, false).setFlip(!!Trident.dir(aim)[1], !!Trident.dir(aim)[2]); }   // (a splash of the jet: the ice comes with the freeze)
+            if (Trident.hitFar(S, e, dmg, chill, inLine(e) / C.FAR_THRUST)) { struck++; Trident.mark(S, e, C.MARK_THRUST); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 4, 'tri_spray_' + Trident.dir(aim)[0], 1.1, 3.3, false).setFlip(!!Trident.dir(aim)[1], !!Trident.dir(aim)[2]); }   // (a splash of the jet: the ice comes with the freeze)
         }
-        const cells = [];
+        const cells = [], outK = (x, y) => Math.hypot(x - ox, y - oy) / C.FAR_THRUST;
         for (let d = 0.5; d <= reach + 0.01; d += 0.5) for (const w of [-1, 0, 1]) cells.push([Math.round(ox + ux * d - uy * w), Math.round(oy + uy * d + ux * w)]);
-        if (Trident.tiles(S, cells, dmg)) struck++;
+        if (Trident.tiles(S, cells, dmg, outK)) struck++;
         const st0 = Trident.st(S); if (st0.comboHits) st0.comboHits[0] = struck > 0;
         if (struck) { Glaive.hitstop(S, C.HIT_STOP); Trident.gain(S, struck, 0); }
         // the look: a quick poke straight down the aim and a JET of seawater driven down the line to the end of the reach (JET_MS):
@@ -465,10 +450,10 @@ class Trident {
         // water). Its aftershock: the jet flash-freezes from you out, and the spine erupts out of it, blowing it apart as it goes
         const hx = S._shotX(), hy = S._shotY(), G = C.GRIP * C.SCALE;
         S._scytheSpinUntil = now + 200;   // (the one in your hand is the one stabbing)
-        const spr = Trident.face(S.add.sprite(hx + ux * (G - 6), hy + uy * (G - 6), 'fx_trident', 'tri_e'), aim).setScale(C.SCALE).setDepth(3.2);
+        const spr = Trident.face(S.add.sprite(hx + ux * (G - 6), hy + uy * (G - 6), 'fx_trident', 'tri_e'), aim, 1).setScale(C.SCALE).setDepth(3.2), beat = () => Trident.face(spr, aim, (1 + Math.floor((S.time.now - now) / 60)) % 4);   // (full frost at full stretch, the crack on the way back)
         const far = G + C.JAB * T * Math.min(1, reach / C.REACH);
-        S.tweens.add({ targets: spr, x: hx + ux * far, y: hy + uy * far, duration: 60, ease: 'Quad.easeOut', onComplete: () =>
-            S.tweens.add({ targets: spr, x: hx + ux * G, y: hy + uy * G, duration: 120, ease: 'Quad.easeIn', onComplete: () => spr.destroy() }) });
+        S.tweens.add({ targets: spr, x: hx + ux * far, y: hy + uy * far, duration: 60, ease: 'Quad.easeOut', onUpdate: beat, onComplete: () =>
+            S.tweens.add({ targets: spr, x: hx + ux * G, y: hy + uy * G, duration: 120, ease: 'Quad.easeIn', onUpdate: beat, onComplete: () => spr.destroy() }) });
         const gx = ox * T + T / 2, gy = oy * T + T / 2 + 4, pc = Trident.pace(S), end = Math.max(T, reach * T), nx = -uy, ny = ux, jet = [], TJ = C.JET_MS * pc, TF = C.JET_FROST * pc;
         // its outline: narrow at the tines (JET_W0 tiles across), swelling to JET_W1 along its length, a rounded tail cap at your end
         // and a bull-nosed head (a half-round crest, NOSE of its width long, riding the front, water inside it); each edge its own
@@ -515,7 +500,7 @@ class Trident {
         S.time.delayedCall(C.AFTER_THRUST * pc, () => {
             if (!S.sys?.isActive()) return;
             const sd = C.SPIKE_DMG * (S.damageScaling || 1), hitAt = new Set(), n = Math.max(2, Math.round(reach / 0.6)), RF = Rimeguard.fx(S);
-            Sfx.play(S, 'slam', { small: true }); Sfx.play(S, 'freeze', { soft: true });
+            Sfx.play(S, 'slam', { small: true });
             for (let i = 1; i <= n; i++) {
                 const d = 0.25 + (reach - 0.25) * i / n, t = C.SPINE_MS * pc * i / n, last = i === n, k = 1.2 + 0.5 * i / n, life = C.SPINE_MS * pc + C.SPINE_HOLD + 30 * i - t;
                 S.time.delayedCall(t, () => {
@@ -534,16 +519,16 @@ class Trident {
                     for (const e of [...(S.enemies || [])]) {   // the spine reaching this far: what's on the line here takes it, once
                         if (hitAt.has(e) || !e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y)) continue;
                         const a = inLine(e); if (a < 0 || a > d + 0.3) continue;
-                        hitAt.add(e); if (Trident.hit(S, e, sd, 0) && e.sprite?.active) { Trident.burst(S, e.sprite.x, e.sprite.y - 6, last ? 1.4 : 1); Trident.jolt(S, e, last ? 5 : 3); }
+                        hitAt.add(e); if (Trident.hitFar(S, e, sd, 0, a / C.FAR_THRUST) && e.sprite?.active) { Trident.burst(S, e.sprite.x, e.sprite.y - 6, last ? 1.4 : 1); Trident.jolt(S, e, last ? 5 : 3); }
                     }
                     if (last) {   // the great spike at the end: a heavier hit, a flash, a shake, a deeper crack
                         Trident.nova(S, x, y - 8, 1.3); S._vfxFlash?.(x, y - 16, 34, 0xd8fff4, 200, 0.55);
-                        S.cameras.main.shake(120, 0.008); Sfx.play(S, 'slam'); Sfx.play(S, 'shatter');
+                        S.cameras.main.shake(120, 0.008); Sfx.play(S, 'tri_boom');
                         RF.shard.emitParticleAt(x, y - 20, 6); F.dir = [-90, 120]; F.chunk.emitParticleAt(x, y - 4, 4); F.dir = null;
-                    } else if (i % 3 === 1) S.cameras.main.shake(40, 0.002);
+                    } else if (i % 3 === 1) { S.cameras.main.shake(40, 0.002); Sfx.play(S, 'tri_crack', { soft: true }); }
                 });
             }
-            Trident.tiles(S, cells, sd);
+            Trident.tiles(S, cells, sd, outK);
         });
     }
     // A piece of the thrust's spine (kind spine, tip or spur) bursting up out of the floor at (x, y), its foot there: it rises
@@ -569,126 +554,161 @@ class Trident {
             });
         });
     }
-    // 2. The swipe: the tines swept round in front of you over SWEEP_MS, everything within SWIPE_R tiles and SWIPE_ARC° either side
-    // of the aim takes SWIPE_DMG and MARK_SWIPE Rime marks; enemy shots in the arc are knocked out of the air. A crescent of ice
-    // freezes where it was swung, hangs, and (AFTER_SWIPE after the sweep) SHATTERS outward: SHATTER_DMG to everything in the arc
-    // out to SHATTER_R tiles past it, chips left lying on the floor
+    // 2. The swell: the trident brought down and a WAVE rises across your front and rolls straight out over SWEEP_MS, WAVE_W tiles
+    // wide, WAVE_R out, a crescent: its ends trail the middle (WAVE_BOW) and start further out (WAVE_TAIL); a wall stops the stretch that meets it. What its crest reaches takes
+    // SWIPE_DMG and MARK_SWIPE Rime marks, and enemy shots it reaches are knocked out of the air. The frost chases out through it from
+    // you, catching it mid-crest, and AFTER_SWIPE after it's rolled it EXPLODES from you out, the blast taking SWIPE_SPREAD to reach the
+    // crest: SHATTER_DMG to what it covered as the blast gets there, and what's SHATTER_R tiles past the crest at the last of it; rime
+    // spreads over its floor with the blast, which ends in a ROW of great spines along the crest, with the boom
     static swipe(S, aim) {
-        const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, F = Trident.fx(S), ARC = C.SWIPE_ARC * Math.PI / 180, pc = Trident.pace(S);
-        Sfx.play(S, 'swing'); Sfx.play(S, 'w_boreal_trident');   // (not 'whoosh': a transition's slow rush, it came in after the swing)
+        const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, pc = Trident.pace(S), st = Trident.st(S), HW = C.WAVE_W / 2, R = C.WAVE_R, PITCH = 18 / T;
+        Sfx.play(S, 'swing'); Sfx.play(S, 'splash', { big: true });
         const dmg = C.SWIPE_DMG * (S.damageScaling || 1), chill = S._chillCfg().DIRECT * C.HIT_CHILL, ox = S.playerX, oy = S.playerY;
-        const inArc = (e, r) => { const dx = e.x - ox, dy = e.y - oy, d = Math.hypot(dx, dy); return d >= 0.4 && d <= r + 0.3 && Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - aim)) <= ARC && Trident.clear(S, ox, oy, e.x, e.y); };   // (never through a wall)
+        const ux = Math.cos(aim), uy = Math.sin(aim), nx = -uy, ny = ux, gx = ox * T + T / 2, gy = oy * T + T / 2 + 4;
+        const at = (q, al) => [gx + (ux * al + nx * q) * T, gy + (uy * al + ny * q) * T];   // (q tiles across it, al tiles out, in the world)
         const open = (x, y) => { const tx = Math.floor(x / T), ty = Math.floor(y / T); return S.world[tx]?.[ty] === S.FLOOR && Trident.clear(S, ox, oy, tx, ty); };   // (a spot of its look: in sight of you)
-        let struck = 0;
-        for (const e of [...(S.enemies || [])]) {
-            if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y) || !inArc(e, C.SWIPE_R)) continue;
-            if (Trident.strike(S, e, dmg, chill, Math.atan2(e.y - oy, e.x - ox), 0.8)) { struck++; Trident.mark(S, e, C.MARK_SWIPE); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) S._vfxFlash?.(e.sprite.x, e.sprite.y - 6, 18, 0xffffff, 120, 0.5); }
+        // how far out each half tile across it gets: a wall stops that stretch, and what you can't see from where you stand is never in it
+        const reach = [];
+        for (let q = -HW; q <= HW + 0.01; q += 0.5) {
+            const x0 = ox + nx * q, y0 = oy + ny * q, tx = Math.round(x0), ty = Math.round(y0);
+            let d = -1;
+            if (S.world[tx]?.[ty] === S.FLOOR && Trident.clear(S, ox, oy, tx, ty)) for (d = 0; d < R + C.SHATTER_R && S.world[Math.round(x0 + ux * (d + 0.25))]?.[Math.round(y0 + uy * (d + 0.25))] === S.FLOOR; d += 0.25);
+            reach.push(d);
         }
+        const col = q => reach[Math.round((Phaser.Math.Clamp(q, -HW, HW) + HW) * 2)];
+        const edge = (q, d) => Math.min(col(q), d * (1 - C.WAVE_BOW * (q / HW) ** 2));   // (its crest at q, the middle of it d tiles out)
+        const back = q => -0.4 + C.WAVE_TAIL * (q / HW) ** 2;   // (its inner edge at q)
+        const inWave = (e, d) => { const dx = e.x - ox, dy = e.y - oy, al = dx * ux + dy * uy, ac = dx * nx + dy * ny; return Math.abs(ac) <= HW + 0.3 && col(ac) >= 0 && al >= back(ac) - 0.3 && al <= edge(ac, d) + 0.3; };
+        const live = e => e.sprite?.active && e.health > 0 && !S._phasedOut?.(e) && S.isInCurrentRoom(e.x, e.y);
+        const crestK = (x, y) => { const dx = x - ox, dy = y - oy, q = Phaser.Math.Clamp(dx * nx + dy * ny, -HW, HW); return (dx * ux + dy * uy) / (R * (1 - C.WAVE_BOW * (q / HW) ** 2)); };   // (how far out to the crest's curve, walls or no walls)
         const cells = [];
-        for (let da = -2; da <= 2; da++) for (let d = 1; d <= C.SWIPE_R; d++) { const a = aim + da * Math.PI / 4, x = Math.round(ox + Math.cos(a) * d), y = Math.round(oy + Math.sin(a) * d); if (S.world[x]?.[y] === S.FLOOR && Trident.clear(S, ox, oy, x, y)) cells.push([x, y]); }
-        if (Trident.tiles(S, cells, dmg)) struck++;
-        const st1 = Trident.st(S); if (st1.comboHits) st1.comboHits[1] = struck > 0;
-        if (struck) { Glaive.hitstop(S, C.HIT_STOP); Trident.gain(S, struck, 1); }
-        Trident.parry(S, ox * T + T / 2, oy * T + T / 2, aim, ARC, (C.SWIPE_R + 0.5) * T);
-        // the look: the swing throws a sheet of seawater through the whole fan (sheet: one body of water, a foam crest at the reach,
-        // a foam front at the tines, drops flung off it), one piece on you while it's swung (it moves with you); the trident carried
-        // through it over SWEEP_MS (thirty-two ways, a streak behind it), always the same way round. As it ends, the frost chases
-        // out through it from you (where it is then) to its crest, freezing it as it hangs, the crest a crisp rim of ice shards; and
-        // AFTER_SWIPE after the sweep it EXPLODES: a flash, bursts of ice all along the arc, chunks and shards blasted out past its
-        // edge, a crack and a boom, a shake, a hitstop on hits; rime left on the floor along the arc (only the look: no Frostbite)
-        const hx = S._shotX(), hy = S._shotY(), side = 1, K = C.SWIPE_SCALE;
-        const sweep = C.SWEEP_MS * pc, rr = C.SWIPE_R * T * 0.95, mid = 20 * K;   // (mid: the trident's middle, out from your hand)
-        S._scytheSpinUntil = now + sweep + 80;
-        const spr = S.add.sprite(hx, hy, 'fx_trident', 'tri_e').setScale(K).setDepth(3.2);
-        const water = S.add.container(hx, hy).setDepth(0.97), foam = S.add.container(hx, hy).setDepth(0.98), sea = [], shards = [];
-        let was = aim - side * ARC;   // (the sheet laid from the swing's very start to its very end, however few frames it gets)
-        Sfx.play(S, 'splash', { soft: true });
-        S.tweens.addCounter({ from: 0, to: 1, duration: sweep, ease: 'Linear',
-            onUpdate: tw => {
-                const v = tw.getValue(), a = aim + side * (-ARC + 2 * ARC * v), x = S._shotX(), y = S._shotY();
-                water.setPosition(x, y); foam.setPosition(x, y);
-                Trident.streak(S, spr);
-                Trident.face(spr, a).setPosition(x + Math.cos(a) * mid, y + Math.sin(a) * mid);
-                Trident.sheet(S, sea, was, a, water, foam, side, 14, rr); was = a;
-            },
-            onComplete: () => {
-                Trident.sheet(S, sea, was, aim + side * ARC, water, foam, side, 14, rr); was = aim + side * ARC;
-                S.tweens.add({ targets: spr, alpha: 0, duration: 120, delay: 40, onComplete: () => spr.destroy() });
-            } });
+        for (let q = -HW; q <= HW + 0.01; q += 0.5) for (let d = Math.max(0, back(q)); d <= edge(q, R); d += 0.5) cells.push([Math.round(ox + ux * d + nx * q), Math.round(oy + uy * d + ny * q)]);
+        if (st.comboHits) st.comboHits[1] = false;
+        // the look: seawater only (see water): the crest, one foam edge riding over what it reaches, the body laid behind it column by
+        // column as it comes, its flanks foam, spray off the top. Past its reach it keeps creeping till the frost has it
+        const hx = S._shotX(), hy = S._shotY(), mid = 20 * C.SCALE, up = -Math.PI / 2, turn = Phaser.Math.Angle.Wrap(aim - up), TS = C.SWEEP_MS * pc;
+        S._scytheSpinUntil = now + TS + 80;
+        const spr = S.add.sprite(hx, hy, 'fx_trident', 'tri_e_0').setScale(C.SCALE).setDepth(3.2);
+        S.tweens.addCounter({ from: 0, to: 1, duration: TS, ease: 'Quad.easeOut',
+            onUpdate: tw => { const a = up + turn * tw.getValue(), x = S._shotX(), y = S._shotY(); Trident.streak(S, spr); Trident.face(spr, a).setPosition(x + Math.cos(a) * mid, y + Math.sin(a) * mid); },
+            onComplete: () => S.tweens.add({ targets: spr, alpha: 0, duration: 120, delay: 40, onComplete: () => spr.destroy() }) });
         S.cameras.main.shake(70, 0.0025);
-        S.time.delayedCall(sweep, () => {   // the frost chasing out through it from you, to its crest, over SWIPE_FREEZE
+        const sea = [], shards = [], seen = new Set(), head = [], n = Math.round(C.WAVE_W * T / C.CREST_GAP), cols = Math.ceil(C.WAVE_W / PITCH), laid = Array.from({ length: cols }, (_, j) => back(-HW + C.WAVE_W * (j + 0.5) / cols));
+        for (let i = 0; i < n; i++) { const c = Trident.crest(S, gx, gy, aim, i, 3.02); c._q = -HW + C.WAVE_W * (i + 0.5 + (Math.random() - 0.5) * 0.5) / n; c._lag = (Math.random() - 0.5) * 0.14; c.setVisible(false); head.push(c); sea.push(c); }
+        const lay = (j, q, al) => {
+            const [x, y] = at(q + (Math.random() - 0.5) * 0.2, al), w = Trident.water(S, x, y, 1.7 + Math.random() * 0.4, 0.97), out = Math.min(0.3, Math.max(0, col(q) - al)) * T;
+            S.tweens.add({ targets: w, alpha: 0.88, duration: 60 });
+            S.tweens.add({ targets: w, x: x + ux * out, y: y + uy * out, scaleX: w.scaleX * 1.3, scaleY: w.scaleY * 1.3, duration: 1500, ease: 'Quad.easeOut' });   // (still creeping out when the frost comes, growing as it goes: one body)
+            w._iceA = 0.42; sea.push(w);   // (so wide a sheet of ice, clear enough to see what's in it)
+            if (!(j % 3)) { const g = S.add.image(x, y, 'vfx_glow').setTint(0x1a5aa6).setAlpha(0.28).setScale(0.4 + Math.random() * 0.2).setDepth(0.965); g._kind = 'glow'; sea.push(g); }
+            if (Math.random() < 0.1) Trident.churnBody(S, sea, x, y, aim, 0.97);
+            if (j === 0 || j === cols - 1) { const sd = j ? 1 : -1, [fx, fy] = at(sd * HW, al); sea.push(Trident.crest(S, fx, fy, aim + sd * Math.PI / 2, j, 0.98)); }   // (its ends, unbroken)
+            if (al === back(q)) { const sl = 2 * C.WAVE_TAIL * q / HW ** 2; sea.push(Trident.crest(S, x, y, Math.atan2(-uy + ny * sl, -ux + nx * sl), j, 0.98)); }   // (and its inner edge)
+        };
+        let struck = 0, gained = false, bossed = false;
+        const k0 = Trident.clock(S), ev = S.time.addEvent({ delay: 16, loop: true, callback: () => {
+            if (!S.sys?.isActive()) { ev.remove(); return; }
+            const t = Trident.clock(S) - k0, d = R * (1 - (1 - Math.min(1, t / TS)) ** 2) + (t > TS ? 0.3 * (1 - Math.exp(-(t - TS) / 260)) : 0);
+            for (const c of head) if (!c._iced && edge(c._q, d) >= back(c._q)) c.setVisible(true).setPosition(...at(c._q, edge(c._q, d) + c._lag));   // (its ends unfurling as it rolls)
+            for (let j = 0; j < cols; j++) {
+                const q = -HW + C.WAVE_W * (j + 0.5) / cols;
+                if (col(q) < 0) continue;
+                for (const e = edge(q, d) - 0.12; laid[j] <= e; laid[j] += PITCH * (0.7 + Math.random() * 0.4)) lay(j, q, laid[j]);
+            }
+            if (Math.random() < 0.3) { const q = (Math.random() * 2 - 1) * HW; if (col(q) >= 0) { const [x, y] = at(q, edge(q, d)), v = 40 + Math.random() * 70; Trident.drop(S, sea, x, y - 4, ux * v, uy * v - 70); } }   // (spray off its top)
+            if (t <= TS) {
+                Trident.parry(S, gx, gy, aim, Math.PI / 2, (d + 0.5) * T);
+                for (const e of [...(S.enemies || [])]) {
+                    if (seen.has(e) || !live(e) || !inWave(e, d)) continue;
+                    seen.add(e);
+                    if (Trident.strike(S, e, dmg, chill, aim, 0.8, crestK(e.x, e.y))) { if (!struck++) { if (st.comboHits) st.comboHits[1] = true; Glaive.hitstop(S, C.HIT_STOP); } Trident.mark(S, e, C.MARK_SWIPE); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) S._vfxFlash?.(e.sprite.x, e.sprite.y - 6, 18, 0xffffff, 120, 0.5); }
+                }
+                if (!bossed && t >= TS / 2) { bossed = true; if (Trident.tiles(S, cells, dmg, crestK)) { if (!struck++) { if (st.comboHits) st.comboHits[1] = true; Glaive.hitstop(S, C.HIT_STOP); } } }
+            } else if (!gained) { gained = true; if (struck) Trident.gain(S, struck, 1); }
+            if (t >= TS + (C.AFTER_SWIPE + C.SWIPE_SPREAD) * pc || head.every(c => c._iced)) ev.remove();
+        } });
+        S.time.delayedCall(TS, () => {   // the frost chasing out through it from you, catching the crest over SWIPE_FREEZE
             if (!S.sys?.isActive()) return;
-            const bx = water.x, by = water.y, TC = C.SWIPE_FREEZE * pc;
-            Trident.chase(S, sea, bx, by, t => (rr + 14) * t / TC, rr + 14, r => [0, 1, 2].map(() => { const a = aim - ARC + Math.random() * 2 * ARC; return [bx + Math.cos(a) * r, by + Math.sin(a) * r]; }));
-            S.time.delayedCall(TC * 0.95, () => {   // the crest frozen into a crisp rim of ice shards along the reach
+            const far = Math.hypot(R, HW) * T, TC = C.SWIPE_FREEZE * pc;
+            Trident.chase(S, sea, gx, gy, t => (far + 14) * t / TC, far + 14, r => [0, 1, 2].map(() => { const q = (Math.random() * 2 - 1) * Math.min(r / T, HW), al = Math.min(Math.sqrt(Math.max(0, (r / T) ** 2 - q * q)), Math.max(0, edge(q, R))); return at(q, al); }));
+            S.time.delayedCall(TC * 0.95, () => {   // the crest frozen into a crisp rim of ice shards
                 if (!S.sys?.isActive()) return;
-                for (let i = 0; i <= 20; i++) { const a = aim - ARC + 2 * ARC * i / 20, [f, fx, fy] = Trident.dir(a); if (!open(bx + Math.cos(a) * rr * 1.08, by + Math.sin(a) * rr * 1.08 + 6)) continue; shards.push({ sh: S.add.image(bx + Math.cos(a) * rr * 1.08, by + Math.sin(a) * rr * 1.08, 'fx_trident', 'cres_' + f).setFlip(!!fx, !!fy).setScale(1.3).setDepth(3.28), a }); }
+                const [f, fx, fy] = Trident.dir(aim);
+                for (let i = 0; i <= 20; i++) { const q = -HW + C.WAVE_W * i / 20; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, R) + 0.2); if (open(x, y + 6)) shards.push(S.add.image(x, y, 'fx_trident', 'cres_' + f).setFlip(!!fx, !!fy).setScale(1.3).setDepth(3.28)); }
             });
         });
-        // the aftershock: the frozen sheet EXPLODES outward
-        S.time.delayedCall(sweep + C.AFTER_SWIPE * pc, () => {
-            const done = () => S.time.delayedCall(700, () => { water.destroy(); foam.destroy(); });
-            if (!S.sys?.isActive()) { shards.forEach(s => s.sh.destroy()); sea.forEach(w => w.destroy()); return done(); }
-            const sd = C.SHATTER_DMG * (S.damageScaling || 1), bx = water.x, by = water.y, RF = Rimeguard.fx(S);
+        // the aftershock: the frozen wave EXPLODES, from you out: the blast rolls to the crest in the crest's own curve, what's in reach
+        // hit as it arrives, the ice blown apart where it passes, the rim and the big shards going with the last of it
+        S.time.delayedCall(TS + C.AFTER_SWIPE * pc, () => {
+            if (!S.sys?.isActive()) { shards.forEach(s => s.destroy()); sea.forEach(w => w.destroy()); return; }
+            const sd = C.SHATTER_DMG * (S.damageScaling || 1), RF = Rimeguard.fx(S), steps = Math.round(R / 0.5), blasted = new Set();
             let hits = 0;
-            for (const e of [...(S.enemies || [])]) {
-                if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y) || !inArc(e, C.SWIPE_R + C.SHATTER_R)) continue;
-                if (Trident.hit(S, e, sd, 0) && e.sprite?.active) { hits++; Trident.burst(S, e.sprite.x, e.sprite.y - 6, 0.8); Trident.jolt(S, e, 3); }
-            }
-            if (Trident.tiles(S, cells, sd)) hits++;
-            if (hits) Glaive.hitstop(S, 60);
-            S._vfxFlash?.(bx + Math.cos(aim) * rr * 0.55, by + Math.sin(aim) * rr * 0.55, rr * 1.3, 0xe8fbff, 240, 0.7);
-            for (let i = 0; i < 9; i++) { const a = aim - ARC * 0.88 + 1.76 * ARC * i / 8; if (open(bx + Math.cos(a) * rr * 0.68, by + Math.sin(a) * rr * 0.68 + 6)) Trident.boom(S, bx + Math.cos(a) * rr * 0.68, by + Math.sin(a) * rr * 0.68, 1.15, null); }
-            Sfx.play(S, 'shatter', { soft: true });   // (a crack: the boom comes with the giant spine at the end of the rime)
-            for (let i = 0; i < 6; i++) { const a = aim - ARC + 2 * ARC * (i + Math.random()) / 6, r = rr * (0.55 + Math.random() * 0.4); if (open(bx + Math.cos(a) * r, by + Math.sin(a) * r + 6)) Rimeguard.spike(S, bx + Math.cos(a) * r, by + Math.sin(a) * r + 6, 1 + Math.random() * 0.5, 20 * i, true); }
-            Trident.ring(S, bx, by + 4, rr / 22 * 0.85, 0);
-            S.cameras.main.shake(160, 0.01);
-            for (const w of sea) Trident.fling(S, w, bx, by, C.SHATTER_R * T * 1.4, false, 190);
-            for (const { sh, a } of shards) {   // the rim, blasted out past the fan's edge
-                if (!sh.active) continue;
-                RF.dir = [a * 180 / Math.PI, 30]; RF.shard.emitParticleAt(sh.x, sh.y, 2); RF.dir = null;
-                S.tweens.add({ targets: sh, x: sh.x + Math.cos(a) * C.SHATTER_R * T * 1.4, y: sh.y + Math.sin(a) * C.SHATTER_R * T * 1.4, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => sh.destroy() });
-            }
-            for (let i = 0; i < 8; i++) {   // and eight big shards thrown out past it, landing, gone within a second
-                const a = aim - ARC + 2 * ARC * (i + 0.2 + Math.random() * 0.6) / 8, fx0 = bx + Math.cos(a) * rr, fy0 = by + Math.sin(a) * rr;
-                if (!open(fx0, fy0 + 6)) continue;
-                const ex = fx0 + Math.cos(a) * T * (1 + Math.random() * 1.2), ey = fy0 + Math.sin(a) * T * (1 + Math.random() * 1.2) + 6;
-                const c = S.add.image(fx0, fy0, 'fx_rimeguard', 'shard_' + Math.floor(Math.random() * 3)).setScale(1.6 + Math.random() * 0.5).setFlipX(Math.random() < 0.5).setDepth(3.29);
-                S.tweens.add({ targets: c, x: ex, duration: 240, ease: 'Quad.easeOut' }); S.tweens.add({ targets: c, y: { value: ey, ease: p => p * p * 1.3 - 0.3 * p }, duration: 240, onComplete: () => { c.setDepth(0.95); S.tweens.add({ targets: c, alpha: 0, delay: 450, duration: 300, onComplete: () => c.destroy() }); } });
-            }
-            // rime left on the floor along the arc (only its look: no iced tiles, no Frostbite)
-            const tx0 = Math.floor(bx / T), ty0 = Math.floor(by / T), st = Trident.st(S); st.seed = (st.seed || 0) + 1;
-            for (let dx = -C.SWIPE_R; dx <= C.SWIPE_R; dx++) for (let dy = -C.SWIPE_R; dy <= C.SWIPE_R; dy++) {
-                const d = Math.hypot(dx, dy), x = tx0 + dx, y = ty0 + dy;
-                if (d < 0.8 || d > C.SWIPE_R + 0.3 || Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - aim)) > ARC || S.world[x]?.[y] !== S.FLOOR || !Trident.clear(S, tx0, ty0, x, y)) continue;
-                S.time.delayedCall(C.SWIPE_SPREAD * pc * d / C.SWIPE_R, () => S.sys?.isActive() && Trident.rimeTile(S, x, y, C.RIME_FAST, Math.max(0.2, 0.9 - 0.2 * Math.abs(d - C.SWIPE_R * 0.7))));
+            Sfx.play(S, 'tri_crack', { soft: true });   // (a crack: the boom comes with the giant spine at the end of the rime)
+            for (let i = 1; i <= steps; i++) S.time.delayedCall(C.SWIPE_SPREAD * pc * i / steps, () => {
+                if (!S.sys?.isActive()) return;
+                const last = i === steps, f = R * i / steps, d = last ? R + C.SHATTER_R : f;
+                for (const e of [...(S.enemies || [])]) {
+                    if (blasted.has(e) || !live(e) || !inWave(e, d)) continue;
+                    blasted.add(e);
+                    if (Trident.hitFar(S, e, sd, 0, crestK(e.x, e.y)) && e.sprite?.active) { if (!hits++) Glaive.hitstop(S, 60); Trident.burst(S, e.sprite.x, e.sprite.y - 6, 0.8); Trident.jolt(S, e, 3); }
+                }
+                if (i === Math.ceil(steps / 2) && Trident.tiles(S, cells, sd, crestK) && !hits++) Glaive.hitstop(S, 60);
+                for (const w of sea) {
+                    if (w._gone || !w.active) continue;
+                    const [x, y] = Trident.wpos(w), al = ((x - gx) * ux + (y - gy) * uy) / T, ac = ((x - gx) * nx + (y - gy) * ny) / T;
+                    if (last || al <= edge(ac, f)) { w._gone = true; Trident.fling(S, w, gx, gy, C.SHATTER_R * T * 1.4, false, 190); }
+                }
+                for (let k = 0; k < 3; k++) { const q = -HW + C.WAVE_W * (k + Math.random()) / 3; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, f)); if (open(x, y + 6)) Trident.boom(S, x, y, 1.15); }
+                const [mx, my] = at(0, f); S._vfxFlash?.(mx, my, T * 2.4, 0xe8fbff, 180, 0.45);
+                if (i % 3 === 1) S.cameras.main.shake(70, 0.004);
+                if (!last) return;
+                for (const sh of shards) {   // the rim, blasted out past the crest
+                    if (!sh.active) continue;
+                    RF.dir = [aim * 180 / Math.PI, 30]; RF.shard.emitParticleAt(sh.x, sh.y, 2); RF.dir = null;
+                    S.tweens.add({ targets: sh, x: sh.x + ux * C.SHATTER_R * T * 1.4, y: sh.y + uy * C.SHATTER_R * T * 1.4, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => sh.destroy() });
+                }
+                for (let k = 0; k < 8; k++) {   // and eight big shards thrown out past it, landing, gone within a second
+                    const q = -HW + C.WAVE_W * (k + 0.2 + Math.random() * 0.6) / 8;
+                    if (col(q) < 0) continue;
+                    const [fx0, fy0] = at(q, edge(q, R));
+                    if (!open(fx0, fy0 + 6)) continue;
+                    const ex = fx0 + ux * T * (1 + Math.random() * 1.2), ey = fy0 + uy * T * (1 + Math.random() * 1.2) + 6;
+                    const c = S.add.image(fx0, fy0, 'fx_rimeguard', 'shard_' + Math.floor(Math.random() * 3)).setScale(1.6 + Math.random() * 0.5).setFlipX(Math.random() < 0.5).setDepth(3.29);
+                    S.tweens.add({ targets: c, x: ex, duration: 240, ease: 'Quad.easeOut' }); S.tweens.add({ targets: c, y: { value: ey, ease: p => p * p * 1.3 - 0.3 * p }, duration: 240, onComplete: () => { c.setDepth(0.95); S.tweens.add({ targets: c, alpha: 0, delay: 450, duration: 300, onComplete: () => c.destroy() }); } });
+                }
+            });
+            // rime left on its floor (only its look: no iced tiles, no Frostbite)
+            const box = Math.ceil(Math.hypot(R, HW)); st.seed = (st.seed || 0) + 1;
+            for (let dx = -box; dx <= box; dx++) for (let dy = -box; dy <= box; dy++) {
+                const al = dx * ux + dy * uy, ac = dx * nx + dy * ny, x = ox + dx, y = oy + dy;
+                if (al < Math.max(0.5, back(ac)) || Math.abs(ac) > HW || col(ac) < 0 || al > edge(ac, R) || S.world[x]?.[y] !== S.FLOOR || !Trident.clear(S, ox, oy, x, y)) continue;
+                S.time.delayedCall(C.SWIPE_SPREAD * pc * al / R, () => S.sys?.isActive() && Trident.rimeTile(S, x, y, C.RIME_FAST, Math.max(0.2, 0.9 - 0.2 * Math.abs(al - R * 0.7))));
             }
             for (let k = 1; k <= 4; k++) S.time.delayedCall(C.SWIPE_SPREAD * pc * k / 4, () => {   // (its front, crystals bursting up as it spreads)
                 if (!S.sys?.isActive()) return;
-                for (let i = 0; i < 2 + k; i++) { const a = aim - ARC + 2 * ARC * Math.random(), r = rr * k / 4; if (open(bx + Math.cos(a) * r, by + Math.sin(a) * r + 6)) Rimeguard.spike(S, bx + Math.cos(a) * r, by + Math.sin(a) * r + 6, 0.7 + 0.15 * k, 0, true); }
+                for (let i = 0; i < 2 + k; i++) { const q = (Math.random() * 2 - 1) * HW; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, R) * k / 4); if (open(x, y + 6)) Rimeguard.spike(S, x, y + 6, 0.7 + 0.15 * k, 0, true); }
             });
-            S.time.delayedCall(C.SWIPE_SPREAD * pc, () => {   // and it ends in a ROW of great spines along the fan's edge (only the look: no hits)
+            S.time.delayedCall(C.SWIPE_SPREAD * pc, () => {   // and it ends in a ROW of great spines along the crest (only the look: no hits)
                 if (!S.sys?.isActive()) return;
-                // five across it, the middle one (down the aim) the biggest and with the boom, the rest rippling out from it within
-                // SPINE_ROW_MS, a little smaller toward the tips; each short of a wall
+                // across it, the middle one (down the aim) the biggest and with the boom, the rest rippling out from it within
+                // SPINE_ROW_MS, a little smaller toward the ends; each short of a wall
                 const n = C.SPINE_ROW;
                 for (let i = 0; i < n; i++) {
-                    const u = i / (n - 1) * 2 - 1, a = aim + u * ARC * 0.9 + (Math.random() - 0.5) * 0.12, mid = i === (n - 1) / 2, k = mid ? 1.7 : 1.7 * (0.85 - 0.15 * Math.abs(u)) * (0.95 + Math.random() * 0.1);
+                    const u = i / (n - 1) * 2 - 1, q = u * HW * 0.85 + (Math.random() - 0.5) * 0.3, mid = i === (n - 1) / 2, k = mid ? 1.7 : 1.7 * (0.85 - 0.15 * Math.abs(u)) * (0.95 + Math.random() * 0.1);
                     S.time.delayedCall(C.SPINE_ROW_MS * Math.abs(u), () => {
-                        if (!S.sys?.isActive()) return;
-                        let r = rr * (1.02 + (Math.random() - 0.5) * 0.08), gx2 = bx + Math.cos(a) * r, gy2 = by + Math.sin(a) * r;
-                        for (; r > T && !open(gx2, gy2 + 6); r -= T / 2) { gx2 = bx + Math.cos(a) * r; gy2 = by + Math.sin(a) * r; }
-                        if (!open(gx2, gy2 + 6)) return;
-                        Trident.vertebra(S, gx2, gy2 + 6, 'tip', k, 700 - 40 * Math.abs(u));
+                        if (!S.sys?.isActive() || col(q) < 0) return;
+                        let r = edge(q, R) * (1.02 + (Math.random() - 0.5) * 0.08), [x, y] = at(q, r);
+                        for (; r > 1 && !open(x, y + 6); r -= 0.5) [x, y] = at(q, r);
+                        if (!open(x, y + 6)) return;
+                        Trident.vertebra(S, x, y + 6, 'tip', k, 700 - 40 * Math.abs(u));
                         if (mid) {   // the middle one: its flank spines, the flash, the boom
-                            for (const sd of [-1, 1]) Trident.vertebra(S, gx2 - Math.sin(aim) * sd * T * 0.7, gy2 + Math.cos(aim) * sd * T * 0.7 + 6, 'spine', 1.2, 620, sd < 0);
-                            Trident.nova(S, gx2, gy2 - 8, 1.3); S._vfxFlash?.(gx2, gy2 - 16, 34, 0xd8fff4, 200, 0.55);
-                            S.cameras.main.shake(120, 0.008); Sfx.play(S, 'slam'); Sfx.play(S, 'shatter');   // (the boom: the same as the thrust's spine and the slam's eruption)
-                        } else Trident.nova(S, gx2, gy2 - 6, 0.8);
+                            for (const sd of [-1, 1]) { const [sx, sy] = at(q + sd * 0.7, r); Trident.vertebra(S, sx, sy + 6, 'spine', 1.2, 620, sd < 0); }
+                            Trident.nova(S, x, y - 8, 1.3); S._vfxFlash?.(x, y - 16, 34, 0xd8fff4, 200, 0.55);
+                            S.cameras.main.shake(120, 0.008); Sfx.play(S, 'tri_boom');   // (the boom: the same as the thrust's spine and the slam's eruption)
+                        } else Trident.nova(S, x, y - 6, 0.8);
                     });
                 }
             });
-            done();
         });
     }
     // 3. The leap: up into the air, the trident raised over you; steered with the movement keys (air), down with a click or at LEAP_MS
@@ -699,8 +719,8 @@ class Trident {
         S._glideUntil = now + C.LEAP_MS + 100;   // (no steps: you're in the air)
         S._dashInvulnUntil = Math.max(S._dashInvulnUntil || 0, now + C.LEAP_UP);   // (the take-off)
         S._scytheSpinUntil = now + C.LEAP_MS + 400;
-        Sfx.play(S, 'dash', { el: 'ice' }); Sfx.play(S, 'whoosh', { soft: true });
-        const raised = S.add.sprite(p.x, p.y - 30, 'fx_trident', 'tri_s').setFlipY(true).setScale(C.SCALE).setDepth(3.25);   // (tip up, over your head)
+        Sfx.play(S, 'dash'); Sfx.play(S, 'whoosh', { soft: true });
+        const raised = S.add.sprite(p.x, p.y - 30, 'fx_trident', 'tri_su_2').setFlipY(true).setScale(C.SCALE).setDepth(3.25);   // (tip up, over your head)
         const glow = S.add.image(p.x, p.y - 44, 'vfx_glow').setTint(0x9fe4ff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3).setAlpha(0.45).setDepth(3.24);
         const shadow = S.add.image(fx, fy + 8, 'vfx_shadow').setDepth(0.95).setAlpha(0.5);
         const mark = S.add.sprite(fx, fy, 'fx_trident', 'mark_0').setScale(T / 12).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.96).setAlpha(0.6);
@@ -742,7 +762,7 @@ class Trident {
             if (k >= 1) { p.setPosition(L.fx, L.fy + off); Trident.slam(S); return; }
         } else L.z = C.LEAP_H * (1 - Math.exp(-u / C.LEAP_TAU));   // (climbing all the way, slower and slower)
         p.setPosition(L.fx, L.fy + off - L.z);
-        L.raised.setPosition(p.x, p.y - 30); L.glow.setPosition(p.x, p.y - 44).setAlpha(0.35 + 0.15 * Math.sin(time * 0.02));
+        L.raised.setPosition(p.x, p.y - 30).setFrame('tri_su_' + Trident.phase(S)); L.glow.setPosition(p.x, p.y - 44).setAlpha(0.35 + 0.15 * Math.sin(time * 0.02));
         const h = L.z / C.LEAP_H, cam = S.cameras.main;
         L.shadow.setPosition(L.fx, L.fy + 8).setScale(0.9 - 0.45 * h, 0.6 - 0.28 * h).setAlpha(0.6 - 0.35 * h);   // (your shadow on the floor, smaller and fainter the higher you are)
         if (L.zoom0) cam.setZoom(L.zoom0 * (1 - 0.05 * h));   // (the camera drawing back a touch with the height)
@@ -750,12 +770,12 @@ class Trident {
         const hn = Trident.height(L.z0 && L.drop ? L.z0 : L.z);
         L.mark.setPosition(mx * T + T / 2, my * T + T / 2).setFrame(hn > 0.55 ? 'mark_1' : 'mark_0').setScale(T / 12 * (0.75 + 0.45 * Math.min(1.2, hn))).setAlpha(0.55 + 0.4 * Math.min(1, hn));   // (the slam charging as you climb)
         const fp = Trident.footprint(S, mx, my);
-        L.foot.forEach((im, i) => { const [dx, dy] = Trident.FOOT[i], x = mx + dx, y = my + dy, on = fp.has(x + ',' + y); im.setVisible(on).setPosition(x * T + T / 2, y * T + T / 2).setAlpha(on ? 0.16 + 0.06 * Math.sin(time * 0.012 - Math.abs(dx) - Math.abs(dy)) : 0); });
+        L.foot.forEach((im, i) => { const [dx, dy] = Trident.FOOT[i], x = mx + dx, y = my + dy, on = fp.has(x + ',' + y); im.setVisible(on).setPosition(x * T + T / 2, y * T + T / 2).setAlpha(on ? (Trident.rimK(dx, dy) >= 1 ? 0.5 : 0.12) + 0.06 * Math.sin(time * 0.012 - Math.abs(dx) - Math.abs(dy)) : 0); });   // (its rim the bright part: there it's a Crest)
     }
     // A tile the leap may fly over: inside the room you leapt in (walls, pillars and all; no void, no locked or sealed tiles), or
     // out of any room (a corridor), only tiles you could walk onto
     static flyable(S, L, tx, ty) {
-        if (S.isInLockedRoom?.(tx, ty) || (S._roomGated?.() && S.lockedDoorTiles?.some(t => t.x === tx && t.y === ty))) return false;
+        if (S.isInLockedRoom?.(tx, ty) || (S._roomGated?.() && S.lockedDoorTiles?.some(t => t.x === tx && t.y === ty)) || S._gravZone?.(tx, ty)) return false;
         const R = L.room;
         if (!R) return S._dashCanEnter(tx, ty);
         return tx >= R.x && tx < R.x + R.w && ty >= R.y && ty < R.y + R.h && (S.world[tx]?.[ty] ?? S.NOTHING) !== S.NOTHING;
@@ -847,14 +867,14 @@ class Trident {
         for (const e of [...(S.enemies || [])]) {
             if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y)) continue;
             if (!foot.has(e.x + ',' + e.y)) continue;
-            const r = Trident.hit(S, e, dmg, 0);
+            const r = Trident.hitFar(S, e, dmg, 0, Trident.rimK(e.x - tx, e.y - ty));
             if (!r) continue;
             struck++;
             if (r === true) { Trident.bite(S, e, C.BITE_MS * (1 + Trident.perk('tide'))); Trident.burst(S, e.sprite.x, e.sprite.y - 4, 1.1); }   // (Glacial Tide: twice as long)
         }
         const cells = [];
         for (const kk of foot) cells.push(kk.split(',').map(Number));
-        if (Trident.tiles(S, cells, dmg)) struck++;
+        if (Trident.tiles(S, cells, dmg, (x, y) => Trident.rimK(x - tx, y - ty))) struck++;
         if (struck) Trident.gain(S, struck, 2);
         Glaive.hitstop(S, C.SLAM_STOP + 10 * Math.min(4, struck));
         const cam = S.cameras.main, z0 = L.zoom0 || cam.zoom;
@@ -934,7 +954,7 @@ class Trident {
             if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y) || !foot.has(e.x + ',' + e.y)) continue;
             const m = e._rmN || 0, ex = e.sprite.x, ey = e.sprite.y;
             Trident.unmark(S, e);
-            const r = Trident.hit(S, e, C.ERUPT_DMG * mult * (1 + C.MARK_K * m) * ds, 0);
+            const r = Trident.hitFar(S, e, C.ERUPT_DMG * mult * (1 + C.MARK_K * m) * ds, 0, Trident.rimK(e.x - tx, e.y - ty));
             if (!r) continue;
             Trident.jolt(S, e, 4 + m);
             if (r === true && m) Trident.bite(S, e, C.MARK_BITE * m);
@@ -944,15 +964,13 @@ class Trident {
                 RF.dir = [-90, 200]; RF.shard.emitParticleAt(ex, ey - 8, 3 + 3 * m); RF.dir = null;
             }
         }
-        Trident.tiles(S, cells, C.ERUPT_DMG * ds);
+        Trident.tiles(S, cells, C.ERUPT_DMG * ds, (x, y) => Trident.rimK(x - tx, y - ty));
         if (shattered) { st.charges = Math.min(C.KIN_MAX, st.charges + shattered); }
         const big = Math.min(1, shattered / 9);
         Glaive.hitstop(S, 60 + 10 * Math.min(9, shattered));
         S.cameras.main.shake(150 + 80 * big, 0.01 + 0.008 * big);
         S._vfxFlash?.(cx, cy - 4, 60 + 40 * big, 0xd8fff4, 220, 0.4 + 0.3 * big);
-        Sfx.play(S, 'slam'); Sfx.play(S, 'shatter');
-        if (shattered >= 3) Sfx.play(S, 'shatter', { soft: true });
-        if (shattered >= 6) Sfx.play(S, 'freeze');
+        Sfx.play(S, 'tri_boom', { big: shattered >= 3 });
         Trident.mist(S, cx, cy + 4, 8, C.SLAM_R * T);
         Trident.ring(S, cx, cy, (0.8 + 0.3 * Math.min(1.2, hn)) * (C.SLAM_R + 0.5) * T / 22, 0, false);
         F.dir = [-90, 200]; F.chunk.emitParticleAt(cx, cy, 10); F.dir = null; RF.shard.emitParticleAt(cx, cy - 4, 10);
@@ -982,7 +1000,7 @@ class Trident {
         if (sh.hp <= 0) {   // broken: the shell shatters off you
             const p = S.player, RF = Rimeguard.fx(S);
             if (p) { S.showStatusText?.(p.x, p.y - 30, 'SHELL BROKEN', '#bfefff'); RF.shard.emitParticleAt(p.x, p.y - 4, 10); Trident.fx(S).chunk.emitParticleAt(p.x, p.y, 4); }
-            Sfx.play(S, 'shatter');
+            Sfx.play(S, 'tri_crack');
             for (const pl of S._tri.plates || []) { if (!pl.active) continue; const a = Math.atan2(pl.y - (p?.y ?? pl.y), pl.x - (p?.x ?? pl.x)); S.tweens.add({ targets: pl, x: pl.x + Math.cos(a) * 26, y: pl.y + Math.sin(a) * 18 + 8, alpha: 0, duration: 300, ease: 'Quad.easeOut', onComplete: () => pl.destroy() }); }   // (the plates flying off)
             S._tri.plates = null;
         }
@@ -1044,7 +1062,6 @@ class Trident {
         const ic = e._rmIcon ||= S.add.image(e.sprite.x, e.sprite.y - 30, 'fx_trident', 'rmark_1').setDepth(5.5);
         ic.setFrame('rmark_' + e._rmN).setAlpha(1).setScale(1.8);
         S.tweens.add({ targets: ic, scale: 1, duration: 160, ease: 'Back.easeOut' });
-        Sfx.play(S, 'clink', { soft: true });
     }
     static unmark(S, e) {
         e._rmN = 0; e._rmUntil = 0; S._tri?.marked.delete(e);
@@ -1132,7 +1149,7 @@ class Trident {
         if (performance.now() < (S._glvStopUntil || 0)) return;   // (held still through a hitstop)
         S._scytheSpinUntil = time + 100;   // (your hand's empty)
         const x0 = s.x, y0 = s.y;
-        if (o.leg === 'hang') { if (time >= o.until && !st.ride) { o.leg = 'back'; Trident.burst(S, s.x, s.y, 0.8); Sfx.play(S, 'shatter', { soft: true }); } return; }   // (ripped out of what it's stuck in)
+        if (o.leg === 'hang') { if (time >= o.until && !st.ride) { o.leg = 'back'; Trident.burst(S, s.x, s.y, 0.8); Sfx.play(S, 'tri_crack', { soft: true }); } return; }   // (ripped out of what it's stuck in)
         if (o.leg === 'back') {
             const hx = S._shotX(), hy = S._shotY(), d = Math.hypot(hx - x0, hy - y0), step = C.BACK * dt;
             if (d <= step + 8) return Trident.catch(S);
@@ -1289,7 +1306,7 @@ class Trident {
         Glaive.hitstop(S, big ? C.END_STOP + 30 : C.CRASH_STOP);
         if (o.hit.size) { o.rush = true; if (st.ride) st.ride.rush = true; else Trident.rush(S, now + C.RUSH_MS); }   // (riding: the rush starts as you land)   // (it caught something: FROST RUSH, the clump's for dumping the combo into)
         S.cameras.main.shake(big ? 200 : 140, big ? 0.014 : 0.008);
-        Sfx.play(S, 'splash', { big: true }); Sfx.play(S, 'slam', { small: !big }); Sfx.play(S, 'freeze');
+        Sfx.play(S, 'splash', { big: true }); Sfx.play(S, 'slam', { small: !big });
         if (!n) {
             Trident.rideLand(S, x, y, o, []);
             for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; Rimeguard.spike(S, x + Math.cos(a) * 15, y + Math.sin(a) * 11 + 4, 0.85, 60 + 20 * k, Math.sin(a) > -0.3); }
@@ -1318,7 +1335,7 @@ class Trident {
             if (big) S.time.delayedCall(90, () => Trident.seal(S, e, e.stunnedUntil));
         });
         if (!big) return;
-        Sfx.play(S, 'shatter');
+        Sfx.play(S, 'tri_crack');
         const hx = cx0 * T + T / 2, hy = cy0 * T + T / 2;
         S.showStatusText?.(hx, hy - 34, wall ? (n > 1 ? `PINNED ×${n}` : 'PINNED') : `IMPALED ×${n}`, '#d8fff4');
         for (let k = 0; k < 7; k++) {   // ice bursting up round the heap as the water freezes
@@ -1341,7 +1358,7 @@ class Trident {
             for (const [tx, ty, wgt] of lane) S.time.delayedCall(at(tx * T + T / 2, ty * T + T / 2) + 60, () => S.sys?.isActive() && Trident.rimeTile(S, tx, ty, C.RIME_MS, wgt));
             for (let t = t0 + T * (0.3 + Math.random() * 0.5); t < L - T * 0.6; t += T * (0.6 + Math.random() * 0.7)) {   // the chain of bursts
                 const q = (Math.random() - 0.5) * T * 0.8, px = x0 + ux * t + nx * q, py = y0 + uy * t + ny * q, kk = 0.5 + Math.random() * 0.6;
-                S.time.delayedCall(at(px, py), () => { if (!S.sys?.isActive()) return; Trident.boom(S, px, py - 4, kk, null); F.dir = [-90, 160]; F.chunk.emitParticleAt(px, py, 1 + Math.floor(kk * 3)); F.dir = null; if (Math.random() < 0.5) Sfx.play(S, 'shatter', { soft: true }); });
+                S.time.delayedCall(at(px, py), () => { if (!S.sys?.isActive()) return; Trident.boom(S, px, py - 4, kk); F.dir = [-90, 160]; F.chunk.emitParticleAt(px, py, 1 + Math.floor(kk * 3)); F.dir = null; if (Math.random() < 0.5) Sfx.play(S, 'tri_crack', { soft: true }); });
             }
             for (const w of sea) if (w.active) S.time.delayedCall(at(w.x, w.y) + 30, () => {   // (the ice collapsing up and onto the line as it's burst)
                 if (!w.active) return;
@@ -1352,7 +1369,7 @@ class Trident {
             });
             S.time.delayedCall(at(x, y) + 60, () => {   // and the biggest at the landing, with the boom
                 if (!S.sys?.isActive()) return;
-                Trident.boom(S, x, y - 4, big ? 2 : 1.6, null); Sfx.play(S, 'slam'); Sfx.play(S, 'shatter');
+                Trident.boom(S, x, y - 4, big ? 2 : 1.6); Sfx.play(S, 'tri_boom');
                 S._vfxFlash?.(x, y - 6, big ? 80 : 64, 0xe8fbff, 260, 0.6);
                 S.cameras.main.shake(160, big ? 0.012 : 0.009);
             });
@@ -1365,9 +1382,9 @@ class Trident {
     // set down. Purely a move of yours over the drawn sea: no water anywhere.
     static ride(S) {
         const st = Trident.st(S), o = st.out, p = S.player, now = S.time.now;
-        if (!o || o.leg !== 'out' || st.ride || st.leap || !p?.active || S._deathScreenActive) return;
+        if (!o || o.leg !== 'out' || st.ride || st.leap || !p?.active || S._deathScreenActive || S._gravZone?.()) return;
         S._glide = null; S.tweens.killTweensOf(p); S._step = null;
-        const off = S.SLIME_Y_OFFSET || 0, room = (S.rooms || []).find(R => S.playerX >= R.x && S.playerX < R.x + R.w && S.playerY >= R.y && S.playerY < R.y + R.h) || null;
+        const off = S.SLIME_Y_OFFSET || 0, room =(S.rooms || []).find(R => S.playerX >= R.x && S.playerX < R.x + R.w && S.playerY >= R.y && S.playerY < R.y + R.h) || null;
         const board = S.add.sprite(p.x, p.y - off + 6, 'fx_trident', 'ride_e_0').setScale(1.5).setDepth(0.99).setAlpha(0.95);
         st.ride = { x: p.x, y: p.y - off, t0: now, room, board, f: null, land: null, trailAt: 0, hx: o.ux, hy: o.uy };
         S.lockActions?.('riptide', ['dash', 'ult', 'gadget', 'swap']);
@@ -1454,7 +1471,7 @@ class Trident {
             st.seals.splice(i, 1);   // (the daze running out, or it died: it cracks and bursts)
             s.spr.play('tri_unseal').once('animationcomplete', () => s.spr.destroy());
             const F = Trident.fx(S); F.dir = [-90, 200]; F.shard.emitParticleAt(s.spr.x, s.spr.y, 5); F.chunk.emitParticleAt(s.spr.x, s.spr.y, 3); F.dir = null;
-            Sfx.play(S, 'shatter', { soft: true });
+            Sfx.play(S, 'tri_crack', { soft: true });
         }
     }
     static catch(S) {
@@ -1574,7 +1591,7 @@ class Trident {
         if (!k.spr.active) return;
         k.spr.setScale(1.25).clearTint().play(`tri_${Trident.KINDS[k.kind].look}_die`);
         Trident.fx(S).shard.emitParticleAt(k.spr.x, k.spr.y, 4);
-        Sfx.play(S, 'shatter', { soft: true });
+        Sfx.play(S, 'tri_crack', { soft: true });
         k.spr.once('animationcomplete', () => k.spr.destroy());
     }
     // something a Frostkin will go for: alive, here, in this room, and hurt by ice
@@ -1655,7 +1672,7 @@ class Trident {
                     S.tweens.add({ targets: k, lx: (e.x - a.x) * 7, ly: (e.y - a.y) * 7, duration: 70, yoyo: true, ease: 'Quad.easeOut' });
                     Trident.hit(S, e, C.KIN_DMG * ds * Trident.kinPow(S, e), 0);
                     if (e.sprite?.active) { Trident.burst(S, e.sprite.x, e.sprite.y - 6, 0.6); F.dir = [Math.atan2(e.y - a.y, e.x - a.x) * 180 / Math.PI, 80]; F.spark.emitParticleAt(e.sprite.x, e.sprite.y - 6, 3); F.dir = null; }
-                    Sfx.play(S, 'w_ice_fists', { soft: true });
+                    Sfx.play(S, 'tri_crack', { soft: true });
                 }
                 continue;
             }
@@ -1763,7 +1780,7 @@ class Trident {
         S.tweens.add({ targets: spot, alpha: 0, duration: 260, onComplete: () => spot.destroy() });
         const c = S.add.image(x, y - 1, 'fx_trident', last ? 'crater_1' : 'crater_0').setScale(last ? 1.8 : 1.4).setDepth(0.94).setAlpha(0.85).setFlipX(Math.random() < 0.5);
         S.tweens.add({ targets: c, alpha: 0, duration: 400, delay: 800, onComplete: () => c.destroy() });
-        Sfx.play(S, 'shatter', { soft: true });
+        Sfx.play(S, 'tri_crack', { soft: true });
         if (last) { Sfx.play(S, 'slam', { small: true }); Glaive.hitstop(S, 35); S.cameras.main.shake(80, 0.004); }
     }
     // A squall's breath in (SQUALL_TELL): puffed up, frost drawn in to it; then the gust (kinTick calls gust when it's done)

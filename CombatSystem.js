@@ -636,11 +636,11 @@ class CombatSystem {
     }
 
     // A hit landing on enemy: it flashes and its tint comes back, the hit's sound, its sparks (_vfxHit). `own`: a weapon that draws
-    // its own hits (the Boreal Trident, Fractal Shard, Thunder Glaive, Rimeguard, which skip damageEnemy): the flash, the sound and
+    // its own hits (the Boreal Trident, Fractal Shard, Thunder Glaive, Rimeguard, which skip damageEnemy): the flash, the sound (a name: its own in place of `hit`) and
     // the flinch (_vfxHitAt: the wince, and what breaks a Blinder's or a Sniper's aim), not the sparks
     static hitFlash(S, enemy, dmg, el, own = false) {
         if (!S._noFlash && enemy.sprite?.active) enemy.sprite.setTintFill(el === 'ice' ? 0x9ff0ff : 0xffffff);   // a real flash (setTint(0xffffff) changed nothing); steady ticks skip it
-        if (own) { Sfx.play(S, 'hit', { el }); enemy._vfxHitAt = S.time.now; }
+        if (own) { Sfx.play(S, own === true ? 'hit' : own, { el }); enemy._vfxHitAt = S.time.now; }
         else S._vfxHit?.(enemy, dmg, el);
         if (!S._noFlash) S.time.delayedCall(70, () => {
             if (enemy.sprite && enemy.sprite.active) {

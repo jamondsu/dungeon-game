@@ -212,3 +212,17 @@ TODO / FOLLOW-UP:
   Lightning slime (TD, PARKED — build later): SEPARATE enemy from Speedies (do NOT put this on Speedies — keep the early enemy teaching one thing, and turret-disable is a mid-game threat). Mid-game debut (~W15+). Periodically forks lightning to briefly disable/stun several nearby turrets at once, then goes on cooldown. Identity contrast with the Rooter: Rooter = sustained, single-target, physical leash (holds one turret until killed); Lightning slime = burst, multi-target, intermittent chain-stun (zaps a few turrets for ~1-2s, gaps in between). Counterplay = spread turrets out (so one fork can't chain them all) + burst it down between arcs. Balance levers: brief disable + long cooldown (~4-5s), capped fork count (2-3), fragile glass-cannon body (priority target, unlike the tankier rooter). UNDECIDED: effect type (hard stun vs fire-rate slow) and exact fork count. Goal: add more turret-status enemies like the rooter, and it fits the electricity theme.
 
   When a tesla coil is idle (no enemies in range), but theres another tesla coil in range, the tesla coil can target the other tesla coil to chain onto enemies that are in range of the other tesla coil. but targetting other tesla coils are the lowest priority compared to enemies.
+
+Pendulum (taken out of the game 2026-10-30, it can come back):
+  cosmic weapon, tier 4, 400 glorps. a support tool with no attack: a brass pendulum with an astral glass for its bob
+
+  - click: fling it at the cursor, 6 tiles at most. it stops at the last open floor before a wall, a sealed room or the edge of the view, so it never goes through one. it bounces along the line, floats up, grows into a great pendulum and drops with a heavy thud, about 1.45s from the click. that lays the time lock
+  - time lock: a 7x7 with its corners cut (rows of 3, 5, 7, 7, 7, 5, 3), only the tiles you can reach from the middle over open floor, for 4s. time stops in it for everything but you. enemies on it cant move, act, cast or be moved, and their ailments dont run down. every hit on them is stored (a tally shows over them) and it all lands at once when the lock ends, kills and all. shots, yours and theirs, stop at its edge and fly on after. a boss isnt frozen, its time runs 80% slower and its damage is stored the same
+  - R, rewind: you get pulled back along your own path to where you were 3s ago. the hp you lost since comes back (a heal since stays) and every ailment you picked up since goes. ults, gadgets and stamina stay spent. it never takes you back through a door, a lift or a fall, and with under 0.4s of past theres nothing to rewind
+  - one cooldown for both: 12s after a time lock, 30s after a rewind
+  - upgrades: long lock (2 levels, +0.5s each, 260 then 468 glorps), quick lock (3 levels, 10% off the lock's cooldown each, 220, 396, 713), quick rewind (3 levels, 10% off the rewind's cooldown each, 220, 396, 713). 2 enchant slots
+
+  the code and the art are in commit 026ec59 (Cosmic.js has the weapon, assets/art/fx_pendulum and mn_icon_pendulum are the art, guide/compendium/img/weapons/pendulum.png is the guide picture)
+  the cleansing bell was the purification idea, it stays as a gadget
+
+  anyone who owned it got it all back when they next opened the game: the 400, the upgrades, what binding books on it cost, and the books. thats WeaponLevels.retirePendulum in Stats.js, and the save remembers it with pendulum_refund. if the pendulum comes back that has to come out first or it takes the weapon off everyone who buys it

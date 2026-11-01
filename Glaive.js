@@ -210,7 +210,7 @@ class Glaive {
         const dmg = C.DMG * (1 + C.LINK_UP * (link - 1)) * (S.damageScaling || 1), a = Math.atan2(p.uy, p.ux), deg = a * 180 / Math.PI;
         const k8 = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
         // you go: the glide (as a dash's), untouchable till just after you land; rooted, you strike from where you stand
-        const land = S._playerRooted || S._csRooted?.() || S._frostPinned?.() ? null : p.land;
+        const land = S._playerRooted || S._csRooted?.() || S._frostPinned?.() || S._gravZone?.() ? null : p.land;
         const x0 = S.player.x, y0 = S.player.y;
         let x1 = x0, y1 = y0;
         if (land) {
@@ -264,7 +264,7 @@ class Glaive {
         st.thrust?.spr?.destroy(); st.thrust?.glow?.destroy();
         const z = (S.player.depth ?? 1) + (k8 >= 5 ? -0.03 : 0.03);   // (aimed up, it's behind you)
         const spr = S.add.sprite(x0, y0, 'fx_glaive', `glaive_${f}_0`).setScale(C.SCALE).setFlip(!!fl, !!fl).setDepth(z).play('glv_' + f);
-        const glow = S.add.image(x0, y0, 'vfx_glow').setTint(0x7ad8ff).setBlendMode(ADD).setScale(0.4).setAlpha(0.22).setDepth(z - 0.01);
+        const glow = S.add.image(x0, y0, 'vfx_glow').setTint(0x7ad8ff).setBlendMode(ADD).setScale(0.4).setAlpha(0.14).setDepth(z - 0.01);
         st.thrust = { spr, glow, t0: now, a: k8 * Math.PI / 4 };
         S._scytheSpinUntil = now + C.MS + C.HOLD + 60;   // (the glaive in your hand is the one thrust out)
         const a = k8 * Math.PI / 4, ux = Math.cos(a), uy = Math.sin(a), deg = k8 * 45, back = deg + 180;
@@ -644,7 +644,7 @@ class Glaive {
             else {
                 const x = S._shotX() + Math.cos(th.a) * C.JAB * out, y = S._shotY() + Math.sin(th.a) * C.JAB * out;
                 th.spr.setPosition(x, y).setAlpha(t > C.MS + C.HOLD * 0.6 ? 1 - (t - C.MS - C.HOLD * 0.6) / (C.HOLD * 0.4) : 1);
-                th.glow.setPosition(x + Math.cos(th.a) * 26, y + Math.sin(th.a) * 26).setAlpha(0.3 * th.spr.alpha);
+                th.glow.setPosition(x + Math.cos(th.a) * 26, y + Math.sin(th.a) * 26).setAlpha(0.14 * th.spr.alpha);
             }
         }
         // the coils: humming, an arc to the floor now and then, zapping what's near, each drawing volts while it has work

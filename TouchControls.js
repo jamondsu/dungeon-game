@@ -8,15 +8,89 @@
 // bound to a key does just what it does on a keyboard: DASH, the weapon's ability, the ult (held,
 // cosmic's charge), the next element, the two gadgets, PAUSE.
 //
-// Only on a touch screen. localStorage touchControls = 'on' shows it anywhere, 'off' never.
+// Only on a touch screen, which also gets the covers (cover()). localStorage touchControls = 'on' shows it anywhere, 'off' never.
 // ═══════════════════════════════════════════════════════════════════════════
 class TouchControls {
-    static u(S) { return Math.min(1.3, Math.max(1, S.scale.height / 480)); }   // a little bigger on a big screen
+    // a little bigger on a big screen, and the same size under a thumb however many pixels the game's drawn at
+    static u(S) { const k = S.scale.displayScale.y; return Math.min(1.3, Math.max(1, S.scale.height / k / 480)) * k; }
 
-    static on(scene) {
+    static device() {
         let f = null; try { f = localStorage.getItem('touchControls'); } catch (e) {}
-        const d = scene.sys.game.device;
-        return f === 'on' || (f !== 'off' && d.input.touch && !d.os.desktop);
+        return f === 'on' || (f !== 'off' && navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches);
+    }
+    static on() { return TouchControls.device(); }
+
+    // ── THE COVERS (index.html) ──────────────────────────────────────────────
+    // A browser goes fullscreen or holds the screen sideways only for a tap, and the game is drawn at one size for good when it's
+    // made: so a phone taps a cover first, and the game is made after that, sideways, once the turn and the bars have settled.
+    // Upright at any time (an iPhone can do neither for a page), the other cover, the game stood still behind it. Out of
+    // fullscreen, the next tap goes back in, unless Settings turned it off (fullOff). A browser that won't (an iPhone's) gets it
+    // only from the Home Screen, so the cover says how.
+    static cover(start) {
+        const cover = document.getElementById('cover'), turn = document.getElementById('turn'), el = document.documentElement;
+        let tapped = false, settle = null;
+        const full = () => {
+            if (TouchControls.fullOff || document.fullscreenElement || document.webkitFullscreenElement) return;
+            let p = null;
+            try { p = (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el, { navigationUI: 'hide' }); } catch (e) {}
+            Promise.resolve(p).catch(() => {}).then(() => screen.orientation?.lock?.('landscape')).catch(() => {});   // (locks only once it's fullscreen)
+        };
+        const check = () => {
+            const tall = window.innerHeight > window.innerWidth;
+            turn.hidden = !tapped || !tall;
+            TouchControls.hold(tall);
+            clearTimeout(settle);
+            if (tapped && !tall && !game) settle = setTimeout(() => { cover.hidden = true; start(); TouchControls.thumbs(game); }, 400);
+        };
+        // (a cover keeps its touches: Phaser's window listeners take any touch nobody stopped, and the game lies under it)
+        for (const c of [cover, turn]) for (const ev of ['touchstart', 'touchend']) c.addEventListener(ev, e => e.preventDefault(), { passive: false });
+        for (const ev of ['touchend', 'mouseup']) window.addEventListener(ev, () => { full(); tapped = true; check(); }, true);
+        window.addEventListener('resize', check);
+        const app = navigator.standalone || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+        document.getElementById('addhome').hidden = app || !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+        cover.hidden = false;
+    }
+
+    // What's small to tap on a phone (a −, a ✕, a row in a list) takes a thumb that lands near it, up to THUMB css px across. Two
+    // of them in reach: the nearer one, so a row is never lost to its neighbour.
+    static THUMB = 40;
+    static thumbs(game) {
+        const I = game.input, within = I.pointWithinHitArea, hitTest = I.hitTest;
+        let near = [];
+        I.pointWithinHitArea = function (o, x, y) {
+            const on = within.call(this, o, x, y), W = o.width, H = o.height, t = TouchControls.THUMB * game.scale.displayScale.y;
+            const tw = t / Math.abs(o.scaleX || 1), th = t / Math.abs(o.scaleY || 1);
+            if (!(W > 0 && H > 0) || (W >= tw && H >= th)) return on;
+            if (on) { near.push([0, o]); return true; }
+            const lx = x + o.displayOriginX, ly = y + o.displayOriginY, cx = Phaser.Math.Clamp(lx, 0, W), cy = Phaser.Math.Clamp(ly, 0, H);
+            if (Math.abs(lx - cx) > Math.max(0, tw - W) / 2 || Math.abs(ly - cy) > Math.max(0, th - H) / 2) return false;
+            if (!within.call(this, o, cx - o.displayOriginX, cy - o.displayOriginY)) return false;
+            near.push([Math.hypot(lx - cx, ly - cy), o]);
+            return true;
+        };
+        I.hitTest = function (...a) {
+            near = [];
+            const r = hitTest.apply(this, a);
+            near.sort((p, q) => p[0] - q[0]).slice(1).forEach(([, o]) => r.splice(r.indexOf(o), 1));
+            return r;
+        };
+    }
+
+    // Stood still behind the cover: the game's steps stop and it goes quiet (the rhythm trial's song with it), and each scene's clock
+    // is held as the pause menu holds it, or every cooldown stamped with time.now runs out behind the cover. (A clock already held
+    // stays as it is: the menu that's up lets go of it.)
+    static hold(on) {
+        if (on === !!TouchControls.held || !game?.isBooted) return;
+        const freeze = (S, f) => HUD.prototype._freezeClock.call(S, f);
+        if (on) {
+            TouchControls.held = game.scene.getScenes(true).filter(S => S.time._heldNow == null);
+            TouchControls.held.forEach(S => freeze(S, true));
+            game.sound.onBlur(); game.pause();
+        } else {
+            game.resume(); game.sound.onFocus();
+            TouchControls.held.forEach(S => { S.time.now = game.loop.now; freeze(S, false); });   // (no steps, so nobody told the clock the time, and that's what comes off it)
+            TouchControls.held = null;
+        }
     }
 
     // A key pressed (or let go, or held: repeat) the way the keyboard sends it, so its Key and every handler on it see it as ever
@@ -31,7 +105,8 @@ class TouchControls {
 
     // o.move: the four keys the stick holds (up, left, down, right); o.repeat: held, they repeat as a held key does. o.zig():
     // where you stand, for a game that steps one way at a time: pushed on a diagonal, it steps one way then the other (null: the
-    // nearer of the two). o.aim: the right stick's home ({ x, y }), for a game that aims; o.direct(): a tap is for the world now.
+    // nearer of the two). o.aim: the right stick's home ({ x, y }), for a game that aims; o.direct(): a tap is for the world now;
+    // o.world(): so is one anywhere, the stick's side too.
     // o.hidden(): nothing new taken while it's true (a menu is up). o.slot(k): where the k-th small button goes. o.buttons: see draw().
     constructor(S, o) {
         this.S = S; this.o = o;
@@ -86,6 +161,9 @@ class TouchControls {
                 b.pid = p.id; b.t0 = Date.now();
                 b.held = b.key?.() || null;
                 if (b.held) TouchControls.key(b.held, true);
+                b.tap?.(this);
+            } else if (o.world?.()) {
+                role = 'direct';
             } else if (p.x < S.scale.width * 0.4 && !this.mv) {
                 role = 'move';
                 this.mv = { id: p.id, ox: p.x, oy: p.y, dx: 0, dy: 0, mag: 0 };
@@ -191,7 +269,7 @@ class TouchControls {
 
     // Each button: at x, y (or slot: the next of o.slot(k)), r; key() the key it presses (a name Phaser knows); show() whether it's
     // there; icon() [texture, frame, scale] or label() its words; fill() a ring round it filling (an ult's charge), cool() a dark
-    // sweep over it (a gadget recharging).
+    // sweep over it (a gadget recharging); tap(this) what it does, for one that isn't a key.
     draw() {
         const S = this.S, g = this.g, P = UIKit.PALETTE, hid = !!this.o.hidden?.(), u = this.u, TAU = Math.PI * 2, TOP = -Math.PI / 2;
         g.clear();
@@ -260,6 +338,10 @@ class TouchControls {
         const next = () => { const a = els(); return a[(a.indexOf(el()) + 1) % a.length]; };
         const fill = () => Math.min(1, (S.ultGems?.[el()] || 0) / (S.ultChargeMax || 100));
         const slot = i => (S._gadgetSlots || [])[i];
+        const ult = (e, id) => ({   // (another element's, charged: Z X C V without changing to it)
+            slot: true, r: 22, key: K(id), show: () => e !== el() && has(e) && (S.ultGems?.[e] || 0) >= (S.ultChargeMax || 100),
+            icon: () => ['ui_ultgem', `${e}_lit`, 1.6], accent: () => S._ultCfg?.().COLORS?.[e],
+        });
         const gadget = i => ({
             slot: true, r: 22, show: () => !!slot(i), key: K(i ? 'gadget2' : 'gadget1'),
             icon: () => [tex['g_' + slot(i)] ??= ShopScene.gadgetIcon(S, slot(i)), undefined, 1.2],
@@ -268,8 +350,8 @@ class TouchControls {
         });
         return new TouchControls(S, {
             move: ['up', 'left', 'down', 'right'].map(id => Settings.key(id)),
-            zig: () => S._rtrial ? null : S.playerX + ',' + S.playerY,   // (the rhythm run: a step a push)
-            aim: home, slot: k => at(190 + k * 24, 176),
+            zig: () => S._rtrial || S._gravZone?.() ? null : S.playerX + ',' + S.playerY,   // (the rhythm run: a step a push; the gravity room: a fall a push)
+            aim: home, slot: k => k < 5 ? at(190 + k * 24, 176) : at(205 + (k - 5) * 24, 232),
             direct: () => !!(S.displacerPending?.() || S._isClickOnActiveWeakPoint?.()),
             hidden: () => !!(S._pauseMenuOpen || S._deathScreenActive),
             buttons: [
@@ -284,8 +366,36 @@ class TouchControls {
                 { slot: true, r: 22, label: () => Settings.label(Settings.key('detonate')), key: K('detonate'),
                   show: () => !!(S._condWielding?.() || (el() === 'fire' && S.equippedWeapons?.fire === 'ignition') || (el() === 'ice' && S.equippedWeapons?.ice === 'rimeguard')) },   // (the Rimeguard: held, the shield's up)
                 { slot: true, r: 22, label: () => 'CALL', key: K('call'), show: () => TideMother.hasCall() && !S.isTutorial, accent: () => 0x5ed4c8 },
+                ult('fire', 'ultFire'), ult('ice', 'ultIce'), ult('lightning', 'ultLightning'), ult('cosmic', 'ultCosmic'),
+                { slot: true, r: 22, label: () => 'ANCHOR', show: () => S._cs?.tf?.phase === 'form' && !!S._cs.drag,
+                  tap: t => S._csSetAnchor({ x: t.vp.worldX, y: t.vp.worldY }) },   // (Twin Collapse's right click: the anchor to where you're aiming)
                 { x: W - 34 * u, y: 74 * u, r: 20, label: () => 'II', key: () => 'ESC' },
                 { x: W - 84 * u, y: 74 * u, r: 20, label: () => 'H', key: () => 'H', show: () => !!S.trainingRun },   // the Training Ground's panel
+            ],
+        });
+    }
+
+    // ── ENGINEERING DEFENSE'S ────────────────────────────────────────────────
+    // The stick steps you and the right stick throws the wrench, as in the dungeon. BUILD and WISPS by the right stick, E and F when
+    // you're by the Glorp and the TV, PAUSE in the corner. A tower to place, or a wave to aim: the whole screen's for the finger, and
+    // PAUSE is the way out of it. (TowerDefenseScene: the ghost follows the finger, the tower goes down where it's lifted.)
+    static td(S) {
+        const W = S.scale.width, H = S.scale.height, u = TouchControls.u(S);
+        const home = { x: W - 100 * u, y: H - 96 * u };
+        const at = (deg, R) => ({ x: home.x + Math.cos(deg * Math.PI / 180) * R * u, y: home.y + Math.sin(deg * Math.PI / 180) * R * u });
+        const by = (x, y) => Math.abs(S._myX - x) + Math.abs(S._myY - y) <= 3;
+        const world = () => !!(S._placementMode || S.towers?.some(t => t._settingWaveDir));
+        return new TouchControls(S, {
+            move: ['W', 'A', 'S', 'D'], zig: () => S._myX + ',' + S._myY,
+            aim: home, world, slot: k => at(240 + k * 30, 120),
+            hidden: () => !!(S._buildMenuOpen || S._upgradeMenuOpen || S._wispRosterOpen || S._wispTreeOpen || S._glurpShopOpen || S._waveTVOpen
+                || S._pauseMenuOpen || S._aimPickerClose || S._powerupPending || S.gameOver),
+            buttons: [
+                { ...at(180, 120), r: 31, label: () => 'BUILD', key: () => 'Q' },
+                { ...at(210, 120), r: 31, label: () => 'WISPS', key: () => 'R' },
+                { slot: true, r: 28, label: () => 'E', key: () => 'E', show: () => by(S._glorpTileX, S._glorpTileY) },
+                { slot: true, r: 28, label: () => 'F', key: () => 'F', show: () => by(S._tvTileX, S._tvTileY) },
+                { x: W - 34 * u, y: 74 * u, r: 20, label: () => S._placementMode ? '✕' : 'II', key: () => 'ESC' },
             ],
         });
     }

@@ -753,7 +753,7 @@ class FieldKit {
 
     // ── WHAT CAN BE ON YOU ───────────────────────────────────────────────────
     // Every ailment an enemy or the floor puts on you, each [kind, on(now), clear(now)], where it lives on the scene. The
-    // Cleansing Bell clears them all; the Pendulum's Rewind (Cosmic.js) the ones you picked up since the moment it goes back to.
+    // Cleansing Bell clears them all.
     // A slow is cleared by setting its time to one already past, so its own expiry puts your step back (EnemyManager.moveEnemies,
     // _updateCrumbleTiles). The ice ult's shell holds you itself: that's never cleared.
     _playerAilments() {
@@ -951,7 +951,7 @@ class FieldKit {
         const half = Math.floor(def.length / 2), tiles = [];
         for (let k = -half; k <= half; k++) {
             const x = tx + across.x * k, y = ty + across.y * k;
-            if (this.world?.[x]?.[y] !== this.FLOOR) continue;
+            if (this.world?.[x]?.[y] !== this.FLOOR || this._gravZone?.(x, y)) continue;   // (no walls to stop your fall on in the gravity room)
             if (x === this.playerX && y === this.playerY) continue;
             if (this.getEnemyAt?.(x, y) || this.isNodeAt?.(x, y)) continue;
             tiles.push({ x, y });

@@ -140,7 +140,7 @@ class BootScene extends Phaser.Scene {
                 progress += 2;
                 barFill.scaleX = Math.round((barW - 4) / 2 * (progress / 100)) * 2;
                 if (progress >= 100) {
-                    loadText.setText('Press any key to start');
+                    loadText.setText(TouchControls.on() ? 'Tap to start' : 'Press any key to start');
                     loadText.setStyle({ color: '#cfe0ff', fontSize: '14px' });
                     this.tweens.add({ targets: loadText, alpha: 0.45, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
                     // Slime bobs happily

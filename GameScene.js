@@ -46,7 +46,7 @@ class GameScene extends Phaser.Scene {
         // without threading `data` down through every init helper.
         this._sceneData = data || {};
         this.tutorialStage = data?.tutorialStage ?? 0;
-        this.storyFloor = data?.floor || 1; this._floorExit = null; this._cells = null; this._circuit = null; this._lightsOut = false; this._voltGateDone = false;   // a story level in floors: the one you're on (LevelManager._floorPlan)
+        this.storyFloor = data?.floor || 1; this._floorExit = null; this._cells = null; this._circuit = null; this._grav = null; this._slide = null; this._lightsOut = false; this._voltGateDone = false;   // a story level in floors: the one you're on (LevelManager._floorPlan)
         // Water lives on the scene object, which outlives a restart: the Cistern's (or a flooded
         // Tower floor's) tiles were still there, unseen, on the next level. Its pipes were too, still
         // refilling their old tiles on the new map and flinging water from mouths out in the void.
@@ -961,7 +961,7 @@ class GameScene extends Phaser.Scene {
                 }
                 return;
             }
-            if (this.currentElement === 'cosmic' && this._csCast) { this._csRewind(); return; }   // Cosmic.js: R is the Pendulum's Rewind (the other cosmic weapons have none)
+            if (this.currentElement === 'cosmic' && this._csCast) return;   // Cosmic.js: no R on cosmic
             // Singularity staff R-attack is now orb fire (was Collapse)
             // Only fires when the passive charge bar is full
             if (this.currentElement === 'cosmic' &&
@@ -1243,13 +1243,15 @@ class GameScene extends Phaser.Scene {
         }
         const stepMs = this.moveCooldown * _waterMult * (this._csMoveMult?.() ?? 1) * (this._frostHazeMult || 1) * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]) * (this._chaosMove?.() ?? 1) * this._ultMoveMult() * this._diverSlow();   // (a Torpedo Diver's hit)
         this._stepMul = stepMs / (200 * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]));   // how much slower or faster than usual right now (relics and books aside): LevelManager._updateSpeedMarks
-        if (time - this.lastMoveTime >= stepMs && this.time.now >= (this._staggerUntil || 0) && this.time.now >= (this._glideUntil || 0) && !this._lifting) {   // (scene clock, not the loop's `time`: they part after a pause)   // Leaden: a corrupted book's curse; the Wheel of Fate; Double or Nothing's stagger
+        if (this._slide) this._gravSlide();   // the gravity room: a fall under way, no steps till it stops (LevelManager)
+        const _grav = this._gravZone();
+        if (!this._slide && (_grav || time - this.lastMoveTime >= stepMs) && this.time.now >= (this._staggerUntil || 0) && this.time.now >= (this._glideUntil || 0) && !this._lifting) {   // (scene clock, not the loop's `time`: they part after a pause)   // Leaden: a corrupted book's curse; the Wheel of Fate; Double or Nothing's stagger
             let dx = 0, dy = 0;
 
             const isCosmicCharging = this.currentElement === 'cosmic' && this.cosmicCharging;
 
             if (!isCosmicCharging && !this.thunderheadActive && !this._playerRooted && !this._csRooted?.()) {
-                if (this._rtrial) {   // the rhythm trial: a step per press (held, the quickened step stepped again, off the slab), a tap kept till the step's free
+                if (this._rtrial || _grav) {   // the rhythm trial: a step per press (held, the quickened step stepped again, off the slab), a tap kept till the step's free (the gravity room: a fall)
                     const U = this._rtUsed ||= {};
                     let pick = null;
                     for (const [n, kx, ky] of [['W', 0, -1], ['S', 0, 1], ['A', -1, 0], ['D', 1, 0]]) {
@@ -1264,7 +1266,8 @@ class GameScene extends Phaser.Scene {
                 else if (this.keys.D.isDown) dx = 1;
             }
 
-            if (dx !== 0 || dy !== 0) {
+            if (_grav) { if (dx || dy) this._gravPush(dx, dy); }
+            else if (dx !== 0 || dy !== 0) {
                 const newX = this.playerX + dx;
                 const newY = this.playerY + dy;
 
@@ -1598,6 +1601,16 @@ class GameScene extends Phaser.Scene {
     _circuitPower(...a) { return LevelManager.prototype._circuitPower.call(this, ...a); }
     _circuitTick(...a) { return LevelManager.prototype._circuitTick.call(this, ...a); }
     _circuitOpen(...a) { return LevelManager.prototype._circuitOpen.call(this, ...a); }
+    _chestPayout(...a) { return LevelManager.prototype._chestPayout.call(this, ...a); }
+    _gravCfg(...a) { return LevelManager.prototype._gravCfg.call(this, ...a); }
+    _gravBuild(...a) { return LevelManager.prototype._gravBuild.call(this, ...a); }
+    _gravZone(...a) { return LevelManager.prototype._gravZone.call(this, ...a); }
+    _gravTick(...a) { return LevelManager.prototype._gravTick.call(this, ...a); }
+    _gravSpent(...a) { return LevelManager.prototype._gravSpent.call(this, ...a); }
+    _gravOpen(...a) { return LevelManager.prototype._gravOpen.call(this, ...a); }
+    _gravPush(...a) { return LevelManager.prototype._gravPush.call(this, ...a); }
+    _gravStep(...a) { return LevelManager.prototype._gravStep.call(this, ...a); }
+    _gravSlide(...a) { return LevelManager.prototype._gravSlide.call(this, ...a); }
     _spawnLevel2ChestRooms(...a){ return LevelManager.prototype._spawnLevel2ChestRooms.call(this, ...a); }
     // Level 3 proxies
     updateLevel3(...a)           { return LevelManager.prototype.updateLevel3.call(this, ...a); }
@@ -2491,23 +2504,6 @@ class GameScene extends Phaser.Scene {
     _csFluidTile(...a) { return CosmicSystem.prototype._csFluidTile.call(this, ...a); }
     _csAscendBlast(...a) { return CosmicSystem.prototype._csAscendBlast.call(this, ...a); }
     _csAscendWave(...a) { return CosmicSystem.prototype._csAscendWave.call(this, ...a); }
-    _csStasisCast(...a) { return CosmicSystem.prototype._csStasisCast.call(this, ...a); }
-    _csFlyTick(...a) { return CosmicSystem.prototype._csFlyTick.call(this, ...a); }
-    _csStasisOpen(...a) { return CosmicSystem.prototype._csStasisOpen.call(this, ...a); }
-    _csStasisTick(...a) { return CosmicSystem.prototype._csStasisTick.call(this, ...a); }
-    _csFieldAct(...a) { return CosmicSystem.prototype._csFieldAct.call(this, ...a); }
-    _csInField(...a) { return CosmicSystem.prototype._csInField.call(this, ...a); }
-    _csBigFade(...a) { return CosmicSystem.prototype._csBigFade.call(this, ...a); }
-    _csLockOn(...a) { return CosmicSystem.prototype._csLockOn.call(this, ...a); }
-    _csLockShots(...a) { return CosmicSystem.prototype._csLockShots.call(this, ...a); }
-    _csFieldRelease(...a) { return CosmicSystem.prototype._csFieldRelease.call(this, ...a); }
-    _csStasisTiles(...a) { return CosmicSystem.prototype._csStasisTiles.call(this, ...a); }
-    _csStasisEnd(...a) { return CosmicSystem.prototype._csStasisEnd.call(this, ...a); }
-    _csRewindRecord(...a) { return CosmicSystem.prototype._csRewindRecord.call(this, ...a); }
-    _csRewind(...a) { return CosmicSystem.prototype._csRewind.call(this, ...a); }
-    _csRewindTick(...a) { return CosmicSystem.prototype._csRewindTick.call(this, ...a); }
-    _csRewindRing(...a) { return CosmicSystem.prototype._csRewindRing.call(this, ...a); }
-    _csTrayArt(...a) { return CosmicSystem.prototype._csTrayArt.call(this, ...a); }
     _playerAilments(...a) { return FieldKit.prototype._playerAilments.call(this, ...a); }
     _gadgetBell(...a) { return FieldKit.prototype._gadgetBell.call(this, ...a); }
     _fkCleanse(...a) { return FieldKit.prototype._fkCleanse.call(this, ...a); }

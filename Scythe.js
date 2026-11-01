@@ -12,7 +12,7 @@
 // cast heals you WAVE_HEAL of your max HP.
 // After either, if you're moving, a free SLIDE: SLIDE tiles toward the crosshair, and a
 // shield of SHIELD of your max HP for SHIELD_MS that takes hits before your health does (a fresh one, never stacked).
-// Art: assets/art/ember_scythe (spin_e/ese/se/sse/s/ssw/sw/wsw, the other eight flipped both ways; flame_0-3; soul_0-3).
+// Art: assets/art/ember_scythe (spin_e/ese/se/sse/s/ssw/sw/wsw, four phases of each, spin_e_0-3, the other eight flipped both ways; flame_0-3; soul_0-3).
 // ═══════════════════════════════════════════════════════════════════════════
 class Scythe {
     static CFG = { CD: 1100, SPIN_MS: 550, SPINS: 1, REACH: 4.3, REACH_UP: 0.5, DMG: 6, SCALE: 2.5, TIP: 39, BLADE: 32, HAND: 5,   // TIP, BLADE, HAND: art pixels out from you (the blade's tip, where it starts, your grip)
@@ -44,6 +44,7 @@ class Scythe {
     static reach() { return Scythe.CFG.REACH + Scythe.CFG.REACH_UP * Scythe.perk('reach'); }
     static scale() { return Scythe.CFG.SCALE * Scythe.reach() / Scythe.CFG.REACH; }
     static frameAt(a) { return Scythe.DIRS[((Math.round(a / (Math.PI / 8)) % 16) + 16) % 16]; }
+    static spinFrame(S, f) { return 'spin_' + f + '_' + (Math.floor(S.time.now / 100) % 4); }   // (its four phases, 10 a second: the gem's beat, the heat running down the blade)
     // a band of fire round (cx, cy) between radii r0 and r1, from angle a0 to a1 (clockwise)
     static band(g, r0, r1, a0, a1, col, al, cx = 0, cy = 0) {
         g.fillStyle(col, al).beginPath();
@@ -146,7 +147,7 @@ class Scythe {
         if (now - st.spinAt < C.CD) return;
         st.spinAt = now; S._gearFiredAt = now;   // (Creatures.gear: and its sound)
         const cam = S.cameras.main, aim = Math.atan2(targetY + cam.scrollY - S._shotY(), targetX + cam.scrollX - S._shotX());
-        const spr = S.add.image(S._shotX(), S._shotY(), 'ember_scythe', 'spin_e').setScale(Scythe.scale()).setDepth(3.2);
+        const spr = S.add.image(S._shotX(), S._shotY(), 'ember_scythe', Scythe.spinFrame(S, 'e')).setScale(Scythe.scale()).setDepth(3.2);
         const cut = new Set();
         let lickAt = 0, turns = 0, was = null;
         S._scytheSpinUntil = now + Scythe.spinMs() + 120;   // (the scythe in your hand is the one spinning)
@@ -154,7 +155,7 @@ class Scythe {
         S.tweens.addCounter({ from: 0, to: Scythe.spins(), duration: Scythe.spinMs(), ease: 'Linear',
             onUpdate: tw => {
                 const v = tw.getValue(), a = aim + v * Math.PI * 2, [f, fl] = Scythe.frameAt(a), x = S._shotX(), y = S._shotY(), t = S.time.now;
-                spr.setPosition(x, y).setFrame('spin_' + f).setFlip(fl, fl);
+                spr.setPosition(x, y).setFrame(Scythe.spinFrame(S, f)).setFlip(fl, fl);
                 Scythe.burn(S, was ?? a, a, x, y); was = a;
                 if (t - lickAt > 45) { lickAt = t; Scythe.lick(S, x, y, a); }
                 // each turn's cut, halfway round it
@@ -211,7 +212,7 @@ class Scythe {
         const ap = S._aim?.(S.input.activePointer), cam = S.cameras.main;
         const mx = ap ? ap.x + cam.scrollX - (S.playerX * T + T / 2) : 0, my = ap ? ap.y + cam.scrollY - (S.playerY * T + T / 2) : 0;
         if (!S.isMobile && Math.abs(mx) + Math.abs(my) > 4) { const a = Math.round(Math.atan2(my, mx) / (Math.PI / 4)) * (Math.PI / 4); dx = Math.round(Math.cos(a)); dy = Math.round(Math.sin(a)); }
-        const open = (x, y) => S.world[x]?.[y] === S.FLOOR && !S.getEnemyAt(x, y);
+        const open = (x, y) => S.world[x]?.[y] === S.FLOOR && !S.getEnemyAt(x, y) && !S._gravZone?.(x, y);
         let x = S.playerX, y = S.playerY;
         for (let k = 0; k < C.SLIDE + Scythe.perk('slide'); k++) {   // (Long Slide: further)
             if (!open(x + dx, y + dy) || (dx && dy && (!open(x + dx, y) || !open(x, y + dy)))) break;
@@ -379,8 +380,9 @@ class Scythe {
         const emberAt = new Set(rows.flat().map(t => t.x + ',' + t.y).sort(() => Math.random() - 0.5).slice(0, C.WAVE_EMBERS));
         // you point it: the scythe out along your aim, its blade lit, for a moment
         const [f, fl] = Scythe.frameAt(aim);
-        const pose = S.add.image(S._shotX(), S._shotY(), 'ember_scythe', 'spin_' + f).setScale(Scythe.scale()).setFlip(fl, fl).setDepth(3.2);
-        const lit = S.add.image(pose.x, pose.y, 'ember_scythe', 'spin_' + f).setScale(Scythe.scale()).setFlip(fl, fl).setTintFill(0xffb050).setBlendMode(ADD).setDepth(3.21).setAlpha(0.6);
+        const pose = S.add.image(S._shotX(), S._shotY(), 'ember_scythe', Scythe.spinFrame(S, f)).setScale(Scythe.scale()).setFlip(fl, fl).setDepth(3.2);
+        const lit = S.add.image(pose.x, pose.y, 'ember_scythe', Scythe.spinFrame(S, f)).setScale(Scythe.scale()).setFlip(fl, fl).setTintFill(0xffb050).setBlendMode(ADD).setDepth(3.21).setAlpha(0.6);
+        const step = S.time.addEvent({ delay: 100, loop: true, callback: () => { const n = Scythe.spinFrame(S, f); pose.setFrame(n); lit.setFrame(n); } });   // (it burns on while it's raised)
         S._scytheSpinUntil = now + C.WIND + 420;
         lit.setAlpha(0.2); S.tweens.add({ targets: lit, alpha: 0.95, duration: C.WIND, ease: 'Quad.easeIn' });
         const tipX = pose.x + Math.cos(aim) * C.TIP * Scythe.scale() * 0.85, tipY = pose.y + Math.sin(aim) * C.TIP * Scythe.scale() * 0.85;
@@ -388,7 +390,7 @@ class Scythe {
             const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 40, m = S.add.sprite(tipX + Math.cos(a) * d, tipY + Math.sin(a) * d, 'ember_scythe', 'spark_1').setScale(1.6).setDepth(3.3);
             S.tweens.add({ targets: m, x: tipX, y: tipY, scale: 0.6, duration: C.WIND * (0.6 + Math.random() * 0.4), ease: 'Quad.easeIn', onComplete: () => m.destroy() });
         }
-        S.tweens.add({ targets: [pose, lit], alpha: 0, duration: 200, delay: C.WIND + 220, onComplete: () => { pose.destroy(); lit.destroy(); } });
+        S.tweens.add({ targets: [pose, lit], alpha: 0, duration: 200, delay: C.WIND + 220, onComplete: () => { step.remove(); pose.destroy(); lit.destroy(); } });
         Sfx.play(S, 'e_riser');
         S.time.delayedCall(C.WIND, () => { Sfx.play(S, 'magma_surge', { f: 1 }); S.cameras.main.shake(200, 0.009); Scythe.burst(S, tipX, tipY, 12, 90); });
         S.showStatusText?.(S.player.x, S.player.y - 34, 'HEAT WAVE', '#ffcc44');

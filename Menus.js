@@ -331,6 +331,7 @@ class MenuArt {
                     '...GmG..................',
                     '.SS.....................',
                 ].forEach((r, y) => [...r].forEach((c, x) => c !== '.' && m.set(x, y, c))),
+                frames: 8, fps: 10,   // its file's eight frames: the gem's beat, the heat along the molten edge, an ember up the shaft
                 fx: [['ember', 'front', 0, 0, 22, 14, 5]] },
             ice_fists: { el: 'ice', draw: typed([   // a clenched fist in blue steel, ice crystals jutting from its knuckles, a steel cuff
                     '........................',
@@ -468,6 +469,7 @@ class MenuArt {
                     '.Ss.....................',
                     'C.......................',
                 ]),
+                frames: 8, fps: 8,   // assets/art/mn_icon_boreal_trident: frost grows along the tines, cracks and sheds
                 fx: [['glint', 'front', 15, 7, 21, 1], ['spark', 'front', 6, 0, 23, 13, 2, 0x7affc8], ['star', 'front', 18, 10, 1], ['star', 'front', 4, 13, 3]] },
             lightning_fists: { el: 'lightning', draw: m => [   // a storm gauntlet punching right: gold plates, a bolt engraved on its back, the fingers' plates
                     // seamed, a steel cuff with its rivets

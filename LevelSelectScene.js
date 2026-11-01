@@ -241,7 +241,7 @@ class LevelSelectScene extends Phaser.Scene {
         this._drawPack(pack);
 
 
-        this.add.text(map.x + map.w / 2, H - 10,
+        if (!TouchControls.on()) this.add.text(map.x + map.w / 2, H - 10,
             'Arrows walk  •  Enter goes in  •  1-7 jump  •  I the Isle' + (Progress.devMode() ? '  •  DEV MODE: every level open' : ''), {
             fontSize: '12px', fontFamily: 'monospace', color: UIKit.CSS.textLo
         }).setOrigin(0.5, 1);
@@ -711,7 +711,7 @@ class LevelSelectScene extends Phaser.Scene {
                 vid.setScale(Math.min((rw - 16) / 432, 228 / 256)); vid.play(true);   // (the clips are 432x256)
             } else {
                 model(k, rx + rw / 2, gy + 210, 5).forEach(v);
-                if (!(this._clipTried ||= new Set()).has(k)) {   // (one try each: a missing clip leaves it the model)
+                if (this.sys.game.device.video.mp4 && !(this._clipTried ||= new Set()).has(k)) {   // (one try each: a missing clip leaves it the model; no mp4 in this browser, the same)
                     this._clipTried.add(k);
                     this.load.video(clip, `assets/enemy_clips/${k}.mp4`, true);
                     this.load.once('complete', () => { if (this._settingsOpen && keys[pick] === k) draw(); });
@@ -978,7 +978,7 @@ class LevelSelectScene extends Phaser.Scene {
             txt(lx, y, 'FULLSCREEN', { fontStyle: 'bold' }).setOrigin(0, 0.5);
             const cy = y, bw = (lw - 90) / 2, btns = [['ON', true], ['OFF', false]].map(([name, v], k) => {
                 const b = txt(lx + 90 + bw * (k + 0.5), cy, name, { fontSize: '12px', fontStyle: 'bold', backgroundColor: '#141a2a', padding: { x: 8, y: 4 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-                b.on('pointerup', () => { if (v !== this.scale.isFullscreen) { if (v) this.scale.startFullscreen(); else this.scale.stopFullscreen(); } Sfx.play(this, 'click'); });
+                b.on('pointerup', () => { TouchControls.fullOff = !v; if (v !== this.scale.isFullscreen) { if (v) this.scale.startFullscreen(); else this.scale.stopFullscreen(); } Sfx.play(this, 'click'); });
                 return [b, v];
             });
             const paint = () => btns.forEach(([b, v]) => b.active && b.setColor(this.scale.isFullscreen === v ? '#f6d58a' : UIKit.CSS.textLo).setBackgroundColor(this.scale.isFullscreen === v ? '#2a2414' : '#141a2a'));
@@ -986,9 +986,10 @@ class LevelSelectScene extends Phaser.Scene {
             for (const ev of ['enterfullscreen', 'leavefullscreen']) { this.scale.on(ev, paint); this.events.once('shutdown', () => this.scale.off(ev, paint)); }
             y += 38;
         }
-        txt(lx, y + 4, 'Keybinds take effect when a level loads.', { fontSize: '11px', color: UIKit.CSS.textLo });
+        const touch = TouchControls.on();   // (a phone: no keys to bind)
+        if (!touch) txt(lx, y + 4, 'Keybinds take effect when a level loads.', { fontSize: '11px', color: UIKit.CSS.textLo });
         // your runs, recorded (Telemetry.js)
-        y += 44;
+        y += touch ? 10 : 44;
         head(lx, y, 'PLAY DATA'); y += 30;
         const nRuns = Telemetry.all().length;
         const pdTxt = txt(lx, y, `${nRuns} run${nRuns === 1 ? '' : 's'} recorded`, { fontSize: '12px' }).setOrigin(0, 0.5);
@@ -1005,11 +1006,11 @@ class LevelSelectScene extends Phaser.Scene {
 
         // ── right: keybinds, two columns
         const rx = px + lw + 60, rw = pw - lw - 94, cw = rw / 2 - 10;
-        head(rx, py + 70, 'KEYBINDS');
+        if (!touch) head(rx, py + 70, 'KEYBINDS');
         const rows = [];
         const paintRows = () => rows.forEach(r => r.btn.setText(Settings.label(Settings.key(r.id))).setColor(UIKit.CSS.textHi).setBackgroundColor('#1a2236'));
         const per = Math.ceil(Settings.ACTIONS.length / 2), rh = Math.min(34, (ph - 112 - 84) / per);   // half each side (a 21st, Mute, had wrapped onto the first row of the second), spaced to fit above the buttons
-        Settings.ACTIONS.forEach((a, i) => {
+        (touch ? [] : Settings.ACTIONS).forEach((a, i) => {
             const col = i < per ? 0 : 1, row = i % per, x = rx + col * (cw + 20), ry = py + 112 + row * rh;
             txt(x, ry, a.label, { fontSize: '12px' }).setOrigin(0, 0.5);
             const btn = txt(x + cw - 4, ry, '', { fontSize: '13px', fontStyle: 'bold', backgroundColor: '#1a2236', padding: { x: 10, y: 4 } })
@@ -1033,7 +1034,7 @@ class LevelSelectScene extends Phaser.Scene {
         });
         paintRows();
 
-        kit(UIKit.button(this, { x: rx + rw / 2 - 90, y: py + ph - 44, w: 170, h: 40, label: 'RESET KEYS', accent: P.accentOrange, depth: D + 4, fontSize: '14px', fireOn: 'down',
+        if (!touch) kit(UIKit.button(this, { x: rx + rw / 2 - 90, y: py + ph - 44, w: 170, h: 40, label: 'RESET KEYS', accent: P.accentOrange, depth: D + 4, fontSize: '14px', fireOn: 'down',
                                  onClick: () => { Settings.reset(); paintRows(); Sfx.play(this, 'switch'); } }));
         kit(UIKit.button(this, { x: rx + rw / 2 + 90, y: py + ph - 44, w: 170, h: 40, label: 'DONE', accent: P.accentGreen, depth: D + 4, fontSize: '14px', fireOn: 'down',
                                  onClick: close }));
@@ -1128,7 +1129,8 @@ class LevelSelectScene extends Phaser.Scene {
             keep(this.add.rectangle(x, y, cw, rh - 6, got ? 0x1a1426 : P.bgRaised, 1).setOrigin(0).setDepth(D + 2).setStrokeStyle(1, col, got ? 0.8 : 0.2));
             keep(this.add.image(x + 20, y + (rh - 6) / 2, 'map_kit', 'star_' + a.tier).setScale(2).setDepth(D + 3).setAlpha(got ? 1 : 0.25));
             txt(x + 40, y + 5, a.name, { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: got ? UIKit._hex(col) : UIKit.CSS.textHi });
-            txt(x + 40, y + 24, got ? `"${a.desc}"` : a.how, { fontStyle: got ? 'italic' : 'normal', color: got ? '#e8dcc0' : UIKit.CSS.textMid });
+            const long = TouchControls.on() && (got ? a.desc : a.how).length > 60;   // (two small lines: it'd run off a phone)
+            txt(x + 40, y + (long ? 20 : 24), got ? `"${a.desc}"` : a.how, { fontStyle: got ? 'italic' : 'normal', color: got ? '#e8dcc0' : UIKit.CSS.textMid, ...(long && { fontSize: '10px', wordWrap: { width: cw - 50 } }) });
             txt(x + cw - 10, y + 7, Achievements.rewardText(a).split('   ').join('  '), { fontSize: '10px', color: got ? UIKit.CSS.textLo : '#9be08a' }).setOrigin(1, 0);
             if (!got && a.goal > 1) {   // how far along
                 const bw = 120, bx = x + cw - 10 - bw, by = y + rh - 18;
@@ -1147,7 +1149,7 @@ class LevelSelectScene extends Phaser.Scene {
             ice_fists: 'Ice Fists', icicle_cannon: 'Icicle Cannon', fractal_shard: 'Fractal Shard', rimeguard: 'Rimeguard', boreal_trident: 'Boreal Trident',
             lightning_fists: 'Storm Fists', orb_emitter: 'Orb Emitter', ball_lightning: 'Ball Lightning', conductor: 'Circuit Breaker', thunder_glaive: 'Thunder Glaive',
             cosmic_fists: 'Void Fists', barrier_staff: 'Barrier Staff', astrolabe: 'Astrolabe',
-            singularity_staff: 'Singularity', void_blade: 'Void Blade', pendulum: 'Pendulum',
+            singularity_staff: 'Singularity', void_blade: 'Void Blade',
         };
         const els = [
             { key: 'fire', label: 'FIRE', color: UIKit.PALETTE.accentOrange, def: 'flame_fists' },

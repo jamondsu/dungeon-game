@@ -1194,6 +1194,7 @@ class RhythmTrial {
         const caps = keys.map(([code, label], i) => ({ code,
             img: pin(S.add.image(x0 + i * kw, y, 'fx_rt_key').setDisplaySize(48, 48)),
             txt: pin(S.add.text(x0 + i * kw, y - 4, label, { fontSize: '20px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#2a2030' }).setOrigin(0.5)) }));
+        if (TouchControls.on()) caps.forEach(c => { const slid = () => RhythmTrial.glissKey(S, { code: c.code }); c.img.setInteractive().on('pointerover', slid).on('pointerdown', slid); });   // (a phone: a finger along the keys)
         const arrow = pin(S.add.image(W / 2, y + 44, 'fx_rt_arrow').setDisplaySize(56, 56).setTint(0x7fe8ff));   // which way to slide (at its own size: stretched, it broke up)
         st.gl = { g, caps, arrow, hit: new Map(), c: 0, done: false, said: false, slide: g.t + C.GLISS.SLIDE * g.beat, end: g.t + (C.GLISS.BEATS - 0.5) * g.beat };
         S.input.keyboard.resetKeys(); S.input.keyboard.enabled = false;   // the game's own keys stand down (some of these switch elements, throw gadgets...)

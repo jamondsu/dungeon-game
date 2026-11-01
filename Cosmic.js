@@ -21,11 +21,6 @@
 //                  longer you held (3-7 tiles, 1-3 wide, 0.6-1.8s). Retribution, 10s: when
 //                  you're hit, everything within 3 tiles is Hexed for 5s (up to +45%
 //                  taken, -40% speed, a mark)                                        (12s)
-//   Pendulum       no attack: a click flings it onto the cursor (6 tiles at most) and it lays a
-//                  TIME LOCK (a 7x7 with its corners cut, 4s): time stops in it for all but you;
-//                  hits on what's in it are stored and land at once when it ends; shots stop at its
-//                  edge. R: REWIND, back along your path to 3s ago, the HP and the ailments since
-//                  undone. One cooldown: 12s after the lock, 30s after Rewind
 //   Ascend (ult)   10s: +25% max HP, free switching, fluid blasts, trail and waves, your boon at full
 //                  strength, then a supernova that cashes every mark in reach in as damage
 //   Stage 2        two layers; tap V for Ascend (-20% damage taken), hold V to transform:
@@ -130,22 +125,9 @@ class CosmicSystem {
                        // eight objects: the pair and three more pairs turned 45°, 90° and 135°
                        COLLAPSE_R: 2.6, MULT: 2.4, ROT: [45, 90, 135], PIERCE_SHARE: 0.6,
                        DRAG_STEP_MS: 60, VOIDLET_HP: 70, VOIDLETS: ['warrior', 'beam', 'warrior', 'beam', 'warrior'] },
-            // The Pendulum, a support tool with no attack. A click lays its field, Time Lock, at the cursor, RANGE tiles at
-            // most: MASK round it (a 7x7 with its corners cut: rows of 3, 5, 7, 7, 7, 5, 3).
-            // Rewind (R): BACK_MS back along your path in PULL_MS; under MIN_MS of past, nothing to rewind. The two share one
-            // cooldown: Stasis sets it to STASIS_CD, Rewind to REWIND_CD (it was the stronger one alone).
-            // TLOCK: the field's Time Lock: MS long (4s, +0.5s a level of Long Lock); what's stored lands x REL_MUL; a boss's time runs BOSS_SLOW slower in it.
-            // THROW (ms): the wind-up; the fling and the bounces, each [how far along the way it lands, ms, its height]; the float; the
-            // growth; the drop. About 1.45s from the click to the thud.
-            // HANG_UP: how far above the field's middle the big one's bob hangs (px); FADE: its alpha while anything's under it
-            PEND:    { RANGE: 6, HANG_UP: 48, FADE: 0.55, THROW: { WIND: 180, HOPS: [[0.55, 340, 1], [0.82, 180, 0.45], [0.95, 130, 0.2], [1, 90, 0.08]], FLOAT: 160, GROW: 260, DROP: 110 },
-                       MASK: ['..###..', '.#####.', '#######', '#######', '#######', '.#####.', '..###..'],
-                       TLOCK: { MS: 4000 + 500 * WeaponLevels.perk('pendulum', 'hold'), REL_MUL: 1, BOSS_SLOW: 0.8 },
-                       STASIS_CD: 12000 * (1 - 0.1 * WeaponLevels.perk('pendulum', 'cd')),
-                       BACK_MS: 3000, REWIND_CD: 30000 * (1 - 0.1 * WeaponLevels.perk('pendulum', 'echo')), PULL_MS: 420, MIN_MS: 400 },
             COL:     { violet: 0xb47cff, lilac: 0xe2c8ff, deep: 0x5a24a8, gold: 0xffd060, hex: 0xff5fd2 },
             NAMES:   { cosmic_fists: 'VOID FISTS', barrier_staff: 'BARRIER', astrolabe: 'ASTROLABE',
-                       singularity_staff: 'SINGULARITY', void_blade: 'VOID BLADE', pendulum: 'PENDULUM' },
+                       singularity_staff: 'SINGULARITY', void_blade: 'VOID BLADE' },
         });
     }
 
@@ -483,8 +465,6 @@ class CosmicSystem {
         for (const v of S.voidlets || []) [v.spr, v.glow, v.eye, v.bar, v.reticle].forEach(o => o?.destroy());
         if (S.well) this._csWellEnd(true);
         if (S.wellBeam) { S.wellBeam.g?.destroy(); S.wellBeam = null; }
-        if (S.stasis) this._csStasisEnd('gone');   // (the scene's going: nothing stored lands)
-        S.fly?.spr?.destroy(); S.fly?.shadow?.destroy(); S.fly?.ghost?.forEach(o => o.destroy());
         for (const k in S.fx) S.fx[k]?.destroy?.();
         for (const [, o] of S.hexFx) o?.destroy?.();
         this._cs = null;
@@ -697,9 +677,8 @@ class CosmicSystem {
         else if (weapon === 'astrolabe')         { ok = this._csAstrolabe(wx, wy); cd = C.ASTRO.CD; }
         else if (weapon === 'singularity_staff') { ok = this._csWell(wx, wy);    cd = C.WELL.CD; }
         else if (weapon === 'void_blade')        { this._csBladeCharge(); return; }   // fires on release (_csRelease)
-        else if (weapon === 'pendulum')          { ok = this._csStasisCast(wx, wy); cd = C.PEND.STASIS_CD; }
         if (!ok) return;
-        S.cdUntil = now + cd; S.cdMs = cd;
+        S.cdUntil = now + cd;
         this._gearFiredAt = now;   // the held weapon swings now (Creatures.gear)
         S.castAt = now;
     }
@@ -1346,409 +1325,6 @@ class CosmicSystem {
         Sfx.play(this, 'whoosh'); this.cameras.main.shake(90, 0.004);
     }
 
-    // ── THE PENDULUM: THE CAST ───────────────────────────────────────────────
-    // A click lays the Time Lock at the cursor (RANGE tiles at most, along the line out from you: the last open floor before a wall,
-    // a sealed room or the edge of the view, so never through one). You fling the pendulum (assets/art/fx_pendulum): small,
-    // its bob whirling on its chain (fly_0..15), on a curve onto the spot; there it rises a little and grows (grow_0, grow_1,
-    // the big hang frames: typed bigger, never scaled), then drops onto the spot with a heavy thud, and the field snaps on.
-    _csStasisCast(wx, wy) {
-        const S = this._cs, C = this._csCfg().PEND, now = this.time.now, T = this.TILE_SIZE, px = this.playerX, py = this.playerY;
-        if (S.fly) return false;
-        let tx = Math.floor(wx / T), ty = Math.floor(wy / T);
-        const d = Math.hypot(tx - px, ty - py);
-        if (d > C.RANGE) { tx = Math.round(px + (tx - px) * C.RANGE / d); ty = Math.round(py + (ty - py) * C.RANGE / d); }
-        const view = this.cameras.main.worldView, n = Math.max(1, Math.ceil(Math.hypot(tx - px, ty - py) * 3));
-        let end = { x: px, y: py };
-        for (let k = 1; k <= n; k++) {
-            const x = Math.round(px + (tx - px) * k / n), y = Math.round(py + (ty - py) * k / n);
-            if (this.world?.[x]?.[y] !== this.FLOOR || this.isInLockedRoom?.(x, y) || !view.contains(x * T + T / 2, y * T + T / 2)) break;
-            end = { x, y };
-        }
-        const M = this._cfxGearState?.main, x0 = M?.visible ? M.x : this.player.x, y0 = M?.visible ? M.y : this.player.y - 10;
-        const x1 = end.x * T + T / 2, y1 = end.y * T + T / 2, L = Math.hypot(x1 - x0, y1 - y0);
-        const spr = this.add.sprite(x0, y0, 'fx_pendulum', 'fly_0').setDepth(4.6).setScale(1.5);
-        const shadow = this.add.image(x0, y0 + 10, 'vfx_shadow').setDepth(0.97).setAlpha(0.45).setScale(0.16, 0.07);
-        // where it'll land: the field's edge, faint, pulsing, from the click till the thud
-        const T2 = this.TILE_SIZE, tiles = this._csStasisTiles(end.x, end.y), ghost = [];
-        for (const k of tiles) {
-            const [cx, cy] = k.split(',').map(Number), X = cx * T2 + T2 / 2, Y = cy * T2 + T2 / 2;
-            for (const [dx, dy, side, ox, oy] of [[0, -1, 'n', 0, -10], [0, 1, 's', 0, 10], [-1, 0, 'w', -10, 0], [1, 0, 'e', 10, 0]])
-                if (!tiles.has((cx + dx) + ',' + (cy + dy))) ghost.push(this.add.image(X + ox, Y + oy, 'fx_pendulum', 'edge_' + side).setDepth(0.945).setAlpha(0.25));
-        }
-        S.fly = { x0, y0, x1, y1, tx: end.x, ty: end.y, t0: now, spr, shadow, ghost, phase: 'wind', L };
-        S.away = true;   // (the one in your hand is out there now: CreatureFX.gear hides it till it's back)
-        return true;
-    }
-    // Where the bob's middle is below the pivot in each hanging frame (px, before the 1.5 it's drawn at)
-    static BOB_AT = { grow_0: 7, grow_1: 16, hang: 48 };   // (the Reliquary's orb: its middle in grow_0, grow_1 and the big hanging frames)
-    // THE THROW (PEND.THROW): a wind-up at your hand (it whirls faster and draws back), the fling on an arc that lands short
-    // of the spot, bounces along the line to it (each lower and shorter, a puff and a tick where it touches), then it floats
-    // up off the spot, grows (typed bigger frame by frame, never scaled) and drops with a heavy thud: the field opens then.
-    _csFlyTick(now) {
-        const S = this._cs, F = S.fly;
-        if (!F) return;
-        const B = CosmicSystem.BOB_AT, spr = F.spr, C = this._csCfg().PEND.THROW, t = now - F.t0;
-        const at = f => [F.x0 + (F.x1 - F.x0) * f, F.y0 + (F.y1 - F.y0) * f];
-        for (const g of F.ghost) g.setAlpha(0.18 + 0.12 * Math.sin(now / 120));
-        let hopEnd = C.WIND;
-        for (const [, ms] of C.HOPS) hopEnd += ms;
-        if (t < C.WIND) {   // the wind-up: drawn back from the target, whirling ever faster
-            const u = t / C.WIND, [bx, by] = at(-0.12 * u);
-            spr.setPosition(Math.round(bx), Math.round(by - 4 * u)).setFrame('fly_' + (Math.floor(t * (1 + 2 * u) / 45) % 16));
-            F.shadow.setPosition(bx, by + 10);
-            return;
-        }
-        if (t < hopEnd) {   // the fling and its bounces: hop k from f0 to f1, its height h x the first
-            let t0 = C.WIND, f0 = -0.12;
-            for (const [f1, ms, h] of C.HOPS) {
-                if (t < t0 + ms) {
-                    const u = (t - t0) / ms, [gx, gy] = at(f0 + (f1 - f0) * u), H = h * Math.max(26, F.L * 0.35);
-                    spr.setPosition(Math.round(gx), Math.round(gy - H * 4 * u * (1 - u))).setFrame('fly_' + (Math.floor(t / 35) % 16));
-                    F.shadow.setPosition(gx, gy + 10).setScale(0.16 * (1 - 0.4 * 4 * u * (1 - u) * h), 0.07 * (1 - 0.4 * 4 * u * (1 - u) * h));
-                    if (Math.random() < 0.6) CosmicSystem.pendFx(this).haze.emitParticleAt(spr.x, spr.y, 1);
-                    break;
-                }
-                if (F.hop !== f1) {   // (it touched down: a puff of dust and a tick, once a landing)
-                    F.hop = f1;
-                    const [lx, ly] = at(f1);
-                    CosmicSystem.puff(CosmicSystem.fx(this).dust, lx, ly + 6, 4 + Math.round(6 * h), 0, Math.PI, 15, 50);
-                    Sfx.play(this, 'ptick');
-                }
-                t0 += ms; f0 = f1;
-            }
-            return;
-        }
-        // on the spot: it floats up (FLOAT), grows a frame at a time as it rises a little more (GROW), then drops (DROP)
-        if (!F.landed) { F.landed = true; spr.setOrigin(0.5, 0); F.shadow.destroy(); }
-        const u = t - hopEnd, RISE = 14, MORE = 6;
-        let r, frame;
-        if (u < C.FLOAT) { const k = u / C.FLOAT; r = RISE * (1 - (1 - k) * (1 - k)); frame = 'grow_0'; }
-        else if (u < C.FLOAT + C.GROW) { const k = (u - C.FLOAT) / C.GROW; r = RISE + MORE * k; frame = k < 0.5 ? 'grow_1' : 'hang_2'; }
-        else { const k = Math.min(1, (u - C.FLOAT - C.GROW) / C.DROP); r = (RISE + MORE) * (1 - k * k); frame = 'hang_2'; }
-        spr.setFrame(frame).setPosition(Math.round(F.x1), Math.round(F.y1 - this._csCfg().PEND.HANG_UP * Math.min(1, u / (C.FLOAT + C.GROW)) - r - (B[frame] ?? B.hang) * 1.5));   // (rising to where it hangs, over the field's upper rows)
-        if (u < C.FLOAT + C.GROW + C.DROP) return;
-        S.fly = null;
-        F.ghost.forEach(o => o.destroy());
-        this._csStasisOpen(F.tx, F.ty, spr);
-    }
-    // The pendulum's light in flight: soft pieces of haze with no outline (fx_fractal's), lilac to deep violet, that run
-    // together where they crowd into one smear behind it
-    static pendFx(S) {
-        if (S._csPendFx?.haze?.active) return S._csPendFx;
-        const haze = S.add.particles(0, 0, 'fx_fractal', { frame: ['haze_0', 'haze_1', 'haze_2', 'haze_3', 'haze_4', 'haze_5'], emitting: false, blendMode: Phaser.BlendModes.ADD,
-            lifespan: { min: 220, max: 380 }, speed: { min: 0, max: 12 }, scale: { start: 1.8, end: 0.9 }, alpha: { start: 0.5, end: 0 },
-            color: [0xf0e4ff, 0xc8a0ff, 0x8a52e8, 0x3a1470], colorEase: 'quad.out' }).setDepth(4.55);
-        return (S._csPendFx = { haze });
-    }
-
-    // ── THE PENDULUM: TIME LOCK ──────────────────────────────────────────────
-    // The field (in the code still "stasis"), for TLOCK.MS: the tiles of a 7x7 with its corners cut (MASK) that can be
-    // reached from the middle over open floor (a wall cuts it off), each lit (tile_0) with its edge drawn round them, the
-    // big pendulum hanging over the middle swinging slowly and ticking. Inside it time stops for everything but you: what
-    // stands on it is locked (_csLockOn, _csFieldAct), your shots and theirs stop where they reach it (_csLockShots), and
-    // when it ends everything stored is let go at once (_csFieldRelease).
-    _csStasisTiles(tx, ty) {
-        const M = this._csCfg().PEND.MASK, h = (M.length - 1) / 2, inMask = (x, y) => M[y - ty + h]?.[x - tx + h] === '#', tiles = new Set([tx + ',' + ty]), q = [[tx, ty]];
-        while (q.length) {
-            const [x, y] = q.shift();
-            for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-                const k = nx + ',' + ny;
-                if (tiles.has(k) || !inMask(nx, ny) || this.world?.[nx]?.[ny] !== this.FLOOR || this.isInLockedRoom?.(nx, ny)) continue;
-                tiles.add(k); q.push([nx, ny]);
-            }
-        }
-        return tiles;
-    }
-    _csStasisOpen(tx, ty, big = null) {
-        const S = this._cs, C = this._csCfg().PEND, col = this._csCfg().COL, now = this.time.now, T = this.TILE_SIZE;
-        if (S.stasis) this._csStasisEnd(true);
-        const x = tx * T + T / 2, y = ty * T + T / 2, tiles = this._csStasisTiles(tx, ty), parts = [];
-        for (const k of tiles) {
-            const [cx, cy] = k.split(',').map(Number), X = cx * T + T / 2, Y = cy * T + T / 2;
-            parts.push(this.add.image(X, Y, 'fx_pendulum', 'tile_0').setDepth(0.94).setFlip(Math.random() < 0.5, Math.random() < 0.5));
-            for (const [dx, dy, side, ox, oy] of [[0, -1, 'n', 0, -10], [0, 1, 's', 0, 10], [-1, 0, 'w', -10, 0], [1, 0, 'e', 10, 0]])
-                if (!tiles.has((cx + dx) + ',' + (cy + dy))) parts.push(this.add.image(X + ox, Y + oy, 'fx_pendulum', 'edge_' + side).setDepth(0.945));
-        }
-        const glow = this.add.image(x, y, 'vfx_glow').setTint(col.violet).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.93).setScale(1.75).setAlpha(0.3);
-        if (!big) big = this.add.sprite(x, 0, 'fx_pendulum', 'hang_2').setOrigin(0.5, 0).setDepth(4.6).setScale(1.5);
-        big.setPosition(Math.round(x), Math.round(y - C.HANG_UP - CosmicSystem.BOB_AT.hang * 1.5)).setAlpha(0.9);
-        if (!this.anims.exists('csw_pend')) this.anims.create({ key: 'csw_pend', frames: [0, 1, 2, 3, 4, 3, 2, 1].map(i => ({ key: 'fx_pendulum', frame: 'hang_' + i })), frameRate: 5, repeat: -1 });
-        big.play({ key: 'csw_pend', startFrame: 2 });
-        big.on('animationupdate', (a, fr) => { if (fr.textureFrame === 'hang_0' || fr.textureFrame === 'hang_4') Sfx.play(this, 'ptick'); });   // a tick at each end of its swing
-        // the dust in it hangs where it is: motes that neither fall nor drift, only glint and go out
-        const motes = this.add.particles(x, y, 'fx_cosmic', { frame: ['p_0', 'p_3', 'p_4', 'p_6', 'p_7', 'p_9'], blendMode: Phaser.BlendModes.ADD,
-            emitZone: { type: 'random', source: new Phaser.Geom.Rectangle(-80, -82, 160, 160) }, frequency: 18, lifespan: { min: 700, max: 1500 }, speed: 0,
-            alpha: { onEmit: () => 0, onUpdate: (p, k, t) => Math.sin(t * Math.PI) * 0.85 }, scale: 1.2, tint: [0xfff0b0, 0xe2c8ff, 0xffffff] }).setDepth(4.4);
-        S.stasis = { tx, ty, x, y, tiles, t0: now, at: now, until: now + C.TLOCK.MS, parts, glow, big, motes, locked: new Map(), shots: [] };
-        // the thud: the ground shakes, time ripples out from it (Rewind's ring thrown wide, soft haze, the dust kicked up)
-        this.showStatusText(x, y - 64, 'TIME LOCK', '#ffe08a');
-        this._vfxFlash?.(x, y, 90, col.gold, 240, 0.55);
-        const ring = this.add.image(x, y, 'fx_pendulum', 'rw_ring').setDepth(4.5).setScale(1).setAlpha(0.9);
-        this.tweens.add({ targets: ring, scale: 5.8, alpha: 0, duration: 460, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-        CosmicSystem.ring(CosmicSystem.pendFx(this).haze, x, y, T * 3.6, 420, 40, 18);
-        CosmicSystem.ring(CosmicSystem.fx(this).dust, x, y + 6, T * 3.2, 360, 32, 8);
-        this.cameras.main.shake(140, 0.006);
-        Sfx.play(this, 'stasis');
-    }
-    // Every frame while it lies: whatever stands on it is locked (once locked it stays so till the end: it can't move off),
-    // what it does to each, the shots it stops; in its last moments it flickers
-    _csStasisTick(now) {
-        const S = this._cs, F = S.stasis;
-        if (!F) return;
-        if (now >= F.until) { this._csStasisEnd(); return; }
-        const dt = Math.max(0, now - F.at);
-        F.at = now;
-        for (const e of this.enemies || []) if (!F.locked.has(e) && e.sprite?.active && e.health > 0 && !this._phasedOut?.(e) && this._csInField(e)) this._csLockOn(e);
-        for (const [e, L] of F.locked) this._csFieldAct(e, L, now, dt);
-        this._csLockShots(now, dt);
-        this._csBigFade(F);
-        const a = F.until - now < 600 && Math.floor(now / 90) % 2 ? 0.5 : 1;
-        if (a !== F.alpha) { F.alpha = a; for (const o of F.parts) o.setAlpha(a); }
-    }
-    // The big pendulum fades to FADE while you, an enemy or a shot is under it (its bob and its rod), so it never hides one
-    _csBigFade(F) {
-        const B = F.big, C = this._csCfg().PEND;
-        if (!B?.active) return;
-        const s = B.scaleY, top = B.y, bob = top + (CosmicSystem.BOB_AT.hang - 12) * s, bot = top + (CosmicSystem.BOB_AT.hang + 12) * s, x = B.x;
-        const under = (px, py) => py > top && py < bot + 8 && Math.abs(px - x) < (py > bob - 4 ? 20 : 5) * s;
-        let hit = this.player?.active && under(this.player.x, this.player.y);
-        for (const e of this.enemies || []) if (!hit && e.sprite?.active && under(e.sprite.x, e.sprite.y)) hit = true;
-        for (const list of [this.fireballs, this.iceShards, this.ballLightnings, this.ballSeekers, this.lightningOrbs, this.enemyProjectiles])
-            for (const o of list || []) { const p = o.gfx || o.sprite; if (!hit && p?.active && under(p.x, p.y)) hit = true; }
-        const want = hit ? C.FADE : 0.9;
-        B.setAlpha(B.alpha + (want - B.alpha) * 0.25);
-    }
-    // Is e (an enemy, or a story boss by any tile of its 3x3) on the field?
-    _csInField(e) {
-        const F = this._cs?.stasis;
-        if (!F || !e) return false;
-        if (e.sprite || !e.container) return F.tiles.has(e.x + ',' + e.y);
-        const T = this.TILE_SIZE, bx = Math.floor(e.container.x / T), by = Math.floor(e.container.y / T);
-        return [-1, 0, 1].some(dx => [-1, 0, 1].some(dy => F.tiles.has((bx + dx) + ',' + (by + dy))));
-    }
-    // e steps into stopped time. Its health (and, unless it's a boss, its tile) can't be changed any more: what lowers it is
-    // STORED (every hit, from anything), what raises it still lands; what moves it moves nothing. A boss isn't frozen solid:
-    // its time only slows (TLOCK.BOSS_SLOW). Over it, the tally of what's stored.
-    _csLockOn(e) {
-        const F = this._cs.stasis, C = this._csCfg().PEND.TLOCK, now = this.time.now;
-        const L = { boss: !!e.isBoss, h: e.health, stored: 0, stun: Math.max(0, (e.stunnedUntil || 0) - now), tw: this.tweens.getTweensOf(e.sprite) };
-        Object.defineProperty(e, 'health', { configurable: true, enumerable: true, get: () => L.h, set: v => { if (v < L.h) L.stored += L.h - v; else L.h = v; } });
-        if (L.boss) L.tw.forEach(t => { t.timeScale = 1 - C.BOSS_SLOW; });
-        else {
-            L.x = e.x; L.y = e.y; L.sx = e.sprite.x; L.sy = e.sprite.y;
-            for (const k of ['x', 'y']) Object.defineProperty(e, k, { configurable: true, enumerable: true, get: () => L[k], set: () => {} });
-            L.tw = L.tw.filter(t => t.isPlaying?.()); L.tw.forEach(t => t.pause());
-            e.sprite.anims?.pause();
-            e._tlock = L;   // (CreatureFX: no stun stars on it; its stun is only stopped time)
-        }
-        L.txt = this.add.text(e.sprite.x, e.sprite.y - 40, '', { fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ffe08a', stroke: '#1c1728', strokeThickness: 3 })
-            .setOrigin(0.5).setDepth(5.6).setVisible(false);
-        // its mark in the row of status pips over it (HUD._stackStatusIcons places the row): the stopped clock, its hand twitching
-        if (!this.anims.exists('csw_tmark')) this.anims.create({ key: 'csw_tmark', frames: ['tmark_0', 'tmark_1'].map(frame => ({ key: 'fx_pendulum', frame })), frameRate: 3, repeat: -1 });
-        L.mark = this.add.sprite(e.sprite.x, e.sprite.y - 30, 'fx_pendulum', 'tmark_0').setDepth(4.62).play('csw_tmark');
-        e._tlMark = L.mark; e._tlTally = L.txt;
-        F.locked.set(e, L);
-    }
-    // WHAT THE FIELD DOES to one locked enemy, each frame, for the dt that passed. The one place its effect lives: swap this
-    // (and _csLockOn, _csFieldRelease) to change what the field is. Now: TIME LOCK. Every clock on it stands still (each of
-    // its times, ...Until, ...At, ...Time, pushed on by dt; a boss's by BOSS_SLOW of it), so its ailments don't run down
-    // (what they tick is stored like any hit) and whatever you put on it waits for time to start again; it holds still where
-    // it was, stunned while time's stopped (no acting, casting or summoning); the tally shows.
-    static HELD_SINCE = ['lastChillTime', '_csMarkAt', '_tbAt', 'lastBurnStackTime'];   // (chill's hold, cosmic marks, Frostbite's growth, Burn's last stack)
-    _csFieldAct(e, L, now, dt) {
-        const k = L.boss ? this._csCfg().PEND.TLOCK.BOSS_SLOW : 1, lo = now - 120000, hi = now + 600000;
-        for (const key in e) {
-            if (key === 'x' || key === 'y' || key === 'health') continue;
-            const v = e[key];
-            if (typeof v !== 'number') continue;
-            // what's still to come waits (its ailments' ends, its stun, its own next move); a status counted from when it last
-            // came holds its count (HELD_SINCE). A past "last hit at" is left alone: that's your weapon's, and it keeps hitting
-            if ((v > now && v < hi && /(Until|At|Time)$/.test(key)) || (v > lo && v <= now && CosmicSystem.HELD_SINCE.includes(key))) e[key] = v + dt * k;
-        }
-        if (!L.boss && e.sprite?.active) {
-            e.isStunned = true;
-            if (!(e.stunnedUntil > now + 100)) e.stunnedUntil = now + 100;
-            e.sprite.setPosition(L.sx, L.sy);
-        }
-        if (e.sprite?.active) L.mark.setX(Math.round(e.sprite.x));   // (its height: the status row, HUD._stackStatusIcons)
-        if (L.stored > 0 && e.sprite?.active) {
-            const n = String(Math.round(L.stored));
-            if (L.txt.text !== n) { L.txt.setText(n).setVisible(true).setScale(1.35); this.tweens.add({ targets: L.txt, scale: 1, duration: 140 }); }
-            L.txt.setX(Math.round(e.sprite.x));
-        }
-    }
-    // Shots in flight (yours, and theirs) stop where they reach the field and hang there, their clocks stopped too; they go
-    // on at the speed they had when it ends
-    _csLockShots(now, dt) {
-        const F = this._cs.stasis, T = this.TILE_SIZE, lo = now - 120000, hi = now + 600000;
-        for (const list of [this.fireballs, this.iceShards, this.ballLightnings, this.ballSeekers, this.lightningOrbs, this.enemyProjectiles]) for (const o of list || []) {
-            const p = o.gfx || o.sprite || o;
-            if (typeof o.vx !== 'number' || !p || p.active === false) continue;
-            if (!o.__tl) {
-                if (!F.tiles.has(Math.floor(p.x / T) + ',' + Math.floor(p.y / T))) continue;
-                o.__tl = { vx: o.vx, vy: o.vy }; o.vx = o.vy = 0; F.shots.push(o);
-            }
-            for (const key in o) { const v = o[key]; if (/(Until|At|Time|born|t0)$/.test(key) && typeof v === 'number' && v > lo && v < hi) o[key] = v + dt; }
-        }
-    }
-    // The field ends: time starts again. Every locked enemy gets its health and tile back, then all it stored lands at once
-    // (x REL_MUL: its tally bursting, the number, a kill, a split or a drop happening now), then what was put on it runs on
-    // (its clocks were only held), then the stopped shots fly on. quiet: no show (the scene's going)
-    _csFieldRelease(F, quiet) {
-        const C = this._csCfg().PEND.TLOCK, now = this.time.now, Fx = quiet ? null : CosmicSystem.fx(this);
-        for (const [e, L] of F.locked) {
-            L.mark.destroy(); e._tlMark = e._tlTally = null;
-            delete e.health; e.health = L.h;
-            if (L.boss) L.tw.forEach(t => { t.timeScale = 1; });
-            else {
-                delete e.x; delete e.y; e.x = L.x; e.y = L.y; e._tlock = null;
-                if (e.sprite?.active) { e.sprite.setPosition(L.sx, L.sy); e.sprite.anims?.resume(); }
-                L.tw.forEach(t => t.isPaused?.() && t.resume());
-                if (!(e.stunnedUntil - now > 150) && L.stun <= 150) { e.isStunned = false; e.stunnedUntil = now; }   // (the stun was only stopped time)
-            }
-        }
-        for (const [e, L] of F.locked) {
-            const d = L.stored * C.REL_MUL;
-            if (!quiet && L.txt.visible) { this.tweens.add({ targets: L.txt, scale: 1.9, alpha: 0, y: L.txt.y - 10, duration: 320, ease: 'Quad.easeOut', onComplete: () => L.txt.destroy() }); }
-            else L.txt.destroy();
-            if (!(d > 0) || !e.sprite?.active || quiet === 'gone') continue;
-            e.health -= d;
-            if (!quiet) {
-                this.showDamageNumber?.(e.sprite.x, e.sprite.y - 12, d, '#ffe08a');
-                CosmicSystem.puff(Fx.gold, e.sprite.x, e.sprite.y - 4, 10, 0, Math.PI, 40, 160);
-                this._vfxFlash?.(e.sprite.x, e.sprite.y, 40, 0xffe08a, 200, 0.6);
-            }
-            this.updateEnemyHealthBar?.(e);
-            if (e.health <= 0) this.killEnemy(e);
-        }
-        for (const o of F.shots) if (o.__tl) { o.vx = o.__tl.vx; o.vy = o.__tl.vy; o.__tl = null; }
-        F.locked.clear(); F.shots.length = 0;
-    }
-    _csStasisEnd(quiet) {
-        const S = this._cs, F = S?.stasis;
-        if (!F) return;
-        S.stasis = null;
-        this._csFieldRelease(F, quiet);
-        F.motes.stop();
-        const B = F.big;
-        B.off('animationupdate');
-        if (quiet) { [...F.parts, F.glow, B].forEach(o => o.destroy()); F.motes.destroy(); if (S && !S.fly) S.away = false; return; }
-        this.tweens.add({ targets: [...F.parts, F.glow], alpha: 0, duration: 260, onComplete: () => [...F.parts, F.glow].forEach(o => o.destroy()) });
-        this.time.delayedCall(1600, () => F.motes.destroy());
-        CosmicSystem.puff(CosmicSystem.fx(this).fine, F.x, F.y, 14, 0, Math.PI, 10, 50);   // time going again: the hanging dust let go
-        // the release: time cracks open across the field (fx_fractal's cracks of light, lilac), the clock's ring spun backwards
-        for (let i = 0; i < 6; i++) {
-            const [way, fx, fy] = [['e', 0, 0], ['ne', 0, 0], ['s', 0, 0], ['se', 0, 0], ['e', 1, 0], ['ne', 1, 1]][i], a = i / 6 * Math.PI * 2 + Math.random() * 0.4;
-            const c = this.add.image(F.x + Math.cos(a) * 16, F.y + Math.sin(a) * 16, 'fx_fractal', 'crack_' + way).setFlip(!!fx, !!fy).setTint(0xe2c8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth(0.96).setScale(1.5);
-            this.tweens.add({ targets: c, alpha: 0, duration: 520, delay: 80, onComplete: () => c.destroy() });
-        }
-        this._csRewindRing(F.x, F.y, true).setScale(3);
-        this._vfxFlash?.(F.x, F.y, 110, 0xffe08a, 260, 0.7);
-        this.cameras.main.shake(160, 0.007);
-        Sfx.play(this, 'shatter'); Sfx.play(this, 'rewind');
-        // it shrinks back the way it grew, then flies home to your hand, whirling
-        B.stop();
-        const up = this._csCfg().PEND.HANG_UP, at = fr => B.setFrame(fr).setY(Math.round(F.y - up - CosmicSystem.BOB_AT[fr] * 1.5));
-        at('grow_1');
-        this.time.delayedCall(90, () => B.active && at('grow_0'));
-        this.time.delayedCall(180, () => {
-            if (!B.active) return;
-            B.setOrigin(0.5).setFrame('fly_0').setY(F.y - up);
-            const t0 = this.time.now, p = this.player;
-            this.tweens.add({ targets: B, x: () => p?.x ?? B.x, y: () => (p?.y ?? B.y) - 10, duration: 260, ease: 'Quad.easeIn',
-                onUpdate: () => B.setFrame('fly_' + (15 - Math.floor((this.time.now - t0) / 35) % 16)), onComplete: () => { B.destroy(); if (this._cs && !this._cs.fly) this._cs.away = false; } });
-        });
-    }
-
-    // ── THE PENDULUM: REWIND (R) ─────────────────────────────────────────────
-    // Every 50ms: where you are, your HP and which ailments are on you (FieldKit._playerAilments), kept for BACK_MS. A new
-    // room (through a door, sealed or not), a lift or a fall starts it afresh: you can't rewind through one.
-    _csRewindRecord(now) {
-        const S = this._cs, C = this._csCfg().PEND, R = S.rw || (S.rw = { buf: [], room: null, pull: null });
-        if (R.pull || !this.player?.active) return;
-        const room = this.getCurrentPlayerRoom?.() ?? -1;
-        if (room !== R.room || this._lifting || this._tutFalling || this._deathScreenActive) { R.buf.length = 0; R.room = room; }
-        const last = R.buf[R.buf.length - 1];
-        if (last && now - last.t < 50) return;
-        const ail = (this._playerAilments?.() || []).filter(a => a[1](now)).map(a => a[0]);
-        R.buf.push({ t: now, x: this.playerX, y: this.playerY, px: this.player.x, py: this.player.y, hp: this.health, ail });
-        while (R.buf.length > 1 && now - R.buf[0].t > C.BACK_MS) R.buf.shift();
-    }
-    // R, holding the Pendulum: back to the furthest moment kept whose tile is still open, pulled back along the way you came
-    // (afterimages of you strung out behind, a clock ring ticking backwards). The HP you've lost since comes back (a heal
-    // since is never taken away) and every ailment you've picked up since goes. Ults, gadgets and stamina stay spent.
-    _csRewind() {
-        const S = this._cs, p = this.player;
-        if (!S || this._csWeapon() !== 'pendulum' || !p?.active || this._deathScreenActive) return;
-        const C = this._csCfg().PEND, now = this.time.now, R = S.rw;
-        if (!R || R.pull) return;
-        const say = (t, c = '#9a8cb8') => this.showStatusText(p.x, p.y - 30, t, c);
-        if (now < S.cdUntil) { say(`${((S.cdUntil - now) / 1000).toFixed(1)}s`); Sfx.play(this, 'deny'); return; }   // (the cooldown the Time Lock shares)
-        // what holds your dash holds this (a lift, the ice ult's shell, a story beat), except a root or a Glu: picked up since, it undoes them
-        const L = this._actLocks || {};
-        if (Object.entries(L).some(([id, k]) => id !== '#glued' && id !== '#rooted' && (k.until == null || now < k.until) && k.kinds.includes('dash'))) return this._actionDenied?.('dash');
-        if (this._lifting || this._csTf() || this._iceShellUntil > now) { Sfx.play(this, 'deny'); return; }
-        const free = s => this.world?.[s.x]?.[s.y] === this.FLOOR && !this.isInLockedRoom?.(s.x, s.y) && (!this.getEnemyAt?.(s.x, s.y) || (s.x === this.playerX && s.y === this.playerY));
-        let i = 0;
-        while (i < R.buf.length && !free(R.buf[i])) i++;
-        const to = R.buf[i];
-        if (!to || now - to.t < C.MIN_MS) { say('NOTHING TO REWIND'); Sfx.play(this, 'deny'); return; }
-        S.cdUntil = now + C.REWIND_CD; S.cdMs = C.REWIND_CD; S.castAt = now;
-        const path = [[p.x, p.y], ...R.buf.slice(i).reverse().map(s => [s.px, s.py])];
-        const back = Math.min(this.maxHealth, Math.max(this.health, to.hp)) - this.health;
-        this.health += back;
-        for (const [k, on, clear] of this._playerAilments?.() || []) if (on(now) && !to.ail.includes(k)) clear(now);
-        this.updateHUD?.();
-        // your tile at once (what's after you has lost you), your body pulled back to it; nothing touches you on the way
-        this.playerX = to.x; this.playerY = to.y; this._step = null; this._glide = null;
-        this._glideUntil = Math.max(this._glideUntil || 0, now + C.PULL_MS);
-        this._dashInvulnUntil = Math.max(this._dashInvulnUntil || 0, now + C.PULL_MS);
-        R.buf.length = 0;
-        R.pull = { path, t0: now, ms: C.PULL_MS, to, ghostAt: 0 };
-        this._csRewindRing(p.x, p.y, true);
-        say('REWIND', '#e2c8ff');
-        if (back >= 1) this.showStatusText(p.x, p.y - 44, `+${Math.round(back)}`, '#9af0a8');
-        Sfx.play(this, 'rewind');
-    }
-    _csRewindTick(now) {
-        const R = this._cs.rw, P = R?.pull, p = this.player;
-        if (!P) return;
-        if (!p?.active) { R.pull = null; return; }
-        if (this.playerX !== P.to.x || this.playerY !== P.to.y) {   // something else moved you on the way (a knock, a pull): it has you now
-            R.pull = null;
-            // ...but never leave your body where the pull had got to: back on your tile, unless a step or a dash is carrying it there
-            if (!this._glide && !this._step) p.setPosition(this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2, this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2 + (this.SLIME_Y_OFFSET || 0));
-            return;
-        }
-        const T = this.TILE_SIZE, u = Math.min(1, (now - P.t0) / P.ms), e = 1 - (1 - u) * (1 - u);   // fast away, easing in
-        const k = e * (P.path.length - 1), i = Math.floor(k), f = k - i, a = P.path[i], b = P.path[Math.min(P.path.length - 1, i + 1)];
-        p.setPosition(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f);
-        if (now >= P.ghostAt) {   // you, left behind on the way, fading
-            P.ghostAt = now + 28;
-            const g = this.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX)
-                .setTintFill(0xc8a8ff).setBlendMode(Phaser.BlendModes.ADD).setDepth((p.depth ?? 2) - 0.01).setAlpha(0.5);
-            this.tweens.add({ targets: g, alpha: 0, duration: 340, onComplete: () => g.destroy() });
-        }
-        if (u < 1) return;
-        R.pull = null;
-        p.setPosition(P.to.x * T + T / 2, P.to.y * T + T / 2 + (this.SLIME_Y_OFFSET || 0));
-        this._csRewindRing(p.x, p.y, false);
-        this._vfxFlash?.(p.x, p.y, 60, this._csCfg().COL.lilac, 220, 0.6);
-        CosmicSystem.puff(CosmicSystem.fx(this).dust, p.x, p.y + 2, 12, 0, Math.PI, 20, 90);
-    }
-    // Rewind's clock round you: its ring, and a glint ticking round it backwards (twelve ticks, from twelve o'clock)
-    _csRewindRing(x, y, depart) {
-        const ring = this.add.image(x, y + 2, 'fx_pendulum', 'rw_ring').setDepth(4.55).setScale(depart ? 1.5 : 0.7).setAlpha(0.95);
-        this.tweens.add({ targets: ring, scale: depart ? 1.2 : 1.5, alpha: 0, duration: depart ? 520 : 420, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
-        const E = CosmicSystem.fx(this).gold;
-        for (let i = 0; i < 12; i++) this.time.delayedCall(i * 30, () => {
-            if (!ring.active) return;
-            const a = -Math.PI / 2 - i * Math.PI / 6, r = 13 * ring.scaleX, q = E.emitParticleAt(ring.x + Math.cos(a) * r, ring.y + Math.sin(a) * r, 1);
-            if (q) { q.velocityX = q.velocityY = 0; q.life = q.lifeCurrent = 260; }
-        });
-        return ring;
-    }
-
     // ── THE ULT ──────────────────────────────────────────────────────────────
     // From activateUlt (which has already emptied the gem). Ignores the shared lockout and
     // doesn't start it, so it can open a combo.
@@ -2168,7 +1744,7 @@ class CosmicSystem {
         const tgt = tf.target || { x: this.playerX, y: this.playerY };
         // never land on an enemy: the nearest open tile instead
         let land = tgt;
-        const free = (x, y) => this.world?.[x]?.[y] === this.FLOOR && !this.getEnemyAt(x, y) && !this.isInLockedRoom(x, y);
+        const free = (x, y) => this.world?.[x]?.[y] === this.FLOOR && !this.getEnemyAt(x, y) && !this.isInLockedRoom(x, y) && !this._gravZone?.(x, y);
         if (!free(land.x, land.y)) {
             land = null;
             for (let r = 1; !land && r <= 3; r++) for (let dx = -r; dx <= r && !land; dx++) for (let dy = -r; dy <= r && !land; dy++)
@@ -2851,10 +2427,6 @@ class CosmicSystem {
         this._csUpdateFluid(now);
         this._csUpdateWellBeam(now);
         this._csUpdateWell(now, dt);
-        this._csFlyTick(now);
-        this._csStasisTick(now);
-        this._csRewindRecord(now);
-        this._csRewindTick(now);
         this._csUpdateMarks(now);
         this.damageReductionMultiplier = this._csTakenMult();
         this._csDrawFx(now, dt);
@@ -3076,7 +2648,7 @@ class CosmicSystem {
     // bar (the boon running down, or the cooldown filling).
     _csBuildTray() {
         this._csTrayG = this.add.graphics().setScrollFactor(0).setDepth(31);
-        this._csTrayIcon = this.add.image(0, 0, ...this._csTrayArt(false)).setScrollFactor(0).setDepth(32).setScale(2);
+        this._csTrayIcon = this.add.image(0, 0, 'cs_sheet', 'i_' + this._csWeapon()).setScrollFactor(0).setDepth(32).setScale(2);
         this._csTrayText = this.add.text(0, 0, '', {
             fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#e2d2ff', stroke: '#05060a', strokeThickness: 3,
         }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(32);
@@ -3099,17 +2671,14 @@ class CosmicSystem {
             : w === 'astrolabe' ? (S.astro ? [`STARFALL ★${S.astro.got}`, (S.astro.until - now) / C.ASTRO.WINDOW]
                 : S.astral.size ? [`ASTRAL ×${S.astral.size}`, 1] : null)
             : w === 'singularity_staff' ? (now < S.horizonUntil ? ['HORIZON -30%', (S.horizonUntil - now) / (C.WELL.MS + C.WELL.AFTER)] : null)
-            : w === 'void_blade' ? (S.fluid?.some(t => !t.dash) && S.fluidSpan ? ['COSMIC FLUID', (S.fluidSpan.to - now) / (S.fluidSpan.to - S.fluidSpan.from)] : now < S.retributionUntil ? ['RETRIBUTION', (S.retributionUntil - now) / C.BLADE.MS] : null)
-            : w === 'pendulum' ? (S.stasis ? [`TIME LOCK ${((S.stasis.until - now) / 1000).toFixed(1)}s`, (S.stasis.until - now) / C.PEND.TLOCK.MS] : null) : null;
+            : w === 'void_blade' ? (S.fluid?.some(t => !t.dash) && S.fluidSpan ? ['COSMIC FLUID', (S.fluidSpan.to - now) / (S.fluidSpan.to - S.fluidSpan.from)] : now < S.retributionUntil ? ['RETRIBUTION', (S.retributionUntil - now) / C.BLADE.MS] : null) : null;
         if (boon) return { label: boon[0], frac: boon[1], mode: 'boon', cd: now < S.cdUntil };
         if (now < S.cdUntil) {
-            const cd = { barrier_staff: C.BARRIER.CD, astrolabe: C.ASTRO.CD, singularity_staff: C.WELL.CD, void_blade: C.BLADE.CD, pendulum: S.cdMs || C.PEND.STASIS_CD }[w] || 12000;   // (the Pendulum's: whichever of its two set it)
+            const cd = { barrier_staff: C.BARRIER.CD, astrolabe: C.ASTRO.CD, singularity_staff: C.WELL.CD, void_blade: C.BLADE.CD }[w] || 12000;
             return { label: `${C.NAMES[w] || w}  ${Math.ceil((S.cdUntil - now) / 1000)}s`, frac: 1 - (S.cdUntil - now) / cd, mode: 'cd' };
         }
         return { label: `${C.NAMES[w] || w}  READY`, frac: 1, mode: 'ready' };
     }
-    // the tray's icon: cs_sheet's, the Pendulum's in its own sheet (fx_pendulum)
-    _csTrayArt(asc) { return asc ? ['cs_sheet', 'i_ascend'] : this._csWeapon() === 'pendulum' ? ['fx_pendulum', 'i_pendulum'] : ['cs_sheet', 'i_' + this._csWeapon()]; }
 
     _csDrawTray(now) {
         const g = this._csTrayG;
@@ -3123,7 +2692,7 @@ class CosmicSystem {
         const x0 = Math.round(W / 2 + 121), y = Math.round(H - 36), w = 140, h = 30;
         const st = this._csTrayState(now);
         const asc = st.mode === 'ascend', live = asc || st.mode === 'boon';
-        const accent = asc ? col.gold : st.mode === 'boon' ? (this._csWeapon() === 'void_blade' ? col.hex : ['astrolabe', 'pendulum'].includes(this._csWeapon()) ? col.gold : col.violet)
+        const accent = asc ? col.gold : st.mode === 'boon' ? (this._csWeapon() === 'void_blade' ? col.hex : this._csWeapon() === 'astrolabe' ? col.gold : col.violet)
                      : st.mode === 'ready' ? col.lilac : 0x6a6286;
         g.fillStyle(0x090b14, 0.82); g.fillRoundedRect(x0, y - h / 2, w, h, 8);
         g.lineStyle(1, live ? accent : 0x2b3256, live ? 0.9 : 0.9); g.strokeRoundedRect(x0 + 0.5, y - h / 2 + 0.5, w - 1, h - 1, 8);
@@ -3138,7 +2707,7 @@ class CosmicSystem {
             const k = 0.5 + 0.5 * Math.sin(now / 220);
             g.lineStyle(1.5, col.lilac, 0.25 + 0.35 * k); g.strokeCircle(x0 + 16, y, 14 + 2 * k);
         }
-        this._csTrayIcon.setTexture(...this._csTrayArt(asc)).setPosition(x0 + 16, y)
+        this._csTrayIcon.setFrame(asc ? 'i_ascend' : 'i_' + this._csWeapon()).setPosition(x0 + 16, y)
             .setAlpha(st.mode === 'cd' || st.mode === 'idle' ? 0.5 : 1);
         // label and bar
         const bx = x0 + 34, bw = w - 44, by = y + 6;

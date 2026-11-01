@@ -55,10 +55,28 @@ const LevelLayouts = {
         chest:     { w: 12, h: 9, chest: true, name: 'Chest Room' },
         chest_s:   { w: 10, h: 8, chest: true, name: 'Chest Room' },
         elite:     { w: 14, h: 11, elite: true, name: 'Elite Den', walls: [[4, 3], [9, 3], [4, 7], [9, 7]] },
+        // The Void Rift's puzzle (LevelManager._gravBuild): you walk in on the ledge, its first columns, and past it you fall till
+        // something stops you. # a wall, * the chest, s a slime, r a Spitter, both holding their ground. must: a layout that can't fit it is laid out again.
+        // (no name: its banner says it, LevelManager._gravTick)
+        v_gravity: { w: 18, h: 12, open: true, must: true, ledge: 2, map: [
+            '..#........#......',
+            '..#...............',
+            '..#..............s',
+            '..#..s..r.........',
+            '..#..#......#.....',
+            '..#..*#...........',
+            '..##.#............',
+            '..#...............',
+            '..................',
+            '..#.......#.......',
+            '..#...............',
+            '..#...............',
+        ], get walls() { return this.map.flatMap((row, y) => [...row].flatMap((c, x) => c === '#' ? [[x, y]] : [])); } },
     },
     RECIPES: {
         // the spawn is a hub: four rooms off it, then the hall leads on to the queens and the boss (its boss door wants a north or south corridor)
-        voidrift: { path: ['v_spawn', ['v_crucible', 0], ['v_observatory', 0], ['v_gauntlet', 0], ['v_hall', 0], 'v_queens', ['v_boss', 5, ['north', 'south']]], side: [['chest_s', 2]] },
+        // (the gravity room's way in is on its west: its map starts at the ledge)
+        voidrift: { path: ['v_spawn', ['v_crucible', 0], ['v_observatory', 0], ['v_gauntlet', 0], ['v_hall', 0], 'v_queens', ['v_boss', 5, ['north', 'south']]], side: [['chest_s', 2], ['v_gravity', 1, [1, 2, 3, 4, 5], ['east']]] },
         // the spawn a hub again: the crater and the sinkhole beyond it, the chain gang and the splitter farm beyond it, the trap gauntlet on to the Core
         fracture: { path: ['f_spawn', ['f_crater', 0], ['f_sinkhole', 1], ['f_chain', 0], ['f_splitter', 3], ['f_traps', 0], ['f_core', 5]], side: [['chest_s', 2]] },
         gauntlet: { path: ['g_start', 'g_pillars', 'g_brawl', 'g_choke', 'g_lanes', 'g_ambush', 'g_boss'], side: [['chest', 1], ['chest_s', 1], ['elite', 1]], loop: 0.5 },
@@ -152,7 +170,7 @@ const LevelLayouts = {
                 if (T.chest) r.entranceTiles = r.entryTiles;
                 placed = true; break;
             }
-            if (!placed && recipe.story) return null;   // a floor's side rooms are part of it (FLOORS): lay it out again
+            if (!placed && (recipe.story || T.must)) return null;   // a floor's side rooms are part of it (FLOORS): lay it out again
         }
         // a loop: a side room's far side joined straight to another story room, if one lines up close enough
         if (R() < (recipe.loop || 0)) {

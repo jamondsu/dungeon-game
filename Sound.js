@@ -16,7 +16,7 @@
 
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
-           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
+           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, tri_boom: 80, tri_crack: 70, tri_hit: 45, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
            lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 400, sear: 450, blip: 60, bosshit: 70,
            tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
     _last: {},
@@ -97,11 +97,12 @@ const Sfx = {
     // A recorded sound. rate pitches it (under 1: deeper and slower), grit mixes in a distorted copy filtered to a
     // crackle, double a second voice a shade lower drifting against the first, growl the voice ring-modulated at 45Hz
     // (a demon's buzz), space sends that share into the echoes. False if it isn't loaded.
-    _sample(ctx, t, { name, rate = 1, vol = 1, grit = 0, double = 0, growl = 0, space = 0, lp = 0, out = null }) {   // (out: where it goes, a panner; else straight out)
+    _sample(ctx, t, { name, rate = 1, vol = 1, grit = 0, double = 0, growl = 0, space = 0, lp = 0, len = 0, out = null }) {   // (out: where it goes, a panner; else straight out; len: only its first len seconds)
         const buf = this._buf[name];
         if (!buf) return false;
         const g = ctx.createGain(), end = t + buf.duration / rate + 0.2, dest = out || this._master;
         g.gain.value = vol;
+        if (len) { g.gain.setValueAtTime(vol, t + len - 0.03); g.gain.linearRampToValueAtTime(0, t + len); }
         if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; g.connect(f); f.connect(dest); }   // (lp: its top end off, Hz)
         else g.connect(dest);
         if (space && this._space) { const sg = ctx.createGain(); sg.gain.value = space; g.connect(sg); sg.connect(this._space); }
@@ -703,6 +704,24 @@ const Sfx = {
             this._tone(ctx, t, { type: 'sine', f0: 2200 * j, f1: 1700, dur: 0.07, vol: 0.06 });
             this._tone(ctx, t, { type: 'triangle', f0: 200 * j, f1: 90, dur: 0.06, vol: 0.14 });
         },
+        tri_boom(ctx, t, o, j) {           // the Boreal Trident's eruptions: a heavy blow, the low end dropping away under it, one hard crack on top (o.big: a longer fall)
+            this._tone(ctx, t, { type: 'sine', f0: 120 * j, f1: 34, dur: o.big ? 1 : 0.8, vol: 0.26 });
+            this._noise(ctx, t, { filter: 'bandpass', f0: 2000, f1: 900, q: 0.7, dur: 0.06, vol: 0.3 });   // (noise: the snap recording rang a note at 1.6kHz)
+            if (this._rec(ctx, t, { name: 'thud', rate: 0.85, vol: 0.34 }, { name: 'fire_burst', rate: 0.9 * j, vol: 0.4, lp: 300 },
+                { name: 'slam', rate: 0.75 * j, vol: o.big ? 0.46 : 0.36, lp: 500 })) return;   // (lower: it clangs at 930Hz)
+            this._noise(ctx, t, { filter: 'lowpass', f0: 900, f1: 80, dur: 0.5, vol: 0.28 });
+        },
+        tri_crack(ctx, t, o, j) {          // one hard crack of ice with nothing after it and no note in it (o.soft: lighter)
+            const v = o.soft ? 0.6 : 1;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 3200 * j, f1: 900, q: 0.5, dur: 0.07, vol: 0.6 * v });
+            if (this._rec(ctx, t, { name: 'thud', rate: 1.4 * j, vol: 0.24 * v })) return;
+            this._tone(ctx, t, { type: 'triangle', f0: 260 * j, f1: 120, dur: 0.07, vol: 0.14 * v });
+        },
+        tri_hit(ctx, t, o, j) {            // a Boreal Trident hit: a blow landing, no note in it (the ice `hit`'s sine pings over the eruptions)
+            this._noise(ctx, t, { filter: 'lowpass', f0: 1800, f1: 300, dur: 0.07, vol: 0.18 });
+            if (this._rec(ctx, t, { name: 'thud', rate: 1.05 * j, vol: 0.24 })) return;
+            this._tone(ctx, t, { type: 'triangle', f0: 220 * j, f1: 120, dur: 0.06, vol: 0.14 });
+        },
         tri_catch(ctx, t, o, j) {          // the Boreal Trident back in your hand: the shaft slapping into your palm, the tines ringing
             if (this._rec(ctx, t, { name: 'punch', rate: 1.25, vol: 0.16 }, { name: 'sword', rate: 1.7, vol: 0.1, at: 0.02 })) return;
             this._tone(ctx, t, { type: 'triangle', f0: 240 * j, f1: 140, dur: 0.05, vol: 0.12 });
@@ -725,12 +744,11 @@ const Sfx = {
             this._noise(ctx, t + at, { filter: 'lowpass', f0: 1500, f1: 120, dur: 0.3, vol: 0.22 });
             this._crackle(ctx, t + at + 0.02, { n: 8, spread: 0.18, f: 2200, vol: 0.1, q: 1.5 });
         },
-        w_boreal_trident(ctx, t, o, j) {   // a quick stab: steel driven through the air (a blade, pitched up), the ice on it cracking
-            if (this._rec(ctx, t, { name: 'sword', rate: 1.3 + Math.random() * 0.1, vol: 0.24 }, { name: 'ice_crack', rate: 1.5 + Math.random() * 0.15, vol: 0.12, at: 0.03 })) return;
+        w_boreal_trident(ctx, t, o, j) {   // a quick stab: steel driven through the air (a blade, pitched up)
+            if (this._rec(ctx, t, { name: 'sword', rate: 1.3 + Math.random() * 0.1, vol: 0.24, lp: 4000, len: 0.15 })) return;   // (pitched up its top rings at 8kHz, and a second ring comes 0.2s in)
             this._noise(ctx, t, { filter: 'bandpass', f0: 2600 * j, f1: 900, q: 1.5, dur: 0.09, vol: 0.12 });
             this._tone(ctx, t + 0.04, { type: 'sine', f0: 3100 * j, f1: 2900, dur: 0.12, vol: 0.04 });
             this._tone(ctx, t + 0.05, { type: 'triangle', f0: 1800 * j, f1: 1300, dur: 0.06, vol: 0.05 });
-            this._crackle(ctx, t + 0.05, { n: 3, spread: 0.06, f: 3200, vol: 0.05, q: 2 });
         },
         w_lightning_fists(ctx, t, o, j) {  // a jab with a spark on it
             if (this._rec(ctx, t, { name: 'punch', rate: 0.9 + Math.random() * 0.2, vol: 0.22 }, { name: 'zap', rate: 1 + Math.random() * 0.4, vol: 0.18 })) return;
@@ -801,26 +819,6 @@ const Sfx = {
             if (this._rec(ctx, t, { name: 'sword', rate: 0.75 + Math.random() * 0.1, vol: 0.42 }, { name: 'magic_whoosh', rate: 0.9, vol: 0.18 })) return;
             this._noise(ctx, t, { filter: 'bandpass', f0: 400 * j, f1: 2000, q: 1.5, dur: 0.2, vol: 0.28, attack: 0.02 });
             this._tone(ctx, t, { type: 'sawtooth', f0: 110 * j, f1: 55, dur: 0.22, vol: 0.06 });
-        },
-        w_pendulum(ctx, t, o, j) {         // the pendulum flung: its chain whirring round, a brass tick as it leaves your hand
-            this._tone(ctx, t, { type: 'triangle', f0: 1800 * j, dur: 0.03, vol: 0.04 });
-            for (let i = 0; i < 4; i++) this._noise(ctx, t + 0.03 + i * 0.07, { filter: 'bandpass', f0: 500 * j, f1: 1100 * j, q: 2, dur: 0.06, vol: 0.1 });
-        },
-        stasis(ctx, t, o, j) {             // the big pendulum landing: a heavy thud, then a deep tick... tock, the field humming on
-            this._tone(ctx, t, { type: 'sine', f0: 70, f1: 32, dur: 0.45, vol: 0.32 });
-            this._noise(ctx, t, { filter: 'lowpass', f0: 1400, f1: 120, dur: 0.3, vol: 0.24 });
-            this._tone(ctx, t + 0.16, { type: 'triangle', f0: 520, dur: 0.05, vol: 0.09 });
-            this._tone(ctx, t + 0.5, { type: 'triangle', f0: 390, dur: 0.06, vol: 0.09 });
-            this._tone(ctx, t + 0.1, { type: 'triangle', f0: 659, f1: 652, dur: 0.95, vol: 0.03, attack: 0.3 });
-        },
-        ptick(ctx, t, o, j) {              // the big pendulum at the end of its swing: a soft clock tick
-            this._tone(ctx, t, { type: 'triangle', f0: 1500 * j, dur: 0.025, vol: 0.025 });
-            this._noise(ctx, t, { filter: 'highpass', f0: 4000, dur: 0.015, vol: 0.03 });
-        },
-        rewind(ctx, t, o, j) {             // a sound played backwards (swelling, cut off), the clock ticking back fast
-            this._noise(ctx, t, { filter: 'bandpass', f0: 2600, f1: 300, q: 1.6, dur: 0.42, vol: 0.22, attack: 0.36 });
-            for (let i = 0; i < 8; i++) this._tone(ctx, t + i * 0.045, { type: 'square', f0: (2400 - i * 160) * j, dur: 0.018, vol: 0.035 });
-            this._tone(ctx, t + 0.4, { type: 'sine', f0: 440, f1: 880, dur: 0.12, vol: 0.06 });
         },
         bell(ctx, t, o, j) {               // the Cleansing Bell: a clear struck bell, its overtones dying away one after another
             this._noise(ctx, t, { filter: 'highpass', f0: 4000, dur: 0.02, vol: 0.08 });

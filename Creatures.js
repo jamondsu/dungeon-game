@@ -455,7 +455,6 @@ class CreatureFX {
             rimeguard: { type: 'blade', s: 0.66, art: -Math.PI / 4, ox: 0.3, oy: 0.72 },   // (the maul swings; the shield's face is Rimeguard.look's)
             boreal_trident: { type: 'staff', s: 0.92, art: -Math.PI / 4, ox: 0.26, oy: 0.74, mirror: true },   // (a polearm at your side, the tines up and out in front)
             ball_lightning: { type: 'orb', s: 0.48 }, astrolabe: { type: 'orb', s: 0.52, spin: 0.0012 }, fractal_shard: { type: 'orb', s: 0.52 },
-            pendulum: { type: 'orb', s: 0.6, fps: 4 },   // (the Reliquary held up beside you, never turned: it sways a pixel by its own frames, its sparkles twinkling)
         });
     }
     // As high as the weapon in your hand can reach however it leans (world y), or null: a meter a weapon keeps over you sits above it
@@ -478,7 +477,7 @@ class CreatureFX {
         const id = scene.equippedWeapons?.[scene.currentElement];
         const def = CreatureFX.GEAR()[id];
         const key = def && typeof MenuArt !== 'undefined' ? MenuArt.iconSheet(scene, id) : null;
-        const show = !!(p?.active && key && p.visible !== false && (p.alpha ?? 1) > 0.05 && !scene._deathScreenActive && !(scene._iceShellUntil > scene.time.now) && !scene._tutFalling && !(scene._scytheSpinUntil > scene.time.now) && !(id === 'pendulum' && scene._cs?.away));   // (hidden while the ice ult encases you)
+        const show = !!(p?.active && key && p.visible !== false && (p.alpha ?? 1) > 0.05 && !scene._deathScreenActive && !(scene._iceShellUntil > scene.time.now) && !scene._tutFalling && !(scene._scytheSpinUntil > scene.time.now));   // (hidden while the ice ult encases you)
         if (!show) { if (G) { G.main.setVisible(false); G.off.setVisible(false); } return; }
         if (!G) {
             const mk = () => scene.add.sprite(p.x, p.y, key, '0');
@@ -486,7 +485,7 @@ class CreatureFX {
         }
         if (G.id !== id) {
             G.id = id; G.swapAt = now; G.ang = null;
-            for (const o of [G.main, G.off]) { o.setTexture(key, '0'); o.play(def.fps ? { key, frameRate: def.fps } : key); o.setRotation(0).setFlip(false, false).setOrigin(0.5, 0.5); }
+            for (const o of [G.main, G.off]) { o.setTexture(key, '0'); o.play(key); o.setRotation(0).setFlip(false, false).setOrigin(0.5, 0.5); }
         }
         // where you aim, and the kick: each time the weapon actually attacks (the attack marks
         // scene._gearFiredAt once its own cooldown lets it through), so the motion runs at that
@@ -1040,7 +1039,7 @@ class CreatureFX {
         if (fv) { CreatureFX.mute(fv.iceBlock); CreatureFX.mute(fv.iceBorder); for (const l of fv._extraLayers || []) CreatureFX.mute(l); }
 
         const frozen = !!(e.isFrozen || e._iceCube);
-        const stunned = !!e.isStunned && !(e.stunnedUntil > 0 && now > e.stunnedUntil + 100) && !e._tlock;   // (in a Time Lock it's only stopped time: no stars)
+        const stunned = !!e.isStunned && !(e.stunnedUntil > 0 && now > e.stunnedUntil + 100);
         // the eyes: squeezed after a hit, X's while stunned, a fixed stare in the ice
         if (u) u.expr = now - (e._vfxHitAt ?? -1e9) < C.WINCE_MS ? 'wince' : stunned ? 'x' : frozen ? 'c' : null;
 

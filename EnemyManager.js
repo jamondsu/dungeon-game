@@ -855,6 +855,8 @@ class EnemyManager {
                     continue;
                 }
 
+                if (enemy._planted) { enemy._committedPath = null; enemy.lastMoveTime = currentTime; continue; }   // it holds its ground: it hits you beside it, and goes nowhere
+
                 // Final occupied check for the fresh-BFS case (pathStillValid already handles its own)
                 if (this.getEnemyAt(nextStep.x, nextStep.y) || this._tauntBlocks?.(nextStep.x, nextStep.y)   // a taunted enemy still can't walk onto you
                     || (enemy._goalX != null && nextStep.x === this.playerX && nextStep.y === this.playerY)) {   // nor one going somewhere of its own
@@ -1228,7 +1230,7 @@ class EnemyManager {
             const shotGap = enemy.isElectrical ? 220 / 3 : 220;
 
             // ── MOVEMENT during idle/cooldown only ────────────────────────
-            const canMove = enemy.rangedState === 'idle' || enemy.rangedState === 'cooldown';
+            const canMove = !enemy._planted && (enemy.rangedState === 'idle' || enemy.rangedState === 'cooldown');
             if (canMove && dist <= AGGRO_RANGE) {
                 const hasLOS = this._hasLineOfSight(enemy.x, enemy.y, this.playerX, this.playerY);
                 const needsRepo = dist < MIN_RANGE || dist > ATTACK_MAX || !hasLOS;

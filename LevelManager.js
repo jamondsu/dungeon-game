@@ -1617,16 +1617,20 @@ class LevelManager {
             this.showStatusText?.(this.player.x, this.player.y - 34, 'ZAP!', '#bfeeff');
         }
         const ch = Q.chest;
-        if (Q.open && !ch.opened && this.playerX === ch.x && this.playerY === ch.y) {
-            ch.opened = true;
-            LootFX.open(this, ch);
-            this.totalGlorps = (this.totalGlorps || 0) + C.GLORPS;
-            this.glorpText?.setText(`✦ ${this.totalGlorps} Glorps`);
-            localStorage.setItem('glorps', this.totalGlorps);
-            Enchants.addBooks(1);
-            LootFX.reward(this, ch.container.x, ch.container.y - 14, `+${C.GLORPS}`);
-            this.time.delayedCall(350, () => LootFX.reward(this, ch.container.x, ch.container.y - 32, 'A SEALED BOOK', '#e8c8ff'));
-        }
+        if (Q.open && !ch.opened && this.playerX === ch.x && this.playerY === ch.y) this._chestPayout(ch, C.GLORPS);
+    }
+
+    // a puzzle's gold chest opens: glorps and a sealed book
+    _chestPayout(ch, glorps) {
+        ch.opened = true;
+        LootFX.open(this, ch);
+        if (this.trainingRun) { LootFX.reward(this, ch.container.x, ch.container.y - 14, 'IT PAYS IN THE VOID RIFT', '#e8c8ff'); return; }   // (a room laid out fresh at will)
+        this.totalGlorps = (this.totalGlorps || 0) + glorps;
+        this.glorpText?.setText(`✦ ${this.totalGlorps} Glorps`);
+        localStorage.setItem('glorps', this.totalGlorps);
+        Enchants.addBooks(1);
+        LootFX.reward(this, ch.container.x, ch.container.y - 14, `+${glorps}`);
+        this.time.delayedCall(350, () => LootFX.reward(this, ch.container.x, ch.container.y - 32, 'A SEALED BOOK', '#e8c8ff'));
     }
 
     // the run reaches the gate: it slides up into the fence and the vault's open
@@ -2712,6 +2716,7 @@ class LevelManager {
     // ═══════════════════════════════════════════════════════════════════════
 
     updateLevel3(time) {
+        if (this._grav) this._gravTick();
         const playerRoom = this.getCurrentPlayerRoom();
         if (playerRoom === -1) return;
 
@@ -3021,6 +3026,7 @@ class LevelManager {
         this.spawnVoidSovereignBoss(...at(6, 50, 88));
         this.spawnFinalLevelChest(...at(6, 50, 79), 'cosmic');
         this._spawnLevel3ChestRooms();
+        this._gravBuild();
 
         // Key system — spawn boss door and show HUD
         this._level3KeysCollected = 0;
@@ -3051,6 +3057,85 @@ class LevelManager {
             const { container, body, lid, glow, kind } = LootFX.chest(this, wx, wy, 'void');
             this.tutorialChests.push({ tileX:cx, tileY:cy, roomIndex:i, container, lid, body, glow, kind, opened:false, isMimic:false, _mimicTriggered:false });
         }
+    }
+
+    // ─── THE GRAVITY ROOM ───────────────────────────────────────────────────
+    // The Void Rift's optional room (LevelLayouts.T.v_gravity). Past the ledge a push drops you in a straight line, in any of the
+    // four ways, until a wall or an enemy stops you one tile short of it; a fall back over the ledge ends there, and you walk again.
+    // You can't turn in the air: a push while you fall waits for the landing (the last one, if there are several). Landing on the
+    // chest is the win, whoever's still alive, and nothing but a fall opens it.
+    _gravCfg() { return { TILES_PER_S: 16, MOB_HP: 70, GLORPS: 60 }; }
+    _gravBuild() {
+        const ri = this.rooms.findIndex(r => r.tpl === 'v_gravity');
+        if (ri < 0) return;   // (the fixed map has none)
+        const C = this._gravCfg(), R = this.rooms[ri], T = LevelLayouts.T.v_gravity, TS = this.TILE_SIZE;
+        const G = this._grav = { ri, x0: R.x + T.ledge, x1: R.x + R.w, y0: R.y, y1: R.y + R.h, in: false, said: false, chest: null };
+        this.tutorialRoomCleared[ri] = true;   // (nothing to clear: killing them all opens nothing)
+        T.map.forEach((row, j) => [...row].forEach((c, i) => {
+            const x = R.x + i, y = R.y + j;
+            if (c === '*') G.chest = { x, y, ...LootFX.chest(this, x * TS + TS / 2, y * TS + TS / 2, 'gold') };
+            else if (c === 's' || c === 'r') { const e = c === 'r' ? this.createRangedEnemy(x, y, ri) : this.createEnemy(x, y, C.MOB_HP); e.tutorialRoomIndex = ri; e._planted = true; }
+        }));
+    }
+    // Is (x, y), or where you stand, past the ledge?
+    _gravZone(x = this.playerX, y = this.playerY) {
+        const G = this._grav;
+        return !!G && x >= G.x0 && x < G.x1 && y >= G.y0 && y < G.y1;
+    }
+    // The rule, the first time you reach the room; over the ledge, what you were holding as you came in isn't a push
+    _gravTick() {
+        const G = this._grav, was = G.in;
+        G.in = this._gravZone();
+        if (!G.said && this.getCurrentPlayerRoom() === G.ri) { G.said = true; this._showRhythmSessionBanner('GRAVITY', '#d8a8ff', 'You fall until something stops you.'); }
+        if (G.in && !was) this._gravSpent();
+    }
+    // Every press so far is spent: what you held coming in, and whatever lost out to the last one pressed
+    _gravSpent() { const U = this._rtUsed ||= {}; for (const n of ['W', 'A', 'S', 'D']) U[n] = this.keys[n].timeDown; }
+    _gravOpen(x, y) { return this._dashCanEnter(x, y) && !this.getEnemyAt(x, y); }
+    // A push: off, if there's anywhere to go (an enemy right beside you stops it before it starts)
+    _gravPush(dx, dy) {
+        const p = this.player;
+        this._gravSpent();
+        if (!this._gravOpen(this.playerX + dx, this.playerY + dy)) return;
+        this._step = null; this._lastMoveDir = { x: dx, y: dy };
+        p.stop(); p.setFrame(0); this.isIdling = false;
+        Sfx.play(this, 'whoosh', { soft: true });
+        this._gravStep(this._slide = { dx, dy, t0: this.time.now, fx: p.x, fy: p.y, lx: p.x, ly: p.y });
+    }
+    // On to the next tile: yours from the moment you set off for it, as with a step; a streak of you left behind
+    _gravStep(F) {
+        const p = this.player;
+        this.playerX += F.dx; this.playerY += F.dy; this.lastMoveTime = this.time.now;
+        this._singTilesTraversed = (this._singTilesTraversed || 0) + 1;
+        const g = this.add.sprite(p.x, p.y, p.texture.key, p.frame.name).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX).setDepth(p.depth - 0.01).setTint(0xa050ff).setAlpha(0.4);
+        this.tweens.add({ targets: g, alpha: 0, duration: 220, onComplete: () => g.destroy() });
+    }
+    // A frame of a fall, tile by tile, as many as the frame took (each looks again: an enemy may have got in the way). Anything else
+    // moving the slime (a shove) ends it where it left you.
+    _gravSlide() {
+        const F = this._slide, p = this.player, T = this.TILE_SIZE, ms = 1000 / this._gravCfg().TILES_PER_S;
+        if (!p?.active || p.x !== F.lx || p.y !== F.ly) { this._slide = null; return; }
+        const at = () => [this.playerX * T + T / 2, this.playerY * T + T / 2 + this.SLIME_Y_OFFSET];
+        let u = (this.time.now - F.t0) / ms;
+        for (; u >= 1; u--) {
+            [F.fx, F.fy] = at();
+            F.t0 += ms;
+            if (!this._gravZone() || !this._gravOpen(this.playerX + F.dx, this.playerY + F.dy)) {   // landed
+                this._slide = null;
+                p.setPosition(F.fx, F.fy);
+                this._vfxHop?.(p, undefined, 160);
+                Sfx.play(this, 'thud');
+                this.cameras.main.shake(40, 0.002);
+                this.updateHUD();
+                this._checkRoomNameDisplay();
+                const ch = this._grav.chest;
+                if (!ch.opened && this.playerX === ch.x && this.playerY === ch.y) this._chestPayout(ch, this._gravCfg().GLORPS);
+                return;
+            }
+            this._gravStep(F);
+        }
+        const [tx, ty] = at();
+        p.setPosition(F.lx = F.fx + (tx - F.fx) * u, F.ly = F.fy + (ty - F.fy) * u);
     }
 
     // ─── NEW ENEMY TYPES ─────────────────────────────────────────────────
@@ -5700,6 +5785,7 @@ class LevelManager {
         diver: ['controller', 'water'], leech: ['trickster'], gem: ['controller', 'tough'], ceo: ['buffer', 'controller', 'tough'],
         armored: ['aggressor', 'tough'], hunter: ['aggressor', 'trickster'], frost: ['controller', 'water', 'tough'], tidalguard: ['controller', 'water'],
         wishingwell: ['buffer', 'water'], conduit: ['controller', 'water'], cheer: ['buffer'], blinder: ['controller', 'trickster'],
+        smasher: ['aggressor', 'water'],
     };
     static bodyKey(scene, kind) { const L = LevelManager.LOOKS[kind]; return L ? LevelManager.slimeRecolor(scene, 'slime_' + kind, L.pal, L.glint) : null; }
     // { tex, anim, tint } for a codex key, in any scene
@@ -6695,33 +6781,33 @@ class LevelManager {
     _enemyCodex() {
         const C = {
             smasher:      { name: 'Smasher',          role: 'Bruiser',   tint: 0x3eba68,
-                            desc: "The Tide Mother's own guard. Close in, it plants itself and swings its club faster than you can see: the six tiles in front of it light first. The strike leaves a bubble that drifts a tile on over two seconds, then bursts wider still for a third as much and leaves you dripping, bleeding and dazed. With a Ripplerunner about, that bubble comes for you." },
+                            desc: "The Tide Mother's own guard. Close in, it plants itself and swings its clubs faster than you can see: the six tiles in front of it light first. The strike leaves a bubble that drifts a tile on over two seconds, then bursts wider still for a third as much and leaves you dripping, bleeding and dazed. With a Ripplerunner about, that bubble comes for you." },
             slime:        { name: 'Slime',            role: 'Chaser',    tint: 0xcc3333,
                             desc: 'Walks at you and hits you on contact. Five times slower than you are.' },
-            berserker:    { name: 'Berserker',        role: 'Charger',   tint: 0xff4444,
+            berserker:    { name: 'Berserker',        role: 'Bruiser',   tint: 0xff4444,
                             desc: 'Winds up when you get close, then swings a wide arc at you and knocks you back. Back off during the wind-up: it turns to face you as it swings, so getting behind it won\'t help.' },
             ranged:       { name: 'Spitter',          role: 'Ranged',    tint: 0xffee88,
                             desc: 'Keeps four to ten tiles away and aims a beam at you, then fires three shots down it. The aim locks a second before it fires: step off the line.' },
             encased:      { name: 'Encased Slime',    role: 'Controller', tint: 0x9a8a7a,
-                            desc: 'Throws the rubble at you in lanes: step into a clear one. Killed, it turns to stone. Break the stone in five seconds or it comes back far worse.' },
+                            desc: 'Throws the rubble at you in lanes: step into a clear one. Killed, it turns to stone. Break the stone in five seconds or it comes back far worse, slamming whole walls of rubble shut on you: dash through one as it arrives.' },
             rooter:       { name: 'Rooter',           role: 'Control',   tint: 0x226633,
                             desc: 'From up to fourteen tiles it throws a tendril that pulls you toward it. Get within two and it thumps the ground, rooting you and leaving a ring of poison round itself.' },
             anchor:       { name: 'Anchor Slime',     role: 'Support',   tint: 0x7f93b5,
                             desc: 'Slow and heavy, and it follows the fight. Pulses every few seconds: allies speed up, you slow down. Kill it first.' },
             healer:       { name: 'Healer Slime',     role: 'Support',   tint: 0x66ddaa,
                             desc: 'Slow and tough, and it keeps up with its friends. Heals everything within six tiles by a fifth of its health every second, past full up to three times over. Kill it first.' },
-            splitter:     { name: 'Splitter',         role: 'Swarm',     tint: 0xcc66cc,
+            splitter:     { name: 'Splitter',         role: 'Swarm',     tint: 0xf07a28,
                             desc: 'Bursts when it dies, hurting you if you are close, and splits into two smaller, faster copies, twice over. Kill it where you have room.' },
             mortar:       { name: 'Mortar',           role: 'Artillery', tint: 0x445566,
                             desc: 'Lobs shells over walls at where you stand, from up to thirteen tiles. Inside its glow, five tiles round it, you are safe.' },
-            voidsniper:   { name: 'Void Sniper',      role: 'Ambusher',  tint: 0x220044,
+            voidsniper:   { name: 'Void Sniper',      role: 'Ambusher',  tint: 0xff8cff,
                             desc: 'Hides in a pocket dimension where nothing can touch it. A portal opens right next to you, then it steps out, blasts a spread of shots, and stays hittable for a few seconds.' },
             sniper:       { name: 'Bankshot',         role: 'Marksman',  tint: 0xffcf4a,
                             desc: 'Keeps six to ten tiles away and fires one heavy slug at a time: its scope glints, then the shot. The slug glances off walls twice, so it can bank one round cover at you. After every shot it blinks somewhere else in the room, six to nine tiles from you, and stands re-aiming for a moment and a half: that\'s your chance to reach it. Hit it while it aims and it may blink away without firing, but not twice in three seconds.' },
             lightningelem:{ name: 'Storm Elemental',  role: 'Zoner',     tint: 0xe8ff3a,
                             desc: 'Arcs at you every few seconds while you are inside its ring and it can see you. Resists lightning.' },
             singularity:  { name: 'Singularity Slime',role: 'Bruiser',   tint: 0x440088,
-                            desc: 'Slow and heavy. Get within two tiles and it lights the square round itself, then slams it: get out before it lands or you are hit and slowed.' },
+                            desc: 'Slow and goopy. Get within two tiles and it lights the square round itself, then slams it: get out before it lands or you are hit and slowed.' },
             drowner:      { name: 'Drowner',          role: 'Ambusher',  tint: 0x5a2d6b,
                             desc: 'Sinks to attack and tracks you for two seconds before it strikes. In water it lands at once and holds you under for two seconds. On dry ground you get a moment to step off the mark, but it leaves a pool either way. A strike that lands leaves you winded: no stamina back for two and a half seconds.' },
             ripplerunner: { name: 'Ripplerunner',     role: 'Skirmisher',tint: 0x66f0ff,
@@ -6731,19 +6817,19 @@ class LevelManager {
             cheer:        { name: 'Cheerleader Slime', role: 'Booster',  tint: 0xff6ad0,
                             desc: 'Fast, and never comes for you: she rushes to wherever she can cheer on the most of her friends. Then a stage pops up under her and she performs for six seconds, standing still and taking half damage: everything within five tiles is Encouraged for six seconds, moving faster and hitting three times as hard. Kill her and the cheer stops, but everything near her is Discouraged: slower, and harder to hurt for five seconds.' },
             waverider:    { name: 'Wave Rider',       role: 'Charger',   tint: 0xdff3ff,
-                            desc: 'From across the room it winds up, then charges in one locked direction, flooding a five-wide lane until it hits a wall. Caught in it, you\'re pulled onto its line and thrown ahead of it, harder the faster it\'s going. Leave the lane while it winds up.' },
+                            desc: 'From across the room it winds up, then charges in one locked direction, flooding a five-wide lane until it hits a wall. Caught in it, you\'re pulled onto its line and thrown ahead of it, and the faster it\'s going, the more it hurts. Leave the lane while it winds up.' },
             bud:          { name: 'Budding Slime',    role: 'Grower',    tint: 0x9be05a,
-                            desc: 'Every ten seconds it swells and buds off a copy with its full health; both burst a ring of poison globs, and poison pools round it. Hitting it does not stop the clock: kill it, or freeze or stun it mid-swell. No Budding Slime charges your ult. The original wears the bud; a family stops at eight.' },
+                            desc: 'Every ten seconds it swells and buds off a copy with as much health as it has left; both burst a ring of poison globs, and poison pools round it. Hitting it does not stop the clock: kill it, or freeze or stun it mid-swell. No Budding Slime charges your ult. A family stops at eight.' },
             shade:        { name: 'Adaptive Shade',   role: 'Mini-boss', tint: 0xa060ff,
                             desc: 'Hex slides off it. Two seconds after fire, ice or lightning hits it, it turns into that element and barely feels it, then can\'t change again for six seconds. It takes the hits of everything near it. Swap elements.' },
             wraith:       { name: 'Wraith',           role: 'Shroud',    tint: 0xc8bce8,
-                            desc: 'Untouchable until you\'re within three tiles. Now and then it shrouds an enemy near it the same way, for as long as it lives.' },
+                            desc: 'Untouchable until you\'re within three tiles. Now and then it shrouds an enemy near it the same way, for as long as it lives and the two stay close.' },
             diver:        { name: 'Torpedo Diver',    role: 'Sniper',    tint: 0x4ad0ff,
-                            desc: 'A sniper with a water gun. It keeps its distance and backs off when you close in, and its only warning is raising the gun to aim. Keep running and its shot misses you up close and often at middle range; from across the room it follows you, and only a quick dash through it saves you. A hit soaks you: you drip for 4 seconds and slow down for a moment. The tank on its back holds four shots and it drinks from water to refill, but every water tile only has three in it, so it hunts for fresh water when it runs dry.' },
+                            desc: 'A sniper with a water gun. It keeps its distance and backs off when you close in, and its only warning is raising the gun to aim. Keep running and its shot misses you up close and often at middle range; from across the room it follows you, and only a quick dash through it saves you. A hit soaks you: you drip for four seconds and slow down for a moment. The tank on its back holds four shots and it drinks from water to refill, but every water tile only has three in it and a tile drunk dry stays dry, so when it runs out it hunts for fresh water, sniping on the way.' },
             leech:        { name: 'Leech',            role: 'Thief',     tint: 0xb070ff,
                             desc: 'A thing of the void. It picks one of your elements, and its gem spins over your head while it does. Still holding that element when its ring closes and it tears the gem out of you and runs, slipping through portals to get ahead, and you cannot switch to it. Kill it and the gem flies back to you.' },
             gem:          { name: 'The Gem',          role: 'Hazard',    tint: 0xd8e8ff,
-                            desc: 'Can\'t be hurt. It breaks when everything else on the floor is dead. Now and then a gem falls on you and three safe circles of its colour open: be in one, holding that element, when it lands.' },
+                            desc: 'Can\'t be hurt. It breaks when everything else in its room is dead. Now and then a gem falls on you and three safe domes of its colour rise: be in one, holding that element, when it lands.' },
             ceo:          { name: 'Slime CEO',        role: 'Commander', tint: 0xffd84a,
                             desc: 'Armoured: hits do 40% to its armour until it breaks. Knights the enemies round it with armour of their own, and sends slow waves to the room\'s edges. Step into a gap or dash through.' },
             armored:      { name: 'Armored Slime',    role: 'Tank',      tint: 0x8a94a6,

@@ -1533,7 +1533,7 @@ class GardenScene extends Phaser.Scene {
         const hs = 54;   // the two hands
         this._hot = { x: W / 2 + 66, y: by - hs / 2, sz: hs, keep, D };
         this._hotSel();
-        keep(this.add.text(W / 2, this.scale.height - 6, this.scene.key === 'Garden' ? 'WASD walk  ·  E tend, fish, rest (hold E to reel)  ·  1 / 2 hands  ·  I backpack  ·  B build  ·  L log  ·  Esc leave  ·  the Grove is west, the Lagoon east' : 'WASD walk  ·  E fish (hold E to reel)  ·  1 / 2 hands  ·  I backpack  ·  L log  ·  ' + (this._cfg?.().hint || 'Esc to leave'), { fontSize: '11px', fontFamily: 'monospace', color: '#c8d8c8', backgroundColor: '#0a0618aa', padding: { x: 6, y: 2 } }).setOrigin(0.5, 1).setDepth(D));
+        if (!TouchControls.on()) keep(this.add.text(W / 2, this.scale.height - 6, this.scene.key === 'Garden' ? 'WASD walk  ·  E tend, fish, rest (hold E to reel)  ·  1 / 2 hands  ·  I backpack  ·  B build  ·  L log  ·  Esc leave  ·  the Grove is west, the Lagoon east' : 'WASD walk  ·  E fish (hold E to reel)  ·  1 / 2 hands  ·  I backpack  ·  L log  ·  ' + (this._cfg?.().hint || 'Esc to leave'), { fontSize: '11px', fontFamily: 'monospace', color: '#c8d8c8', backgroundColor: '#0a0618aa', padding: { x: 6, y: 2 } }).setOrigin(0.5, 1).setDepth(D));
         if (this._logOpen) for (const o of objs) o.setVisible?.(false);   // (rebuilt with the diary open: it stays put away)
     }
 
@@ -2311,7 +2311,7 @@ class GardenScene extends Phaser.Scene {
         const label = keep(this.add.text(cx, cy - R2 - 46 * k, '', { fontSize: '14px', fontFamily: UIKit.FONT.title, fontStyle: 'bold', color: '#fff6d8', stroke: '#1a1006', strokeThickness: 5 }).setOrigin(0.5).setDepth(D + 6));
         const showAll = () => {
             const pk = this._packPick && items.find(o => o.k + ':' + o.id === this._packPick); if (!pk) this._packPick = null;
-            label.setText(pk ? `${this._itemName(pk).replace(/ \(.*\)$/, '')}: put it in hand 1 or 2 (click the hand, or press 1 / 2)` : `click a thing, then a hand to put it in  ·  ${items.length} of ${Garden.BAG + Garden.CHEST} slots${pages > 1 ? `  ·  ${page + 1}/${pages} (scroll for more)` : ''}`);
+            label.setText(pk ? `${this._itemName(pk).replace(/ \(.*\)$/, '')}: put it in hand 1 or 2 (click the hand, or press 1 / 2)` : `click a thing, then a hand to put it in  ·  ${items.length} of ${Garden.BAG + Garden.CHEST} slots${pages > 1 ? `  ·  ${page + 1}/${pages} (${TouchControls.on() ? '‹ ›' : 'scroll'} for more)` : ''}`);
             mine.forEach((o, j) => {
                 const inner = j < N1, n = inner ? Math.min(N1, mine.length) : mine.length - N1, i = inner ? j : j - N1, R = inner ? R1 : R2;
                 const a = -Math.PI / 2 + (i + (inner ? 0 : 0.5)) / n * Math.PI * 2, x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R * 0.92;
@@ -2342,6 +2342,9 @@ class GardenScene extends Phaser.Scene {
             xb.add([this.add.image(2, 3, 'gd_ui', 'xbtn').setScale(2).setTintFill(0x1a0806), this.add.image(0, 0, 'gd_ui', 'xbtn').setScale(2), this.add.text(0, -1, '✕', { fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold', color: '#fff6d8' }).setOrigin(0.5), this.add.circle(0, 0, 20).setInteractive({ useHandCursor: true }).on('pointerdown', () => this._packAway())]);
             xb.list.forEach(q => q.setScrollFactor(0));
             if (pages > 1) { const wheel = (p, o2, dx, dy) => { this.input.off('wheel', wheel); if (this._panelObjs === objs) this._backpack(page + (dy > 0 ? 1 : -1), true); }; this.input.on('wheel', wheel); }
+            if (pages > 1 && TouchControls.on()) for (const [dx, dir, sym] of [[-R2 - 34, -1, '‹'], [R2 + 34, 1, '›']])   // (a phone has no wheel)
+                keep(this.add.text(cx + dx, cy, sym, { fontSize: '36px', fontFamily: 'monospace', fontStyle: 'bold', color: '#fff6d8', stroke: '#1a1006', strokeThickness: 5 }).setOrigin(0.5).setDepth(D + 6).setInteractive({ useHandCursor: true }))
+                    .on('pointerdown', () => { Sfx.play(this, 'e_flip'); this._backpack(page + dir, true); });
         };
         if (again) { showAll(); return; }
         // the drop: from above the screen, a long fall, a slam

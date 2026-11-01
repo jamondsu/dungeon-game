@@ -14,18 +14,20 @@ class EnchantScene extends Phaser.Scene {
 
     // The island's shape, picked by hand (the art in isle2_rock / isle2_isle is typed to it): how far its rim reaches every
     // 10 degrees round (0 right, 90 toward you; 1 = rx), how deep the rock hangs under each, the lumps hanging under that
-    // ([out, angle, rows under the rim, depth, width, lean, swell down its length]), the rivers' mouths (degrees), what
+    // ([out, angle, rows under the rim, depth, width, lean, swell down its length]), the rivers' mouths (degrees), their paths (FLOW, as isle2_isle's top has them), what
     // stands where ([degrees, out]) and the rocks adrift under it (island pixels).
     static ISLE = { W: 232, H: 200, cx: 116, cy: 58, rx: 100, ry: 30, LIP: 6, UW: 628,
         R: [1, 0.97, 0.93, 0.95, 0.99, 0.92, 0.88, 0.91, 0.97, 1, 1.02, 1.04, 1.07, 1.09, 1.06, 0.99, 0.95, 0.99, 1.02, 1, 0.96, 0.93, 0.95, 0.99, 1.01, 0.98, 0.94, 0.96, 1, 1.03, 1.01, 0.97, 0.95, 0.98, 1.02, 1.03],
         D: [40, 42, 46, 52, 58, 66, 74, 82, 88, 92, 90, 84, 76, 68, 60, 52, 46, 42, 40, 38, 40, 44, 50, 56, 62, 66, 62, 58, 54, 58, 62, 58, 52, 48, 44, 42],
         TEETH: [[0.36, 128, 26, 50, 0.27, 0.1, [1, 1.12, 0.94, 1.08, 0.8, 1]], [0.42, 52, 24, 44, 0.25, 0.08, [1, 0.9, 1.1, 0.96, 1.05, 1]], [0.6, 168, 12, 34, 0.18, 0.14, [1, 1.1, 0.9, 1, 1, 1]],
                 [0.58, 14, 14, 38, 0.17, 0.12, [1, 0.92, 1.12, 0.9, 1, 1]], [0.12, 98, 70, 50, 0.14, -0.04, [1, 1.2, 0.9, 1.05, 0.8, 1]], [0.5, 250, 22, 50, 0.24, 0.1, [1, 1.1, 0.9, 1, 1, 1]], [0.5, 300, 20, 44, 0.22, 0.1, [1, 0.9, 1.1, 1, 1, 1]]],
-        MOUTHS: [74, 150],
+        MOUTHS: [108, 36],
+        FLOW: [[[110, 65], [104, 67], [98, 70], [95, 73], [97, 76], [99, 79], [96, 82], [91, 84], [86, 87], [82, 90]], [[142, 63], [149, 65], [156, 66], [163, 67], [170, 70], [177, 71], [184, 72], [191, 74], [199, 76]]],
+        SEA: [[60, 186, 1], [120, 192, 0], [176, 178, 0], [210, 200, 2], [40, 210, 2], [150, 216, 1], [260, 188, 0], [388, 196, 1], [24, 226, 2], [196, 226, 1], [402, 214, 2], [96, 232, 2]],
         PLACES: { reforge: [0, 0.7], reseal: [72, 0.66], garden: [144, 0.72], bind: [216, 0.68], combine: [288, 0.68] },
         LIGHT: { bind: 0x6ad86a, reforge: 0xb07aff, combine: 0xffd060, reseal: 0x7ad8ff, garden: 0x8affd8 }, FRAMES: { bind: 6, reforge: 4, combine: 2, reseal: 4, garden: 3 },
         PILLARS: [[205, 0.36, 20], [335, 0.36, 20], [160, 0.42, 26], [20, 0.42, 26]],
-        BITS: [[20, 0.5, 'tuft'], [36, 0.86, 'flower'], [64, 0.5, 'tuft2'], [100, 0.6, 'bush'], [112, 0.88, 'tuft'], [128, 0.4, 'stone'], [160, 0.5, 'tuft2'], [178, 0.86, 'bush'], [196, 0.62, 'flower'], [236, 0.5, 'tuft'],
+        BITS: [[20, 0.5, 'tuft'], [27, 0.9, 'flower'], [64, 0.5, 'tuft2'], [100, 0.6, 'bush'], [112, 0.88, 'tuft'], [128, 0.4, 'stone'], [160, 0.5, 'tuft2'], [178, 0.86, 'bush'], [196, 0.62, 'flower'], [236, 0.5, 'tuft'],
                [252, 0.86, 'stone'], [266, 0.6, 'tuft2'], [304, 0.62, 'flower'], [318, 0.86, 'tuft'], [340, 0.55, 'bush'], [350, 0.86, 'tuft2'], [84, 0.84, 'tuft'], [140, 0.72, 'flower'], [6, 0.72, 'stone'], [46, 0.64, 'tuft']],
         FLOATERS: [[30, 112, 'c'], [194, 118, 'a'], [52, 140, 'b'], [176, 150, 'b'], [212, 104, 'b'], [70, 162, 'a']],
         CLOUDS: [[10, 58, 'mid_mid'], [228, 72, 'wisp_mid'], [350, 60, 'mid_mid'], [118, 30, 'wisp_mid'], [-20, 150, 'mid_near'], [372, 148, 'wisp_near']] };
@@ -151,23 +153,34 @@ class EnchantScene extends Phaser.Scene {
         let ct = 0;
         this._ticks.push(t => { const dt = ct ? Math.min(50, t - ct) : 0; ct = t;
             for (const c of clouds) { c.x -= c.v * dt / 1000; if (c.x < -c.img.displayWidth) c.x = W + 10; c.img.x = Math.round(c.x / 3) * 3; } });
-        // stars twinkling, glints running on the moon's road
-        const tw = this.add.graphics().setDepth(1), roadX = nx + 341 * 3;
+        // stars twinkling, the moon's road shimmering, crests catching the light
+        const tw = this.add.graphics().setDepth(1);
         const stars = Array.from({ length: 22 }, () => ({ x: Math.round(Math.random() * AW / 3) * 3, y: Math.round(Math.random() * (ny + 380) / 3) * 3, p: Math.random() * 6 }));
-        const glints = Array.from({ length: 16 }, (_, i) => { const y = ny + 506 + Math.pow(i / 16, 1.3) * (H - ny - 506); return { x: roadX + (Math.random() - 0.5) * (20 + (y - ny - 500) * 0.5), y: Math.round(y / 3) * 3, p: Math.random() * 6, l: 6 + i }; });
+        if (!this.anims.exists('isle2_road')) this.anims.create({ key: 'isle2_road', frames: [0, 1, 2, 3].map(i => ({ key: 'isle2_water', frame: 'road_' + i })), frameRate: 5, repeat: -1 });
+        night.add(this.add.sprite(nx + 303 * 3, ny + 166 * 3, 'isle2_water', 'road_0').setOrigin(0).setScale(3).play('isle2_road'));
+        const crests = G.SEA.map(([x, y, k], i) => ({ p: i * 2.4, img: this.add.image(nx + x * 3, ny + y * 3, 'isle2_water', 'crest_' + k).setOrigin(0).setScale(3).setAlpha(0) }));
+        night.add(crests.map(c => c.img));
         this._ticks.push(t => { tw.clear();
             for (const s of stars) { const a = Math.max(0, Math.sin(t * 0.002 + s.p)); if (a > 0.6) { tw.fillStyle(0xffffff, a); tw.fillRect(s.x, s.y, 3, 3); } }
-            for (const g of glints) { const a = Math.max(0, Math.sin(t * 0.0016 + g.p)); if (a > 0.3) { tw.fillStyle(0xe8e0ff, a * 0.8); tw.fillRect(Math.round((g.x + Math.sin(t * 0.0005 + g.p) * 6) / 3) * 3, g.y, Math.round(g.l * a / 3) * 3, 3); } } });
+            for (const c of crests) c.img.setAlpha(Math.max(0, Math.sin(t * 0.0012 + c.p)) * 0.7); });
         // the island, floating; its light on the water under it
         const ix = Math.max(Math.round(AW / 2 - G.W * S / 2), 252), iy = Math.round(H * 0.083);   // (on a narrow window it moves right, clear of the station cards)
         this.add.image(ix + G.W * S / 2, ny + 560, 'mn_glow').setTint(0x5a3ab0).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(720, 140).setAlpha(0.22).setDepth(1);
         const land = this._land = this.add.container(0, 0).setDepth(2);
         this._isleGeo = { ix, iy, S, cx: G.cx, top: G.cy, rx: G.rx, ry: G.ry };
-        if (!this.anims.exists('isle2_fall')) this.anims.create({ key: 'isle2_fall', frames: [0, 1, 2, 3].map(i => ({ key: 'isle2_isle', frame: 'fall_' + i })), frameRate: 9, repeat: -1 });
-        this._falls = G.MOUTHS.map(() => ({ back: this.add.sprite(0, 0, 'isle2_isle', 'fall_0').setOrigin(8 / 17, 0).setScale(S).play('isle2_fall'), front: this.add.sprite(0, 0, 'isle2_isle', 'fall_0').setOrigin(8 / 17, 0).setScale(S).play('isle2_fall') }));
+        for (const w of [11, 8, 5]) if (!this.anims.exists('isle2_fall' + w)) this.anims.create({ key: 'isle2_fall' + w, frames: [0, 1, 2, 3, 4, 5, 6, 7].map(i => ({ key: 'isle2_water', frame: `fall${w}_${i}` })), frameRate: 10, repeat: -1 });
+        const fallSpr = () => this.add.sprite(0, 0, 'isle2_water', 'fall11_0').setOrigin(14 / 29, 0).setScale(S);
+        this._falls = G.MOUTHS.map(() => ({ w: 0, back: fallSpr(), front: fallSpr() }));
         land.add(this._falls.map(f => f.back));
         this._isleSetup();
         land.add(this.add.image(ix, iy, 'isle2_view').setOrigin(0).setScale(S));
+        // glints carried down the rivers, turning with the island
+        const flows = G.FLOW.flatMap((pts, r) => Array.from({ length: 14 }, (_, i) => ({ pts, at: i / 14 + r * 0.04, off: [-1, 1, 0, -2, 2, 0, 1][i % 7], img: this.add.image(0, 0, 'isle2_water', 'flow_' + (i % 3)).setScale(S).setAlpha(0) })));
+        land.add(flows.map(f => f.img));
+        this._ticks.push(t => { for (const f of flows) {
+            const u = (f.at + t * 0.00007) % 1, k = u * (f.pts.length - 1), i = Math.floor(k), a = f.pts[i], b = f.pts[i + 1], [x, y] = this._spinPt(a[0] + (b[0] - a[0]) * (k - i) + f.off, a[1] + (b[1] - a[1]) * (k - i));
+            f.img.setPosition(ix + Math.round(x) * S, iy + Math.round(y) * S).setAlpha(Math.min(1, Math.min(u, 1 - u) * 8) * (0.5 + 0.5 * Math.sin(t * 0.004 + f.at * 40)));
+        } });
         land.add(this._falls.map(f => f.front));
         for (const [x, y, k] of G.FLOATERS) {   // rocks adrift under it, each bobbing on its own
             const f = this.add.image(ix + x * S, iy + y * S, 'isle2_isle', 'float_' + k).setOrigin(0).setScale(S); land.add(f);
@@ -226,7 +239,6 @@ class EnchantScene extends Phaser.Scene {
         const shrink = t => t < 0.06 ? 1 : Math.pow(1 - Math.pow((t - 0.06) / 0.94, 1.25), 0.85), taper = t => Math.pow(1 - t, 1.1) * (t < 0.15 ? 0.85 + t : 1);
         for (let s = 0; s < 1440; s++) {   // the rock under the rim
             const d = s / 4, r0 = L2(G.R, d), D = Math.round(L2(G.D, d)), a = (d + A) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
-            if (sa < -0.25) continue;
             const u = Math.round(d / 360 * UW) % UW, light = Math.cos(a - 0.7);
             for (let j = 0; j <= D; j++) {
                 const t = j / D, r = r0 * shrink(t), x = Math.round(cx + r * rx * ca), y = Math.round(cy + r * ry * sa + j), z = r * sa;
@@ -255,12 +267,14 @@ class EnchantScene extends Phaser.Scene {
             if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
             const c = top[ty * W + tx]; if (c >>> 24) px[y * W + x] = c;
         }
+        for (let y = cy + 1; y < H; y++) for (let x = 1; x < W - 1; x++) { const i = y * W + x; if (!px[i] && px[i - 1] && px[i + 1]) px[i] = px[i - 1]; }   // the sweep's pinholes, or the outline rings each one
         const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && (px[y * W + x] >>> 24) === 255, ol = [];   // its outline where rock meets the sky below or away from the moon
         for (let y = cy + 1; y < H; y++) for (let x = 0; x < W; x++) if (on(x, y) && (!on(x, y + 1) || !on(x - 1, y) || (!on(x + 1, y) && y > cy + 30))) ol.push(y * W + x);
         for (const i of ol) px[i] = 0xff1c0b0e;
         K.tex.getContext().putImageData(K.img, 0, 0); K.tex.refresh();
         const { ix, iy, S } = this._isleGeo;   // the falls, at their mouths as the island has turned: in front, or behind it
-        G.MOUTHS.forEach((d, k) => { const a = (d + A) * Math.PI / 180, r = L2(G.R, d) * 0.98, x = ix + Math.round(cx + r * rx * Math.cos(a)) * S, y = iy + Math.round(cy + r * ry * Math.sin(a)) * S, front = Math.sin(a) > 0.08, F = this._falls[k];
+        G.MOUTHS.forEach((d, k) => { const a = (d + A) * Math.PI / 180, r = L2(G.R, d) * 0.98, x = ix + Math.round(cx + r * rx * Math.cos(a)) * S, y = iy + Math.round(cy + r * ry * Math.sin(a)) * S, sa = Math.abs(Math.sin(a)), w = sa > 0.72 ? 11 : sa > 0.36 ? 8 : 5, front = Math.sin(a) > 0.08, F = this._falls[k];
+            if (F.w !== w) { F.w = w; for (const f of [F.back, F.front]) f.play({ key: 'isle2_fall' + w, startFrame: Math.max(0, (f.anims.currentFrame?.index || 1) - 1) }); }   // (the sheet is seen edge-on as the river comes to run across you)
             F.front.setPosition(x, y).setVisible(front); F.back.setPosition(x, y).setVisible(!front); });
     }
     _spinSetup(land) {

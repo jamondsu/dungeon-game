@@ -1488,6 +1488,9 @@ class TowerDefenseScene extends Phaser.Scene {
     spawnIgnitionTrail()         {}
     _specialHit(e, d)            { return d; }   // no Armored, Shade or plated enemies here
     _leechDie()                  {}              // no Leeches either
+    _aim(...a) { return VisualFX.prototype._aim.call(this,...a); }
+    _scrX(...a) { return VisualFX.prototype._scrX.call(this,...a); }
+    _scrY(...a) { return VisualFX.prototype._scrY.call(this,...a); }
     _shotX(...a) { return WeaponSystem.prototype._shotX.call(this,...a); }
     conductorAttack()            {}   // (not in tower defense)
     _shotY(...a) { return WeaponSystem.prototype._shotY.call(this,...a); }
@@ -1718,7 +1721,7 @@ class TowerDefenseScene extends Phaser.Scene {
         this._waveBoost=1; this._scrapMult=1; this.shieldPct=0;
         this.baseHealRate=0; this.baseAuras=[];
         this.gameOver=false; this.baseAuras=[]; this.shieldPct=0; this.baseHealRate=0;
-        this._powerupTiers={}; this._buildMenuOpen=false; this._upgradeMenuOpen=false; this._placementMode=null;
+        this._powerupTiers={}; this._buildMenuOpen=false; this._upgradeMenuOpen=false; this._placementMode=null; this._aimPickerClose=null; this._powerupPending=false;
 
         // ── World ─────────────────────────────────────────────────────────────
         this.rng=this.createRng(77777);
@@ -1755,13 +1758,15 @@ class TowerDefenseScene extends Phaser.Scene {
 
         // ── Input ─────────────────────────────────────────────────────────────
         this.keys=this.input.keyboard.addKeys({W:Phaser.Input.Keyboard.KeyCodes.W,S:Phaser.Input.Keyboard.KeyCodes.S,A:Phaser.Input.Keyboard.KeyCodes.A,D:Phaser.Input.Keyboard.KeyCodes.D});
+        this._touch=TouchControls.on()?TouchControls.td(this):null;   // a phone: sticks and buttons on the screen (TouchControls.js)
         // Q / R are pure toggles: opening a panel now closes any other open panel
         // (see _closeAllPanels), so the old "don't open while X is up" guards are gone.
         // Still suppressed while the pause menu is up, since that's a game-state overlay.
-        this.input.keyboard.on('keydown-Q',()=>{if(this._pmActive)return; this._buildMenuOpen?this._closeBuildMenu():this._openBuildMenu();});
-        this.input.keyboard.on('keydown-R',()=>{if(this._pmActive)return; this._wispRosterOpen?this._closeWispRoster():this._openWispRoster();});
+        this.input.keyboard.on('keydown-Q',()=>{if(this._pauseMenuOpen)return; this._buildMenuOpen?this._closeBuildMenu():this._openBuildMenu();});
+        this.input.keyboard.on('keydown-R',()=>{if(this._pauseMenuOpen)return; this._wispRosterOpen?this._closeWispRoster():this._openWispRoster();});
         this.input.keyboard.on('keydown-ESC',()=>{
-            if(this._pmActive){ this._closePauseMenu(); return; }
+            if(this._pauseMenuOpen){ this.closePauseMenu(); return; }
+            if(this._aimPickerClose){ this._aimPickerClose(); return; }
             if(this._waveTVOpen){ this._closeWaveTV(); return; }
             if(this._devTreeMenuOpen){ this._closeDevWispTreeMenu(); return; }
             if(this._wispTreeOpen){ this._closeWispSkillTree(); return; }
@@ -1772,9 +1777,13 @@ class TowerDefenseScene extends Phaser.Scene {
             if(this._placementMode){ this._cancelPlacement(); return; }
             this._openPauseMenu();
         });
-        this.input.keyboard.on('keydown-P',()=>this._pmActive?this._closePauseMenu():this._openPauseMenu());
-        this.input.on('pointermove',ptr=>{this.pointerX=ptr.x;this.pointerY=ptr.y;});
+        this.input.keyboard.on('keydown-P',()=>this._pauseMenuOpen?this.closePauseMenu():this._openPauseMenu());
+        this.input.on('pointermove',ptr=>{
+            if(this._touch&&!(ptr=this._touch.aimPointer(ptr)))return;   // a touch screen: only the aiming thumb, or a finger on the world
+            this.pointerX=ptr.x;this.pointerY=ptr.y;
+        });
         this.input.on('pointerdown',ptr=>{
+            if(this._touch&&!(ptr=this._touch.aimPointer(ptr)))return;
             this.pointerX=ptr.x; this.pointerY=ptr.y;
             this._onPointerDown(ptr);
             // Poll every 100ms — WeaponSystem's internal _lastWrenchTime gates actual firing
@@ -1787,9 +1796,12 @@ class TowerDefenseScene extends Phaser.Scene {
                 }
             });
         });
-        this.input.on('pointerup',()=>{
+        this.input.on('pointerup',ptr=>{
+            if(this._touch&&!(ptr=this._touch.aimPointer(ptr)))return;
             this._holdAttackTimer?.remove();
             this._holdAttackTimer=null;
+            if(this._touch&&this._placementMode)this._placeAt(ptr);
+            else if(this._touch&&!this._touch.o.hidden())this.fireEquippedWeapon(this.pointerX,this.pointerY);   // (a quick tap: the throw it never had)
         });
         this.input.keyboard.on('keydown-E',()=>this._tryInteractGlorp());
         this.input.keyboard.on('keydown-F',()=>this._tryInteractWaveTV());
@@ -1808,12 +1820,12 @@ class TowerDefenseScene extends Phaser.Scene {
         this._buildBuildMenu();
 
         this.time.delayedCall(2500,()=>this._startNextWave());
-        this._showBanner('⚙ ENGINEERING DEFENSE ⚙','#aaddff','Defend the core — Q to build');
+        this._showBanner('⚙ ENGINEERING DEFENSE ⚙','#aaddff',`Defend the core — ${this._touch?'BUILD':'Q'} to build`);
     }
 
     update(time,delta){
         this._vfxUpdateTorches?.(time);   // Visuals.js
-        if(this.gameOver||this._pmActive)return;
+        if(this.gameOver||this._pauseMenuOpen)return;
         this.orbScraps=this.scraps; // sync into ES before it runs
         // Magma heat bleeds here too. Without this call it only ever rises, so the staff
         // would lock at max tier for the rest of the run the first time you reached it.
@@ -2640,12 +2652,19 @@ class TowerDefenseScene extends Phaser.Scene {
         }
         if(this._buildMenuOpen||this._upgradeMenuOpen)return;
         if(this._placementMode){
-            const tx=Math.floor(ptr.worldX/this.TILE_SIZE),ty=Math.floor(ptr.worldY/this.TILE_SIZE);
-            if(this._placeTower(this._placementMode,tx,ty))this._showFloatingText(ptr.worldX,ptr.worldY-16,'PLACED','#44ff88');
-            this._cancelPlacement();return;
+            if(this._touch)this._onPlacementMove(ptr);   // a finger can't hover: the ghost under it, and it goes down where it's lifted
+            else this._placeAt(ptr);
+            return;
         }
         // Real WeaponSystem wrench — exact same as main game
-        this.fireEquippedWeapon(ptr.x,ptr.y);
+        if(!this._touch)this.fireEquippedWeapon(ptr.x,ptr.y);   // (a thumb gets a moment to push the stick: the hold's first poll, or the lift)
+    }
+
+    _placeAt(ptr){
+        const tx=Math.floor(ptr.worldX/this.TILE_SIZE),ty=Math.floor(ptr.worldY/this.TILE_SIZE);
+        const ok=this._placeTower(this._placementMode,tx,ty);
+        if(ok)this._showFloatingText(ptr.worldX,ptr.worldY-16,'PLACED','#44ff88');
+        if(ok||!this._touch)this._cancelPlacement();   // (a finger that missed tries again: PAUSE gives up)
     }
 
     // ─── ENEMY BASE DETECTION ────────────────────────────────────────────────
@@ -5430,7 +5449,8 @@ class TowerDefenseScene extends Phaser.Scene {
 
         const hit=this.add.rectangle(px,py,fpW,fpW,0xffffff,0).setDepth(5).setInteractive();
         tower.hitArea=hit;
-        hit.on('pointerdown',p=>{
+        hit.on(this._touch?'pointerup':'pointerdown',p=>{
+            if(this._touch&&(p.getDistance()>20||p.getDuration()>400||this._placementMode))return;   // a tap on it, not a thumb that rested or slid over it
             p.event.stopPropagation();
             this._openUpgradeMenu(tower);
         });
@@ -7241,7 +7261,7 @@ class TowerDefenseScene extends Phaser.Scene {
     }
 
     _tryInteractWaveTV(){
-        if(this._pmActive)return;
+        if(this._pauseMenuOpen)return;
         if(this._waveTVOpen){ this._closeWaveTV(); return; }
         const dx=Math.abs(this._myX-this._tvTileX),dy=Math.abs(this._myY-this._tvTileY);
         if(dx+dy<=3) this._openWaveTV();
@@ -7455,7 +7475,8 @@ class TowerDefenseScene extends Phaser.Scene {
         const panelH=rows*cardH+(rows-1)*gap+124;
         const px=W/2-panelW/2, py=H/2-panelH/2;
 
-        tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.55).setScrollFactor(0).setDepth(40).setInteractive());
+        tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.55).setScrollFactor(0).setDepth(40).setInteractive()
+            .on('pointerdown',()=>{if(this._touch)this._closeWispRoster();}));
         UIKit.panel(this,{x:px,y:py,w:panelW,h:panelH,accent:0x4488cc,depth:41}).objs.forEach(tr);
         this._iconBy(tr(this.add.text(px+panelW/2,py+30,'WISP ROSTER',{fontSize:'23px',fontFamily:UIKit.FONT.title,color:'#88ccff',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(42)),tr(this._tdIcon('light',0,0,42)),false,6);
         const equipTxt=tr(this.add.text(px+panelW/2,py+58,'',{fontSize:'13px',fontFamily:'monospace',color:'#778899'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));
@@ -7884,7 +7905,7 @@ class TowerDefenseScene extends Phaser.Scene {
         const infoH=130;
         const infoTop=py+PH-infoH;
         tr(this._tdNine('card','card_a',px+12,infoTop,PW-24,infoH-12,0x2e4458,52));
-        const infoName=tr(this.add.text(cx,infoTop+22,'Hover a node',{fontSize:'18px',fontFamily:UIKit.FONT.title,color:'#ccd8ee',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(53));
+        const infoName=tr(this.add.text(cx,infoTop+22,this._touch?'Tap a node':'Hover a node',{fontSize:'18px',fontFamily:UIKit.FONT.title,color:'#ccd8ee',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(53));
         const infoDesc=tr(this.add.text(cx,infoTop+46,'Tap an unlocked node to spend ✦ Glorps.',{fontSize:'14px',fontFamily:'monospace',color:'#8a9bb0',align:'center',wordWrap:{width:PW-80},lineSpacing:4}).setOrigin(0.5,0).setScrollFactor(0).setDepth(53));
         const setInfo=(name,desc,col)=>{
             if(infoName.active){infoName.setText(name);infoName.setColor(col||'#ccd8ee');}
@@ -8031,6 +8052,7 @@ class TowerDefenseScene extends Phaser.Scene {
                     // instead of the click silently doing nothing.
                     hit.on('pointerdown',p=>{
                         p.event.stopPropagation();
+                        if(this._touch&&this._treePick!==type+nodeId){ this._treePick=type+nodeId; return; }   // a finger can't hover: the first tap reads it, the next one buys
                         if(maxed){ setInfo(node.name,'✓ Fully upgraded. '+descFor(purchased),'#44ff88'); return; }
                         if(!prereq){ setInfo(node.name,'Locked: buy the previous node on this branch first.','#cc9955'); return; }
                         const c=node.costFn(this._wispUpgrades[type][nodeId]||0);
@@ -9518,7 +9540,7 @@ class TowerDefenseScene extends Phaser.Scene {
         };
         draw(tower._cannonFixedAng??null, tower._cannonFixedAng!==undefined?tower.px+Math.cos(tower._cannonFixedAng)*(tower._cannonFixedDist??range):undefined, tower._cannonFixedAng!==undefined?tower.py+Math.sin(tower._cannonFixedAng)*(tower._cannonFixedDist??range):undefined);
 
-        const close=()=>{ objs.forEach(o=>o?.destroy()); this._openUpgradeMenu(tower); };
+        const close=this._aimPickerClose=()=>{ this._aimPickerClose=null; objs.forEach(o=>o?.destroy()); this._openUpgradeMenu(tower); };
         // Click anywhere on overlay — set angle
         overlay.on('pointerdown',p=>{ p.event.stopPropagation(); const dx=p.worldX-tower.px,dy=p.worldY-tower.py; const ang=Math.atan2(dy,dx); tower._cannonFixedAng=ang; tower._cannonFixedDist=Math.min(range,Math.hypot(dx,dy)); tower._mgAimGfx?.clear(); draw(ang,p.worldX,p.worldY); close(); });
         // Circle interaction — hover shows preview, click confirms
@@ -9533,9 +9555,6 @@ class TowerDefenseScene extends Phaser.Scene {
             draw(ang,p.worldX,p.worldY); close();
         });
         hitCirc.on('pointermove',p=>{ const ang=Math.atan2(p.worldY-tower.py,p.worldX-tower.px); draw(ang,p.worldX,p.worldY); });
-        // Close on Escape
-        const onEsc=()=>{ this.input.keyboard.off('keydown-ESC',onEsc); close(); };
-        this.input.keyboard.on('keydown-ESC',onEsc);
     }
 
     _cannonBounceArc(fromX,fromY,toX,toY,dirX,dirY,hopDist,bouncesLeft,baseDmg,aoeR,coreR,shellR,isBowler){
@@ -9947,9 +9966,10 @@ class TowerDefenseScene extends Phaser.Scene {
         const cols=4,btnW=116,btnH=108,gap=12,rows=Math.ceil(types.length/cols);
         const totalW=cols*btnW+(cols-1)*gap,sx=W/2-totalW/2,sy=H/2-(rows*(btnH+gap))/2-28;
         this._bmObjs=[];const tr=o=>{this._bmObjs.push(o);return o;};
-        tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.72).setScrollFactor(0).setDepth(20).setVisible(false).setInteractive());
+        tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.72).setScrollFactor(0).setDepth(20).setVisible(false).setInteractive()
+            .on('pointerdown',()=>{if(this._touch)this._closeBuildMenu();}));
         UIKit.panel(this,{x:sx-18,y:sy-34,w:totalW+36,h:rows*(btnH+gap)+64,accent:0x2a3a5a,depth:21}).objs.forEach(o=>tr(o.setVisible(false)));
-        const title=tr(this.add.text(W/2,sy-18,'BUILD TOWER  [Q to close]',{fontSize:'15px',fontFamily:'monospace',color:'#aaddff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0).setDepth(22).setVisible(false));
+        const title=tr(this.add.text(W/2,sy-18,this._touch?'BUILD TOWER  [tap outside to close]':'BUILD TOWER  [Q to close]',{fontSize:'15px',fontFamily:'monospace',color:'#aaddff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0).setDepth(22).setVisible(false));
         this._iconBy(title,tr(this._tdIcon('⚙',0,0,22).setVisible(false)),false,10);
         this._bmBtnData=[];
         for(let i=0;i<types.length;i++){
@@ -9998,7 +10018,7 @@ class TowerDefenseScene extends Phaser.Scene {
     _startPlacementMode(type){
         this._placementMode=type;const def=this._towerDefs()[type];
         this._ghostGfx=this.add.graphics().setDepth(6);this._rangeGfx=this.add.graphics().setDepth(0.35);
-        this._placeLabel=this.add.text(this.scale.width/2,52,`Place ${def.name}  (ESC to cancel)`,{fontSize:'13px',fontFamily:'monospace',color:'#aaddff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+        this._placeLabel=this.add.text(this.scale.width/2,52,`Place ${def.name}  (${this._touch?'✕':'ESC'} to cancel)`,{fontSize:'13px',fontFamily:'monospace',color:'#aaddff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setScrollFactor(0).setDepth(30);
         this.input.on('pointermove',this._onPlacementMove,this);
     }
     _onPlacementMove(ptr){
@@ -10644,13 +10664,14 @@ class TowerDefenseScene extends Phaser.Scene {
 
     _offerPowerups(){
         if(this.gameOver)return;
+        this._powerupPending=true;
         const all=[{id:'p_hp',name:'Reinforced Frame',icon:'❤',desc:'+25 max HP',eff:()=>{this.playerMaxHP+=25;this.playerHP=Math.min(this.playerHP+25,this.playerMaxHP);}},{id:'p_dmg',name:'Sharpened Wrench',icon:'⚙',desc:'+6 wrench dmg',eff:()=>{this.wrenchDmg+=6;}},{id:'t_dmg',name:'Overcharged',icon:'⚡',desc:'+15% turret dmg',eff:()=>{this.turretDmgMult+=0.15;}},{id:'b_reg',name:'Auto-Repair',icon:'🔧',desc:'Base heals 2/s',eff:()=>{this.baseHealRate+=2;}},{id:'h_aura',name:'Healing Zone',icon:'💚',desc:'Aura heals player',eff:()=>{const x=this.baseAuras.find(a=>a.type==='heal');x?x.tier=Math.min(4,x.tier+1):this.baseAuras.push({type:'heal',tier:0});}},{id:'p_aura',name:'Toxin Field',icon:'☠',desc:'Aura poisons enemies',eff:()=>{const x=this.baseAuras.find(a=>a.type==='poison');x?x.tier=Math.min(4,x.tier+1):this.baseAuras.push({type:'poison',tier:0});}},{id:'shld',name:'Reflective Plating',icon:'🛡',desc:'+12% reflection',eff:()=>{this.shieldPct=Math.min(0.6,this.shieldPct+0.12);}}];
         const avail=all.filter(p=>(this._powerupTiers[p.id]||0)<5),picks=Phaser.Utils.Array.Shuffle(avail).slice(0,3);
         const W=this.scale.width,H=this.scale.height,objs=[];const tr=o=>{objs.push(o);return o;};
         tr(this.add.rectangle(W/2,H/2,W,H,0x000000,0.78).setScrollFactor(0).setDepth(40).setInteractive());
         tr(this.add.text(W/2,H*0.17,`⭐ WAVE ${this.wave} BONUS — CHOOSE ONE ⭐`,{fontSize:'17px',fontFamily:UIKit.FONT.title,color:'#ffdd44',stroke:'#000',strokeThickness:4}).setOrigin(0.5).setScrollFactor(0).setDepth(41));
         const cw=196,ch=200,gap=18,sx=W/2-(picks.length*(cw+gap)-gap)/2;
-        picks.forEach((p,i)=>{const tier=this._powerupTiers[p.id]||0,bx=sx+i*(cw+gap),by=H*0.28;const bg=tr(this.add.graphics().setScrollFactor(0).setDepth(41));const draw=hov=>{bg.clear();bg.fillStyle(hov?0x1e2a40:0x151525,0.98);bg.fillRoundedRect(bx,by,cw,ch,9);bg.lineStyle(2,hov?0x5588cc:0x334466,hov?0.9:0.7);bg.strokeRoundedRect(bx,by,cw,ch,9);};draw(false);tr(this.add.text(bx+cw/2,by+28,p.icon,{fontSize:'32px'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));tr(this.add.text(bx+cw/2,by+72,p.name,{fontSize:'12px',fontFamily:'monospace',color:'#ffffff',fontStyle:'bold',wordWrap:{width:cw-14}}).setOrigin(0.5).setScrollFactor(0).setDepth(42));tr(this.add.text(bx+cw/2,by+98,p.desc,{fontSize:'10px',fontFamily:'monospace',color:'#8899aa',wordWrap:{width:cw-18}}).setOrigin(0.5).setScrollFactor(0).setDepth(42));tr(this.add.text(bx+cw/2,by+ch-18,'CHOOSE',{fontSize:'12px',fontFamily:'monospace',color:'#ffdd44',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));const hit=tr(this.add.rectangle(bx+cw/2,by+ch/2,cw,ch,0xffffff,0).setScrollFactor(0).setDepth(43).setInteractive());hit.on('pointerover',()=>draw(true));hit.on('pointerout',()=>draw(false));hit.on('pointerdown',()=>{p.eff();this._powerupTiers[p.id]=(tier+1);objs.forEach(o=>o?.active&&o.destroy());this._showBanner(`${p.icon} ${p.name.toUpperCase()}`,'#ffdd44','Upgrade applied!');this.time.delayedCall(2000,()=>this._startNextWave());});});
+        picks.forEach((p,i)=>{const tier=this._powerupTiers[p.id]||0,bx=sx+i*(cw+gap),by=H*0.28;const bg=tr(this.add.graphics().setScrollFactor(0).setDepth(41));const draw=hov=>{bg.clear();bg.fillStyle(hov?0x1e2a40:0x151525,0.98);bg.fillRoundedRect(bx,by,cw,ch,9);bg.lineStyle(2,hov?0x5588cc:0x334466,hov?0.9:0.7);bg.strokeRoundedRect(bx,by,cw,ch,9);};draw(false);tr(this.add.text(bx+cw/2,by+28,p.icon,{fontSize:'32px'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));tr(this.add.text(bx+cw/2,by+72,p.name,{fontSize:'12px',fontFamily:'monospace',color:'#ffffff',fontStyle:'bold',wordWrap:{width:cw-14}}).setOrigin(0.5).setScrollFactor(0).setDepth(42));tr(this.add.text(bx+cw/2,by+98,p.desc,{fontSize:'10px',fontFamily:'monospace',color:'#8899aa',wordWrap:{width:cw-18}}).setOrigin(0.5).setScrollFactor(0).setDepth(42));tr(this.add.text(bx+cw/2,by+ch-18,'CHOOSE',{fontSize:'12px',fontFamily:'monospace',color:'#ffdd44',fontStyle:'bold'}).setOrigin(0.5).setScrollFactor(0).setDepth(42));const hit=tr(this.add.rectangle(bx+cw/2,by+ch/2,cw,ch,0xffffff,0).setScrollFactor(0).setDepth(43).setInteractive());hit.on('pointerover',()=>draw(true));hit.on('pointerout',()=>draw(false));hit.on('pointerdown',()=>{this._powerupPending=false;p.eff();this._powerupTiers[p.id]=(tier+1);objs.forEach(o=>o?.active&&o.destroy());this._showBanner(`${p.icon} ${p.name.toUpperCase()}`,'#ffdd44','Upgrade applied!');this.time.delayedCall(2000,()=>this._startNextWave());});});
     }
 
     _buildHUD(){
@@ -10667,7 +10688,7 @@ class TowerDefenseScene extends Phaser.Scene {
         this._hudBase=stat(3,'🏛','500');this._hudPlayer=stat(4,'❤','100',{...s,color:'#ffb0bc'});
         this._hudEnemy=stat(5,'👾','0');
         this._hudKills=stat(6,'☠','0');
-        this.add.text(W-14,12,`[${'Q'}] BUILD`,{fontSize:'12px',fontFamily:UIKit.FONT.title,fontStyle:'bold',color:'#8a93a6'}).setOrigin(1,0).setScrollFactor(0).setDepth(11);
+        if(!this._touch)this.add.text(W-14,12,`[${'Q'}] BUILD`,{fontSize:'12px',fontFamily:UIKit.FONT.title,fontStyle:'bold',color:'#8a93a6'}).setOrigin(1,0).setScrollFactor(0).setDepth(11);
     }
     _updateHUD(){
         this._hudWave.setText(`WAVE ${this.wave}`);this._hudScrap.setText(`${this.scraps}`);
@@ -11042,7 +11063,6 @@ class TowerDefenseScene extends Phaser.Scene {
     _openPauseMenu(){
         if(this._pauseMenuOpen||this.gameOver)return;
         this.openPauseMenu();
-        this._pmActive=true;
         // RESTART must restart THIS scene, not 'Game'. HUD builds the menu, so repoint
         // the button through the named handle it exposes.
         //
@@ -11052,12 +11072,8 @@ class TowerDefenseScene extends Phaser.Scene {
         // the loop simply found nothing and RESTART kept Game's behaviour, sending the
         // player to the wrong scene with no error anywhere.
         this._pauseBtns?.restart?.setOnClick(()=>{
-            this.closePauseMenu(); this._pmActive=false; this.scene.start('TowerDefenseScene');
+            this.closePauseMenu(); this.scene.start('TowerDefenseScene');
         });
-    }
-    _closePauseMenu(){
-        this._pmActive=false;
-        this.closePauseMenu();
     }
 
     _triggerGameOver(){
