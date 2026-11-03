@@ -597,7 +597,7 @@ class CombatSystem {
 
         // A fire hit used to start a second, separate burn here (unless the Magma Staff happened
         // to be equipped). The burn is one system now and the sources that burn add its stacks
-        // themselves (WeaponSystem.applyBurnStack), so Ignition's pellets, for one, don't.
+        // themselves (Burn.applyBurnStack), so Ignition's pellets, for one, don't.
 
         if (_atkElement === 'ice' && enemy.health > 0) {
             const wasAlreadySlowed = enemy.isSlowed;
@@ -1847,7 +1847,7 @@ class CombatSystem {
     }
 
     updateBurnEffects(time) {
-        // Retired: the one burn ticks in WeaponSystem._applyBurnDoT and Creatures.js draws it. Left
+        // Retired: the one burn ticks in Burn._applyBurnDoT and Creatures.js draws it. Left
         // running, this would expire every burn the frame it started (burnUntil is never set now).
         return;
         for (let enemy of [...this.enemies]) {
@@ -2735,7 +2735,7 @@ class CombatSystem {
         }
 
         // Burst damage: flat amount scaled by ult bonus
-        // Combustion cashes the burn in: +8 per stack (WeaponSystem._burnCfg), and they're spent.
+        // Combustion cashes the burn in: +8 per stack (Burn._burnCfg), and they're spent.
         const _stacks = Math.min(5, enemy.burnStacks || 0);
         const burstDamage = ((dmgOverride !== undefined && dmgOverride !== null)
             ? dmgOverride

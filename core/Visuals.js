@@ -301,39 +301,6 @@ class VisualFX {
         scene._vfxFlash?.(x, y, 22, PAL[1], 140, 0.4);
     }
 
-    // A force field round the slime, drawn into g about its centre (g ADD-blended): a bubble whose rim is
-    // bright and whose middle is nearly clear (looking through more of it at the edge), a hex lattice
-    // shimmering over it (brightest near the rim, drifting), a highlight sliding round the rim, a band of
-    // energy sweeping up through it, and where it was just hit, a ripple and the lattice lit up there.
-    // o: { col, rim, R (width radius), ry (height), t (ms), fade (0..1), hit (0..1 since the last hit),
-    // hitA (the hit's angle), sparkle: a colour for motes in it }
-    static forceField(g, o) {
-        const { col, rim, R, t } = o, ry = o.ry ?? R * 0.86, a0 = o.fade ?? 1, hit = o.hit ?? 0, TAU = Math.PI * 2;
-        for (let k = 0; k < 7; k++) { const u = k / 7; g.fillStyle(col, (0.025 + 0.11 * Math.pow(u, 2.2)) * a0); g.fillEllipse(0, 0, R * 2 * (1 - u * 0.12) * 1, ry * 2 * (1 - u * 0.12)); }   // fresnel: thicker toward the rim
-        // the lattice: hex cells laid on the bubble, squashed toward the rim, shimmering in a slow wave
-        const cell = R * 0.26, drift = (t * 0.00004) % 1;
-        for (let q = -4; q <= 4; q++) for (let r2 = -4; r2 <= 4; r2++) {
-            const hx = (q + r2 * 0.5 + drift) * cell * 1.5, hy = r2 * cell * 1.3;
-            const nx = hx / R, ny = hy / ry, d = nx * nx + ny * ny; if (d > 0.92) continue;
-            const edge = Math.sqrt(d), s = 1 - edge * 0.45, shim = 0.5 + 0.5 * Math.sin(t * 0.003 - edge * 6 + q * 0.7);
-            let al = (0.05 + 0.3 * Math.pow(edge, 2.5)) * (0.5 + 0.5 * shim) * a0;
-            if (hit > 0) { const ha = Math.atan2(ny, nx), dA = Math.abs(((ha - (o.hitA ?? 0)) + Math.PI * 3) % TAU - Math.PI); al += hit * Math.max(0, 1 - dA * 1.2) * 0.6; }
-            g.lineStyle(1, rim, al); g.beginPath();
-            for (let j = 0; j <= 6; j++) { const b = j / 6 * TAU + Math.PI / 6, px = hx * (1 - edge * 0.12) + Math.cos(b) * cell * 0.5 * s, py = hy * (1 - edge * 0.12) + Math.sin(b) * cell * 0.5 * s * 0.86; j ? g.lineTo(px, py) : g.moveTo(px, py); }
-            g.strokePath();
-        }
-        // the band sweeping up through it
-        const by = ry - ((t * 0.06) % (ry * 3)); if (Math.abs(by) < ry) { const w = R * Math.sqrt(1 - (by / ry) ** 2); g.fillStyle(rim, 0.14 * a0); g.fillRect(-w, by - 1.5, w * 2, 3); g.fillStyle(0xffffff, 0.1 * a0); g.fillRect(-w * 0.8, by - 0.5, w * 1.6, 1); }
-        // the rim, and a highlight sliding round it
-        g.lineStyle(2.5, rim, (0.7 + 0.3 * hit) * a0); g.strokeEllipse(0, 0, R * 2, ry * 2);
-        g.lineStyle(1, 0xffffff, 0.35 * a0); g.strokeEllipse(0, 0, R * 2 - 4, ry * 2 - 4);
-        const hA = t * 0.0015; g.lineStyle(3, 0xffffff, 0.7 * a0);
-        g.beginPath(); for (let j = 0; j <= 10; j++) { const b = hA + j * 0.06; const px = Math.cos(b) * R, py = Math.sin(b) * ry; j ? g.lineTo(px, py) : g.moveTo(px, py); } g.strokePath();
-        g.fillStyle(0xffffff, 0.5 * a0); g.fillEllipse(-R * 0.42, -ry * 0.5, R * 0.34, ry * 0.16);   // the window highlight, top left
-        // a hit: a ripple running out round the rim from where it struck
-        if (hit > 0) { const r = 1 + (1 - hit) * 0.25; g.lineStyle(2, 0xffffff, hit * 0.9); g.strokeEllipse(0, 0, R * 2 * r, ry * 2 * r); }
-    }
-
     // A fissure torn across a floor tile along (dx, dy), drawn into g about the tile's centre. `grow` (0..1) opens
     // it: a hairline at 0, a wide molten seam at 1, its side fractures creeping out as it goes, the floor round it
     // lifting into plates; `heat` (0..1) lights the magma in it, `t` (ms) makes the light boil.

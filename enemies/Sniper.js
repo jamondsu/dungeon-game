@@ -5,8 +5,8 @@
 // its own room, six to nine tiles off you (with a line to you if it can, never beside another enemy), and stands there
 // re-aiming for a moment and a half: that's when to reach it. Hit while it's aiming, it may blink away without firing,
 // but not twice within ESCAPE.
-// Static (no proxies): GameScene.update calls Sniper.tick; EnemyManager.createUpgradedSniper makes one (the Fracture, the
-// Tower, the Training Ground). The slug is an ordinary enemy shot (EnemyManager._fireRicochetArrow; its bounce in
+// Static (no proxies): GameScene.update calls Sniper.tick; Sniper.createUpgradedSniper makes one (the Fracture, the
+// Tower, the Training Ground). The slug is an ordinary enemy shot (Sniper._fireRicochetArrow; its bounce in
 // updateEnemyProjectiles), so whatever stops, slows or dodges a shot does the same to it.
 // Art: slime_m_sniper (its body), fx_sniper (the slug, its spark off a wall, the scope's glint, the blink's puff).
 // ═══════════════════════════════════════════════════════════════════════
@@ -213,4 +213,22 @@ class Sniper {
         const p = S.add.sprite(x, y, 'fx_sniper', 'spark_0').setScale(1.2).setDepth(3.3).play('sn_spark');
         S._vfxSort?.(p); p.once('animationcomplete', () => p.destroy());
     }
+
+    // ── The scene's own Sniper methods (GameScene borrows each, so `this` in them is the scene) ──────────
+
+    // The Sniper's slug (Sniper.js): one heavy round heading `angle`, glancing off up to two walls (the bounce is
+    // updateEnemyProjectiles'), a spark off each (fx_sniper's typed frames, pointing the nearest of eight ways)
+    _fireRicochetArrow(enemy, angle) {
+        const C = Sniper.CFG.SLUG, [ex, ey] = Sniper.muzzle(enemy.sprite);
+        const g = this.add.image(ex, ey, 'fx_sniper', 'slug_e').setDepth(2.6).setScale(1.2);
+        g._efxBase = 'slug'; this._vfxSort?.(g); EnemyFX.aim(g, 'slug', angle);
+        this.enemyProjectiles.push({ src: enemy, gfx: g, _bfxKind: 'dart', vx: Math.cos(angle) * C.SPEED, vy: Math.sin(angle) * C.SPEED,
+            damage: C.DMG * (this.enemyDamageScale || 1), isRicochetArrow: true, ricochetLeft: C.BOUNCES, startX: ex, startY: ey,
+            maxDist: Sniper.CFG.BANK.REACH * this.TILE_SIZE, onBounce: (x, y) => Sniper.spark(this, x, y) });
+        BossFX.muzzle(this, 'dart', ex, ey, angle);
+    }
+
+
+    // The Sniper: one ricochet slug at a time, a blink after every shot (Sniper.js); its hood and scope are its mark
+    createUpgradedSniper(x, y, roomIndex) { return Sniper.make(this, x, y, roomIndex); }
 }

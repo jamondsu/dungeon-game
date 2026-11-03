@@ -93,40 +93,37 @@ class TowerDefenseScene extends Phaser.Scene {
     // The staff is reachable from fireEquippedWeapon here too, and its heat helpers are
     // resolved off `this` — which is THIS scene, not WeaponSystem.prototype. Without these
     // four, equipping the Magma Staff in Engineering Defense throws on the first click.
-    _magmaCfg(...a)        { return WeaponSystem.prototype._magmaCfg.call(this,...a); }
-    _magmaTier(...a)       { return WeaponSystem.prototype._magmaTier.call(this,...a); }
-    _addMagmaHeat(...a)    { return WeaponSystem.prototype._addMagmaHeat.call(this,...a); }
-    _updateMagmaHeat(...a) { return WeaponSystem.prototype._updateMagmaHeat.call(this,...a); }
+    _magmaCfg(...a)        { return MagmaStaff.prototype._magmaCfg.call(this,...a); }
+    _magmaTier(...a)       { return MagmaStaff.prototype._magmaTier.call(this,...a); }
+    _addMagmaHeat(...a)    { return MagmaStaff.prototype._addMagmaHeat.call(this,...a); }
+    _updateMagmaHeat(...a) { return MagmaStaff.prototype._updateMagmaHeat.call(this,...a); }
     // Kindling Brand is reachable from fireEquippedWeapon here as well. Same rule as the
     // staff: every helper it calls off `this` has to exist on THIS scene.
-    _kindlingCfg(...a)          { return WeaponSystem.prototype._kindlingCfg.call(this,...a); }
-    _kindlingPayout(...a)       { return WeaponSystem.prototype._kindlingPayout.call(this,...a); }
-    _kindleOverMult(...a)       { return WeaponSystem.prototype._kindleOverMult.call(this,...a); }
-    _jetFx(...a)                { return WeaponSystem.prototype._jetFx.call(this,...a); }
-    kindlingBrandAttack(...a)   { return WeaponSystem.prototype.kindlingBrandAttack.call(this,...a); }
-    kindlingIgnitionMode(...a)  { return WeaponSystem.prototype.kindlingIgnitionMode.call(this,...a); }
-    _brandEnemy(...a)           { return WeaponSystem.prototype._brandEnemy.call(this,...a); }
-    _kindlePassOn(...a)         { return WeaponSystem.prototype._kindlePassOn.call(this,...a); }
-    _updateKindling(...a)       { return WeaponSystem.prototype._updateKindling.call(this,...a); }
-    _detonateKindling(...a)     { return WeaponSystem.prototype._detonateKindling.call(this,...a); }
-    _clearKindle(...a)          { return WeaponSystem.prototype._clearKindle.call(this,...a); }
-    _updateKindleIndicator(...a){ return WeaponSystem.prototype._updateKindleIndicator.call(this,...a); }
-    _drawKindleMark(...a){ return WeaponSystem.prototype._drawKindleMark.call(this,...a); }
-    _kindleBlast(...a){ return WeaponSystem.prototype._kindleBlast.call(this,...a); }
-    _kindleIgniteFx(...a){ return WeaponSystem.prototype._kindleIgniteFx.call(this,...a); }
-    _kindleClickDetonate(...a){ return WeaponSystem.prototype._kindleClickDetonate.call(this,...a); }
+    _kindlingCfg(...a)          { return KindlingBrand.prototype._kindlingCfg.call(this,...a); }
+    _kindlingPayout(...a)       { return KindlingBrand.prototype._kindlingPayout.call(this,...a); }
+    _jetFx(...a)                { return KindlingBrand.prototype._jetFx.call(this,...a); }
+    kindlingBrandAttack(...a)   { return KindlingBrand.prototype.kindlingBrandAttack.call(this,...a); }
+    kindlingIgnitionMode(...a)  { return KindlingBrand.prototype.kindlingIgnitionMode.call(this,...a); }
+    _brandEnemy(...a)           { return KindlingBrand.prototype._brandEnemy.call(this,...a); }
+    _kindlePassOn(...a)         { return KindlingBrand.prototype._kindlePassOn.call(this,...a); }
+    _updateKindling(...a)       { return KindlingBrand.prototype._updateKindling.call(this,...a); }
+    _detonateKindling(...a)     { return KindlingBrand.prototype._detonateKindling.call(this,...a); }
+    _clearKindle(...a)          { return KindlingBrand.prototype._clearKindle.call(this,...a); }
+    _updateKindleIndicator(...a){ return KindlingBrand.prototype._updateKindleIndicator.call(this,...a); }
+    _drawKindleMark(...a){ return KindlingBrand.prototype._drawKindleMark.call(this,...a); }
+    _kindleBlast(...a){ return KindlingBrand.prototype._kindleBlast.call(this,...a); }
+    _kindleIgniteFx(...a){ return KindlingBrand.prototype._kindleIgniteFx.call(this,...a); }
     _evaporate(...a) { return WeaponSystem.prototype._evaporate.call(this, ...a); }
-    _kindleBrandables(...a) { return WeaponSystem.prototype._kindleBrandables.call(this, ...a); }
-    _kindlePos(...a) { return WeaponSystem.prototype._kindlePos.call(this, ...a); }
-    _kindleAlive(...a) { return WeaponSystem.prototype._kindleAlive.call(this, ...a); }
-    _kindleDamage(...a) { return WeaponSystem.prototype._kindleDamage.call(this, ...a); }
-    _updateKindleBullets(...a) { return WeaponSystem.prototype._updateKindleBullets.call(this, ...a); }
-    _kindleSpark(...a) { return WeaponSystem.prototype._kindleSpark.call(this, ...a); }
-    _kindleHeatColor(...a) { return WeaponSystem.prototype._kindleHeatColor.call(this, ...a); }
-    _clearKindleBullets(...a) { return WeaponSystem.prototype._clearKindleBullets.call(this, ...a); }
+    _kindleBrandables(...a) { return KindlingBrand.prototype._kindleBrandables.call(this, ...a); }
+    _kindlePos(...a) { return KindlingBrand.prototype._kindlePos.call(this, ...a); }
+    _kindleAlive(...a) { return KindlingBrand.prototype._kindleAlive.call(this, ...a); }
+    _kindleDamage(...a) { return KindlingBrand.prototype._kindleDamage.call(this, ...a); }
+    _updateKindleBullets(...a) { return KindlingBrand.prototype._updateKindleBullets.call(this, ...a); }
+    _kindleSpark(...a) { return KindlingBrand.prototype._kindleSpark.call(this, ...a); }
+    _kindleHeatColor(...a) { return KindlingBrand.prototype._kindleHeatColor.call(this, ...a); }
     engineeringDegreeAttack(targetX,targetY){
         const isGold=this._wrenchTier==='gold'||this._wrenchTier==='diamond';
-        if(!isGold) return WeaponSystem.prototype.engineeringDegreeAttack.call(this,targetX,targetY);
+        if(!isGold) return Wrench.prototype.engineeringDegreeAttack.call(this,targetX,targetY);
         if(this._wrenchTier==='diamond'){
             const currentTime=this.time.now;
             const worldX=targetX+this.cameras.main.scrollX;
@@ -358,7 +355,7 @@ class TowerDefenseScene extends Phaser.Scene {
             return;
         }
         // Normal wrench — original arc behavior
-        return WeaponSystem.prototype._throwWrenchArc.call(this,fx,fy,tx,ty,bounces,dx,dy,hopDist);
+        return Wrench.prototype._throwWrenchArc.call(this,fx,fy,tx,ty,bounces,dx,dy,hopDist);
     }
     _drawWrenchGfx(gfx,rotation,isGold=false,isDiamond=false){
         gfx.clear(); gfx.rotation=rotation;
@@ -379,7 +376,7 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     _wrenchImpact(px,py,dmg,splashR,stunR){
         const effStunR=this._stunWholeRadius?splashR:stunR;
-        const result=WeaponSystem.prototype._wrenchImpact.call(this,px,py,dmg,splashR,effStunR);
+        const result=Wrench.prototype._wrenchImpact.call(this,px,py,dmg,splashR,effStunR);
         const TS=this.TILE_SIZE;
         // Show STUNNED! on everything the impact just stunned. (Doing it here, tied to the
         // stun application, is reliable — the damage-path text only fires on a damage tick,
@@ -459,14 +456,14 @@ class TowerDefenseScene extends Phaser.Scene {
         }
     }
     // _drawWrenchGfx defined above with gold support
-    _showStunIndicator(...a){return WeaponSystem.prototype._showStunIndicator.call(this,...a);}
+    _showStunIndicator(...a){return Freeze.prototype._showStunIndicator.call(this,...a);}
     _syncEnemyMarks(...a){return EnemyManager.prototype._syncEnemyMarks.call(this,...a);}
-    _clearStunIndicator(...a){return WeaponSystem.prototype._clearStunIndicator.call(this,...a);}
+    _clearStunIndicator(...a){return Freeze.prototype._clearStunIndicator.call(this,...a);}
     showDamageNumber(x,y,n,c){ const t=(typeof n==="number")?String(Math.round(n)):n; this._showFloatingText(x,y,t,c||"#ffffff"); }
     gainUltCharge(){}
     // Stubs for things wrench calls that don't apply in TD
     _destroyEnemyProjectile(...a){ return EnemyManager.prototype._destroyEnemyProjectile.call(this,...a); }
-    _fireEnemyProjectile(...a){ return EnemyManager.prototype._fireEnemyProjectile.call(this,...a); }
+    _fireEnemyProjectile(...a){ return Spitter.prototype._fireEnemyProjectile.call(this,...a); }
     getPortalAt(){return null;} damagePortal(){}
     damageEngineerTower(...a)    { return ElementSystem.prototype.destroyEngineerTower ? this._tdDamageEngineerTower(...a) : undefined; }
     _tdDamageEngineerTower(tower,dmg){
@@ -474,17 +471,17 @@ class TowerDefenseScene extends Phaser.Scene {
         this._damageTower(tower,dmg); // shared HP/bar/destroy path (no refund on destroy)
     }
     // killEnemy calls these — proxy from their real modules
-    _destroyPrefireBeam(...a)   { return EnemyManager.prototype._destroyPrefireBeam.call(this,...a); }
-    _destroyChillIndicator(...a){ return WeaponSystem.prototype._destroyChillIndicator.call(this,...a); }
-    _clearFreezeVisuals(...a)   { return WeaponSystem.prototype._clearFreezeVisuals.call(this,...a); }
-    _triggerShatterBurst(...a)  { return WeaponSystem.prototype._triggerShatterBurst.call(this,...a); }
-    _shatterWaterSplash(...a)   { return WeaponSystem.prototype._shatterWaterSplash.call(this,...a); }
+    _destroyPrefireBeam(...a)   { return Spitter.prototype._destroyPrefireBeam.call(this,...a); }
+    _destroyChillIndicator(...a){ return Freeze.prototype._destroyChillIndicator.call(this,...a); }
+    _clearFreezeVisuals(...a)   { return Freeze.prototype._clearFreezeVisuals.call(this,...a); }
+    _triggerShatterBurst(...a)  { return Freeze.prototype._triggerShatterBurst.call(this,...a); }
+    _shatterWaterSplash(...a)   { return Freeze.prototype._shatterWaterSplash.call(this,...a); }
     // Splitter children are created inside EnemyManager and pushed straight into
     // this.enemies, so they carry none of TD's metadata (_tdType/_tdDmg). Tag them, or
     // they fall back to the generic 8 base damage and are missing from kill rewards.
     _triggerSplitterDeath(...a){
         const before=this.enemies.length;
-        const r=EnemyManager.prototype._triggerSplitterDeath.call(this,...a);
+        const r=Splitter.prototype._triggerSplitterDeath.call(this,...a);
         const waveMult=Math.pow(1.045,(this.wave||1)-1);
         for(let i=before;i<this.enemies.length;i++){
             const c=this.enemies[i];
@@ -503,7 +500,7 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     // All EnemyManager internal methods used by updateRangedEnemies and other systems
     _hasLineOfSight(...a)          { return EnemyManager.prototype._hasLineOfSight.call(this,...a); }
-    _anchorBuffEnd(...a)           { return EnemyManager.prototype._anchorBuffEnd.call(this,...a); }
+    _anchorBuffEnd(...a)           { return Anchor.prototype._anchorBuffEnd.call(this,...a); }
     _atkSpd(...a)                  { return LevelManager.prototype._atkSpd.call(this,...a); }
     _cheerEnd(...a)                { return LevelManager.prototype._cheerEnd.call(this,...a); }
     _cheerCfg(...a)                { return LevelManager.prototype._cheerCfg.call(this,...a); }
@@ -528,18 +525,18 @@ class TowerDefenseScene extends Phaser.Scene {
             // Already close enough that the normal annulus search (small, local) is fine —
             // e.g. backing off if knocked within minRange.
         }
-        return EnemyManager.prototype._findSniperRepositionTile.call(this,enemy,minRange,attackMax);
+        return Spitter.prototype._findSniperRepositionTile.call(this,enemy,minRange,attackMax);
     }
     _moveSniperStep(enemy,...a){
         if(enemy?._tdStationary)return;
-        return EnemyManager.prototype._moveSniperStep.call(this,enemy,...a);
+        return Spitter.prototype._moveSniperStep.call(this,enemy,...a);
     }
-    _spawnPrefireBeam(...a)        { return EnemyManager.prototype._spawnPrefireBeam.call(this,...a); }
-    _drawLockedBeam(...a)          { return EnemyManager.prototype._drawLockedBeam.call(this,...a); }
-    _updatePrefireBeam(...a)       { return EnemyManager.prototype._updatePrefireBeam.call(this,...a); }
+    _spawnPrefireBeam(...a)        { return Spitter.prototype._spawnPrefireBeam.call(this,...a); }
+    _drawLockedBeam(...a)          { return Spitter.prototype._drawLockedBeam.call(this,...a); }
+    _updatePrefireBeam(...a)       { return Spitter.prototype._updatePrefireBeam.call(this,...a); }
     _fireSniperShotgun(...a)       { return EnemyManager.prototype._fireSniperShotgun.call(this,...a); }
-    _fireRicochetArrow(...a)       { return EnemyManager.prototype._fireRicochetArrow.call(this,...a); }
-    _fireMortarShot(...a)          { return EnemyManager.prototype._fireMortarShot.call(this,...a); }
+    _fireRicochetArrow(...a)       { return Sniper.prototype._fireRicochetArrow.call(this,...a); }
+    _fireMortarShot(...a)          { return Mortar.prototype._fireMortarShot.call(this,...a); }
     // Rooter tether (TD). A rooter entangles the nearest tower in range with a tendril: while
     // held, the tower fires ~50% slower AND cannot be healed. It holds ONE tower at a time,
     // with a re-tether cooldown, and releases when the rooter dies or the tower leaves range.
@@ -638,7 +635,7 @@ class TowerDefenseScene extends Phaser.Scene {
     }
     _rooterGroundThump(){ /* disabled in TD — rooters use the tower tether, not a player root */ }
     _spawnSpeedArrow(...a)         { return EnemyManager.prototype._spawnSpeedArrow.call(this,...a); }
-    _berserkerSwing(...a)          { return EnemyManager.prototype._berserkerSwing.call(this,...a); }
+    _berserkerSwing(...a)          { return Berserker.prototype._berserkerSwing.call(this,...a); }
     // EMS electromagnetic pulse — disables every turret in a wide radius for 2.5s. Turrets can't
     // fire while disabled (see the _emsDisabledUntil check in the tower-fire paths). A cluster of
     // towers all shut down at once is the threat; killing the EMS before it reaches them is the
@@ -740,17 +737,17 @@ class TowerDefenseScene extends Phaser.Scene {
 
     // ─── EnemyManager proxies — ALL of them ───────────────────────────────────
     createEnemy(...a){return EnemyManager.prototype.createEnemy.call(this,...a);}
-    createRangedEnemy(...a){return EnemyManager.prototype.createRangedEnemy.call(this,...a);}
-    createBerserker(...a){return EnemyManager.prototype.createBerserker.call(this,...a);}
-    createUpgradedSniper(...a){return EnemyManager.prototype.createUpgradedSniper.call(this,...a);}
-    createMortar(...a){return EnemyManager.prototype.createMortar.call(this,...a);}
-    createSplitter(...a){return EnemyManager.prototype.createSplitter.call(this,...a);}
-    createRooter(...a){return EnemyManager.prototype.createRooter.call(this,...a);}
+    createRangedEnemy(...a){return Spitter.prototype.createRangedEnemy.call(this,...a);}
+    createBerserker(...a){return Berserker.prototype.createBerserker.call(this,...a);}
+    createUpgradedSniper(...a){return Sniper.prototype.createUpgradedSniper.call(this,...a);}
+    createMortar(...a){return Mortar.prototype.createMortar.call(this,...a);}
+    createSplitter(...a){return Splitter.prototype.createSplitter.call(this,...a);}
+    createRooter(...a){return Rooter.prototype.createRooter.call(this,...a);}
     createAnchorSlime(x,y,roomIndex){
         // TD-specific: a visible slime body (unlike the main game's pure-anchor-object,
         // which hides the slime sprite entirely) dragging a chained anchor behind it as
         // it walks toward the base — speeds up nearby enemies, slows the player in range.
-        const e=EnemyManager.prototype.createAnchorSlime.call(this,x,y,roomIndex);
+        const e=Anchor.prototype.createAnchorSlime.call(this,x,y,roomIndex);
         // Parent hides the slime and draws an ornate anchor body — drop that; we want a
         // visible slime that simply drags a chain + anchor behind it.
         e._anchorBodyGfx?.destroy(); e._anchorBodyGfx=null;
@@ -776,7 +773,7 @@ class TowerDefenseScene extends Phaser.Scene {
     createHealerTotem(x,y,roomIndex){
         // TD version: a proper healer SLIME (green, visible sprite) with a floating heal
         // cross bobbing above it — not the main game's off-theme stone pillar.
-        const e=EnemyManager.prototype.createHealerTotem.call(this,x,y,roomIndex);
+        const e=HealerTotem.prototype.createHealerTotem.call(this,x,y,roomIndex);
         // Kill the stone-pillar graphic and its orb glow; keep the aura ring + heal particles.
         e._totemGfx?.destroy(); e._totemGfx=null;
         e._orbGlow?.destroy();  e._orbGlow=null;
@@ -794,7 +791,7 @@ class TowerDefenseScene extends Phaser.Scene {
         if(e.healthBarFill?.active) e.healthBarFill.y = e.sprite.y-20;
         return e;
     }
-    _origCreateHealerTotem(...a){return EnemyManager.prototype.createHealerTotem.call(this,...a);}
+    _origCreateHealerTotem(...a){return HealerTotem.prototype.createHealerTotem.call(this,...a);}
     updateEnemyHealthBar(enemy){
         if(enemy && enemy._lastTrackedHealth !== undefined){
             let rawDmg = enemy._lastTrackedHealth - enemy.health;
@@ -1058,12 +1055,12 @@ class TowerDefenseScene extends Phaser.Scene {
         g.height = 3 + Math.min(3, frac*0.6);
         g.fillColor = (Math.sin(this.time.now*0.006)>0) ? 0xffee66 : 0xffbb22;
     }
-    updateRangedEnemies(...a){return EnemyManager.prototype.updateRangedEnemies.call(this,...a);}
+    updateRangedEnemies(...a){return Spitter.prototype.updateRangedEnemies.call(this,...a);}
     updateEnemyProjectiles(...a){return EnemyManager.prototype.updateEnemyProjectiles.call(this,...a);}
-    updateFloorTraps(...a){return EnemyManager.prototype.updateFloorTraps.call(this,...a);}
-    _poisonPlayer(...a){return EnemyManager.prototype._poisonPlayer.call(this,...a);}
-    _poisonRing(...a){return EnemyManager.prototype._poisonRing.call(this,...a);}
-    updateGroundDrops(...a){return EnemyManager.prototype.updateGroundDrops.call(this,...a);}
+    updateFloorTraps(...a){return Traps.prototype.updateFloorTraps.call(this,...a);}
+    _poisonPlayer(...a){return Traps.prototype._poisonPlayer.call(this,...a);}
+    _poisonRing(...a){return Traps.prototype._poisonRing.call(this,...a);}
+    updateGroundDrops(...a){return Drops.prototype.updateGroundDrops.call(this,...a);}
     moveEnemies(...a){
         this.enemies=this.enemies.filter(e=>e!=null);
         const skip=this.enemies.filter(e=>e._isDummy);
@@ -1250,7 +1247,6 @@ class TowerDefenseScene extends Phaser.Scene {
 
     findPathBFS(...a){return EnemyManager.prototype.findPathBFS.call(this,...a);}
     _bfsRun(...a){return EnemyManager.prototype._bfsRun.call(this,...a);}
-    reconstructPath(...a){return EnemyManager.prototype.reconstructPath.call(this,...a);}
     getEnemyAt(...a){return EnemyManager.prototype.getEnemyAt.call(this,...a);}
     isNodeAt(){return false;}
     killEnemy(...a){return CombatSystem.prototype.killEnemy.call(this,...a);}
@@ -1631,7 +1627,7 @@ class TowerDefenseScene extends Phaser.Scene {
         this.NOTHING=0; this.FLOOR=1; this.WALL=2;
         this.FRAMES={FLOOR:156,WALL_TOP:10,WALL_BOTTOM:10,WALL_LEFT:39,WALL_RIGHT:39,CORNER_TOP_LEFT:12,CORNER_TOP_RIGHT:13,CORNER_BOTTOM_LEFT:40,CORNER_BOTTOM_RIGHT:41,WALL_FILLER:39};
         // WeaponSystem/EnemyManager state
-        // damageScaling is what WeaponSystem.engineeringDegreeAttack uses:
+        // damageScaling is what Wrench.engineeringDegreeAttack uses:
         // WRENCH_DMG = 2 * this.damageScaling
         // Set to 3 so wave 1 wrench does 6 dmg → 3-shots a 15HP basic slime
         this.damageScaling=3.0;

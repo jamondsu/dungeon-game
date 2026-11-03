@@ -307,7 +307,7 @@ class ElementSystem {
         }
         if (el === 'ice') {
             ElementSystem.iceSpikeRing(this, p.x, fy, 26, 9, 1.1); ElementSystem.iceSpikeRing(this, p.x, fy, 50, 13, 0.9, 90);
-            const F = WeaponSystem.frost(this);
+            const F = Fractal.frost(this);
             for (let i = 0; i < 12; i++) { const a = Math.random() * Math.PI * 2, d = 10 + Math.random() * 50; F.glint.emitParticleAt(p.x + Math.cos(a) * d, fy + Math.sin(a) * d * 0.5 - 6, 1); }
             return;
         }
@@ -557,59 +557,6 @@ class ElementSystem {
         this._hitPortalsAround?.(tx, ty, R, C.DMG * size * (this.damageScaling || 1), true);   // queens in reach (not just one it lands on)
     }
 
-    _fireShotgunBurst() {
-        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const worldX = (this.pointerX || 0) + this.cameras.main.scrollX;
-        const worldY = (this.pointerY || 0) + this.cameras.main.scrollY;
-        const dx = worldX - playerPixelX, dy = worldY - playerPixelY;
-        const baseAngle = Math.atan2(dy, dx);
-        const stage = parseInt(localStorage.getItem('ultStage_fire') || '1');
-
-        const muzzleFlash = this.add.circle(playerPixelX, playerPixelY, 14, 0xff6600, 0.7).setDepth(4);
-        this.tweens.add({ targets: muzzleFlash, radius: 22, alpha: 0, duration: 120, onComplete: () => muzzleFlash.destroy() });
-
-        // Stage 2: center fireball is a supernova, flanking ones are normal
-        const angles = [-0.5, -0.25, 0, 0.25, 0.5];
-        angles.forEach((offset, idx) => {
-            const isSupernova = stage >= 2 && idx === 2; // center fireball
-            const a = baseAngle + offset;
-            const dirX = Math.cos(a), dirY = Math.sin(a);
-            const c = this.add.container(playerPixelX, playerPixelY).setDepth(2);
-            const fg = this.add.graphics().setDepth(1.5);
-            c.add(fg);
-
-            if (isSupernova) {
-                // Blue supernova visual — larger, glowing blue core
-                fg.fillStyle(0x0044ff, 0.85);
-                fg.fillCircle(0, 0, 9);
-                fg.fillStyle(0x4488ff, 0.70);
-                fg.fillCircle(0, 0, 6);
-                fg.fillStyle(0xaaccff, 0.90);
-                fg.fillCircle(0, 0, 3);
-                fg.lineStyle(2, 0x88bbff, 0.60);
-                fg.strokeCircle(0, 0, 11);
-            }
-
-            this.fireballs.push({
-                sprite: c, fireGraphics: fg,
-                vx: dirX * this.fireballSpeed * 1.4,
-                vy: dirY * this.fireballSpeed * 1.4,
-                damage: isSupernova
-                    ? this.baseFireballDamage * this.damageScaling * 4.5
-                    : this.baseFireballDamage * this.damageScaling * 2.5,
-                dirX, dirY,
-                startX: playerPixelX, startY: playerPixelY,
-                splitCount: 99,
-                piercedEnemies: new Set(),
-                createdAt: this.time.now,
-                lastFlameTime: this.time.now,
-                _isShotgun: true, _ult: this._ultHit,   // the fire ult's: ult damage when it lands
-                _isSupernova: isSupernova,
-            });
-        });
-    }
-
     // The ice ult's frost, its whole 10s: a freezing ring round you (R tiles) in which one chill stack in three cubes
     // (THRESHOLD of the bar) and a cube shatters in CUBE_MS; you move slowly (_ultMoveMult) and take TAKEN x damage
     _iceFrostCfg() { return { MS: 20000, SLOW_MS: 5000, R: 7, SPREAD_MS: 900, SHELL_MS: 3000,   // the haze spreading out, then the ice shell at the end (invulnerable, retracting)
@@ -697,7 +644,7 @@ class ElementSystem {
         const crk = this.add.image(p.x, p.y, 'fx_ult_fi', 'shell_crk').setOrigin(p.originX, p.originY).setScale(p.scaleX, p.scaleY).setFlipX(p.flipX).setDepth(p.depth + 0.025).setAlpha(0);
         this.tweens.add({ targets: img, alpha: 0.95, duration: 220 });
         ElementSystem.iceSpikeRing(this, p.x, p.y + 8, 18, 7, 0.75);
-        const FR = WeaponSystem.frost(this);
+        const FR = Fractal.frost(this);
         const glint = this.add.image(p.x, p.y, 'vfx_glow').setTint(0xd8f4ff).setBlendMode(Phaser.BlendModes.ADD).setScale(0.35).setAlpha(0.35).setDepth(p.depth + 0.03);
         this.tweens.add({ targets: glint, alpha: 0.12, duration: 700, yoyo: true, repeat: -1 });
         this._iceShell = { rim: img, body: glint, cracks: crk, follow: () => {
@@ -737,7 +684,7 @@ class ElementSystem {
             emitZone: { type: 'random', source: { getRandomPoint: v => { const a = this.time.now * 0.009 + Math.floor(Math.random() * 3) * 2.094 - Math.random() * 1.1, d = 0.9 + Math.random() * 0.12; v.x = Math.cos(a) * zw * d; v.y = Math.sin(a) * zw * d * 0.32; return v; } } } }).setDepth(0.9);
         t.snow = this.add.particles(0, 0, 'fx_ice_w', { frame: ['flake_0', 'flake_1', 'flake_2'], lifespan: 700, speedX: { min: -25, max: 25 }, speedY: { min: -70, max: -30 }, gravityY: -60, scale: { start: 1.3, end: 0.5 }, alpha: { start: 0.9, end: 0 }, color: [0xffffff, 0xbff0ff, 0x8ad8ff], frequency: 18,
             emitZone: { type: 'random', source: { getRandomPoint: v => { const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()); v.x = Math.cos(a) * d * zw; v.y = Math.sin(a) * d * zh; return v; } } } }).setDepth(4.5);   // lifted off the floor round its foot
-        const FR = WeaponSystem.frost(this);
+        const FR = Fractal.frost(this);
         Sfx.play(this, 'gale');
         const tick = () => {
             const now = this.time.now, alive = now - t.born < t.form + G.LIFE && this.player?.active;
@@ -1130,7 +1077,7 @@ class ElementSystem {
         cam.shake(260, 0.011);
         this._iceCrackKickAt = this.time.now;   // read by the frozen screen (_iceFrostBegin)
         this._vfxFlash?.(cx, cy, T * 5, 0x9fdcff, 420, 0.35);
-        const RG = Rimeguard.fx(this), FR = WeaponSystem.frost(this);
+        const RG = Rimeguard.fx(this), FR = Fractal.frost(this);
         for (const e of list || []) {
             const s = e.sprite; if (!s?.active) continue;
             const b = this._iceBlockOf(e), x = b ? b.x : s.x, y = b ? b.y : s.y + 10, k = b?.scaleX || 1;
@@ -2006,66 +1953,6 @@ class ElementSystem {
             this.player.setAlpha(1);
             this.player.clearTint();
         }
-    }
-
-    applySuperConduct(enemy) {
-        if (!enemy.sprite || !enemy.sprite.active) return;
-        if (enemy._immuneFx === 'lightning' || this._phasedOut(enemy)) return;   // an Adaptive Shade in its lightning form
-        enemy.isSuperConducted = true;
-        enemy.superConductUntil = this.time.now + this.superConductDuration;
-
-        if (enemy.superConductVisual) {
-            if (enemy.superConductVisual.container?.active) {
-                this.tweens.killTweensOf(enemy.superConductVisual.container);
-                enemy.superConductVisual.container.destroy();
-            }
-            enemy.superConductVisual = null;
-        }
-
-        const ex = enemy.sprite.x, ey = enemy.sprite.y;
-
-        // Detailed electric sigil — concentric rings + angled crackle lines + bright core dot
-        const container = this.add.container(ex, ey - 18).setDepth(2.2);
-
-        const g = this.add.graphics();
-
-        // Outer ring
-        g.lineStyle(1, 0xffff44, 0.55);
-        g.strokeCircle(0, 0, 9);
-
-        // Inner ring
-        g.lineStyle(1, 0xffffff, 0.35);
-        g.strokeCircle(0, 0, 5);
-
-        // Four angled crackle lines radiating outward (like a compass rose, slightly jagged)
-        const crackleAngles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
-        crackleAngles.forEach(a => {
-            const midX = Math.cos(a + 0.25) * 6, midY = Math.sin(a + 0.25) * 6;
-            const endX = Math.cos(a) * 11, endY = Math.sin(a) * 11;
-            g.lineStyle(1.5, 0xffff88, 0.75);
-            g.beginPath(); g.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
-            g.lineTo(midX, midY); g.lineTo(endX, endY); g.strokePath();
-        });
-
-        // Bright core dot
-        g.fillStyle(0xffffff, 0.9);
-        g.fillCircle(0, 0, 2);
-
-        container.add(g);
-
-        // Slow rotation — subtle, not distracting
-        this.tweens.add({
-            targets: container,
-            angle: 360,
-            duration: 3000,
-            repeat: -1,
-            ease: 'Linear'
-        });
-
-        enemy.superConductVisual = { container, g };
-        if (typeof enemy.sprite?.setTint === 'function') enemy.sprite.setTint(0xffffaa);
-
-        this.showStatusText(enemy.sprite.x, enemy.sprite.y, 'AMPED', '#ffff44');
     }
 
     clearSuperConduct(enemy) {
@@ -3039,17 +2926,6 @@ class ElementSystem {
         this.cameras.main.shake(15, 0.0012);
     }
 
-
-    // ─── ENGINEERING DEGREE BUILD MODE UI ──────────────────────────────────
-
-    showEngineerBuildUI() {
-        this.clearEngineerBuildRing();
-        const g = this.add.graphics().setDepth(4);
-        this._engineerBuildRing = { g };
-        this._redrawEngineerBuildRing();
-        this.updateEngineerBuildUI();
-    }
-
     // Separate from the label so scroll-cycling can refresh just the text
     updateEngineerBuildUI() {
         const def = this._engineerTowerDefs()[this.engineerSelectedTowerType];
@@ -3154,37 +3030,6 @@ class ElementSystem {
         }
     }
 
-    // ─── ARC PROJECTILE (right click) ──────────────────────────────────
-
-    shootChainLightning(targetX, targetY) {
-        const worldX = targetX + this.cameras.main.scrollX;
-        const worldY = targetY + this.cameras.main.scrollY;
-
-        const targetTileX = Math.floor(worldX / this.TILE_SIZE);
-        const targetTileY = Math.floor(worldY / this.TILE_SIZE);
-
-        let targetEnemy = null;
-        let minDist = Infinity;
-
-        for (let enemy of this.enemies) {
-            if (this._phasedOut?.(enemy)) continue;
-            const dist = Math.abs(enemy.x - targetTileX) + Math.abs(enemy.y - targetTileY);
-            if (dist < minDist) {
-                minDist = dist;
-                targetEnemy = enemy;
-            }
-        }
-
-        if (minDist <= 2) {
-            this.drawLightningBolt({ sprite: this.player }, targetEnemy);
-            const falloff = this.stormCloudActive ? this.lightningUltChainFalloff : this.lightningChainFalloff;
-            const hitEnemies = [];
-            this.performChainLightning(targetEnemy, this.baseLightningDamage * this.damageScaling, hitEnemies, falloff);
-            // Flat charge per click regardless of chain length
-            this.gainUltCharge(this.ultChargePerChain, 'lightning');
-        }
-    }
-
     performChainLightning(sourceEnemy, damage, hitEnemies, falloff) {
         hitEnemies.push(sourceEnemy);
         this.damageEnemy(sourceEnemy, damage, 'lightning');
@@ -3236,97 +3081,6 @@ class ElementSystem {
         WeaponSystem.zapGlow(this, x0, y0, 0.3, 0xffd23a, 0.45, 150);
         WeaponSystem.zapFlare(this, x1, y1, 'y', 1.4);
         WeaponSystem.zapSparks(this, 'y').explode(6, x1, y1);
-    }
-
-    deployStormField(targetX, targetY) {
-
-        const worldX = targetX + this.cameras.main.scrollX;
-        const worldY = targetY + this.cameras.main.scrollY;
-
-        const tileX = Math.floor(worldX / this.TILE_SIZE);
-        const tileY = Math.floor(worldY / this.TILE_SIZE);
-
-        const centerPixelX = tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const centerPixelY = tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-        // Destroy storm cloud visuals
-        if (this.stormCloud) {
-            if (this.stormCloud.flashInterval) {
-                this.stormCloud.flashInterval.remove();
-            }
-            this.tweens.killTweensOf(this.stormCloud.body);
-            this.tweens.killTweensOf(this.stormCloud.darkCore);
-            this.tweens.killTweensOf(this.stormCloud.crackle);
-            this.tweens.killTweensOf(this.stormCloud.outerCrackle);
-            this.stormCloud.sparks.forEach(spark => this.tweens.killTweensOf(spark));
-
-            this.stormCloud.body.destroy();
-            this.stormCloud.darkCore.destroy();
-            this.stormCloud.crackle.destroy();
-            this.stormCloud.outerCrackle.destroy();
-            this.stormCloud.chargeText.destroy();
-            this.stormCloud.sparks.forEach(spark => spark.destroy());
-            this.stormCloud = null;
-        }
-
-        const chargePercent = this.stormCloudCharge / 100;
-        const startRadius = this.stormFieldRadius * chargePercent;
-        const radiusPixels = startRadius * this.TILE_SIZE;
-
-        const fieldCircle = this.add.circle(
-            centerPixelX,
-            centerPixelY,
-            radiusPixels,
-            0xffff00,
-            0.2
-        );
-
-        const fieldBorder = this.add.circle(
-            centerPixelX,
-            centerPixelY,
-            radiusPixels
-        );
-        fieldBorder.setStrokeStyle(3, 0xffff00, 0.8);
-
-        const lifespanText = this.add.text(
-            centerPixelX,
-            centerPixelY,
-            '3.0s',
-            {
-                fontSize: '16px',
-                fontFamily: 'monospace',
-                color: '#ffffff',
-                stroke: '#ffff00',
-                strokeThickness: 3,
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5);
-
-        this.tweens.add({
-            targets: [fieldCircle, fieldBorder],
-            scaleX: 1.1,
-            scaleY: 1.1,
-            alpha: 0.4,
-            duration: 300,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
-
-        this.stormField = {
-            circle: fieldCircle,
-            border: fieldBorder,
-            lifespanText: lifespanText,
-            tileX: tileX,
-            tileY: tileY,
-            createdAt: this.time.now,
-            expiresAt: this.time.now + (this.stormFieldDuration * chargePercent),
-            radiusTiles: startRadius,
-            lastLifeGainTime: 0
-        };
-
-        this.stormCloudActive = false;
-        this.stormFieldLastTick = this.time.now;
     }
 
     updateStormField(time) {
@@ -3504,46 +3258,6 @@ class ElementSystem {
         });
     }
 
-    startCosmicChanneling() {
-        this.cosmicChanneling = true;
-        this.cosmicChannelStartTime = this.time.now;
-        this.cosmicChannelLastCharge = this.time.now;
-
-        // Slow movement during channeling
-        this._preChanelMoveCooldown = this.moveCooldown;
-        this.moveCooldown = 600;
-
-        // Visual: dark void vortex around player
-        const cx = this.player.x, cy = this.player.y;
-        const g = this.add.graphics().setDepth(3);
-        const progressRing = this.add.graphics().setDepth(3.1);
-        const label = this.add.text(cx, cy - 40, 'CHANNELING', {
-            fontSize: '11px', fontFamily: 'monospace', color: '#9966ff',
-            stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(4);
-
-        // Orbiting void particles
-        const particles = [];
-        for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI * 2 / 6) * i;
-            const p = this.add.circle(
-                cx + Math.cos(angle) * 28,
-                cy + Math.sin(angle) * 28,
-                3, 0x9966ff, 0.8
-            ).setDepth(3.5);
-            particles.push(p);
-        }
-        const orbitContainer = this.add.container(cx, cy, particles.map((p, i) => {
-            const angle = (Math.PI * 2 / 6) * i;
-            p.x = Math.cos(angle) * 28; p.y = Math.sin(angle) * 28;
-            return p;
-        })).setDepth(3.5);
-        this.tweens.add({ targets: orbitContainer, angle: -360, duration: 1800, repeat: -1, ease: 'Linear' });
-
-        this.cosmicChannelVisual = { g, progressRing, label, orbitContainer };
-        this.player.setTint(0x9966ff);
-    }
-
     stopCosmicChanneling(interrupted) {
         this.cosmicChanneling = false;
         if (this._preChanelMoveCooldown !== undefined) {
@@ -3621,10 +3335,6 @@ class ElementSystem {
 
         // Update label with charges
         v.label.setText(`CHANNELING  ${this.cosmicBatteryCharges}/${this.cosmicMaxCharges}`);
-    }
-
-    updateCosmicPassiveCharge(time) {
-        // Replaced by active channeling — no-op kept for safety
     }
 
     updateCosmicCharge(time) {
@@ -3804,48 +3514,6 @@ class ElementSystem {
             if (pct >= 1) chargeText.setAlpha(0.7 + Math.sin(time / 70) * 0.3);
         } else {
             chargeText.setAlpha(0);
-        }
-    }
-
-    releaseCosmicBeam() {
-        const holdTime = this.time.now - this.cosmicChargeStartTime;
-        const chargeRateMultiplier = this.cosmicBlackHole ? 6 : 3;
-        const adjustedTime = holdTime * chargeRateMultiplier;
-        const seconds = adjustedTime / 1000;
-        const chargeMultiplier = Math.pow(2, Math.min(seconds, 3));
-
-        const worldX = this.pointerX + this.cameras.main.scrollX;
-        const worldY = this.pointerY + this.cameras.main.scrollY;
-
-        const playerPixelX = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-        const playerPixelY = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-
-        const dx = worldX - playerPixelX;
-        const dy = worldY - playerPixelY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance === 0) {
-            this.cosmicCharging = false;
-            if (this.cosmicChargeIndicator) {
-                this.cosmicChargeIndicator.destroy();
-                this.cosmicChargeIndicator = null;
-            }
-            return;
-        }
-
-        const dirX = dx / distance;
-        const dirY = dy / distance;
-
-        // Black hole: no damage multiplier, just faster charging
-        const beamWidthMultiplier = 1;
-
-        const damage = this.cosmicBaseBeamDamage * this.damageScaling * chargeMultiplier;
-        this.fireCosmicBeam(playerPixelX, playerPixelY, dirX, dirY, damage, chargeMultiplier, beamWidthMultiplier);
-
-        this.cosmicCharging = false;
-        if (this.cosmicChargeIndicator) {
-            this.cosmicChargeIndicator.destroy();
-            this.cosmicChargeIndicator = null;
         }
     }
 

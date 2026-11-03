@@ -398,21 +398,6 @@ class LevelManager {
         if (img?.active) img.destroy();
         this._fogImgs?.delete(k);
     }
-    _steamPuff(tx, ty) {
-        const now = this.time.now;   // a few at a time: the flamethrower or a meteor dries a field at once, and a puff each was hundreds of objects
-        if (now - (this._puffWin || 0) > 150) { this._puffWin = now; this._puffN = 0; }
-        if (++this._puffN > 6) return;
-        if (this._vfxSteamPuff?.(tx, ty)) return;   // Visuals.js: vapour, droplets, a ring
-        const TS = this.TILE_SIZE;
-        const px = tx * TS + TS / 2, py = ty * TS + TS / 2;
-        for (let i = 0; i < 3; i++) {
-            const p = this.add.circle(px + (Math.random() - 0.5) * 14, py + (Math.random() - 0.5) * 14,
-                                      3 + Math.random() * 3, 0xdfe9ee, 0.55).setDepth(3);
-            this.tweens.add({ targets: p, y: p.y - 18 - Math.random() * 12, alpha: 0,
-                              scaleX: 1.8, scaleY: 1.8, duration: 420 + Math.random() * 260,
-                              ease: 'Quad.easeOut', onComplete: () => p.destroy() });
-        }
-    }
 
     // ── LIGHTNING CONDUCTION ─────────────────────────────────────────────────
     // Lightning's identity is crowds: strong as a room fills up, weak against one target.
@@ -7441,17 +7426,6 @@ class LevelManager {
             }
         }
     }
-    // (old names, kept for their proxies)
-    _initDebris() {}
-    _triggerCeilingWarning() { this._fcOpenFissure?.(null, 0.6); }
-    _dropDebris() {}
-    _redrawDebrisTile() {}
-    _pushPlayerOutOfDebris() {}
-    _debrisSpawnBurst() {}
-    _fcPile() { return null; }
-    _fcRocks() {}
-    _fcCrumble() {}
-    _fcHide() {}
 
     // ══════════════════════════════════════════════════════════════════════
     // CLUSTERED SPAWNING
@@ -7570,12 +7544,6 @@ class LevelManager {
         e._fcAdd = true;
         if (e.sprite?.active) { e.sprite.setAlpha(0); this.tweens.add({ targets: e.sprite, alpha: 1, duration: 300 }); }
         return e;
-    }
-
-    _cleanupDebris() {
-        for (const f of this._fissures || []) { f.gfx?.destroy(); f.warn?.destroy(); f.glow?.destroy(); }
-        this._fissures = []; this._debrisTiles = []; this._debrisWarnings = [];
-        this._fcTint?.destroy(); this._fcTint = null;
     }
 
     // ── THE CORE ─────────────────────────────────────────────────────────────
@@ -7755,7 +7723,6 @@ class LevelManager {
             this._nextSurfaceTime = this.time.now + C.SURFACE_EVERY / Math.max(1, this._fcTempo() * 0.8);
         } });
     }
-    _fractureCoreSurfaceAbort() { this._fractureCoreSubmerge(); }
 
     _updateFractureCore(time, delta) {
         const core = this.fractureCore;
@@ -7772,7 +7739,6 @@ class LevelManager {
             if (time >= core.vulnUntil) this._fractureCoreSubmerge();
         }
     }
-    _updateSurfaceWindow() {}
 
     // A screen banner: a title in the title face, a line under it, over a soft dark band.
     _showRhythmSessionBanner(title, color, subtext) {
@@ -7791,18 +7757,6 @@ class LevelManager {
         this.tweens.add({ targets: all, alpha: 1, duration: 220, ease: 'Quad.easeOut' });
         this.tweens.add({ targets: all, alpha: 0, delay: 2000, duration: 450, ease: 'Quad.easeIn', onComplete: () => all.forEach(o => o.destroy()) });
     }
-
-    // (old names, kept for their proxies)
-    _gradeWeight(grade) { return { PERFECT: 1, GOOD: 0.33, OK: 0.17 }[grade] || 0; }
-    _updateWeakPointBar() {}
-    _activateWeakPoint(idx) { this._wpSequenceIdx = idx; }
-    _drawWeakPointInner() {}
-    _drawWeakPointRing() {}
-    _drawWeakPointRing2() {}
-    _worseGrade(a, b) { const R = { PERFECT: 3, GOOD: 2, OK: 1, MISS: 0 }; return R[a] <= R[b] ? a : b; }
-    _gradeForDiff(d) { return this._fcGrade(d); }
-    _resolveWeakPoint(wp, idx, grade) { this._fcJudge(wp, grade); }
-    _hitFractureWeakPoint() { return false; }
 
     _fractureCoreKill() {
         const core = this.fractureCore;

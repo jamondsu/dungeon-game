@@ -1305,7 +1305,7 @@ class BossFX {
 
     // Something breaking into shards of its colour: crystal chips tumbling off (their frames, never turned), dust, light.
     _bfxShatter(x, y, color = 0xb45cff, n = 10) {
-        const chips = typeof WeaponSystem !== 'undefined' && WeaponSystem.fractalArt?.(this);
+        const chips = typeof WeaponSystem !== 'undefined' && Fractal.fractalArt?.(this);
         for (let i = 0; i < n; i++) {
             const a = i / n * Math.PI * 2 + Math.random() * 0.4, d = 26 + Math.random() * 26;
             const s = chips ? this.add.sprite(x, y, 'fx_fractal', 'shard_0').setDepth(4.6).setScale(1.6).setTint(color).play('frac_tumble')
@@ -1500,9 +1500,6 @@ class BossFX {
         g.lineStyle(1.5, 0xfff2c8, 0.9);
         g.beginPath(); g.moveTo(O[5][0], O[5][1]); g.lineTo(O[6][0], O[6][1]); g.lineTo(O[7][0], O[7][1]); g.strokePath();
     }
-
-    // (Its name and health are the HUD's boss bar now; kept by name for its proxy.)
-    _bfxCoreLayout() {}
 
     _bfxCoreTick(core, now, dt) {
         const C = this._bfxCfg(), c = core.container, b = core.body;

@@ -519,13 +519,6 @@ class CosmicSystem {
 
     _csSwitchMult() { return this._csAscending() ? 0 : 1; }
 
-    _csMark(e, n = 1) {
-        if (!e || this._phasedOut?.(e)) return;
-        const max = this.cosmicMaxMarks || 3;
-        e.cosmicMarks = Math.min(max, (e.cosmicMarks || 0) + n);
-        e._csMarkAt = this.time.now;
-    }
-
     // Every hit that lands, from the damage choke points.
     _csOnHit(enemy, el) {
         const S = this._cs;

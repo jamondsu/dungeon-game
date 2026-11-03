@@ -1114,26 +1114,6 @@ class TutorialManager {
         this.spawnPortal(53, 80, 6);
     }
 
-    // already used by Level 2/3's elemental-immune enemies, not tutorial-exclusive
-
-    // ─── FLOOR TRAPS ───────────────────────────────────────────────────────────
-
-    spawnIceTraps() {
-        // Room 4 bounds: x=82..99, y=41..61
-        const poisonPatches = [
-            { x: 84, y: 44 }, { x: 90, y: 46 }, { x: 84, y: 53 }, { x: 91, y: 55 },
-        ];
-        for (const p of poisonPatches) this.spawnPoisonTrap(p.x, p.y);
-
-        const spikeLines = [
-            [{ x: 86, y: 49 }, { x: 87, y: 49 }, { x: 88, y: 49 }, { x: 89, y: 49 }],
-            [{ x: 94, y: 44 }, { x: 94, y: 45 }, { x: 94, y: 46 }, { x: 94, y: 47 }],
-            [{ x: 92, y: 53 }, { x: 93, y: 53 }, { x: 93, y: 54 }, { x: 93, y: 55 }],
-        ];
-        for (const line of spikeLines)
-            for (const s of line) this.spawnSpikeTrap(s.x, s.y);
-    }
-
     // spawnLevel1Enemies moved to LevelManager — alongside Level 2/3/4's equivalents
 
     // ─── LIGHTNING TUTORIAL (LEVEL 2) ────────────────────────────────────────

@@ -62,7 +62,7 @@
 
     <!-- the release's version tag for the art manifest (BootScene); the ?v= on each script is its own, set with it -->
     <script>window.BUILD = '8fe839a9';</script>
-    <!-- Load utility files first -->
+    <!-- The game's code, by folder: core, progress, ui, combat, weapons, enemies, levels, scenes. Order matters, GameScene last -->
     <script src="core/Utils.js?v=8783fa08"></script>
     <script src="core/Sound.js?v=dab646d8"></script>
     <script src="core/Settings.js?v=235953f3"></script>
@@ -76,29 +76,10 @@
     <script src="progress/Stats.js?v=ba95bef8"></script>
     <script src="progress/Progress.js?v=82b735a1"></script>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         ENGINE — UIKit + ElementResist + Transitions, INLINED.
-
-         These were three files, then one file, and both times a copy that missed
-         them left index.html requesting a script that 404s: the global never
-         defines, the first scene throws ReferenceError inside create(), and the
-         canvas stays black with the cause buried in the console.
-
-         Inlined here because index.html is the one file that reliably travels. It
-         cannot be out of step with itself and there is nothing beside it to forget.
-
-         ORDER, preserved: UIKit (palette + widgets, called during create) →
-         ElementResist (damage table, used by CombatSystem.damageEnemy) →
-         Transitions (reads UIKit.PALETTE when it RUNS, not when it loads).
-
-         EDITING: the readable sources are still Uikit.js / ElementResist.js /
-         Transitions.js in the outputs folder. Edit those and re-inline, or edit
-         here directly. Do NOT also load Engine.js or the three separates — each
-         defines the same consts and the second definition throws.
-         ═══════════════════════════════════════════════════════════════════════ -->
-        <script src="core/Uikit.js?v=7242da5e"></script>
+    <!-- UIKit before Transitions: Transitions reads UIKit.PALETTE when it runs -->
+    <script src="core/Uikit.js?v=7242da5e"></script>
     <script src="combat/ElementResist.js?v=75d77724"></script>
-    <script src="combat/FieldKit.js?v=841a21f8"></script>
+    <script src="combat/FieldKit.js?v=53c4b349"></script>
     <script src="core/Transitions.js?v=ff1e53fb"></script>
     <script src="ui/Menus.js?v=03ecf198"></script>
     <script src="progress/Loot.js?v=6d3f571a"></script>
@@ -106,24 +87,48 @@
     <!-- Load modules (must come before GameScene.js) -->
     <script src="levels/LevelLayouts.js?v=f401d75a"></script>
     <script src="levels/WorldGen.js?v=812052e2"></script>
-    <script src="levels/TutorialManager.js?v=ab2938cb"></script>
-    <script src="enemies/EnemyManager.js?v=51eb8a1d"></script>
-    <script src="weapons/WeaponSystem.js?v=53a43d21"></script>
-    <script src="combat/CombatSystem.js?v=f6675f0b"></script>
-    <script src="combat/ElementSystem.js?v=6724cfdf"></script>
-    <script src="combat/Cosmic.js?v=71d384b2"></script>
+    <script src="levels/TutorialManager.js?v=c0478ba2"></script>
+    <script src="enemies/EnemyManager.js?v=513d84a1"></script>
+    <script src="enemies/Spitter.js?v=9f8b260e"></script>
+    <script src="enemies/Berserker.js?v=049197ff"></script>
+    <script src="enemies/Mortar.js?v=8e1e2e87"></script>
+    <script src="enemies/Splitter.js?v=c24f5301"></script>
+    <script src="enemies/Rooter.js?v=d090dd60"></script>
+    <script src="enemies/Anchor.js?v=394a9d2b"></script>
+    <script src="enemies/HealerTotem.js?v=39711637"></script>
+    <script src="levels/Traps.js?v=56e14e94"></script>
+    <script src="progress/Drops.js?v=49c27a90"></script>
+    <script src="weapons/WeaponSystem.js?v=11b2c28d"></script>
+    <script src="weapons/FlameFists.js?v=cfd215f2"></script>
+    <script src="weapons/FlameSword.js?v=57c4d00d"></script>
+    <script src="weapons/MagmaStaff.js?v=3687c3b2"></script>
+    <script src="weapons/KindlingBrand.js?v=49c67217"></script>
+    <script src="weapons/IceFists.js?v=fbf85e30"></script>
+    <script src="weapons/IcicleCannon.js?v=b68d9c2a"></script>
+    <script src="weapons/LightningFists.js?v=e50d8b78"></script>
+    <script src="weapons/OrbEmitter.js?v=a55c1060"></script>
+    <script src="weapons/BallLightning.js?v=f7190db4"></script>
+    <script src="weapons/Conductor.js?v=908c5063"></script>
+    <script src="weapons/CosmicFists.js?v=55349262"></script>
+    <script src="weapons/SingularityStaff.js?v=ebdfccda"></script>
+    <script src="weapons/Wrench.js?v=fd4c9714"></script>
+    <script src="combat/Burn.js?v=ba327121"></script>
+    <script src="combat/Freeze.js?v=4953a4b9"></script>
+    <script src="combat/CombatSystem.js?v=4f80d311"></script>
+    <script src="combat/ElementSystem.js?v=f1cf4fc8"></script>
+    <script src="combat/Cosmic.js?v=3beb5808"></script>
     <script src="ui/HUD.js?v=1d2df58b"></script>
-    <script src="core/Visuals.js?v=1dccb300"></script>
+    <script src="core/Visuals.js?v=9c9c3e6a"></script>
     <script src="core/Creatures.js?v=80d2c810"></script>
     <script src="enemies/SlimeModels.js?v=f1d00ac7"></script>
     <script src="enemies/EnemyFX.js?v=bf635e40"></script>
-    <script src="enemies/Bosses.js?v=41f18f49"></script>
+    <script src="enemies/Bosses.js?v=cba64d84"></script>
     <script src="levels/Tower.js?v=75e6dcbe"></script>
     <script src="levels/Pulse.js?v=490ea050"></script>
     <script src="levels/Breakers.js?v=8ae82d54"></script>
     <script src="weapons/Scythe.js?v=038d6e01"></script>
     <script src="weapons/Rimeguard.js?v=2d5ad962"></script>
-    <script src="weapons/Fractal.js?v=c7f2b79f"></script>
+    <script src="weapons/Fractal.js?v=74c3e2e4"></script>
     <script src="weapons/Glaive.js?v=96d7ae93"></script>
     <script src="weapons/Trident.js?v=1232a1ff"></script>
     <script src="combat/Fork.js?v=24e86e3d"></script>
@@ -132,7 +137,7 @@
     <script src="levels/MirrorTrial.js?v=bef29f99"></script>
     <script src="levels/TideMother.js?v=72fdf003"></script>
     <script src="enemies/Blinder.js?v=9b0b1dcb"></script>
-    <script src="enemies/Sniper.js?v=684fc114"></script>
+    <script src="enemies/Sniper.js?v=56005ebe"></script>
     <script src="ui/TouchControls.js?v=962f1b71"></script>
 
     <!-- Load scene files -->
@@ -141,15 +146,12 @@
     <script src="scenes/ShopScene.js?v=85bfec3b"></script>
     <script src="scenes/EnchantScene.js?v=ab9d6214"></script>
     <script src="scenes/GardenScene.js?v=69e6d870"></script>
-    <script src="levels/LevelManager.js?v=f6782b6c"></script>
-    <script src="scenes/TowerDefenseScene.js?v=8ff79d8d"></script>
-    <script src="scenes/GameScene.js?v=ab291532"></script>
+    <script src="levels/LevelManager.js?v=25d80585"></script>
+    <script src="scenes/TowerDefenseScene.js?v=53b4796e"></script>
+    <script src="scenes/GameScene.js?v=037975b9"></script>
 
     <!-- Initialize game -->
     <script>
-        // No dependency guard here any more: UIKit, ElementResist and Transitions are
-        // inlined above, so there is no external file of mine that can go missing. The
-        // remaining <script src> tags are the project's own long-standing modules.
         var game;   // (var: Achievements.js asks typeof game, and on a phone there's none till the cover's been tapped)
         const start = () => {
             const touch = TouchControls.device(), host = document.getElementById('host');

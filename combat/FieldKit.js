@@ -283,9 +283,6 @@ class FieldKit {
         return true;
     }
 
-    // The in-run menu lists only what you own, so an unlock visibly widens the menu.
-    _availableGadgets() { return this._gadgetOrder().filter(id => this.gadgetUnlocked(id)); }
-
     // ── THROWING ─────────────────────────────────────────────────────────────
     // Q is slot 0, F slot 1. targetX/targetY are SCREEN coords (as the weapon attack handlers
     // receive them). The cooldown starts when it leaves your hand.
