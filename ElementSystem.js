@@ -1460,7 +1460,7 @@ class ElementSystem {
                 this.damagePortal(p, C.HIT * this.damageScaling * crowd);
         });
         // the aftermath, AFTER_MS: damage to ANY enemy forks to the ones near it (SHARE, at most CAP), and every step you take thumps the floor
-        const A = this._forkAfter = { until: this.time.now + C.AFTER_MS, hp: new Map(), forks: [], px: this.playerX, py: this.playerY, thumpAt: 0 };
+        const A = this._forkAfter = { until: this.time.now + C.AFTER_MS, hp: new Map(), lit: new Map(), forks: [], px: this.playerX, py: this.playerY, thumpAt: 0 };
         for (const e of this.enemies || []) if (e.sprite?.active) A.hp.set(e, e.health);
         const g = this.add.graphics().setDepth(4.55);
         const tick = () => {
@@ -1483,7 +1483,7 @@ class ElementSystem {
                     if (o === e || !o.sprite?.active || o.health <= 0 || !here(o) || Math.hypot(o.x - e.x, o.y - e.y) > C.SPLASH_R) continue;
                     const d = this.resolveElementalHit(o, amt, 'lightning', true); if (d === null || !(d > 0)) continue;
                     o.health -= d; A.hp.set(o, o.health);   // (a splash doesn't splash again)
-                    A.forks.push({ a: from, b: this._forkAim(o), until: now + 160 });
+                    if (!(A.lit.get(o) > now)) { A.lit.set(o, now + 160); A.forks.push({ a: from, b: this._forkAim(o), until: now + 160 }); }   // (one bolt into each at a time: a crowd's jumps run to hundreds a hit)
                     this.showDamageNumber(o.sprite.x, o.sprite.y - 20, Math.round(d), '#fff27a'); this.updateEnemyHealthBar(o); if (o.health <= 0) this.killEnemy(o);
                 }
             }

@@ -170,7 +170,7 @@ class VisualFX {
             cam.off('camerafadeoutstart', this._vfxFadeOut, this);
             cam.off('camerafadeinstart', this._vfxFadeIn, this);
             this._shade = null; this._glows = null; this._uiCam = null;
-            this._vfxBursts = null; this._vfxShadows = null; this._vfxNums = null; this._vfxFlashes = null;
+            this._vfxBursts = null; this._vfxShadows = null; this._vfxNums = null; this._vfxNumQ = null; this._vfxFlashes = null;
             this._vfxTorches = null; this._vfxWards = null; this._vfxStatus = null; this._vfxTrail = null;
             this._vfxRune = null; this._vfxRuneImg = null; this._vfxFreezeTxt = null;
         });
@@ -553,6 +553,7 @@ void main() {
 
     _vfxQueueObj(o) { if (this._vfxQueue) this._vfxQueue.push(o); }
     _vfxFlush() {
+        this._vfxNumFlush();
         const q = this._vfxQueue;
         if (!q || !q.length) return;
         this._vfxQueue = [];
@@ -1535,22 +1536,19 @@ void main() {
     // Whole numbers (one decimal under 10), bigger for bigger hits, a pop then a float. Hits
     // landing on the same spot within a moment add up into one number instead of stacking a
     // column of "-0.8".
+    static NUM_BUDGET = 4;
+    static numSize(v, k = 1) { return Math.round(Math.min(40, Math.min(28, 9 + Math.log2(1 + v) * 2.4) * k)); }   // world px, so x1.5 on screen
     _vfxDamageNumber(x, y, amount, color = '#ffffff') {
         if (!amount || amount <= 0) return true;
-        const now = this.time.now, list = this._vfxNums || (this._vfxNums = []);
-        const fmt = v => v >= 9.95 ? String(Math.round(v)) : v.toFixed(1);
-        const size = (v, k = 1) => Math.round(Math.min(40, Math.min(28, 9 + Math.log2(1 + v) * 2.4) * k));   // world px, so x1.5 on screen
-        const K = this._numK || 1, heft = s => Math.max(0, Math.min(1, (s - 15) / 15));   // (_numK: this hit's own scale, the Boreal Trident's Crest; heft: how hard a number lands)
+        const now = this.time.now, list = this._vfxNums || (this._vfxNums = []), q = this._vfxNumQ || (this._vfxNumQ = []), size = VisualFX.numSize;
+        const K = this._numK || 1;   // (_numK: this hit's own scale, the Boreal Trident's Crest)
         for (let i = list.length - 1; i >= 0; i--) {
             const n = list[i];
-            if (!n.txt.active || now - n.t > 1000) { list.splice(i, 1); continue; }
+            if (n.txt && (!n.txt.active || now - n.t > 1000)) { list.splice(i, 1); continue; }
             // (30px: an AoE landing on a packed crowd sums into one number instead of a column)
             if (n.color === color && now - n.t < 300 && Math.abs(n.x - x) < 30 && Math.abs(n.y - y) < 30) {
                 n.total += amount; n.t = now; n.k = K;
-                const s = size(n.total, K);
-                this.tweens.killTweensOf(n.txt);
-                n.txt.setText(fmt(n.total)).setFontSize(s).setAlpha(1).setPosition(n.x, n.y0).setScale(1.35 + heft(s) * 0.8);
-                this._vfxFloat(n.txt, heft(s));
+                if (!n.due) { n.due = true; q.push(n); }
                 return true;
             }
         }
@@ -1561,13 +1559,29 @@ void main() {
             if (!hit) break;
             y0 = hit.y0 - size(hit.total, hit.k) * 1.3 - 2;   // a step as tall as that number (a big one is drawn ~1.5x its font size)
         }
-        const s = size(amount, K), txt = this.add.text(x + (Math.random() - 0.5) * 10, y0, fmt(amount), {
-            fontSize: `${s}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
-            color, stroke: '#05060a', strokeThickness: 4, resolution: 2,
-        }).setOrigin(0.5).setDepth(10).setScale(1.5 + heft(s) * 0.9).setAngle((Math.random() - 0.5) * 12 * heft(s));
-        list.push({ txt, x: txt.x, y, y0, t: now, total: amount, color, k: K });
-        this._vfxFloat(txt, heft(s));
+        const n = { txt: null, x: x + (Math.random() - 0.5) * 10, y, y0, t: now, total: amount, color, k: K, due: true };
+        list.push(n); q.push(n);
         return true;
+    }
+    // Drawing a number is the dearest part of a big hit (its canvas redrawn and sent to the GPU, a new one for a new number): so a hit
+    // only adds to its sum, and NUM_BUDGET are drawn a frame, longest waiting first, a crowd's over a few frames
+    _vfxNumFlush() {
+        const q = this._vfxNumQ;
+        for (let i = 0; i < VisualFX.NUM_BUDGET && q?.length;) { const n = q.shift(); if (n.due) { this._vfxNumDraw(n); i++; } }
+    }
+    _vfxNumDraw(n) {
+        n.due = false;
+        const s = VisualFX.numSize(n.total, n.k), heft = Math.max(0, Math.min(1, (s - 15) / 15)), str = n.total >= 9.95 ? String(Math.round(n.total)) : n.total.toFixed(1);   // (heft: how hard a number lands)
+        if (n.txt && !n.txt.active) return;
+        if (n.txt) {
+            for (const t of n.tw) t.stop();
+            if (s !== n.s) n.txt.setFontSize(s);
+            n.txt.setText(str).setAlpha(1).setPosition(n.x, n.y0).setScale(1.35 + heft * 0.8);
+        } else n.txt = this.add.text(n.x, n.y0, str, {
+            fontSize: `${s}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
+            color: n.color, stroke: '#05060a', strokeThickness: 4, resolution: 2,
+        }).setOrigin(0.5).setDepth(10).setScale(1.5 + heft * 0.9).setAngle((Math.random() - 0.5) * 12 * heft);
+        n.s = s; n.tw = this._vfxFloat(n.txt, heft);
     }
     // Status words (WET, BRITTLE, SLOWED...). The same word popping on several enemies at once
     // becomes one word with a count ("WET ×5"), and different words at one spot stack instead of
@@ -1612,9 +1626,9 @@ void main() {
     }
 
     _vfxFloat(txt, heft = 0) {   // (heft: 0 to 1, the bigger a hit the harder it lands and the longer it stays)
-        this.tweens.add({ targets: txt, scale: 1, duration: 140 + 70 * heft, ease: 'Back.easeOut', easeParams: [1.7 + 2.5 * heft] });
-        this.tweens.add({ targets: txt, y: txt.y - 26, alpha: 0, duration: 650, delay: 260 + 220 * heft, ease: 'Quad.easeIn',
-                          onComplete: () => txt.destroy() });
+        return [this.tweens.add({ targets: txt, scale: 1, duration: 140 + 70 * heft, ease: 'Back.easeOut', easeParams: [1.7 + 2.5 * heft] }),
+            this.tweens.add({ targets: txt, y: txt.y - 26, alpha: 0, duration: 650, delay: 260 + 220 * heft, ease: 'Quad.easeIn',
+                              onComplete: () => txt.destroy() })];
     }
 
     // ── LAVA ─────────────────────────────────────────────────────────────────

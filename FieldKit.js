@@ -182,13 +182,13 @@ class FieldKit {
                 blurb: 'Enemies chase it, not you, for 6s'
             },
             // Rung where you stand: every ailment on you gone at once, then immuneMs in which anything new is shaken off as
-            // it lands (and no hold takes you at all). It deals nothing and moves nothing: the answer to the Blinder, Winded,
+            // it lands (and no hold takes you at all), and a rush of speed (rush: that much faster as it rings) easing off over rushMs. It deals nothing and moves nothing: the answer to the Blinder, Winded,
             // the Diver's drip and slow, a root, without being any build's reason to exist.
             bell: {
                 id: 'bell', glorps: 200, name: 'Cleansing Bell', cooldown: 26000, order: 7,
-                selfCentred: true, radius: 2.5, immuneMs: 1000,
+                selfCentred: true, radius: 2.5, immuneMs: 2000, rushMs: 5000, rush: 1,
                 color: 0x9ff0d8, glyph: '♪',
-                blurb: 'Clears every ailment on you, then 1s immune'
+                blurb: 'Clears every ailment on you, then 2s immune and a burst of speed'
             }
         };
         return this._cachedGadgetDefs;
@@ -783,12 +783,13 @@ class FieldKit {
     // Rung over your head (its icon's frames: the clapper striking one side, then the other), a ring of clean air goes out
     // from you (soft haze with no outline, white to mint, running together as it spreads, the Grounding Spike's mint sparks
     // at its edge), and what was on you is shaken off in dark specks. For immuneMs a pale shimmer stays on you: anything new
-    // is shaken off as it lands (updateFieldKit), no hold takes you (_ccGate says RESISTED), the Blinder can't blind you.
+    // is shaken off as it lands (updateFieldKit), no hold takes you (_ccGate says RESISTED), the Blinder can't blind you; and you're
+    // off at a run, back to your own pace over rushMs (_bellMoveMult).
     _gadgetBell(tx, ty, def) {
         const now = this.time.now, p = this.player, TS = this.TILE_SIZE;
         if (!p?.active) return 0;
         const n = this._fkCleanse(now);
-        this._bellUntil = now + def.immuneMs;
+        this._bellUntil = now + def.immuneMs; this._bellRush = { at: now, ms: def.rushMs, k: def.rush };
         this._ccImmuneUntil = Math.max(this._ccImmuneUntil || 0, this._bellUntil);
         this._nsight = this._nsight ? Object.assign(this._nsight, { immune: Math.max(this._nsight.immune || 0, this._bellUntil) }) : { t0: now, ms: 1, until: now, immune: this._bellUntil };
         const key = ShopScene.gadgetIcon(this, 'bell');
@@ -809,6 +810,11 @@ class FieldKit {
         this.cameras.main.shake(40, 0.002);
         Sfx.play(this, 'bell');
         return n;
+    }
+    // the bell's rush as a move delay multiplier: rush faster as it rings, easing back to your own pace over rushMs
+    _bellMoveMult() {
+        const R = this._bellRush, f = R ? 1 - (this.time.now - R.at) / R.ms : 0;
+        return f > 0 ? 1 / (1 + R.k * Math.min(1, f)) : 1;
     }
     // Clean air: fx_fractal's soft haze (no outline), white going to mint and out, added, so where it crowds it runs together
     static cleanAir(S) {

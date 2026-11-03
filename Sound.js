@@ -16,7 +16,7 @@
 
 const Sfx = {
     GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
-           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, tri_boom: 80, tri_crack: 70, tri_hit: 45, tri_surge: 120, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
+           w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, tri_boom: 80, tri_crack: 70, tri_frost: 60, tri_hit: 45, tri_surge: 120, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
            lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 400, sear: 450, blip: 60, bosshit: 70,
            tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
     _last: {},
@@ -120,6 +120,22 @@ const Sfx = {
             rm.gain.value = 0; osc.frequency.value = 45; osc.connect(rm.gain); mg.gain.value = growl;
             s.connect(rm); rm.connect(mg); mg.connect(g); osc.start(t); osc.stop(end);
         }
+        return true;
+    },
+
+    // A stretch of the wave, the length of the move under it (fall, s): it swells in and falls away, and the last one gives way to it.
+    // From a new spot each time, its low end off, so it sits under the blows and no two are the same.
+    _wash(ctx, t, { rate = 1, vol, rise = 0.05, fall, hp = 220 }) {
+        const buf = this._buf.wave_crash;
+        if (!buf) return false;
+        const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), out = ctx.createGain();
+        f.type = 'highpass'; f.frequency.value = hp;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + rise); g.gain.setTargetAtTime(0, t + rise, fall / 3);
+        this._washOut?.gain.setTargetAtTime(0, t, 0.03);
+        this._washOut = out;
+        s.buffer = buf; s.playbackRate.value = rate;
+        s.connect(f); f.connect(g); g.connect(out); out.connect(this._master);
+        s.start(t, 0.05 + Math.random() * 0.7, rise + fall * 2);
         return true;
     },
 
@@ -717,9 +733,16 @@ const Sfx = {
             if (this._rec(ctx, t, { name: 'thud', rate: 1.4 * j, vol: 0.24 * v })) return;
             this._tone(ctx, t, { type: 'triangle', f0: 260 * j, f1: 120, dur: 0.07, vol: 0.14 * v });
         },
-        tri_surge(ctx, t, o, j) {          // the sea: a real wave crashing on rock (o.big: all of it; else its first break; o.soft: further off)
+        tri_frost(ctx, t, o, j) {          // the Boreal Trident's flash freeze racing through its water for o.dur s: a hiss climbing as it goes, frost crackling with it, a glassy set as it stops
+            const d = o.dur || 0.3;
+            this._noise(ctx, t, { filter: 'bandpass', f0: 1800 * j, f1: 6500 * j, q: 1.4, dur: d + 0.06, vol: 0.09, attack: d });
+            this._sample(ctx, t, { name: 'ice_crack', rate: 1.5 * j, vol: 0.2, len: d + 0.05 });
+            this._crackle(ctx, t, { n: Math.round(6 + d * 40), spread: d, f: 3000, vol: 0.07, q: 1.2 });
+            this._glass(ctx, t + d, { n: 4, spread: 0.04, f: 3200 * j, vol: 0.025, dur: 0.2 });
+        },
+        tri_surge(ctx, t, o, j) {          // the sea under a move: a short rush of a real wave (o.big: heavier and longer; o.soft: further off)
             const v = o.soft ? 0.6 : 1;
-            if (this._rec(ctx, t, { name: 'wave_crash', rate: (o.big ? 0.95 : 1.05) * j, vol: (o.big ? 0.55 : 0.5) * v, len: o.big ? 0 : 1.2 })) return;
+            if (this._wash(ctx, t, { rate: (o.big ? 0.92 : 1.08) * j, vol: (o.big ? 0.42 : 0.34) * v, fall: o.big ? 0.7 : 0.4 })) return;
             this._noise(ctx, t, { filter: 'lowpass', f0: 1300 * j, f1: 420, q: 0.7, dur: o.big ? 1.8 : 1.3, vol: (o.big ? 1.25 : 1.1) * v, attack: 0.06 });
         },
         tri_hit(ctx, t, o, j) {            // a Boreal Trident hit: a blow landing, no note in it (the ice `hit`'s sine pings over the eruptions)

@@ -80,7 +80,7 @@ class GameScene extends Phaser.Scene {
         // on any level that does not clear roots itself.
         this.playerPoisoned = false; this._poisonTickCount = 0; this._elStolen = null;
         this._poisonUntil = 0; this._bleedUntil = 0; this._pBurnUntil = 0; this._pBurn = 0; this._absHexUntil = 0; this._drippingUntil = 0; this._playerRooted = false; this._hurtTotal = 0;   // (the scene object outlives a restart: what was on you mustn't come with it)
-        this._playerRooted  = false; this._playerRootUntil = 0; this._ccImmuneUntil = 0;
+        this._playerRooted  = false; this._playerRootUntil = 0; this._ccImmuneUntil = 0; this._bellRush = null;
         this._lifting = false;   // riding between a story level's floors (LevelManager._floorLeaveFx): no steps, no dashes
         this._actLocks = {}; this._actBan = null; this._actFlash = null;   // locked actions and their signs (HUD.lockActions)
 
@@ -1241,7 +1241,7 @@ class GameScene extends Phaser.Scene {
                 if (u >= 1) this._step = null;
             }
         }
-        const stepMs = this.moveCooldown * _waterMult * (this._csMoveMult?.() ?? 1) * (this._frostHazeMult || 1) * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]) * (this._chaosMove?.() ?? 1) * this._ultMoveMult() * this._diverSlow();   // (a Torpedo Diver's hit)
+        const stepMs = this.moveCooldown * _waterMult * (this._csMoveMult?.() ?? 1) * (this._frostHazeMult || 1) * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]) * (this._chaosMove?.() ?? 1) * this._ultMoveMult() * this._diverSlow() * this._bellMoveMult();   // (a Torpedo Diver's hit)
         this._stepMul = stepMs / (200 * (this._mods?.speed ?? 1) * Enchants.speed(this.equippedWeapons?.[this.currentElement]));   // how much slower or faster than usual right now (relics and books aside): LevelManager._updateSpeedMarks
         if (this._slide) this._gravSlide();   // the gravity room: a fall under way, no steps till it stops (LevelManager)
         const _grav = this._gravZone();
@@ -2507,6 +2507,7 @@ class GameScene extends Phaser.Scene {
     _playerAilments(...a) { return FieldKit.prototype._playerAilments.call(this, ...a); }
     _gadgetBell(...a) { return FieldKit.prototype._gadgetBell.call(this, ...a); }
     _fkCleanse(...a) { return FieldKit.prototype._fkCleanse.call(this, ...a); }
+    _bellMoveMult(...a) { return FieldKit.prototype._bellMoveMult.call(this, ...a); }
     _csSwitchMult(...a) { return CosmicSystem.prototype._csSwitchMult.call(this, ...a); }
     _csMark(...a) { return CosmicSystem.prototype._csMark.call(this, ...a); }
     _csOnHit(...a) { return CosmicSystem.prototype._csOnHit.call(this, ...a); }
@@ -2768,6 +2769,8 @@ class GameScene extends Phaser.Scene {
     _vfxUltBanner(...a) { return VisualFX.prototype._vfxUltBanner.call(this, ...a); }
     _vfxFreezeBanner(...a) { return VisualFX.prototype._vfxFreezeBanner.call(this, ...a); }
     _vfxDamageNumber(...a) { return VisualFX.prototype._vfxDamageNumber.call(this, ...a); }
+    _vfxNumFlush(...a) { return VisualFX.prototype._vfxNumFlush.call(this, ...a); }
+    _vfxNumDraw(...a) { return VisualFX.prototype._vfxNumDraw.call(this, ...a); }
     _vfxStatusText(...a) { return VisualFX.prototype._vfxStatusText.call(this, ...a); }
     _vfxStatusFloat(...a) { return VisualFX.prototype._vfxStatusFloat.call(this, ...a); }
     _vfxFloat(...a) { return VisualFX.prototype._vfxFloat.call(this, ...a); }

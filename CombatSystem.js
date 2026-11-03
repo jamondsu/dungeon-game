@@ -80,15 +80,15 @@ class CombatSystem {
     }
     // A boost's share of a hit ("+N" in its colour), right beside the number just shown for the rest of it: Hex on an enemy, what boosted a hit on you
     _dmgShare(x, y, share, col) {
-        const list = this._vfxNums, now = this.time.now, base = list?.filter(n => n.t === now && n.txt.active).pop();
+        const list = this._vfxNums, now = this.time.now, base = list?.filter(n => n.t === now && (!n.txt || n.txt.active)).pop();
         if (!base) { this.showDamageNumber(x + 16, y - 6, share, col); return; }
-        const bx = base.txt.x + base.txt.displayWidth / 2 + 3, pk = list.find(n => n.color === col && now - n.t < 300 && Math.abs(n.x - bx) < 40 && Math.abs(n.y0 - base.y0) < 20);
+        if (!base.txt) this._vfxNumDraw(base);   // (this one sits against it, so it can't wait its turn)
+        const bx = base.txt.x + base.txt.displayWidth / 2 + 3, pk = list.find(n => n.txt?.active && n.color === col && now - n.t < 300 && Math.abs(n.x - bx) < 40 && Math.abs(n.y0 - base.y0) < 20);
         const fmt = v => v >= 9.95 ? String(Math.round(v)) : v.toFixed(1);
-        if (pk) { pk.total += share; pk.t = now; this.tweens.killTweensOf(pk.txt); pk.txt.setText('+' + fmt(pk.total)).setAlpha(1).setPosition(pk.x, pk.y0).setScale(1.2); this._vfxFloat?.(pk.txt); return; }
+        if (pk) { pk.total += share; pk.t = now; for (const t of pk.tw) t.stop(); pk.txt.setText('+' + fmt(pk.total)).setAlpha(1).setPosition(pk.x, pk.y0).setScale(1.2); pk.tw = this._vfxFloat?.(pk.txt); return; }
         const txt = this.add.text(bx, base.y0, '+' + fmt(share), { fontSize: `${Math.max(9, Math.round(base.txt.style.fontSize ? parseInt(base.txt.style.fontSize) * 0.8 : 11))}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
             color: col, stroke: '#05060a', strokeThickness: 4, resolution: 2 }).setOrigin(0, 0.5).setDepth(10).setScale(1.2);
-        list.push({ txt, x: bx, y: base.y, y0: base.y0, t: now, total: share, color: col });
-        this._vfxFloat?.(txt);
+        list.push({ txt, x: bx, y: base.y, y0: base.y0, t: now, total: share, color: col, tw: this._vfxFloat?.(txt) });
     }
     showDamageNumber(x, y, amount, color = '#ffffff') {
         if (!amount || amount <= 0) return;
