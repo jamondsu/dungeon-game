@@ -135,3 +135,12 @@ if (typeof Phaser !== 'undefined' && Phaser.Renderer?.WebGL?.Pipelines?.MultiPip
         return this.lineTo(x + Math.cos(a) * radius, y + Math.sin(a) * radius);
     };
 }
+// Every animated sprite listens on the game's one AnimationManager in case an animation is deleted, and stops listening when
+// it's destroyed, and each stop copies the whole list of listeners (~2,000 with a crowd's water about). A geyser blown apart,
+// hundreds of sprites at once, stalled a frame on it and left the copies for the browser to sweep up. Nothing here ever
+// deletes an animation, so sprites don't listen.
+if (typeof Phaser !== 'undefined' && Phaser.Animations?.AnimationManager) {
+    const AM = Phaser.Animations.AnimationManager.prototype, AS = Phaser.Animations.AnimationState, REM = Phaser.Animations.Events.REMOVE_ANIMATION, on = AM.on, off = AM.off;
+    AM.on = function (ev, fn, ctx) { return ev === REM && ctx instanceof AS ? this : on.call(this, ev, fn, ctx); };
+    AM.off = function (ev, fn, ctx, once) { return ev === REM && ctx instanceof AS ? this : off.call(this, ev, fn, ctx, once); };
+}

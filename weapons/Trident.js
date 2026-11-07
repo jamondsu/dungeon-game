@@ -36,6 +36,9 @@
 // And a FROSTKIN comes to float beside you for KIN_LIFE (KIN_CAP at most, Frostkin Pack more), and those already out get KIN_RENEW more life. It
 // takes no hits and starts no fights: on each thrust, swipe and slam of yours they all do a small one of their own, together, the way you
 // went (KIN_HIT, a KIN_BITE of Frostbite), each leaning up to KIN_LEAN to an enemy in KIN_RANGE near its line; the slam out to its own side. A full combo, all three hits landing, gives each one KIN_FEED more life (KIN_LIFE_MAX at most).
+// While one of a colour is out, your combo has its gift (kinUp), its part of your water in its colour: CORAL, reach (the thrust and the wave
+// CORAL_REACH tiles further); PEARL, breadth (PEARL_WIDE tiles wider); the ABYSS, cold (ABYSS_BITE of Frostbite on what the thrust and the
+// swipe hit, the slam's ABYSS_SLAM longer). Two of a colour give it once.
 // FROSTBITE comes from the slam's hit and the Frostkin; all the rime is only its look. Glacial Tide (a perk): the slam's Frostbite twice as long.
 // Art: assets/art/fx_trident (tri_* (32 ways), sea_*/ice_*/foam_*/drop_*/crk_* (the sea and its freeze), spine_*/tip_*/spur_* (the thrust's spine), ride_*, kin_*, seer_*, bite_*, mote/spark/shard/chunk/glint/mist, ring_*, tail_*, core_*,
 // wake/trough/spray_*, tell/spear/spot/crater_*, squall_*, gust_*, crystal_*, mark_*, lane_*, pip_*, ico_hurl) and Rimeguard's fx_rimeguard
@@ -56,7 +59,7 @@ class Trident {
         FAR_NEAR: 0.7, FAR_EDGE: 1.5, FAR_THRUST: 7, FAR_HOT: 0.8,   // Crest (FAR_HOT: how far out, of the reach, a hit shows as one)
         MARK_THRUST: 2, MARK_SWIPE: 1, MARK_MAX: 3, MARK_MS: 4000, MARK_K: 0.4, MARK_BITE: 1000,   // Rime marks: the thrust's and the swipe's, shattered by the slam's eruption
         PTS: [1, 1, 2], PTS_N: 5, KIN_COST: 48, KIN_MAX: 96,
-        KIN_CAP: 3, KIN_LIFE: 10000, KIN_FEED: 3000, KIN_RENEW: 4000, KIN_LIFE_MAX: 16000, KIN_HIT: [5, 4.5, 9.5], KIN_BITE: 600, KIN_REACH: 4, KIN_RANGE: [4.5, 3.5, 4.5], KIN_LEAN: [0.7, 0.7, 1.05], KIN_ICE: 300, KIN_BLOW: 470, KIN_DIM: 0xa8b4c4, KIN_DIM_MS: 900,   // the Frostkin (KIN_DIM: the sea of a hit of yours they join in, KIN_DIM_MS on from it, so it doesn't blind theirs; your R stays bright)
+        KIN_CAP: 3, KIN_LIFE: 10000, KIN_FEED: 3000, KIN_RENEW: 4000, KIN_LIFE_MAX: 16000, KIN_HIT: [5, 4.5, 9.5], KIN_BITE: 600, KIN_REACH: 4, KIN_RANGE: [4.5, 3.5, 4.5], KIN_LEAN: [0.7, 0.7, 1.05], KIN_ICE: 300, KIN_BLOW: 470, KIN_DIM: 0xa8b4c4, KIN_DIM_MS: 900, CORAL_REACH: [2, 1], PEARL_WIDE: [1, 2], ABYSS_BITE: 1500, ABYSS_SLAM: 0.5,   // the Frostkin (KIN_DIM: the sea of a hit of yours they join in, KIN_DIM_MS on from it, so it doesn't blind theirs; your R stays bright)
         R_TOSS: 280, R_JUMP: 190, R_HANG: 100, R_DOWN: 140, R_FALL: 260, R_H: 120, R_REACH: 2.4, R_HIT: 10, R_HIT_R: 2, GEY_N: 3, GEY_R: 6, GEY_GAP: 3, GEY_RUN: 420, GEY_FILL: 170, GEY_ICE: 800, GEY_DMG: 8, GEY_BURST: 20, GEY_BLAST: 2.5, GEY_SPLASH: 0.5, GEY_DAZE: 2000, GEY_MARKS: 2, GEY_SHELL: 3, GEY_H: 124, GEY_G: 900, GEY_WELL: 280, GEY_MS: 1000, GEY_FROST: 160, GEY_HOLD: 80, GEY_JUT: 35, GEY_STAND: 520,   // R's slam and its geysers
         RUSH: 0.85, RUSH_MS: 4000, RUSH_BACK: 3000,   // FROST RUSH: a throw that lands having caught something, the combo RUSH faster for RUSH_MS from the landing (RUSH_BACK after it's back in hand, if that's later)
         RIME_MS: 450, RIME_FAST: 300 };   // the rime (only its look): it stands RIME_MS (the throw's lane), RIME_FAST (the slam's and the swipe's), then melts
@@ -444,18 +447,20 @@ class Trident {
     static jab(S, aim) {
         const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, F = Trident.fx(S);
         Sfx.play(S, 'w_boreal_trident');
-        const ux = Math.cos(aim), uy = Math.sin(aim), ox = S.playerX, oy = S.playerY;
-        let reach = C.REACH;
-        for (let d = 0.5; d <= C.REACH; d += 0.25) if (S.world[Math.round(ox + ux * d)]?.[Math.round(oy + uy * d)] !== S.FLOOR) { reach = d - 0.25; break; }
-        const inLine = e => { const dx = e.x - ox, dy = e.y - oy, along = dx * ux + dy * uy, across = Math.abs(dy * ux - dx * uy); return along >= 0.4 && along <= reach + 0.3 && across <= C.WIDTH / 2 ? along : -1; };
+        const ux = Math.cos(aim), uy = Math.sin(aim), ox = S.playerX, oy = S.playerY, coral = Trident.kinUp(S, 0), pearl = Trident.kinUp(S, 1), abyss = Trident.kinUp(S, 2);   // (the Frostkin's gifts)
+        const REACH = C.REACH + (coral ? C.CORAL_REACH[0] : 0), WIDTH = C.WIDTH + (pearl ? C.PEARL_WIDE[0] : 0);
+        let reach = REACH;
+        for (let d = 0.5; d <= REACH; d += 0.25) if (S.world[Math.round(ox + ux * d)]?.[Math.round(oy + uy * d)] !== S.FLOOR) { reach = d - 0.25; break; }
+        const inLine = e => { const dx = e.x - ox, dy = e.y - oy, along = dx * ux + dy * uy, across = Math.abs(dy * ux - dx * uy); return along >= 0.4 && along <= reach + 0.3 && across <= WIDTH / 2 ? along : -1; };
         const dmg = C.DMG * (S.damageScaling || 1), chill = S._chillCfg().DIRECT * C.HIT_CHILL;
         let struck = 0;
         for (const e of [...(S.enemies || [])]) {
             if (!e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y) || inLine(e) < 0) continue;
-            if (Trident.hitFar(S, e, dmg, chill, inLine(e) / C.FAR_THRUST, true)) { struck++; Trident.mark(S, e, C.MARK_THRUST); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 4, 'tri_spray_' + Trident.dir(aim)[0], 1.1, 3.3, false).setFlip(!!Trident.dir(aim)[1], !!Trident.dir(aim)[2]); }   // (a splash of the jet: the ice comes with the freeze)
+            if (Trident.hitFar(S, e, dmg, chill, inLine(e) / C.FAR_THRUST, true)) { struck++; Trident.mark(S, e, C.MARK_THRUST); Trident.daze(S, e, C.HIT_DAZE); if (abyss) Trident.abyssBite(S, e); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 4, 'tri_spray_' + Trident.dir(aim)[0], 1.1, 3.3, false).setFlip(!!Trident.dir(aim)[1], !!Trident.dir(aim)[2]); }   // (a splash of the jet: the ice comes with the freeze)
         }
         const cells = [], outK = (x, y) => Math.hypot(x - ox, y - oy) / C.FAR_THRUST;
-        for (let d = 0.5; d <= reach + 0.01; d += 0.5) for (const w of [-1, 0, 1]) cells.push([Math.round(ox + ux * d - uy * w), Math.round(oy + uy * d + ux * w)]);
+        const cw = Math.floor(WIDTH / 2);
+        for (let d = 0.5; d <= reach + 0.01; d += 0.5) for (let w = -cw; w <= cw; w++) cells.push([Math.round(ox + ux * d - uy * w), Math.round(oy + uy * d + ux * w)]);
         if (Trident.tiles(S, cells, dmg, outK)) struck++;
         const st0 = Trident.st(S); if (st0.comboHits) st0.comboHits[0] = struck > 0;
         if (struck) { Glaive.hitstop(S, C.HIT_STOP); Trident.gain(S, struck, 0); }
@@ -474,9 +479,9 @@ class Trident {
         // and a bull-nosed head (a half-round crest, NOSE of its width long, riding the front, water inside it); each edge its own
         // bulges and pinches (wl, wr), now and then a tongue licking out past it; the body laid behind the nose
         const ang = Math.atan2(uy, ux), wl = Trident.wavy([0.12, 0.09, 0.06], [1 / 5, 1 / 11, 1 / 3.3]), wr = Trident.wavy([0.12, 0.09, 0.06], [1 / 6, 1 / 13, 1 / 3.7]);
-        const HW = d => { const k = Math.min(1, Math.max(0, d) / (0.6 * end)); return T * (C.JET_W0 + (C.JET_W1 - C.JET_W0) * k * k * (3 - 2 * k)) / 2; };
+        const W1 = C.JET_W1 + (pearl ? C.PEARL_WIDE[0] : 0), HW = d => { const k = Math.min(1, Math.max(0, d) / (0.6 * end)); return T * (C.JET_W0 + (W1 - C.JET_W0) * k * k * (3 - 2 * k)) / 2; };
         const head = [], nose = [], nArc = Math.round(Math.PI * HW(end) / C.CREST_GAP);
-        for (let i = 0; i < nArc; i++) { const c = Trident.crest(S, gx, gy, ang, i, 0.985); c._phi = -Math.PI / 2 + Math.PI * (i + 0.5 + (Math.random() - 0.5) * 0.5) / nArc; c._lag = (Math.random() - 0.5) * 6; c._d = end; head.push(c); jet.push(c); }
+        for (let i = 0; i < nArc; i++) { const c = Trident.crest(S, gx, gy, ang, i, 0.985); c._phi = -Math.PI / 2 + Math.PI * (i + 0.5 + (Math.random() - 0.5) * 0.5) / nArc; c._lag = (Math.random() - 0.5) * 6; c._d = end; if (coral) c.setTint(coral); head.push(c); jet.push(c); }   // (its head coral's, with coral out)
         for (let i = 0; i < 9; i++) { const w = Trident.water(S, gx, gy, 1.4 + Math.random() * 0.4, 0.97); w._u = Math.random(); w._v = Math.random() * 2 - 1; w._d = end; S.tweens.add({ targets: w, alpha: 0.88, duration: 60 }); nose.push(w); jet.push(w); }
         for (let i = 0, n = Math.round(Math.PI * HW(0) / C.CREST_GAP); i < n; i++) { const phi = Math.PI / 2 + Math.PI * (i + 0.5) / n, c = Trident.crest(S, gx + ux * (8 + Math.cos(phi) * HW(0) * 0.6) + nx * Math.sin(phi) * HW(0), gy + uy * (8 + Math.cos(phi) * HW(0) * 0.6) + ny * Math.sin(phi) * HW(0), ang + phi, i, 0.98); c._d = 8; jet.push(c); }   // (the tail cap, round)
         const wave = t => end * (1 - (1 - Math.min(1, t / TJ)) ** 2);   // (the water's front, t ms on: surging out, slowing as it gets there)
@@ -499,7 +504,7 @@ class Trident {
                 Trident.churnBody(S, jet, bx + nx * (Math.random() - 0.5) * hw, by + ny * (Math.random() - 0.5) * hw, ang, 0.97); if (jet.length) jet[jet.length - 1]._d ??= laid;
                 const tongue = Math.random() < 0.08 ? (Math.random() < 0.5 ? -1 : 1) : 0;   // (now and then a tongue of it licking out past an edge)
                 if (tongue) { const ow = hw * (tongue < 0 ? wl(laid) : wr(laid)) + T * 0.2, w = Trident.water(S, bx + nx * tongue * ow, by + ny * tongue * ow, 1.3, 0.97); w._d = laid; S.tweens.add({ targets: w, alpha: 0.88, duration: 60 }); jet.push(w); }
-                for (const sd of [-1, 1]) { const o2 = hw * (sd < 0 ? wl(laid) : wr(laid)) + (sd === tongue ? T * (0.25 + Math.random() * 0.2) : 0), c = Trident.crest(S, bx + nx * sd * o2, by + ny * sd * o2, ang + sd * Math.PI / 2, Math.round(laid / C.CREST_GAP), 0.98); c._d = laid; jet.push(c); S.tweens.add({ targets: c, x: c.x + nx * sd * hw * 0.22, y: c.y + ny * sd * hw * 0.22, duration: 1500, ease: 'Quad.easeOut' }); }   // (its flanks creeping out with it)   // (its sides, unbroken)
+                for (const sd of [-1, 1]) { const o2 = hw * (sd < 0 ? wl(laid) : wr(laid)) + (sd === tongue ? T * (0.25 + Math.random() * 0.2) : 0), c = Trident.crest(S, bx + nx * sd * o2, by + ny * sd * o2, ang + sd * Math.PI / 2, Math.round(laid / C.CREST_GAP), 0.98); c._d = laid; if (pearl) c.setTint(pearl); jet.push(c); S.tweens.add({ targets: c, x: c.x + nx * sd * hw * 0.22, y: c.y + ny * sd * hw * 0.22, duration: 1500, ease: 'Quad.easeOut' }); }   // (its flanks creeping out with it)   // (its sides, unbroken)
                 if (Math.random() < 0.4) { const v = 40 + Math.random() * 60, sd = Math.random() < 0.5 ? 1 : -1; Trident.drop(S, jet, bx, by - 4, nx * sd * v + ux * 40, ny * sd * v + uy * 40 - 60)._d = laid; }
             }
             if (t >= TJ + 400 || head.every(c => c._iced)) jt.remove();   // (creeping on till the frost has its head)
@@ -577,7 +582,8 @@ class Trident {
     // crest: SHATTER_DMG (in BLAST_HITS blows, BLAST_TICK apart) to what it covered as the blast gets there, and what's SHATTER_R tiles past the crest at the last of it; rime
     // spreads over its floor with the blast, which ends in a ROW of great spines along the crest, with the boom
     static swipe(S, aim) {
-        const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, pc = Trident.pace(S), st = Trident.st(S), HW = C.WAVE_W / 2, R = C.WAVE_R, PITCH = 18 / T;
+        const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, pc = Trident.pace(S), st = Trident.st(S), coral = Trident.kinUp(S, 0), pearl = Trident.kinUp(S, 1), abyss = Trident.kinUp(S, 2);   // (the Frostkin's gifts)
+        const W = C.WAVE_W + (pearl ? C.PEARL_WIDE[1] : 0), HW = W / 2, R = C.WAVE_R + (coral ? C.CORAL_REACH[1] : 0), PITCH = 18 / T;
         Sfx.play(S, 'swing'); Sfx.play(S, 'tri_surge', { big: true });
         Trident.kinCombo(S, 1, aim);
         const dmg = C.SWIPE_DMG * (S.damageScaling || 1), chill = S._chillCfg().DIRECT * C.HIT_CHILL, ox = S.playerX, oy = S.playerY;
@@ -610,8 +616,8 @@ class Trident {
             onUpdate: tw => { const a = up + turn * tw.getValue(), x = S._shotX(), y = S._shotY(); Trident.streak(S, spr); Trident.face(spr, a).setPosition(x + Math.cos(a) * mid, y + Math.sin(a) * mid); },
             onComplete: () => S.tweens.add({ targets: spr, alpha: 0, duration: 120, delay: 40, onComplete: () => spr.destroy() }) });
         S.cameras.main.shake(70, 0.0025);
-        const sea = [], shards = [], seen = new Set(), head = [], n = Math.round(C.WAVE_W * T / C.CREST_GAP), cols = Math.ceil(C.WAVE_W / PITCH), laid = Array.from({ length: cols }, (_, j) => back(-HW + C.WAVE_W * (j + 0.5) / cols));
-        for (let i = 0; i < n; i++) { const c = Trident.crest(S, gx, gy, aim, i, 3.02); c._q = -HW + C.WAVE_W * (i + 0.5 + (Math.random() - 0.5) * 0.5) / n; c._lag = (Math.random() - 0.5) * 0.14; c.setVisible(false); head.push(c); sea.push(c); }
+        const sea = [], shards = [], seen = new Set(), head = [], n = Math.round(W * T / C.CREST_GAP), cols = Math.ceil(W / PITCH), laid = Array.from({ length: cols }, (_, j) => back(-HW + W * (j + 0.5) / cols));
+        for (let i = 0; i < n; i++) { const c = Trident.crest(S, gx, gy, aim, i, 3.02); c._q = -HW + W * (i + 0.5 + (Math.random() - 0.5) * 0.5) / n; c._lag = (Math.random() - 0.5) * 0.14; c.setVisible(false); if (coral) c.setTint(coral); head.push(c); sea.push(c); }   // (its crest coral's, with coral out)
         const lay = (j, q, al) => {
             const [x, y] = at(q + (Math.random() - 0.5) * 0.2, al), w = Trident.water(S, x, y, 1.7 + Math.random() * 0.4, 0.97), out = Math.min(0.3, Math.max(0, col(q) - al)) * T;
             S.tweens.add({ targets: w, alpha: 0.88, duration: 60 });
@@ -619,7 +625,7 @@ class Trident {
             w._iceA = 0.42; sea.push(w);   // (so wide a sheet of ice, clear enough to see what's in it)
             if (!(j % 3)) { const g = S.add.image(x, y, 'vfx_glow').setTint(0x1a5aa6).setAlpha(0.28).setScale(0.4 + Math.random() * 0.2).setDepth(0.965); g._kind = 'glow'; sea.push(g); }
             if (Math.random() < 0.1) Trident.churnBody(S, sea, x, y, aim, 0.97);
-            if (j === 0 || j === cols - 1) { const sd = j ? 1 : -1, [fx, fy] = at(sd * HW, al); sea.push(Trident.crest(S, fx, fy, aim + sd * Math.PI / 2, j, 0.98)); }   // (its ends, unbroken)
+            if (j === 0 || j === cols - 1) { const sd = j ? 1 : -1, [fx, fy] = at(sd * HW, al), c = Trident.crest(S, fx, fy, aim + sd * Math.PI / 2, j, 0.98); if (pearl) c.setTint(pearl); sea.push(c); }   // (its ends, unbroken; pearl's, with pearl out)
             if (al === back(q)) { const sl = 2 * C.WAVE_TAIL * q / HW ** 2; sea.push(Trident.crest(S, x, y, Math.atan2(-uy + ny * sl, -ux + nx * sl), j, 0.98)); }   // (and its inner edge)
         };
         let struck = 0, gained = false, bossed = false;
@@ -628,7 +634,7 @@ class Trident {
             const t = Trident.clock(S) - k0, d = R * (1 - (1 - Math.min(1, t / TS)) ** 2) + (t > TS ? 0.3 * (1 - Math.exp(-(t - TS) / 260)) : 0);
             for (const c of head) if (!c._iced && edge(c._q, d) >= back(c._q)) c.setVisible(true).setPosition(...at(c._q, edge(c._q, d) + c._lag));   // (its ends unfurling as it rolls)
             for (let j = 0; j < cols; j++) {
-                const q = -HW + C.WAVE_W * (j + 0.5) / cols;
+                const q = -HW + W * (j + 0.5) / cols;
                 if (col(q) < 0) continue;
                 for (const e = edge(q, d) - 0.12; laid[j] <= e; laid[j] += PITCH * (0.7 + Math.random() * 0.4)) lay(j, q, laid[j]);
             }
@@ -638,7 +644,7 @@ class Trident {
                 for (const e of [...(S.enemies || [])]) {
                     if (seen.has(e) || !live(e) || !inWave(e, d)) continue;
                     seen.add(e);
-                    if (Trident.strike(S, e, dmg, chill, aim, 0.8, crestK(e.x, e.y))) { if (!struck++) { if (st.comboHits) st.comboHits[1] = true; Glaive.hitstop(S, C.HIT_STOP); } Trident.mark(S, e, C.MARK_SWIPE); Trident.daze(S, e, C.HIT_DAZE); if (e.sprite?.active) S._vfxFlash?.(e.sprite.x, e.sprite.y - 6, 18, 0xffffff, 120, 0.5); }
+                    if (Trident.strike(S, e, dmg, chill, aim, 0.8, crestK(e.x, e.y))) { if (!struck++) { if (st.comboHits) st.comboHits[1] = true; Glaive.hitstop(S, C.HIT_STOP); } Trident.mark(S, e, C.MARK_SWIPE); Trident.daze(S, e, C.HIT_DAZE); if (abyss) Trident.abyssBite(S, e); if (e.sprite?.active) S._vfxFlash?.(e.sprite.x, e.sprite.y - 6, 18, 0xffffff, 120, 0.5); }
                 }
                 if (!bossed && t >= TS / 2) { bossed = true; if (Trident.tiles(S, cells, dmg, crestK)) { if (!struck++) { if (st.comboHits) st.comboHits[1] = true; Glaive.hitstop(S, C.HIT_STOP); } } }
             } else if (!gained) { gained = true; if (struck) Trident.gain(S, struck, 1); }
@@ -651,7 +657,7 @@ class Trident {
             S.time.delayedCall(TC * 0.95, () => {   // the crest frozen into a crisp rim of ice shards
                 if (!S.sys?.isActive()) return;
                 const [f, fx, fy] = Trident.dir(aim);
-                for (let i = 0; i <= 20; i++) { const q = -HW + C.WAVE_W * i / 20; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, R) + 0.2); if (open(x, y + 6)) shards.push(S.add.image(x, y, 'fx_trident', 'cres_' + f).setFlip(!!fx, !!fy).setScale(1.3).setDepth(3.28)); }
+                for (let i = 0; i <= 20; i++) { const q = -HW + W * i / 20; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, R) + 0.2); if (open(x, y + 6)) shards.push(S.add.image(x, y, 'fx_trident', 'cres_' + f).setFlip(!!fx, !!fy).setScale(1.3).setDepth(3.28)); }
             });
         });
         // the aftershock: the frozen wave EXPLODES, from you out: the blast rolls to the crest in the crest's own curve, what's in reach
@@ -675,7 +681,7 @@ class Trident {
                     const [x, y] = Trident.wpos(w), al = ((x - gx) * ux + (y - gy) * uy) / T, ac = ((x - gx) * nx + (y - gy) * ny) / T;
                     if (last || al <= edge(ac, f)) { w._gone = true; Trident.fling(S, w, gx, gy, C.SHATTER_R * T * 1.4, false, 190); }
                 }
-                for (let k = 0; k < 3; k++) { const q = -HW + C.WAVE_W * (k + Math.random()) / 3; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, f)); if (open(x, y + 6)) Trident.boom(S, x, y, 1.15); }
+                for (let k = 0; k < 3; k++) { const q = -HW + W * (k + Math.random()) / 3; if (col(q) < 0) continue; const [x, y] = at(q, edge(q, f)); if (open(x, y + 6)) Trident.boom(S, x, y, 1.15); }
                 const [mx, my] = at(0, f); S._vfxFlash?.(mx, my, T * 2.4, 0xe8fbff, 180, 0.45);
                 if (i % 3 === 1) S.cameras.main.shake(70, 0.004);
                 if (!last) return;
@@ -685,7 +691,7 @@ class Trident {
                     S.tweens.add({ targets: sh, x: sh.x + ux * C.SHATTER_R * T * 1.4, y: sh.y + uy * C.SHATTER_R * T * 1.4, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => sh.destroy() });
                 }
                 for (let k = 0; k < 8; k++) {   // and eight big shards thrown out past it, landing, gone within a second
-                    const q = -HW + C.WAVE_W * (k + 0.2 + Math.random() * 0.6) / 8;
+                    const q = -HW + W * (k + 0.2 + Math.random() * 0.6) / 8;
                     if (col(q) < 0) continue;
                     const [fx0, fy0] = at(q, edge(q, R));
                     if (!open(fx0, fy0 + 6)) continue;
@@ -887,7 +893,7 @@ class Trident {
             const r = Trident.hitFar(S, e, dmg, 0, Trident.rimK(e.x - tx, e.y - ty), true);
             if (!r) continue;
             struck++;
-            if (r === true) { Trident.bite(S, e, C.BITE_MS * (1 + Trident.perk('tide'))); Trident.burst(S, e.sprite.x, e.sprite.y - 4, 1.1); }   // (Glacial Tide: twice as long)
+            if (r === true) { Trident.bite(S, e, C.BITE_MS * (1 + Trident.perk('tide') + (Trident.kinUp(S, 2) ? C.ABYSS_SLAM : 0))); Trident.burst(S, e.sprite.x, e.sprite.y - 4, 1.1); }   // (Glacial Tide: twice as long; the abyss out, half again)
         }
         const cells = [];
         for (const kk of foot) cells.push(kk.split(',').map(Number));
@@ -1764,6 +1770,10 @@ class Trident {
         return key;
     }
     static KIN_SLOTS = [[0, 1.9], [0, -1.9], [-1.5, 0], [-1, 3], [-1, -3]];   // (the formation, tiles ahead of you and out to your side from your aim: either side of your thrust, then behind it)
+    // a Frostkin of colour c (0 coral, 1 pearl, 2 the abyss) out: its gift to your combo. [is it, its water's colour]
+    static kinUp(S, c) { return S._tri?.kin.some(k => k.c === c && k.spr.active) ? Trident.KIN_COLORS[c][3] : 0; }
+    // the abyss's cold on an enemy your hit struck: Frostbite, a glint in its colour
+    static abyssBite(S, e) { Trident.bite(S, e, Trident.CFG.ABYSS_BITE); if (e.sprite?.active) Trident.once(S, e.sprite.x, e.sprite.y - 6, 'tri_glint', 2.4, 4.6).setTint(Trident.KIN_COLORS[2][0]); }
     static kinAdd(S) {
         const C = Trident.CFG, st = Trident.st(S), p = S.player;
         for (const k of st.kin) {   // (every R: those already out get some life back)
