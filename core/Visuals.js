@@ -1232,7 +1232,6 @@ void main() {
             add(p.x, p.y, C.PLAYER_LIGHT, C.EL[this.currentElement] ?? 0xbfd2ff, 1, 0.14);
             if (this._vfxPlayerGlow) add(p.x, p.y, 64, this._vfxPlayerGlow, 0.8, 0.6);   // a tint the game gave you
             if (this.ignitionActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.25, C.EL.fire, 1, 0.16);
-            if (this.lightningUltActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.2, C.EL.lightning, 1, 0.28);
             if (this.tsunamiActive) add(p.x, p.y, C.PLAYER_LIGHT * 1.3, C.EL.ice, 1, 0.12);
         }
         for (const f of this.fireballs || []) {

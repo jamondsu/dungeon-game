@@ -177,7 +177,7 @@ class Blinder {
     static _strike(S, e, a, now) {
         const A = Blinder.CFG.AMBUSH, T = S.TILE_SIZE;
         CombatSystem.tauntBoth(S, () => {   // (the ally it lunged at, and you if you're where it lands)
-        const p = S.player, safe = now < (S._dashInvulnUntil || 0) || S.thunderheadActive || S.lightningUltInvuln || S._deathScreenActive;
+        const p = S.player, safe = now < (S._dashInvulnUntil || 0) || S._deathScreenActive;
         if (!safe && p?.active && Math.hypot(S.playerX * T + T / 2 - a.land[0], S.playerY * T + T / 2 - a.land[1]) < A.HIT_R * T) {
             S._hitBy = e; S._hitMelee = true; S.takeDamage(A.DMG * (S.enemyDamageScale || 1)); S._hitBy = null; S._hitMelee = false;
             S.applyWinded?.(A.WINDED);
@@ -291,7 +291,7 @@ class Blinder {
         const now = S.time.now, C = Blinder.CFG.SIGHT, B = C[kind], D = Blinder.CFG.DPS, p = S.player, N = S._nsight;
         if (!p?.active || S._deathScreenActive) return;
         const cue = (txt, dy) => { if (now - (S._blCueAt || 0) > 900) { S._blCueAt = now; S.showStatusText(p.x, p.y - dy, txt, '#d8c8ff'); } };   // (once in a while: you can stand in it)
-        if (now < (S._dashInvulnUntil || 0) || S.thunderheadActive || S.lightningUltInvuln) { cue('THROUGH!', 26); return; }
+        if (now < (S._dashInvulnUntil || 0)) { cue('THROUGH!', 26); return; }
         const w = S._tauntAlly || S;   // (an ally standing in for you: its own stings, and no blindness)
         if (now >= (w._blStingAt || 0)) {   // (takeDamage's own rules: a dash, a shield, the Rimeguard; its numbers are the game's)
             w._blStingAt = (now - (w._blStingAt || 0) < D.EVERY ? w._blStingAt : now) + D.EVERY;   // (one every EVERY however the frames fall)

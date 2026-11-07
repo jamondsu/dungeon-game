@@ -211,12 +211,6 @@ class Fractal {
         mk('frac_chunk', ['chunk_0', 'chunk_1', 'chunk_2', 'chunk_3'], 16, -1);
         return { key: 'fx_fractal' };
     }
-    // The needle drawn the way it flies, to the nearest eighth of a turn (east, south-east, south typed; the rest those
-    // flipped both ways): never the art turned
-    static fracAim(spr, a) {
-        const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8, [f, fl] = [['spike_e', 0], ['spike_se', 0], ['spike_s', 0], ['spike_ne', 1], ['spike_e', 1], ['spike_se', 1], ['spike_s', 1], ['spike_ne', 0]][k];
-        if (spr.frame.name !== f || spr.flipX !== !!fl) spr.setFrame(f).setFlip(!!fl, !!fl);
-    }
     // Frost, the scene's particle emitters (made the first time): glints flaring and going (the hand-drawn ones) and a
     // pale mist, both light added; and frost with no outline (haze_*, drawn normally, pale cyan cooling to deep blue), so
     // where it crowds it runs together into one body, never a heap of pieces: haze lies still (trails), puff is thrown out

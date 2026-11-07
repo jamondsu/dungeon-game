@@ -1479,7 +1479,6 @@ class TowerDefenseScene extends Phaser.Scene {
     applyBrittle()               {}
     clearBurnVisual()            {}
     showBurnVisual()             {}
-    showCannotSwitchText()       {}
     spawnIceSplinter()           {}
     spawnIgnitionTrail()         {}
     _specialHit(e, d)            { return d; }   // no Armored, Shade or plated enemies here

@@ -4845,7 +4845,7 @@ class LevelManager {
         this.enemyProjectiles.push({ src: e, gfx: g, _bfxKind: 'jet', vx: Math.cos(a) * D.SHOT_SPD, vy: Math.sin(a) * D.SHOT_SPD, startX: ex, startY: ey, maxDist: D.REACH * T,
             damage: D.DMG * (this.enemyDamageScale || 1), home: deg * Math.PI / 180,   // (EnemyManager.updateEnemyProjectiles turns it)
             onHit: () => {   // (dashed through, or untouchable: only the hit's own wetness)
-                if (this.time.now < (this._dashInvulnUntil || 0) || this.thunderheadActive || this.lightningUltInvuln) return;
+                if (this.time.now < (this._dashInvulnUntil || 0)) return;
                 this._applyDripping(this.time.now, D.DRIP_MS);
                 this._dvSlowUntil = Math.max(this._dvSlowUntil || 0, this.time.now + D.SLOW_MS);
             }, onEnd: (x, y) => this._diverFx('splash', x, y - 4, false) });
@@ -6521,7 +6521,7 @@ class LevelManager {
                             if (e._cisternMark?.active) e._cisternMark.setVisible(true);
 
                             this.takeDamage(e._drownDmg * (this.enemyDamageScale || 1), e);
-                            if (this.time.now >= (this._dashInvulnUntil || 0) && !this.thunderheadActive && !this.lightningUltInvuln) this.applyWinded?.(2500);   // WINDED 2.5s, a real hit only
+                            if (this.time.now >= (this._dashInvulnUntil || 0)) this.applyWinded?.(2500);   // WINDED 2.5s, a real hit only
                             EnemyManager.playAtk?.(this, e.sprite, 290, PX < e.x);   // up, lashing
                             this._drownWeeds(this.player.x, this.player.y, false);
                             if (this._ccGate(e._drownStun)) {
@@ -6567,7 +6567,7 @@ class LevelManager {
                         if (hit || Math.hypot(e.x - this.playerX, e.y - this.playerY) > e._drownReachR || this.playerX !== mt.x || this.playerY !== mt.y) return;
                         hit = true;
                         this.takeDamage(e._drownDmg * (this.enemyDamageScale || 1), e);
-                        if (this.time.now >= (this._dashInvulnUntil || 0) && !this.thunderheadActive && !this.lightningUltInvuln) this.applyWinded?.(2500);   // WINDED 2.5s, a real hit only
+                        if (this.time.now >= (this._dashInvulnUntil || 0)) this.applyWinded?.(2500);   // WINDED 2.5s, a real hit only
                         this._drownWeeds(this.player.x, this.player.y, true);
                         this.showStatusText?.(this.player.x, this.player.y - 30, 'GRABBED', '#b08fd0');
                     });

@@ -222,119 +222,6 @@ class WeaponSystem {
         e[k] = now; this.showStatusText(e.sprite.x, e.sprite.y - 10, text, col);
     }
 
-    // ── FROST TOTEM — spawns on first pierce spike hit ─────────────────────
-    _spawnFrostTotem(px, py) {
-        const TOTEM_DUR      = 5000;   // 5s
-        const CHILL_RADIUS   = 2;      // tiles
-        const CHILL_INTERVAL = 500;    // ms between stack applications
-
-        // Destroy any existing totem
-        if (this._activeFrostTotem) {
-            this._activeFrostTotem.destroy();
-            this._activeFrostTotem = null;
-        }
-
-        // ── Crystal pillar visual — compact, fits one tile ───────────────────
-        const g = this.add.graphics().setDepth(2.5);
-        g.x = px; g.y = py;
-
-        // Ground shadow
-        g.fillStyle(0x44aaff, 0.15); g.fillEllipse(0, 2, 14, 6);
-
-        // Main crystal body — small pillar
-        g.fillStyle(0x99eeff, 0.88);
-        g.beginPath(); g.moveTo(0, -14); g.lineTo(5, -7); g.lineTo(5, 3); g.lineTo(0, 5); g.lineTo(-5, 3); g.lineTo(-5, -7); g.closePath(); g.fillPath();
-
-        // Inner bright face
-        g.fillStyle(0xddf8ff, 0.65);
-        g.beginPath(); g.moveTo(0, -14); g.lineTo(3, -7); g.lineTo(3, 3); g.lineTo(0, 5); g.closePath(); g.fillPath();
-
-        // Outline
-        g.lineStyle(0.8, 0xffffff, 0.55);
-        g.beginPath(); g.moveTo(0, -14); g.lineTo(5, -7); g.lineTo(5, 3); g.lineTo(0, 5); g.lineTo(-5, 3); g.lineTo(-5, -7); g.closePath(); g.strokePath();
-
-        // Top tip
-        g.fillStyle(0xffffff, 0.95);
-        g.beginPath(); g.moveTo(0, -18); g.lineTo(3, -12); g.lineTo(-3, -12); g.closePath(); g.fillPath();
-
-        // Ambient glow
-        g.fillStyle(0x44aaff, 0.20); g.fillCircle(0, -5, 8);
-
-        // Radius ring
-        const radiusPx = CHILL_RADIUS * this.TILE_SIZE;
-        g.lineStyle(0.8, 0x44aaff, 0.18); g.strokeCircle(0, 0, radiusPx);
-
-        // Fade in
-        g.setAlpha(0);
-        this.tweens.add({ targets: g, alpha: 1, duration: 180, ease: 'Quad.easeOut' });
-
-        // Pulse glow tween
-        this.tweens.add({ targets: g, alpha: 0.75, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: 200 });
-
-        // Particle emit every tick — small ice crystals drifting up
-        const particleTimer = this.time.addEvent({
-            delay: 280, loop: true,
-            callback: () => {
-                if (!g.active) { particleTimer.remove(); return; }
-                const pg = this.add.graphics().setDepth(3);
-                pg.x = px + (Math.random()-0.5)*16;
-                pg.y = py - 8 + (Math.random()-0.5)*8;
-                pg.fillStyle(Math.random() > 0.5 ? 0xaaeeff : 0xffffff, 0.80);
-                pg.fillCircle(0, 0, 1.5 + Math.random()*1.5);
-                this.tweens.add({ targets: pg, y: pg.y - 14, alpha: 0, duration: 500 + Math.random()*300, onComplete: () => pg.destroy() });
-            }
-        });
-
-        // ── Chill tick — every 500ms, apply 1 chill stack to enemies in radius ──
-        const chillTimer = this.time.addEvent({
-            delay: CHILL_INTERVAL, loop: true,
-            callback: () => {
-                if (!g.active) { chillTimer.remove(); return; }
-                const tpx = Math.floor(px / this.TILE_SIZE);
-                const tpy = Math.floor(py / this.TILE_SIZE);
-                for (const enemy of this.enemies) {
-                    if (this._phasedOut?.(enemy)) continue;
-                    if (!enemy.sprite?.active || enemy.health <= 0) continue;
-                    if (enemy.fireImmune || enemy.elementImmune) continue;
-                    if (enemy.isFrozen) continue; // already frozen — don't re-stack chill
-                    const dx = enemy.x - tpx, dy = enemy.y - tpy;
-                    if (Math.sqrt(dx*dx + dy*dy) > CHILL_RADIUS) continue;
-                    // Ignores iceImmune -- that's the whole point of the totem.
-                    // Was freezeEnemy(4000): a leftover 4-second hard stun on a weapon path.
-                    this.applyChill(enemy, this._chillCfg().TOTEM);
-                    // Small chill puff visual
-                    const cf = this.add.graphics().setDepth(3.5);
-                    cf.x = enemy.sprite.x; cf.y = enemy.sprite.y - 10;
-                    cf.fillStyle(0xaaeeff, 0.70); cf.fillCircle(0, 0, 2.5);
-                    this.tweens.add({ targets: cf, y: cf.y - 8, alpha: 0, duration: 350, onComplete: () => cf.destroy() });
-                }
-                // Boss chill tick
-                if (this.voltslimeBoss?.active) {
-                    const boss = this.voltslimeBoss;
-                    const bdx = boss.tileX - tpx, bdy = boss.tileY - tpy;
-                    if (Math.sqrt(bdx*bdx + bdy*bdy) <= CHILL_RADIUS) {
-                        if (typeof this.freezeBossFromIceWeapon === 'function')
-                            this.freezeBossFromIceWeapon(false);
-                    }
-                }
-            }
-        });
-
-        // Destroy after duration
-        this.time.delayedCall(TOTEM_DUR, () => {
-            particleTimer.remove();
-            chillTimer.remove();
-            if (g.active) {
-                this.tweens.killTweensOf(g);
-                this.tweens.add({ targets: g, alpha: 0, scaleX: 0.5, scaleY: 0.5, duration: 300, ease: 'Quad.easeIn', onComplete: () => g.destroy() });
-            }
-            if (this._activeFrostTotem === totemObj) this._activeFrostTotem = null;
-        });
-
-        const totemObj = { destroy: () => { particleTimer.remove(); chillTimer.remove(); this.tweens.killTweensOf(g); if (g.active) g.destroy(); } };
-        this._activeFrostTotem = totemObj;
-    }
-
     // ── THE FIRE WEAPONS' ART ────────────────────────────────────────────────
     // Typed by hand (assets/art/fx_fire_w: the flames, the fist's flare, the sword's ember, the staff's rock, the
     // flamethrower's fire, the kindle mark and its pillar, lava); its animations, made once.
@@ -474,153 +361,46 @@ class WeaponSystem {
         if (typeof this.evaporateWater === 'function') this.evaporateWater(tx, ty, power);
     }
 
+    // The Icicle Cannon's icicles in flight (the only shards there are now): they fly to their range, glance off walls while they
+    // still pierce, and stop at bosses, queens and enemies
     updateIceShards(delta, sub = false) {
-        // A shard moves at most half a tile a step: a long frame (a dip to 15 FPS) runs as several, or the Fractal Shard's spike
-        // (900 px/s) jumped two tiles a frame and flew through the enemy it was aimed at.
+        // A shard moves at most half a tile a step: a long frame (a dip to 15 FPS) runs as several, or a fast one jumped two
+        // tiles a frame and flew through the enemy it was aimed at.
         if (!sub && this.iceShards.length) {
             let v = 0; for (const q of this.iceShards) v = Math.max(v, Math.hypot(q.vx || 0, q.vy || 0));
             const steps = Math.min(6, Math.ceil(v * delta / 1000 / (this.TILE_SIZE * 0.5)) || 1);
             if (steps > 1) { for (let k = 0; k < steps; k++) this.updateIceShards(delta / steps, true); return; }
         }
         const ds = delta / 1000;
-        const time = this.time.now;
+        const drop = i => { this.destroyIceShard(this.iceShards[i]); this.iceShards.splice(i, 1); };
 
         for (let i = this.iceShards.length - 1; i >= 0; i--) {
             const s = this.iceShards[i];
 
-            // Max range check — cannon shards, heal shards, and heal splinters
-            // travel until they hit a wall; only the original bouncing shards and
-            // tsunami scatter keep a distance cap.
-            if (s.startX && s.startY &&
-                (!s.isCannonShard || s._range) && !s.isHealShard && !s.isHealSplinter) {
-                const distTraveled = Math.sqrt(
-                    Math.pow(s.sprite.x - s.startX, 2) +
-                    Math.pow(s.sprite.y - s.startY, 2)
-                );
-                const maxRange = s._range || (s.isPierceSpike ? 20 * this.TILE_SIZE : 12 * this.TILE_SIZE);   // the spike: the longest reach (14 till 2026-10-20)
-                if (distTraveled > maxRange) {
-                    // The centre spike plants its totem where it runs out, so the pillar lands at
-                    // the far end of the lane you swept rather than at your feet.
-                    // Attack 1 always leaves a totem, even on a clean miss: _spawnFrostTotem
-                    // normally fires on the spike's FIRST enemy hit, so a spike that connected
-                    // with nothing would otherwise leave nothing behind.
-                    if (s._plantsTotem && !s.hitEnemies?.size) {
-                        this._spawnFrostTotem(s.sprite.x, s.sprite.y);
-                    }
-                    this.destroyIceShard(s);
-                    this.iceShards.splice(i, 1);
-                    continue;
-                }
-            }
+            // its range
+            if (s.startX && s.startY && s._range && Math.hypot(s.sprite.x - s.startX, s.sprite.y - s.startY) > s._range) { drop(i); continue; }
 
-            // Store previous position before moving
             const oldX = s.sprite.x;
             const oldY = s.sprite.y;
-
-            // Homing — heal shards in heal mode steer toward nearest enemy
-            if (s.isHoming && this.enemies?.length) {
-                let nearestDist = Infinity, nearestEnemy = null;
-                for (const e of this.enemies) {
-                    if (this._phasedOut?.(e)) continue;
-                    if (!e.sprite?.active) continue;
-                    const dx = e.sprite.x - s.sprite.x;
-                    const dy = e.sprite.y - s.sprite.y;
-                    const d = dx * dx + dy * dy;
-                    if (d < nearestDist) { nearestDist = d; nearestEnemy = e; }
-                }
-                if (nearestEnemy) {
-                    const dx = nearestEnemy.sprite.x - s.sprite.x;
-                    const dy = nearestEnemy.sprite.y - s.sprite.y;
-                    const dist = Math.sqrt(nearestDist) || 1;
-                    const TURN = 900; // steering force px/s²
-                    s.vx += (dx / dist) * TURN * ds;
-                    s.vy += (dy / dist) * TURN * ds;
-                    // Clamp to original speed
-                    const spd = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
-                    const MAX_SPD = 260;
-                    if (spd > MAX_SPD) { s.vx = (s.vx / spd) * MAX_SPD; s.vy = (s.vy / spd) * MAX_SPD; }
-                }
-            }
-
-            // Move
             s.sprite.x += s.vx * ds;
             s.sprite.y += s.vy * ds;
 
             // Crack shrink — pierces, no effect on projectile flight (Level 4)
             this._checkProjectileCrackShrink(s.sprite.x, s.sprite.y);
-            // Spinning pellets — rotate container (graphics drawn once at creation)
-            if (s.rotSpeed) s.sprite.rotation += s.rotSpeed * ds;
-            if (s.sprite._glow)     { s.sprite._glow.x = s.sprite.x; s.sprite._glow.y = s.sprite.y; }
-            if (s.sprite._innerOrb) { s.sprite._innerOrb.x = s.sprite.x; s.sprite._innerOrb.y = s.sprite.y; }
-            if (s.isCannonShard && !s.isHealShard) Fractal.frostTrail(this, oldX, oldY, s.sprite.x, s.sprite.y, 3, 0.8);   // the icicle's tail of frost, unbroken
-
-            // Frost trail
-            if (time - s.lastTrailTime > 60) {
-                s.lastTrailTime = time;
-                if (s.isHealShard) {
-                    // ── Rich crystalline heal-icicle trail ──
-                    const ta = Math.atan2(s.vy, s.vx);
-                    const tg = this.add.graphics().setDepth(1.2);
-                    tg.x = s.sprite.x;
-                    tg.y = s.sprite.y;
-                    tg.rotation = ta + Math.PI / 2;
-                    const ts = 0.35 + Math.random() * 0.3;
-                    const tLen = 10 * ts, tWid = 3.5 * ts;
-                    tg.fillStyle(0x00ee77, 0.70);
-                    tg.beginPath();
-                    tg.moveTo(0,     -tLen);
-                    tg.lineTo( tWid,  0);
-                    tg.lineTo( tWid * 0.6,  tLen * 0.5);
-                    tg.lineTo(-tWid * 0.6,  tLen * 0.5);
-                    tg.lineTo(-tWid,  0);
-                    tg.closePath();
-                    tg.fillPath();
-                    tg.lineStyle(0.8, 0x88ffcc, 0.6);
-                    tg.strokePath();
-                    this.tweens.add({
-                        targets: tg, alpha: 0, scaleX: 0.4, scaleY: 0.4,
-                        duration: 380 + Math.random() * 120, ease: 'Quad.easeIn',
-                        onComplete: () => tg.destroy()
-                    });
-                    // Tiny sparkle dot
-                    const sx = s.sprite.x + (Math.random() - 0.5) * 8;
-                    const sy = s.sprite.y + (Math.random() - 0.5) * 8;
-                    const sp = this.add.graphics().setDepth(1.5);
-                    sp.x = sx; sp.y = sy;
-                    sp.fillStyle(Math.random() > 0.5 ? 0xccffdd : 0x00ff99, 0.9);
-                    const ss = 1.2 + Math.random() * 1.8;
-                    sp.fillRect(-ss, -ss, ss * 2, ss * 2);
-                    this.tweens.add({
-                        targets: sp, alpha: 0, scaleX: 0, scaleY: 0,
-                        duration: 260 + Math.random() * 100, ease: 'Cubic.easeOut',
-                        onComplete: () => sp.destroy()
-                    });
-                } else if (s.isCannonShard) {
-                    // a glint now and then off the icicle (its tail is laid every frame, above) and a breath of mist
-                    const FR = Fractal.frost(this);
-                    if (Math.random() < 0.35) FR.glint.emitParticleAt(s.sprite.x + (Math.random() - 0.5) * 4, s.sprite.y + (Math.random() - 0.5) * 4, 1);
-                    if (Math.random() < 0.5) FR.mist.emitParticleAt(s.sprite.x, s.sprite.y, 1);
-                } else {
-                    const t = this.add.rectangle(s.sprite.x, s.sprite.y, 4, 4, 0xaaddff, 0.5);
-                    t.setDepth(0.5);
-                    this.tweens.add({ targets: t, alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 300, onComplete: () => t.destroy() });
-                }
-            }
+            Fractal.frostTrail(this, oldX, oldY, s.sprite.x, s.sprite.y, 3, 0.8);   // the icicle's tail of frost, unbroken
 
             const tileX = Math.floor(s.sprite.x / this.TILE_SIZE);
             const tileY = Math.floor(s.sprite.y / this.TILE_SIZE);
 
-            // ── Boss pixel-radius hit check (all shard types) ────────────────
+            // ── Boss pixel-radius hit check ────────────────
             // damageBossAtTile uses a coarse tile-distance check and misses most
             // shard hits since shards move at pixel level. Check pixel distance
             // against the boss's actual hitbox radius so shards are consumed on hit.
             if (this.voltslimeBoss?.active) {
                 const boss = this.voltslimeBoss;
-                const bpx = boss.container.x;
-                const bpy = boss.container.y;
                 const BOSS_HIT_RADIUS = 40;
-                const bdx = s.sprite.x - bpx;
-                const bdy = s.sprite.y - bpy;
+                const bdx = s.sprite.x - boss.container.x;
+                const bdy = s.sprite.y - boss.container.y;
                 s._hitBossThisFrame = false;
 
                 if (bdx * bdx + bdy * bdy < BOSS_HIT_RADIUS * BOSS_HIT_RADIUS) {
@@ -632,39 +412,16 @@ class WeaponSystem {
                     if (!boss._hitShards.has(s._id)) {
                         boss._hitShards.add(s._id);
                         s._hitBossThisFrame = true;
-
                         const wasAlreadyFrozen = boss._isFrozen;
-
-                        // Pierce spike and block shards instant-freeze; splitters only shatter
-                        if (!s.isSplitter) {
-                            if (typeof this.freezeBossFromIceWeapon === 'function') {
-                                this.freezeBossFromIceWeapon(!!s.isBlock || !!s.isPierceSpike);
-                            }
-                        }
-
-                        const justFroze = !wasAlreadyFrozen && boss._isFrozen;
-                        if (justFroze) {
-                            // Remember this shard froze the boss — it can't shatter it
+                        if (typeof this.freezeBossFromIceWeapon === 'function') this.freezeBossFromIceWeapon(false);
+                        if (!wasAlreadyFrozen && boss._isFrozen) {
+                            // Remember this shard froze the boss — it can't shatter it; no damage the frame it froze
                             boss._frozenByShards.add(s._id);
-                            // Don't deal damage the frame we froze
                         } else if (!boss._frozenByShards.has(s._id)) {
-                            // Splitters: shatter if frozen, else normal damage
-                            if (s.isSplitter && !boss._isFrozen) {
-                                // Normal splitter damage — no freeze
-                                this.damageVoltslimeBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
-                            } else {
-                                this.damageVoltslimeBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
-                            }
+                            this.damageVoltslimeBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
                         }
-
                         this.spawnBounceImpact(s.sprite.x, s.sprite.y);
-
-                        // Only non-piercing shards are consumed
-                        if (!s.isPierceSpike && !s.isHealShard && !s.isSplitter) {
-                            this.destroyIceShard(s);
-                            this.iceShards.splice(i, 1);
-                            continue;
-                        }
+                        drop(i); continue;
                     }
                 }
             }
@@ -688,22 +445,13 @@ class WeaponSystem {
                         s._hitBossThisFrame = true;
 
                         const wasAlreadyFrozen = vboss._isFrozen;
-                        // Only the first shard from a given volley (e.g. one of the 3 Fractal
-                        // Shard pierce needles) may trigger a freeze-or-shatter event against
+                        // Only the first shard from a given volley may trigger a freeze-or-shatter event against
                         // this boss. Other shards from the SAME volley that also land just deal
                         // plain damage instead of each re-triggering freeze/shatter.
                         const volleyAlreadyHandled = s.volleyId && vboss._handledVolleys.has(s.volleyId);
+                        if (!volleyAlreadyHandled && typeof this.freezeBossFromIceWeapon === 'function') this.freezeBossFromIceWeapon(false);
 
-                        // Cannon shards chill/freeze VS; pierce/block instant-freeze; splitters only shatter
-                        if (!s.isSplitter && !volleyAlreadyHandled) {
-                            if (typeof this.freezeBossFromIceWeapon === 'function') {
-                                this.freezeBossFromIceWeapon(!!s.isBlock || !!s.isPierceSpike);
-                            }
-                        }
-
-                        const justFroze = !wasAlreadyFrozen && vboss._isFrozen && !volleyAlreadyHandled;
-
-                        if (justFroze) {
+                        if (!wasAlreadyFrozen && vboss._isFrozen && !volleyAlreadyHandled) {
                             // Froze VS this frame — don't deal damage
                             vboss._frozenByShards.add(s._id);
                             if (s.volleyId) vboss._handledVolleys.add(s.volleyId);
@@ -711,8 +459,7 @@ class WeaponSystem {
                             // Already frozen → shatter bonus (once per volley); or normal damage
                             if (wasAlreadyFrozen && !volleyAlreadyHandled) {
                                 // Shatter — deal full damage with shatter mult
-                                const shatterMult = s.isCannonShard ? (s._shatterMult || 0.5) : 1.0;
-                                this.damageVoidSovereignBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId) * (1 + shatterMult * 5));
+                                this.damageVoidSovereignBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId) * (1 + (s._shatterMult || 0.5) * 5));
                                 if (typeof this._clearFreezeVisuals === 'function') this._clearFreezeVisuals(vboss._bossProxy || vboss);
                                 vboss._isFrozen = false; // thaw — _thawVoidSovereign doesn't exist, so clear directly
                                 this.showStatusText(vpx, vpy - 60, 'SHATTER!', '#aaffff');
@@ -721,26 +468,8 @@ class WeaponSystem {
                                 this.damageVoidSovereignBoss(s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId));
                             }
                         }
-
-                        if (!s.isPierceSpike && !s.isSplitter) {
-                            this.destroyIceShard(s);
-                            this.iceShards.splice(i, 1);
-                            continue;
-                        }
+                        drop(i); continue;
                     }
-                }
-            }
-
-            // ── Distance-based recall ────────────────────────────────────────────
-            // Accumulated from actual per-frame movement rather than from elapsed time, so it
-            // stays correct if a shard is slowed, steered, or has its generation speed retuned.
-            if (s._recallAfterPx && !s.isRecalling) {
-                s._travelledPx = (s._travelledPx || 0) + Math.hypot(s.vx * ds, s.vy * ds);
-                if (s._travelledPx >= s._recallAfterPx) {
-                    if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
-                    s.isRecalling   = true;
-                    s.hitEnemies    = new Set();           // the return pass may re-hit
-                    s._recallDamage = s.damage * (s._recallDmgMult || 2.2);
                 }
             }
 
@@ -751,544 +480,46 @@ class WeaponSystem {
             const outY = nextTileY < 0 || nextTileY >= this.WORLD_HEIGHT;
 
             // Destroy shard if entering locked room
-            if (this.isInLockedRoom(tileX, tileY)) {
-                this.destroyIceShard(s); this.iceShards.splice(i, 1); continue;
-            }
+            if (this.isInLockedRoom(tileX, tileY)) { drop(i); continue; }
 
+            // a wall: a piercing icicle glances off it (twice at most, a corner counting two), any other breaks there
             const hitWallX = outX || (!outY && this.world[nextTileX][tileY] === this.WALL);
             const hitWallY = outY || (!outX && this.world[tileX][nextTileY] === this.WALL);
-            // a fan shard homing back to you ghosts through walls (faded inside them): bouncing off the wall between you, it was stuck there
-            // forever, and every stuck one cost a frame. 2.5s homing at most, whatever happens.
-            if (s.isSplitter && s.isRecalling) {
-                if (time - (s._recallAt ??= time) > 2500) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                s.sprite.setAlpha(this.world[tileX]?.[tileY] === this.FLOOR ? 1 : 0.4);
-                if (hitWallX || hitWallY) { if (!s.isSplitter) s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2); continue; }
-            }
-            if ((hitWallX || hitWallY) && !s.isHealShard) VisualFX.wallImpact(this, s.sprite.x, s.sprite.y, 'ice', s.vx, s.vy);
-
-            if (hitWallX && !hitWallY) {
-                if (s.isHealShard && s._onImpact) { s._onImpact(s.sprite.x, s.sprite.y); this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isTsunamiScatter || s.isPierceSpike) {
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                // A wall short-circuits the distance requirement: nowhere further to go.
-                if (s.isSplitter && s._isFinalGen && !s.isRecalling) {
-                    // Wall hit triggers immediate recall instead of destruction
-                    if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
-                    if (s._recallTimer) { s._recallTimer.remove(); }
-                    s.isRecalling = true; s.hitEnemies = new Set(); s._recallDamage = s.damage * 2.2;
-                    s.vx = -s.vx; continue;
+            if (hitWallX || hitWallY) {
+                VisualFX.wallImpact(this, s.sprite.x, s.sprite.y, 'ice', s.vx, s.vy);
+                if (s.isPiercing && s.bounces < s.maxBounces) {
+                    if (hitWallX) s.vx = -s.vx;
+                    if (hitWallY) s.vy = -s.vy;
+                    s.bounces += hitWallX && hitWallY ? 2 : 1; s.pierceCount = 0; s.piercedEnemies = new Set(); this.spawnBounceImpact(s.sprite.x, s.sprite.y);
+                    continue;
                 }
-                if (s.isCannonShard && !(s.isSplitter && s.isRecalling)) {
-                    if (s.isMiniHealShard) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                    if (s.isPiercing && s.bounces < s.maxBounces) { s.vx = -s.vx; s.bounces++; s.pierceCount = 0; s.piercedEnemies = new Set(); this.spawnBounceImpact(s.sprite.x, s.sprite.y); continue; }
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue;
-                }
-            } else if (hitWallY && !hitWallX) {
-                if (s.isHealShard && s._onImpact) { s._onImpact(s.sprite.x, s.sprite.y); this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isTsunamiScatter || s.isPierceSpike) {
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                // A wall short-circuits the distance requirement: nowhere further to go.
-                if (s.isSplitter && s._isFinalGen && !s.isRecalling) {
-                    if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
-                    if (s._recallTimer) { s._recallTimer.remove(); }
-                    s.isRecalling = true; s.hitEnemies = new Set(); s._recallDamage = s.damage * 2.2;
-                    s.vy = -s.vy; continue;
-                }
-                if (s.isCannonShard && !(s.isSplitter && s.isRecalling)) {
-                    if (s.isMiniHealShard) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                    if (s.isPiercing && s.bounces < s.maxBounces) { s.vy = -s.vy; s.bounces++; s.pierceCount = 0; s.piercedEnemies = new Set(); this.spawnBounceImpact(s.sprite.x, s.sprite.y); continue; }
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue;
-                }
-                if (s.isSplitter && s.isRecalling) { s.vy = -s.vy; continue; }
-                s.vy = -s.vy; s.bounces++; this.spawnBounceImpact(s.sprite.x, s.sprite.y);
-            } else if (hitWallX && hitWallY) {
-                if (s.isHealShard && s._onImpact) { s._onImpact(s.sprite.x, s.sprite.y); this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                if (s.isTsunamiScatter || s.isPierceSpike) {
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                // A wall short-circuits the distance requirement: nowhere further to go.
-                if (s.isSplitter && s._isFinalGen && !s.isRecalling) {
-                    if (s._splitTimer) { s._splitTimer.remove(); s._splitTimer = null; }
-                    if (s._recallTimer) { s._recallTimer.remove(); }
-                    s.isRecalling = true; s.hitEnemies = new Set(); s._recallDamage = s.damage * 2.2;
-                    s.vx = -s.vx; s.vy = -s.vy; continue;
-                }
-                if (s.isCannonShard && !(s.isSplitter && s.isRecalling)) {
-                    if (s.isMiniHealShard) { this.destroyIceShard(s); this.iceShards.splice(i, 1); continue; }
-                    if (s.isPiercing && s.bounces < s.maxBounces) { s.vx = -s.vx; s.vy = -s.vy; s.bounces += 2; s.pierceCount = 0; s.piercedEnemies = new Set(); this.spawnBounceImpact(s.sprite.x, s.sprite.y); continue; }
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue;
-                }
-                if (s.isSplitter && s.isRecalling) { s.vx = -s.vx; s.vy = -s.vy; continue; }
-                s.vx = -s.vx; s.vy = -s.vy; s.bounces += 2; this.spawnBounceImpact(s.sprite.x, s.sprite.y);
+                drop(i); continue;
             }
 
-            if (s.bounces > this.iceShardMaxBounces) {
-                this.destroyIceShard(s);
-                this.iceShards.splice(i, 1);
-                continue;
-            }
-
-            // Rotate shard to match velocity direction (the Fractal Shard's are drawn their way, or tumble: never turned)
-            if (s.isPierceSpike) Fractal.fracAim(s.sprite, Math.atan2(s.vy, s.vx));
-            else if (!s.isBlock && !s.isSplitter && !s.isCannonShard) s.sprite.setRotation(Math.atan2(s.vy, s.vx) + Math.PI / 2);   // (an icicle is drawn the way it flies: turned too, it flew side-on)
-
-            // Keep shatter mark visuals pinned to their enemies each frame
-            for (const enemy of this.enemies) {
-                if (enemy._shatterMarkVisual && enemy.sprite?.active) {
-                    enemy._shatterMarkVisual.x = enemy.sprite.x;
-                    enemy._shatterMarkVisual.y = enemy.sprite.y - 20;
-                }
-            }
-
-            // ── Frost behind the needle (and now and then off a fan shard): glints and a pale mist ──
-            if (s.isPierceSpike && time - (s._lastAfterimageTime || 0) > 16) {
-                s._lastAfterimageTime = time;
-                const F = Fractal.frost(this);
-                F.glint.emitParticleAt(s.sprite.x + (Math.random() - 0.5) * 6, s.sprite.y + (Math.random() - 0.5) * 6, 1);
-                F.mist.emitParticleAt(s.sprite.x, s.sprite.y, 1);
-            } else if (s.isSplitter && Math.random() < 0.08) Fractal.frost(this).glint.emitParticleAt(s.sprite.x, s.sprite.y, 1);
-
-            // ── Homing splinter: after burst delay, curve toward nearest enemy ──
-            if (s.isHealSplinter && time - s._spawnTime > s._homingDelay) {
-                const HOMING_STRENGTH = 0.14;
-                const SPLINTER_SPEED  = 110;
-
-                // Find/validate target — frozen enemies get priority
-                if (!s._homingTarget || !s._homingTarget.sprite?.active || s._homingTarget.health <= 0) {
-                    let nearest = null, nearestDist2 = Infinity;
-                    let nearestFrozen = null, nearestFrozenDist2 = Infinity;
-                    for (const enemy of this.enemies) {
-                        if (this._phasedOut?.(enemy)) continue;
-                        if (!enemy.sprite?.active || enemy.health <= 0) continue;
-                        const edx = enemy.sprite.x - s.sprite.x, edy = enemy.sprite.y - s.sprite.y;
-                        const d2  = edx * edx + edy * edy;
-                        if (enemy.isFrozen) {
-                            if (d2 < nearestFrozenDist2) { nearestFrozenDist2 = d2; nearestFrozen = enemy; }
-                        } else {
-                            if (d2 < nearestDist2) { nearestDist2 = d2; nearest = enemy; }
-                        }
-                    }
-                    // Prefer frozen target; fall back to nearest unfrozen
-                    s._homingTarget = nearestFrozen || nearest;
-                }
-
-                if (s._homingTarget) {
-                    const tx  = s._homingTarget.sprite.x, ty = s._homingTarget.sprite.y;
-                    const tdx = tx - s.sprite.x,          tdy = ty - s.sprite.y;
-                    const tlen = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
-                    // Steer velocity toward target
-                    s.vx += (tdx / tlen) * SPLINTER_SPEED * HOMING_STRENGTH;
-                    s.vy += (tdy / tlen) * SPLINTER_SPEED * HOMING_STRENGTH;
-                    // Clamp to max speed so homing doesn't accelerate forever
-                    const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
-                    if (speed > SPLINTER_SPEED * 1.25) {
-                        s.vx = (s.vx / speed) * SPLINTER_SPEED * 1.25;
-                        s.vy = (s.vy / speed) * SPLINTER_SPEED * 1.25;
-                    }
-                }
-            }
-
-            // ── Final-gen splitter recall: snap back toward player, destroy on arrival ──
-            if (s.isSplitter && s._isFinalGen && s.isRecalling) {
-                const RECALL_SPEED   = 220;
-                const RECALL_ACCEL   = 0.28;
-                const playerPx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const playerPy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const tdx = playerPx - s.sprite.x, tdy = playerPy - s.sprite.y;
-                const tlen = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
-                s.vx += (tdx / tlen) * RECALL_SPEED * RECALL_ACCEL;
-                s.vy += (tdy / tlen) * RECALL_SPEED * RECALL_ACCEL;
-                const spd = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
-                if (spd > RECALL_SPEED) { s.vx = (s.vx / spd) * RECALL_SPEED; s.vy = (s.vy / spd) * RECALL_SPEED; }
-                // Destroy when close enough to player
-                if (tlen < 18) {
-                    this.destroyIceShard(s); this.iceShards.splice(i, 1); continue;
-                }
-            }
-
-            // Heal orb: continuous DPS + one-time lifesteal per enemy, every 80ms
-            if (s.isHealShard && s.lastDamageTick !== undefined) {
-                if (time - s.lastDamageTick >= 80) {
-                    s.lastDamageTick = time;
-                    const orbX = s.sprite.x, orbY = s.sprite.y;
-                    for (const enemy of [...this.enemies]) {
-                        if (!enemy.sprite?.active) continue;
-                        if (enemy.fireImmune) continue;
-                        const dx = enemy.sprite.x - orbX, dy = enemy.sprite.y - orbY;
-                        if (dx * dx + dy * dy > (32 * 32)) continue;
-                        if (!enemy.iceImmune) {
-                            if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                            const _rd5178 = this.resolveElementalHit(enemy, s.damage, 'ice');
-                            if (_rd5178 === null) continue;
-                            enemy.health -= _rd5178;
-                            this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, _rd5178, '#00ff88');
-                            this.updateEnemyHealthBar(enemy);
-                            if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
-                        }
-                        if (!s.healedEnemies.has(enemy)) {
-                            s.healedEnemies.add(enemy);
-                            const cap = this.maxHealth + s._healMaxOverheal;
-                            if (this.health < cap) {
-                                const healed = Math.min(5, cap - this.health);
-                                this.health += healed;
-                                this.updateHUD();
-                                const hx = this.playerX * this.TILE_SIZE + this.TILE_SIZE / 2;
-                                const hy = this.playerY * this.TILE_SIZE + this.TILE_SIZE / 2;
-                                this.showDamageNumber(hx, hy - 20, healed, '#00ff88');
-                            }
-                        }
-                    }
-                    this.tweens.add({ targets: s.sprite, scaleX: 1.25, scaleY: 1.25, duration: 55, yoyo: true, ease: 'Quad.easeOut' });
-                }
-            }
-
-            // Enemy hit
+            // Enemy hit: _onHit handles immunity + damage + chill + shatter
             let destroyed = false;
             for (let enemy of [...this.enemies]) {
                 if (this._phasedOut?.(enemy)) continue;
                 if (s.hitEnemies?.has(enemy)) continue;
                 if (s.piercedEnemies?.has(enemy)) continue;
                 const ex = enemy.sprite.x, ey = enemy.sprite.y;
-
-                // Check distance from shard's path to enemy
-                const distToPath = this.distancePointToSegment(ex, ey, oldX, oldY, s.sprite.x, s.sprite.y);
-                const hitRadius = s.isBlock ? 16 : s.isHealShard ? 28 : 16;
-
-                if (distToPath < hitRadius) {
-                    if (s.isBlock) {
-                        // Always freeze on block hit
-                        this.damageEnemyIce(enemy, s.damage);
-                        // Instant, bar-skipping -- that is the ice block's whole point. But a cube
-                        // now, not a stun: this path predates the brittle rework entirely.
-                        this.makeIceCube(enemy, this.iceBlockFreezeDuration);
-                        this.spawnIceSplinter(ex, ey);
-                        this.spawnIceSplinter(ex, ey);
-                        this.destroyIceShard(s);
-                        this.iceShards.splice(i, 1);
-                        destroyed = true;
-                        break;
-                    } else if (s.isPierceSpike) {
-                        // ── PIERCE SPIKE ─────────────────────────────────
-                        if (s.hitEnemies.has(enemy)) continue;
-                        s.hitEnemies.add(enemy);
-
-                        // ── Spawn frost totem on FIRST hit ───────────────
-                        // Only the volley's centre spike (_plantsTotem): all three planted one.
-                        if (s.hitEnemies.size === 1 && s._plantsTotem) {
-                            this._spawnFrostTotem(ex, ey);
-                        }
-
-                        if (!enemy.iceImmune && !enemy.fireImmune && !enemy.elementImmune) {
-                            // Damage
-                            if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                            // full damage to the first enemy it pierces, 35% to the rest: the
-                            // shard is the single-target half of the weapon, the burst the crowd half
-                            const _rd5235 = this.resolveElementalHit(enemy, s.damage * (s.hitEnemies.size > 1 ? 0.35 : 1) * this._volleyMult(enemy, s.volleyId), 'ice');
-                            if (_rd5235 === null) continue;
-                            enemy.health -= _rd5235;
-                            this.showDamageNumber(ex, ey - 10, Math.round(_rd5235), '#aaeeff');
-                            this.updateEnemyHealthBar(enemy);
-                            if (enemy.health <= 0) { this.killEnemy(enemy); continue; }
-
-                            Fractal.fractalBurst(this, ex, ey, !!s._crit);
-                            // Freeze if not already frozen
-                            if (!enemy._iceCube) {
-                                this._destroyChillIndicator(enemy);
-                                this.makeIceCube(enemy, 4500);
-                                enemy._justFrozenAt = this.time.now;
-                                this.gainUltCharge(this.ultChargePerFreeze, 'ice');
-                                const ff = this.add.graphics().setDepth(4);
-                                ff.x = ex; ff.y = ey;
-                                ff.fillStyle(0xaaeeff, 0.45); ff.fillCircle(0, 0, 12);
-                                ff.fillStyle(0xffffff, 0.70); ff.fillCircle(0, 0, 5);
-                                this.tweens.add({ targets: ff, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 200, onComplete: () => ff.destroy() });
-                            }
-                        } else if (enemy.iceImmune) {
-                            // Pierce spike bypasses ice immunity — instantly freezes ice elementals
-                            if (!enemy._iceCube) {
-                                this._destroyChillIndicator(enemy);
-                                this.makeIceCube(enemy, 4500);
-                                enemy._justFrozenAt = this.time.now;
-                                this.gainUltCharge(this.ultChargePerFreeze, 'ice');
-                                this.showStatusText(ex, ey - 10, 'PIERCED!', '#ffffff');
-                                const ff = this.add.graphics().setDepth(4);
-                                ff.x = ex; ff.y = ey;
-                                ff.fillStyle(0xffffff, 0.9); ff.fillCircle(0, 0, 18);
-                                ff.fillStyle(0xaaeeff, 0.6); ff.fillCircle(0, 0, 10);
-                                this.tweens.add({ targets: ff, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 220, onComplete: () => ff.destroy() });
-                            }
-                        }
-                        // Keep mark visual following enemy each frame
-                        if (enemy._shatterMarkVisual && enemy.sprite?.active) {
-                            enemy._shatterMarkVisual.x = enemy.sprite.x;
-                            enemy._shatterMarkVisual.y = enemy.sprite.y - 20;
-                        }
-                        // Does NOT destroy — continues piercing
-                        // Pierce spike instant-freezes queen portals on tile
-                        const piercePortal = this.getPortalAt(tileX, tileY);
-                        if (piercePortal) {
-                            this.damagePortal(piercePortal, s.damage, { freeze: true, src: s });
-                        }
-                        // Apply instant freeze to boss if hit
-                        if (typeof this.freezeBossFromIceWeapon === 'function') {
-                            const btx = Math.floor(s.sprite.x / this.TILE_SIZE);
-                            const bty = Math.floor(s.sprite.y / this.TILE_SIZE);
-                            if (this.voltslimeBoss?.active &&
-                                Math.abs(btx - this.voltslimeBoss.tileX) <= 1 &&
-                                Math.abs(bty - this.voltslimeBoss.tileY) <= 1) {
-                                this.freezeBossFromIceWeapon(true);
-                            }
-                        }
-                    } else if (s.isSplitter) {
-                        // Splitter fragment — damages, shatters frozen, small AoE, pierces
-                        if (s.hitEnemies.has(enemy)) continue;
-                        s.hitEnemies.add(enemy);
-                        const hitDmg = (s.isRecalling ? (s._recallDamage || s.damage * 2.2) : s.damage) * this._volleyMult(enemy, s.volleyId);
-                        // Shatter mark multiplier — 4× purple, 3× gold
-                        // Marks: purple is x1.5 on everything now (in the resolve), so the splitter adds
-                        // nothing of its own to it; gold pays x1.25. They were 4x / 3x on top of brittle.
-                        const markMult = enemy._purpleMarked ? 1.0 : enemy._shatterMarked ? 1.25 : 1.0;
-                        const finalHitDmg = hitDmg * markMult;
-                        // Check frozen BEFORE immunity — frozen iceImmune enemies shatter
-                        if (enemy.isFrozen) {
-                            this._triggerShatterBurst(enemy, 1.6);   // fractal's shatter, as its spikes'
-                        } else if (!enemy.iceImmune && !enemy.fireImmune && !enemy.elementImmune) {
-                            if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                            const _rd5317 = this.resolveElementalHit(enemy, finalHitDmg, 'ice');
-                            if (_rd5317 === null) continue;
-                            enemy.health -= _rd5317;
-                            const dmgCol = enemy._purpleMarked ? '#cc44ff' : enemy._shatterMarked ? '#ffdd44' : s.isRecalling ? '#ffffff' : '#66ccff';
-                            this.showDamageNumber(ex, ey - 10, Math.round(_rd5317), dmgCol);
-                            this.updateEnemyHealthBar(enemy);
-                            this.gainUltCharge(this.ultChargePerHit);
-                            if (enemy.health <= 0) {
-                                if (enemy._shatterMarkVisual) { this.tweens.killTweensOf(enemy._shatterMarkVisual); enemy._shatterMarkVisual.destroy(); enemy._shatterMarkVisual = null; }
-                                if (enemy._shatterMarkTimer) { enemy._shatterMarkTimer.remove(); enemy._shatterMarkTimer = null; }
-                                this.killEnemy(enemy);
-                            }
-                        }
-                        // Small AoE ice explosion on each fragment hit: a little burst of ice (the hand-drawn flare)
-                        const AOE_RADIUS = 28;
-                        Fractal.fracMuzzle(this, ex, ey, false);
-                        // Damage nearby enemies in AoE radius
-                        for (const nearEnemy of [...this.enemies]) {
-                            if (this._phasedOut?.(nearEnemy)) continue;
-                            if (nearEnemy === enemy || s.hitEnemies.has(nearEnemy)) continue;
-                            if (!nearEnemy.sprite?.active) continue;
-                            const aex = nearEnemy.sprite.x, aey = nearEnemy.sprite.y;
-                            const adx = aex - ex, ady = aey - ey;
-                            if (adx*adx + ady*ady > AOE_RADIUS*AOE_RADIUS) continue;
-                            s.hitEnemies.add(nearEnemy);
-                            // Check frozen BEFORE immunity — frozen iceImmune enemies shatter
-                            if (nearEnemy.isFrozen) {
-                                this._triggerShatterBurst(nearEnemy);
-                            } else if (!nearEnemy.iceImmune && !nearEnemy.fireImmune && !nearEnemy.elementImmune) {
-                                const aoeDmg = finalHitDmg * 0.35;   // was 0.6
-                                const _rd5357 = this.resolveElementalHit(nearEnemy, aoeDmg, 'ice');
-                                if (_rd5357 === null) continue;
-                                nearEnemy.health -= _rd5357;
-                                this.showDamageNumber(aex, aey - 10, Math.round(_rd5357), s.isRecalling ? '#ffffff' : '#88ddff');
-                                this.updateEnemyHealthBar(nearEnemy);
-                                if (nearEnemy.health <= 0) this.killEnemy(nearEnemy);
-                            }
-                        }
-                        // Splitter fragments pierce — they don't stop on hit
-                        // Accumulate boss freeze stacks on each splitter hit
-                        if (typeof this.freezeBossFromIceWeapon === 'function') {
-                            const btx = Math.floor(s.sprite.x / this.TILE_SIZE);
-                            const bty = Math.floor(s.sprite.y / this.TILE_SIZE);
-                            if (this.voltslimeBoss?.active &&
-                                Math.abs(btx - this.voltslimeBoss.tileX) <= 1 &&
-                                Math.abs(bty - this.voltslimeBoss.tileY) <= 1) {
-                                this.freezeBossFromIceWeapon(false);
-                            }
-                        }
-                    } else if (s.isCannonShard) {
-                        if (s.piercedEnemies.has(enemy)) continue;
-                        s.piercedEnemies.add(enemy);
-                        if (s.isHealShard) {
-                            // New heal shard — projectile style, triggers on first hit
-                            if (s._onHit) s._onHit(enemy);
-                            this.destroyIceShard(s);
-                            this.iceShards.splice(i, 1);
-                            destroyed = true;
-                            break;
-                        } else if (s.isHealSplinter) {
-                            // Homing splinter — chill/shatter ice elementals, damage + heal on hit
-                            if (enemy.fireImmune || enemy.elementImmune) {
-                                // fire elementals immune to all ice
-                            } else if (enemy.isFrozen) {
-                                // SHATTER — works on all enemies including iceImmune
-                                this._triggerShatterBurst(enemy);
-                                const shatterHealBonus = (s._healAmount || 20) / 3;
-                                this.health = Math.min((this.maxHealth || 100) + (s._healMaxOverheal || 25), this.health + shatterHealBonus);
-                                if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
-                                const shb = this.add.graphics().setDepth(5);
-                                shb.x = ex; shb.y = ey;
-                                shb.fillStyle(0x00ffaa, 0.65); shb.fillCircle(0, 0, 16);
-                                shb.fillStyle(0xffffff, 0.90); shb.fillCircle(0, 0, 6);
-                                for (let ri = 0; ri < 6; ri++) {
-                                    const ra = (ri / 6) * Math.PI * 2;
-                                    shb.lineStyle(1.5, 0x88ffcc, 0.80);
-                                    shb.beginPath(); shb.moveTo(Math.cos(ra)*6, Math.sin(ra)*6); shb.lineTo(Math.cos(ra)*18, Math.sin(ra)*18); shb.strokePath();
-                                }
-                                this.tweens.add({ targets: shb, scaleX: 2.8, scaleY: 2.8, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => shb.destroy() });
-                            } else if (enemy.iceImmune) {
-                                // Ice elementals: no chip damage, chill is all they take.
-                                // Was freezeEnemy(1500) -- a hard stun, which also left them
-                                // eligible for shatter-on-hit while every other enemy was not.
-                                this.applyChill(enemy, this._chillCfg().IMMUNE);
-                                // Heal 1hp per hit even on iceImmune
-                                this.health = Math.min((this.maxHealth || 100) + (s._healMaxOverheal || 25), this.health + 1);
-                                if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
-                            } else {
-                                // Normal enemy — damage + chill + heal
-                                if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                                const _rd5422 = this.resolveElementalHit(enemy, s.damage, 'ice');
-                                if (_rd5422 === null) continue;
-                                enemy.health -= _rd5422;
-                                this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, Math.round(_rd5422), '#44ffaa');
-                                this.updateEnemyHealthBar(enemy);
-                                const _died = enemy.health <= 0;
-                                if (_died) this.killEnemy(enemy);
-                                // Chill only applies to something still alive -- stacking it
-                                // on a corpse rebuilt the indicator after killEnemy removed
-                                // it. Cannot early-out here: the heal below still owes the
-                                // player its hitpoint whether or not the enemy died.
-                                if (!_died) this.applyChill(enemy, this._chillCfg().DIRECT);
-                                // Heal 1hp per hit
-                                this.health = Math.min((this.maxHealth || 100) + (s._healMaxOverheal || 25), this.health + 1);
-                                if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
-                                const hb = this.add.graphics().setDepth(5);
-                                hb.x = ex; hb.y = ey;
-                                hb.fillStyle(0x00ff88, 0.70); hb.fillCircle(0, 0, 8);
-                                hb.fillStyle(0xffffff, 0.85); hb.fillCircle(0, 0, 3);
-                                this.tweens.add({ targets: hb, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 220, onComplete: () => hb.destroy() });
-                            }
-                            // Apply freeze stack to boss on splinter hit
-                            if (typeof this.freezeBossFromIceWeapon === 'function') {
-                                const btx = Math.floor(ex / this.TILE_SIZE);
-                                const bty = Math.floor(ey / this.TILE_SIZE);
-                                if (this.voltslimeBoss?.active &&
-                                    Math.abs(btx - this.voltslimeBoss.tileX) <= 1 &&
-                                    Math.abs(bty - this.voltslimeBoss.tileY) <= 1) {
-                                    this.freezeBossFromIceWeapon(false);
-                                }
-                            }
-                            this.destroyIceShard(s);
-                            this.iceShards.splice(i, 1);
-                            destroyed = true;
-                            break;
-                        } else if (s.isMiniHealShard) {
-                            // Fixed-direction mini shard — consumed on first hit
-                            if (enemy.fireImmune || enemy.elementImmune) {
-                                // skip
-                            } else if (enemy.isFrozen) {
-                                this._triggerShatterBurst(enemy, 1 / 7.5);
-                            } else if (!enemy.iceImmune) {
-                                if (this._phasedOut(enemy)) continue;   // phased out: not in the world
-                                const _rd5474 = this.resolveElementalHit(enemy, s.damage, 'ice');
-                                if (_rd5474 === null) continue;
-                                enemy.health -= _rd5474;
-                                this.showDamageNumber(ex, ey - 8, Math.round(_rd5474), '#44ffaa');
-                                this.updateEnemyHealthBar(enemy);
-                                // Every other ice hit site returns or continues here. This
-                                // one fell through, so it killed the enemy and THEN stacked
-                                // chill on the corpse -- which rebuilt the chill dots after
-                                // killEnemy had destroyed them, on something already spliced
-                                // out of this.enemies, so nothing could ever clean them up.
-                                if (enemy.health <= 0) { this.killEnemy(enemy); break; }
-                                this.applyChill(enemy, this._chillCfg().SPLASH);
-                            }
-                            // Heal per mini shard hit
-                            this.health = Math.min((this.maxHealth || 100) + 25, this.health + (s._healAmount || 1));
-                            if (typeof HUD !== 'undefined') HUD.prototype.updateHUD.call(this);
-                            // Small heal pip visual
-                            const hpG = this.add.graphics().setDepth(5);
-                            hpG.x = ex; hpG.y = ey;
-                            hpG.fillStyle(0x00ff88, 0.65); hpG.fillCircle(0, 0, 6);
-                            hpG.fillStyle(0xffffff, 0.85); hpG.fillCircle(0, 0, 2);
-                            this.tweens.add({ targets: hpG, scaleX: 2.0, scaleY: 2.0, alpha: 0, duration: 200, onComplete: () => hpG.destroy() });
-                            // Destroy on first hit
-                            if (this.damageBossAtTile(Math.floor(ex / this.TILE_SIZE), Math.floor(ey / this.TILE_SIZE), s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), undefined, 'ice')) this._shardBossSig(s);
-                            const _hsTX = Math.floor(ex / this.TILE_SIZE), _hsTY = Math.floor(ey / this.TILE_SIZE);
-                            const _hsP = this.getPortalAt(_hsTX, _hsTY);
-                            if (_hsP) this.damagePortal(_hsP, s.damage, { chill: true, src: s });
-                            this.destroyIceShard(s); this.iceShards.splice(i, 1); destroyed = true; break;
-                        } else {
-                            // Normal cannon shard — _onHit handles immunity + damage + chill + shatter
-                            if (s._onHit) s._onHit(enemy);
-                            this.spawnBounceImpact(ex, ey);
-                            const _csTX = Math.floor(s.sprite.x / this.TILE_SIZE);
-                            const _csTY = Math.floor(s.sprite.y / this.TILE_SIZE);
-                            if (this.damageBossAtTile(_csTX, _csTY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice')) this._shardBossSig(s);
-                            const _csP = this.getPortalAt(_csTX, _csTY);
-                            if (_csP) this.damagePortal(_csP, s.damage, { chill: true, src: s });
-                            if (s.isPiercing) {
-                                s.pierceCount++;
-                                if (s.pierceCount >= s.maxPierces) {
-                                    this.destroyIceShard(s); this.iceShards.splice(i, 1); destroyed = true; break;
-                                }
-                                // else continue piercing through
-                            } else {
-                                this.destroyIceShard(s); this.iceShards.splice(i, 1); destroyed = true; break;
-                            }
-                        }
-                    } else if (s.isTsunamiScatter) {
-                        // Tsunami scatter — pierce through enemies, shatter frozen ones
-                        s.hitEnemies.add(enemy);
-                        if (enemy.isFrozen) {
-                            this._triggerShatterBurst(enemy);
-                        } else {
-                            this.damageEnemyIce(enemy, s.damage);
-                            this.makeIceCube(enemy, 2800);
-                            this.spawnIceSplinter(ex, ey);
-                        }
-
-                        // Pierce up to 5 enemies before destroying
-                        if (s.hitEnemies.size >= 5) {
-                            this.destroyIceShard(s);
-                            this.iceShards.splice(i, 1);
-                            destroyed = true;
-                            break;
-                        }
-                    } else {
-                        // Small shard
-                        if (Math.random() < this.iceShardFreezeChance && !enemy._iceCube) {
-                            this.makeIceCube(enemy, 1500);
-                        }
-                        s.hitEnemies.add(enemy);
-                        if (this.ultDrainActive) {
-                            // Pierce: can hit up to 3 enemies
-                            if (s.hitEnemies.size >= 3) {
-                                this.destroyIceShard(s);
-                                this.iceShards.splice(i, 1);
-                                destroyed = true;
-                                break;
-                            }
-                        } else {
-                            // Normal: consumed on hit
-                            this.spawnBounceImpact(s.sprite.x, s.sprite.y);
-                            this.destroyIceShard(s);
-                            this.iceShards.splice(i, 1);
-                            destroyed = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            // Tile-based boss fallback — only fires if pixel check didn't already handle it
-            if (!destroyed && !s._hitBossThisFrame &&
-                (s.isCannonShard || s.isPierceSpike || s.isSplitter || s.isHealSplinter)) {
+                if (this.distancePointToSegment(ex, ey, oldX, oldY, s.sprite.x, s.sprite.y) >= 16) continue;   // (from the shard's path this frame)
+                s.piercedEnemies.add(enemy);
+                if (s._onHit) s._onHit(enemy);
+                this.spawnBounceImpact(ex, ey);
                 if (this.damageBossAtTile(tileX, tileY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice')) this._shardBossSig(s);
-                // Also hit queen portal on current tile — chill for ice shards
-                const fbPortal = this.getPortalAt(tileX, tileY);
-                if (fbPortal) {
-                    const isIceShard = s.isCannonShard || s.isPierceSpike || s.isSplitter || s.isHealSplinter;
-                    this.damagePortal(fbPortal, s.damage, isIceShard ? { chill: true, src: s } : { src: s });
-                }
+                const portal = this.getPortalAt(tileX, tileY);
+                if (portal) this.damagePortal(portal, s.damage, { chill: true, src: s });
+                if (!s.isPiercing || ++s.pierceCount >= s.maxPierces) { drop(i); destroyed = true; break; }
+                // else on through
             }
-
             if (destroyed) continue;
+            // Tile-based boss fallback — only if the pixel check didn't already handle it; a queen on the tile is chilled
+            if (!s._hitBossThisFrame) {
+                if (this.damageBossAtTile(tileX, tileY, s.damage * this._volleyMult(this._bossVolleyKey(), s.volleyId), s, 'ice')) this._shardBossSig(s);
+                const portal = this.getPortalAt(tileX, tileY);
+                if (portal) this.damagePortal(portal, s.damage, { chill: true, src: s });
+            }
         }
     }
 
@@ -1309,11 +540,6 @@ class WeaponSystem {
     }
 
     destroyIceShard(s) {
-        if (s.sprite._glow)           { this.tweens.killTweensOf(s.sprite._glow);     s.sprite._glow.destroy(); }
-        if (s.sprite._innerOrb)       { this.tweens.killTweensOf(s.sprite._innerOrb); s.sprite._innerOrb.destroy(); }
-        if (s.sprite._glowPulseTimer) { s.sprite._glowPulseTimer.remove(); s.sprite._glowPulseTimer = null; }
-        if (s._splitTimer)            { s._splitTimer.remove();  s._splitTimer  = null; }
-        if (s._recallTimer)           { s._recallTimer.remove(); s._recallTimer = null; }
         this.tweens.killTweensOf(s.sprite);
         s.sprite.destroy();
     }

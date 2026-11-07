@@ -28,30 +28,6 @@ class CombatSystem {
         cosmic_fists: 0.05, singularity_staff: 0.05,
     };
 
-
-    showCannotSwitchText(reason) {
-        // Dedupe — don't spam if already showing
-        if (this._cannotSwitchText && this._cannotSwitchText.active) return;
-
-        const txt = this.add.text(
-            this.scale.width / 2,
-            this.scale.height / 2 - 60,
-            `✕ CANNOT SWITCH\n${reason}`,
-            {
-                fontSize: '14px', fontFamily: 'monospace',
-                color: '#ff4444', stroke: '#000000', strokeThickness: 3,
-                fontStyle: 'bold', align: 'center'
-            }
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(30);
-
-        this._cannotSwitchText = txt;
-        this.tweens.add({
-            targets: txt, y: txt.y - 20, alpha: 0,
-            duration: 1000, ease: 'Quad.easeOut',
-            onComplete: () => { txt.destroy(); this._cannotSwitchText = null; }
-        });
-    }
-
     showStatusText(x, y, text, color = '#ffffff') {
         if (this._vfxStatusText?.(x, y, text, color)) return;   // "WET ×5", stacked, popping (Visuals.js)
         const txt = this.add.text(
@@ -1162,18 +1138,6 @@ class CombatSystem {
         // Mid-dash: the hit passes through you (ElementSystem.playerDash).
         if (this.time.now < (this._dashInvulnUntil || 0) && !this._ownWound) return;   // (a bleed's wound opens dashing or not)
         if (this._wheel?.('inv')) return;   // the Wheel of Fate: untouchable
-        // Untargetable during Thunderhead or Lightning Ult (Fork)
-        if (this.thunderheadActive || this.lightningUltInvuln) {
-            const ix = this._scrX(this.player.x);
-            const iy = this._scrY(this.player.y);
-            const txt = this.add.text(ix, iy - 20, 'IMMUNE', {
-                fontSize: '14px', fontFamily: 'monospace',
-                color: '#ffff88', stroke: '#000000', strokeThickness: 3, fontStyle: 'bold'
-            }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-            this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 600, ease: 'Quad.easeOut', onComplete: () => txt.destroy() });
-            return;
-        }
-
         // damageReductionMultiplier is Cosmic.js' (rewritten every frame); armor (Stats.js) is its own.
         // Then the armor talents (Stats.js): Aegis can absorb it outright.
         if (this.time.now < (this._iceFrostUntil || 0)) boosted(this._iceFrostCfg?.().TAKEN ?? 2, '#bff4ff');   // the ice ult: this cold, you're fragile
@@ -1219,11 +1183,6 @@ class CombatSystem {
                 if (by.sprite?.active && by.health > 0) this.applyChill?.(by, 0.34);
             }
         } finally { this._thornsHit = false; }   // Colossus Core: a share of the hit, back
-
-        // Cancel cosmic channeling — getting hit interrupts it
-        if (this.cosmicChanneling) {
-            this.stopCosmicChanneling(true); // true = interrupted
-        }
 
         this.health -= actualDamage;
         Telemetry.hurt(this, actualDamage, src ?? this._hitBy);
@@ -1523,23 +1482,6 @@ class CombatSystem {
 
         if (this.currentElement === targetElement) return;
 
-        // Block switching during active abilities
-        // Ice ult DOMAIN is allowed to persist through element switches — only block during
-        // the pre-domain tsunami wave phase (tsunamiActive && !_iceUltDomainActive)
-        const blockingState =
-            this.thunderheadActive ? 'THUNDERHEAD ACTIVE' :
-            // The fire ult (an auto-firing buff) and the black hole (a thing in the world) no
-            // longer hold you in their element: any ult can be cast from any element now, and
-            // these two keep working while you play something else.
-            this.cosmicCharging    ? 'CHARGING BEAM' :
-            this.cosmicContinuousLaserActive ? 'LASER ACTIVE' :
-            null;
-
-        if (blockingState) {
-            this.showCannotSwitchText(blockingState);
-            return;
-        }
-
         if (currentTime - this.lastElementSwitchTime < this.elementSwitchCooldown * (this._csSwitchMult?.() ?? 1)) {
             return;
         }
@@ -1547,16 +1489,6 @@ class CombatSystem {
         this.isPointerDown = false;
         this.clearEngineerBuildMode();
         this.clearEngineerTowerPreview();
-        if (this.cosmicChanneling) this.stopCosmicChanneling(false);
-
-        // Clean up cosmic charge indicator if mid-charge somehow
-        if (this.cosmicChargeIndicator) {
-            this.tweens.killTweensOf(this.cosmicChargeIndicator);
-            this.cosmicChargeIndicator.destroy();
-            this.cosmicChargeIndicator = null;
-        }
-        this.cosmicCharging = false;
-        this.cosmicContinuousLaserActive = false;
 
         // (Shots already flying keep going when you switch: each carries its own element, and a shard or fireball landing
         // after you've switched is how reactions are set up. They used to be cleared here.)

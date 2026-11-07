@@ -162,9 +162,6 @@ class GameScene extends Phaser.Scene {
         this._debrisTiles            = [];
         this._debrisWarnings         = [];
         this._fractureWeakPoints     = [];
-        this.lightningUltActive      = false;
-        this.lightningUltInvuln      = false;
-        this.lightningUltEndTime     = 0;
         // ────────────────────────────────────────────────────────────────────
         this.TILE_SIZE = 24;
         this.TILE_SCALE = 1.5;
@@ -223,11 +220,6 @@ class GameScene extends Phaser.Scene {
         this._iceUltDomainActive  = false;
         this._iceUltDetonate      = null;
         this._iceUltSweepsFired   = 0;
-        this._lightningUltSentries = null;
-        this._thunderheadTimerText = null; // stale references survive scene restarts otherwise
-        this._thunderheadAura      = null;
-        this._thunderheadOuterRing = null;
-        this._cloudSprite          = null;
         this._level3KeysCollected  = 0;
         this._voidKeys             = [];
         this._bossDoor             = null;
@@ -269,19 +261,6 @@ class GameScene extends Phaser.Scene {
         this.tsunamiPuddleDuration = 9000;
         this.tsunamiPuddleSlowDuration = 900;
 
-        // LIGHTNING: Thunderhead ult
-        this.thunderheadActive = false;
-        this.thunderheadEndTime = 0;
-        this.thunderheadDuration = 6000;
-        this.thunderheadGlideSpeed = 160; // px/s
-        this.thunderheadTrailVisuals = [];
-        this.thunderheadTrailInterval = 80;
-        this.thunderheadLastTrail = 0;
-        this.thunderheadTrailDamageRadius = 3;
-        this.thunderheadChainFalloff = 0.85;
-        this.thunderheadGlideX = 0;
-        this.thunderheadGlideY = 0;
-
         // Every ult's state (the scene object outlives a restart: dying mid-ult carried it into the next run,
         // and its per-frame watchers with it, since they run while these say the ult is up)
         this.ignitionActive = false; this._barrageOn = false; this._scorchHealt = 0;
@@ -289,10 +268,6 @@ class GameScene extends Phaser.Scene {
         this.tsunamiActive = false; this._iceUltDomainActive = false; this._iceUltDetonate = null;
         this._forkStop = false; this._forkAfter = null; this._forkSnapped = false;
         this._ultArmor = null; this._overflowBonus = {}; this._ultHit = null;
-        // LIGHTNING ULT state
-        this.lightningUltActive = false;
-        this.lightningUltInvuln = false;
-        this.lightningUltEndTime = 0;
 
         // Boss state reset
         this.voltslimeBoss = null;
@@ -451,16 +426,10 @@ class GameScene extends Phaser.Scene {
         this.iceShards = [];
         this.iceShardSpeed = 100;
         this.iceShardDamage = 1;
-        this.iceShardMaxBounces = 5;
-        this.iceShardFreezeChance = 0.02;   // 2% chance per hit to become a freeze block
         this.iceBlockChance = 0.15;          // 15% chance on fire to shoot a big freeze block instead
         this.iceBlockDamage = 5.0;
-        this.iceBlockFreezeDuration = 3000;
 
         this.lightningChainRange = 4;
-        this.baseLightningDamage = 0.7;
-        this.lightningChainFalloff = 0.5;
-        this.lightningUltChainFalloff = 0.95;
         this.lightningCooldown = 600;
         this.lightningMaxRange = 20;
 
@@ -499,47 +468,13 @@ class GameScene extends Phaser.Scene {
         // Amped mechanic
         this.superConductDuration = 5000;   // the orb's tuned 5s (this 10s was read only by unused code)
 
-        this.stormCloud = null;
-        this.stormCloudRadius = 8;
-        this.stormCloudCharge = 100;
-        this.stormCloudAutoAttackInterval = 250;
-        this.stormCloudLastAttack = 0;
-        this.stormCloudChargeDecayPerAttack = 3;
-        this.stormCloudActive = false;
-
-        this.stormField = null;
-        this.stormFieldRadius = 6;
-        this.stormFieldMaxRadius = 15;
-        this.stormFieldTickInterval = 75;
-        this.stormFieldLastTick = 0;
-        this.stormFieldDuration = 3000;
-        this.stormFieldLifeGainAmount = 600;
-        this.stormFieldLifeGainCooldown = 800;
-        this.stormFieldRadiusGrowthPerHit = 0.15;
-
         // COSMIC ELEMENT - BATTERY CHARGE SYSTEM
         this.cosmicBatteryCharges = 0; // start empty — must channel to earn
         this.cosmicMaxCharges = 10;
 
-        // Active channeling (F key)
-        this.cosmicChanneling = false;
-        this.cosmicChannelStartTime = 0;
-        this.cosmicChannelSecondsPerCharge = 2; // seconds of channeling per charge
-        this.cosmicChannelLastCharge = 0;         // last time a charge was earned
-        this.cosmicChannelVisual = null;
         this.cosmicDropChance = 0;   // Cosmic.js: the cosmic gem fills with time; kills drop nothing
 
-        this.cosmicCharging = false;
-        this.cosmicChargeStartTime = 0;
-        this.cosmicChargeHoldTime = 0; // how long holding
-        this.cosmicChargeIndicator = null;
-
-        // Beam properties
-        this.cosmicBaseBeamDamage = 1.0;
-        this.cosmicBeamWidth = 1.5; // tiles
-
         // Cosmic marks system
-        this.cosmicMarkDamagePerStack = 12; // bonus damage per mark consumed
         this.cosmicMaxMarks = 3; // max 3 marks per enemy
 
         // Black hole ult
@@ -619,15 +554,6 @@ class GameScene extends Phaser.Scene {
         this.ultChargePerLightningHit = 4.0; // lightning fist direct hit
         this.ultChargePerChain = 3.5;        // lightning per click
         this.ultChargePerFreeze = 6.0;       // ice freeze proc
-        this.ultChargePerCosmicMark = 8.0;   // cosmic mark consumed
-
-        // Cosmic continuous laser (during ult)
-        this.cosmicContinuousLaserActive = false;
-        this.cosmicUltActive = false;         // tracks if ult mode is active
-        this.cosmicLaserDrainInterval = 500; // drain 1 charge per second
-        this.cosmicLaserLastDrain = 0;
-        this.cosmicLaserTickInterval = 80;    // fire beam visual every 80ms
-        this.cosmicLaserLastTick = 0;
 
         this.damageReductionMultiplier = 1.0;
         this.attackSpeedMultiplier = 1.0;
@@ -838,11 +764,6 @@ class GameScene extends Phaser.Scene {
             }
 
             // (Ignition's marks go off on a key now, Settings 'detonate': a click only fires)
-
-            if (this.stormCloudActive && this.stormCloud && !this.stormCloud.thrown) {
-                this.throwLightning();
-                return;
-            }
 
             if (this.currentElement === 'lightning') {
                 // The engineerBuildMode branch that used to sit here placed a tower on
@@ -1233,9 +1154,7 @@ class GameScene extends Phaser.Scene {
         if (!this._slide && (_grav || time - this.lastMoveTime >= stepMs) && this.time.now >= (this._staggerUntil || 0) && this.time.now >= (this._glideUntil || 0) && !this._lifting) {   // (scene clock, not the loop's `time`: they part after a pause)   // Leaden: a corrupted book's curse; the Wheel of Fate; Double or Nothing's stagger
             let dx = 0, dy = 0;
 
-            const isCosmicCharging = this.currentElement === 'cosmic' && this.cosmicCharging;
-
-            if (!isCosmicCharging && !this.thunderheadActive && !this._playerRooted && !this._csRooted?.()) {
+            if (!this._playerRooted && !this._csRooted?.()) {
                 if (this._rtrial || _grav) {   // the rhythm trial: a step per press (held, the quickened step stepped again, off the slab), a tap kept till the step's free (the gravity room: a fall)
                     const U = this._rtUsed ||= {};
                     let pick = null;
@@ -1257,7 +1176,7 @@ class GameScene extends Phaser.Scene {
                 const newY = this.playerY + dy;
 
                 const enemyAtTarget = this.getEnemyAt(newX, newY);
-                if (enemyAtTarget && !this.thunderheadActive) {
+                if (enemyAtTarget) {
                     // Walking into an enemy hurts you, unless Ironhide's Spiked Hide turns it round.
                     if (PlayerStats.has(this, 'spiked')) this.damageEnemy(enemyAtTarget, 8 * this.damageScaling, this.currentElement);
                     else this.takeDamage(1, enemyAtTarget);
@@ -1323,47 +1242,6 @@ class GameScene extends Phaser.Scene {
                     this.player.setFrame(0);
                     this.isIdling = false;
                     if (this.nodeChannelActive) this.cancelNodeChannel();
-                    this.updateHUD();
-                    this._checkRoomNameDisplay();
-                    if (this.isLevel4) this._onPlayerStepCrumble(this.playerX, this.playerY);
-                    this._onPlayerStepWater(this.playerX, this.playerY, time);
-                }
-            }
-        }
-
-        // THUNDERHEAD: smooth glide movement overrides tile stepping
-        if (this.thunderheadActive) {
-            let gdx = 0, gdy = 0;
-            if (this.keys.W.isDown) gdy = -1;
-            else if (this.keys.S.isDown) gdy = 1;
-            if (this.keys.A.isDown) gdx = -1;
-            else if (this.keys.D.isDown) gdx = 1;
-
-            if (gdx !== 0 || gdy !== 0) {
-                const len = Math.sqrt(gdx * gdx + gdy * gdy);
-                const spd = this.thunderheadGlideSpeed * (delta / 1000); // speed is px/s
-                const nx = this.thunderheadGlideX + (gdx / len) * spd;
-                const ny = this.thunderheadGlideY + (gdy / len) * spd;
-
-                // Kill any tile-movement tweens that would fight the glide
-                this.tweens.killTweensOf(this.player);
-
-                // Pixel-accurate wall check: test leading edge (half-tile radius ahead)
-                const RADIUS = this.TILE_SIZE * 0.35;
-                const checkX = nx + (gdx / len) * RADIUS;
-                const checkY = ny + (gdy / len) * RADIUS;
-                const ntx = Math.floor(checkX / this.TILE_SIZE);
-                const nty = Math.floor(checkY / this.TILE_SIZE);
-                const inBounds = ntx >= 0 && ntx < this.WORLD_WIDTH && nty >= 0 && nty < this.WORLD_HEIGHT;
-                const passable = inBounds && (this.world[ntx][nty] === this.FLOOR) && !this.isInLockedRoom(ntx, nty);
-
-                if (passable) {
-                    this.thunderheadGlideX = nx;
-                    this.thunderheadGlideY = ny;
-                    this.playerX = Math.floor(nx / this.TILE_SIZE);
-                    this.playerY = Math.floor(ny / this.TILE_SIZE);
-                    this.player.x = nx;
-                    this.player.y = ny + this.SLIME_Y_OFFSET;
                     this.updateHUD();
                     this._checkRoomNameDisplay();
                     if (this.isLevel4) this._onPlayerStepCrumble(this.playerX, this.playerY);
@@ -1476,14 +1354,9 @@ class GameScene extends Phaser.Scene {
             this._redrawEngineerBuildRing();
         }
         this.updateTsunami(time);
-        this.updateStormCloud(time);
-        this.updateStormField(time);
-        this.updateThunderhead(time, delta);
 
         // Level 2 boss: updated once a frame, above. It was updated here a second time, so its
         // shots flew and turned at double their numbers; those are doubled where they are set.
-        this.updateCosmicChanneling(time);
-        this.updateCosmicCharge(time);
         // Black hole projectile removed - using laser ult instead
         this.updateCosmicBlackHoleProjectile(delta);
         this.updateCosmicBlackHole(time);

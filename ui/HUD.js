@@ -321,8 +321,6 @@ class HUD {
             ['#shell', (this._iceShellUntil || 0) > now, ALL],   // encased at the ice ult's end
             ['#fork', !!this._forkStop, ['dash', 'ult']],        // the Fork's stopped time
             ['#inhibit', inhibited, ['ult']],                    // an Ult Inhibitor's or Absorber's zone
-            ['#thunder', this.thunderheadActive, ['dash', 'swap']],
-            ['#beam', this.cosmicCharging || this.cosmicContinuousLaserActive, ['swap']],
             ['#scorch', this.ignitionActive, ['swap']],          // the fire ult holds you in fire
             ['#csform', this._csFormLock?.(), ['swap']],         // cosmic's transformation; rooted while it turns, aims and drops
             ['#csroot', this._csRooted?.(), ['dash']],
