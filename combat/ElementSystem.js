@@ -1420,12 +1420,16 @@ class ElementSystem {
             A.px = this.playerX; A.py = this.playerY;
             const ri = this.getCurrentPlayerRoom?.() ?? -1, gated = this._roomGated?.() && ri >= 0;
             const here = o => !gated || o.tutorialRoomIndex === undefined || o.tutorialRoomIndex === ri;   // forks stay in your room
+            // what each one lost this frame, all read before any splash lands (a splash read first hid its own hit: one blow to a
+            // whole crowd forked from a single enemy)
+            const hit = [];
             for (const e of this.enemies || []) {
                 if (!e.sprite?.active || e.health <= 0) { A.hp.delete(e); continue; }
                 const last = A.hp.has(e) ? A.hp.get(e) : e.health; A.hp.set(e, e.health);
-                const lost = last - e.health;
-                if (!(lost > 0)) continue;
-                const amt = Math.min(lost * C.SHARE, C.CAP * this.damageScaling), from = this._forkAim(e);
+                if (last - e.health > 0) hit.push([e, last - e.health, this._forkAim(e)]);
+            }
+            for (const [e, lost, from] of hit) {
+                const amt = Math.min(lost * C.SHARE, C.CAP * this.damageScaling);
                 for (const o of [...(this.enemies || [])]) {
                     if (o === e || !o.sprite?.active || o.health <= 0 || !here(o) || Math.hypot(o.x - e.x, o.y - e.y) > C.SPLASH_R) continue;
                     const d = this.resolveElementalHit(o, amt, 'lightning', true); if (d === null || !(d > 0)) continue;
