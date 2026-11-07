@@ -19,6 +19,14 @@ class CombatSystem {
     static CRIT_MULT = 1.5;
     static CRIT_DMG_CAP = 3;   // a crit never hits harder than x3, however much crit damage is stacked
     static CRIT_CAP = 0.5;
+    // Each weapon's own crit chance, before Keen, relics and Luck add theirs: precise single hitters
+    // crit more, rapid many-hit weapons less. Off with the variance (exact numbers).
+    static BASE_CRIT = {
+        flame_fists: 0.05, flame_sword: 0.1, magma_staff: 0.05, ignition: 0.03, ember_scythe: 0.05,
+        ice_fists: 0.05, icicle_cannon: 0.1, fractal_shard: 0.1, rimeguard: 0.05, boreal_trident: 0.05,
+        lightning_fists: 0.05, orb_emitter: 0.03, ball_lightning: 0.03, conductor: 0.03, thunder_glaive: 0.05,
+        cosmic_fists: 0.05, singularity_staff: 0.05,
+    };
 
 
     showCannotSwitchText(reason) {
@@ -82,13 +90,10 @@ class CombatSystem {
     _dmgShare(x, y, share, col) {
         const list = this._vfxNums, now = this.time.now, base = list?.filter(n => n.t === now && (!n.txt || n.txt.active)).pop();
         if (!base) { this.showDamageNumber(x + 16, y - 6, share, col); return; }
-        if (!base.txt) this._vfxNumDraw(base);   // (this one sits against it, so it can't wait its turn)
-        const bx = base.txt.x + base.txt.displayWidth / 2 + 3, pk = list.find(n => n.txt?.active && n.color === col && now - n.t < 300 && Math.abs(n.x - bx) < 40 && Math.abs(n.y0 - base.y0) < 20);
-        const fmt = v => v >= 9.95 ? String(Math.round(v)) : v.toFixed(1);
-        if (pk) { pk.total += share; pk.t = now; for (const t of pk.tw) t.stop(); pk.txt.setText('+' + fmt(pk.total)).setAlpha(1).setPosition(pk.x, pk.y0).setScale(1.2); pk.tw = this._vfxFloat?.(pk.txt); return; }
-        const txt = this.add.text(bx, base.y0, '+' + fmt(share), { fontSize: `${Math.max(9, Math.round(base.txt.style.fontSize ? parseInt(base.txt.style.fontSize) * 0.8 : 11))}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
-            color: col, stroke: '#05060a', strokeThickness: 4, resolution: 2 }).setOrigin(0, 0.5).setDepth(10).setScale(1.2);
-        list.push({ txt, x: bx, y: base.y, y0: base.y0, t: now, total: share, color: col, tw: this._vfxFloat?.(txt) });
+        // the number carries it and draws it beside itself when its turn comes (Visuals._vfxNumDraw): drawn at once, a hexed crowd
+        // redrew a dozen texts in one frame
+        base.share = (base.share || 0) + share; base.shareCol = col;
+        if (!base.due) { base.due = true; this._vfxNumQ.push(base); }
     }
     showDamageNumber(x, y, amount, color = '#ffffff') {
         if (!amount || amount <= 0) return;
@@ -97,17 +102,18 @@ class CombatSystem {
             this._lastDmg = null;
             if (color === '#ffffff') color = { fire: '#ff9a4a', ice: '#8ad8ff', lightning: '#ffe14a', cosmic: '#d79cff' }[L.el] || color;
             if (L.hex >= 0.5) {   // Hex's share, beside it in pink
-                this.showDamageNumber(x, y, amount - L.hex, this._critPending ? '#ffd34a' : color);   // (a crit's gold goes on this one)
+                this.showDamageNumber(x, y, amount - L.hex, color);   // (a crit's gold goes on this one)
                 this._dmgShare(x, y, L.hex, '#ff5fd2');
                 return;
             }
         }
-        if (this._critPending) {   // a crit (_hitRoll): gold, with a word over it now and then
+        const crit = this._critPending;
+        if (crit) {   // a crit (_hitRoll): a bigger rainbow number (gold here only so crits sum with crits), and a burst in the hit's colour (Visuals.js)
             this._critPending = false;
+            this._vfxCrit?.(x, y, color);
             color = '#ffd34a';
-            if (this.time.now - (this._critWordAt || -1e9) > 350) { this._critWordAt = this.time.now; this.showStatusText(x, y - 22, 'CRIT', '#ffd34a'); }
         }
-        if (this._vfxDamageNumber?.(x, y, amount, color)) return;   // merged, popping numbers (Visuals.js)
+        if (this._vfxDamageNumber?.(x, y, amount, color, crit)) return;   // merged, popping numbers (Visuals.js)
         const txt = this.add.text(
             x + (Math.random() - 0.5) * 12,
             y - 14,
@@ -295,7 +301,7 @@ class CombatSystem {
     // `el`: the hit's element, whose equipped weapon's Power level counts (WeaponLevels); the
     // element you hold when it isn't known (the boss paths pass none).
     // One hit's roll, at the two choke points (a hit goes through one or the other, never
-    // both): variance, then a crit if you have the chance for one (relics and boons, capped at
+    // both): variance, then a crit (the weapon's own chance, plus relics, books and boons, capped at
     // CRIT_CAP). A crit does ×CRIT_MULT, shows gold, and adds a touch of its element.
     _hitRoll(enemy, el) {
         const V = CombatSystem.DAMAGE_VARIANCE;
@@ -303,7 +309,7 @@ class CombatSystem {
         if (this._tick) return m;   // a burn tick isn't a hit: no crit, no procs (Kindling on a tick fed its own burn)
         const w = this.equippedWeapons?.[el || this.currentElement], luck = this._luckNow();
         const ie = this._thornsHit ? Enchants.n(w, 'iron_edge') : 0;   // Iron Edge: thorns crit twice as often, and harder
-        const c = Math.min(CombatSystem.CRIT_CAP, ((this._mods?.crit || 0) + Enchants.crit(w, luck) + luck * 0.003) * (ie ? 2 : 1));   // Luck: +0.3% crit a point (Fortune's Edge: more)
+        const c = Math.min(CombatSystem.CRIT_CAP, ((this._mods?.crit || 0) + (CombatSystem.DAMAGE_VARIANCE && CombatSystem.BASE_CRIT[w] || 0) + Enchants.crit(w, luck) + luck * 0.003) * (ie ? 2 : 1));   // Luck: +0.3% crit a point (Fortune's Edge: more)
         this._lastCrit = false;
         // Rhythm (an enchant): every nth hit with the weapon is a crit
         const every = Enchants.rhythm(w), beat = every && !this._critBusy && ((this._rhythm ??= {})[w] = ((this._rhythm[w] || 0) + 1) % every) === 0;

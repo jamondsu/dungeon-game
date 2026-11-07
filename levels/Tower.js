@@ -148,7 +148,7 @@ class TowerFloors {
         { id: 'thorns',   name: 'Spiked Hide', max: 5, col: 0xc8a070, text: t => `melee hits on you deal ${5 * t} back` },
         { id: 'greed',    name: 'Greed',       max: 5, col: 0xffd34a, text: t => `floors pay ${15 * t}% more glorps` },
         { id: 'mend',     name: 'Second Wind', max: 3, col: 0x9be08a, text: t => `a cleared floor heals ${10 * t}% more` },
-        { id: 'keen',     name: 'Keen Edge',   max: 5, col: 0xffd34a, text: t => `${5 * t}% of your hits crit (×1.5)` },
+        { id: 'keen',     name: 'Keen Edge',   max: 5, col: 0xffd34a, text: t => `+${5 * t}% crit chance (×1.5)` },
     ];
     // A boon's icon: assets/art/tw_picks, a 16px frame per boon named by its id, in its own colour.
 

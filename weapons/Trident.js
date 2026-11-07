@@ -42,8 +42,8 @@
 // (slam_*, spike_*, crys_*, shard/mist: the rime and the bursts).
 // ═══════════════════════════════════════════════════════════════════════════
 class Trident {
-    static CFG = { CD: 650, POKE_CD: 650, COMBO_MS: 1400, REACH: 9, WIDTH: 3, DMG: 4.8, SPIKE_DMG: 12, HIT_CHILL: 2, HIT_DAZE: 500, AFTER_THRUST: 650, SPINE_MS: 500, SPINE_HOLD: 500, CHILL: 0.3, SCALE: 1.25, GRIP: 10, JAB: 1.1,   // (GRIP: art px from the middle back to your hand; JAB: tiles the stab lunges; POKE_CD after the thrust, CD after the swipe)
-        WAVE_R: 4.5, WAVE_W: 7, WAVE_BOW: 0.22, WAVE_TAIL: 1.6, SWIPE_DMG: 4.8, SWEEP_MS: 300, AFTER_SWIPE: 450, SWIPE_FREEZE: 520, SWIPE_SPREAD: 400, SPINE_ROW: 5, SPINE_ROW_MS: 110, FREEZE_V: 0.9, FROZEN_MS: 1600, SHATTER_DMG: 10.2, SHATTER_R: 1.5, HIT_STOP: 30,   // (the swipe's boom, at its giant spine: SWEEP_MS + AFTER_SWIPE + SWIPE_SPREAD, the same as the thrust's, AFTER_THRUST + SPINE_MS)
+    static CFG = { CD: 650, POKE_CD: 650, COMBO_MS: 1400, REACH: 9, WIDTH: 3, DMG: 4.8, SPIKE_DMG: 12, HIT_CHILL: 2, HIT_DAZE: 500, AFTER_THRUST: 650, SPINE_MS: 500, SPINE_HOLD: 500, SPINE_HITS: 4, SPINE_TICK: 90, CHILL: 0.3, SCALE: 1.25, GRIP: 10, JAB: 1.1,   // (GRIP: art px from the middle back to your hand; JAB: tiles the stab lunges; POKE_CD after the thrust, CD after the swipe)
+        WAVE_R: 4.5, WAVE_W: 7, WAVE_BOW: 0.22, WAVE_TAIL: 1.6, SWIPE_DMG: 4.8, SWEEP_MS: 300, AFTER_SWIPE: 450, SWIPE_FREEZE: 520, SWIPE_SPREAD: 400, SPINE_ROW: 5, SPINE_ROW_MS: 110, FREEZE_V: 0.9, FROZEN_MS: 1600, SHATTER_DMG: 10.2, SHATTER_R: 1.5, BLAST_HITS: 3, BLAST_TICK: 110, HIT_STOP: 30,   // (the swipe's boom, at its giant spine: SWEEP_MS + AFTER_SWIPE + SWIPE_SPREAD, the same as the thrust's, AFTER_THRUST + SPINE_MS)
         LEAP_MS: 1000, LAND_MIN: 420, LEAP_UP: 250, LEAP_SPEED: 5, LEAP_H: 48, LEAP_TAU: 320, FALL_MS: 95,   // (the climb: LEAP_H x (1 - e^(-t / LEAP_TAU)), fast off the floor, ever slower toward LEAP_H, never still)
         SLAM_CD: 650, SLAM_R: 3, SLAM_DMG: 10.8, ERUPT_DMG: 21.6, AFTER_SLAM: 750, HEIGHT_K: 0.45, SLAM_STOP: 130,   // (HEIGHT_K: how much more the slam hits from the full base height than from the earliest landing)   // (the hitstops: ms, real time; LEAP_SPEED tiles a second; SLAM_R how far the slam's footprint reaches from where you land)
         SEA_W: 2.6, SEA_GAP: 6, SEA_RUSH: 200, CREST_GAP: 5, CHURN_MS: 110,  CRASH_STOP: 80, LANE_FREEZE: 90, LANE_HOLD: 100, JET_MS: 450, JET_FROST: 330, JET_CATCH: 300, JET_W0: 1, JET_W1: 2.6, NOSE: 0.75, SLAM_WAVE: 690, SLAM_FROST: 40,
@@ -325,7 +325,7 @@ class Trident {
 
     // An ice hit on e: through resistance, brittle and your damage (not damageEnemy: its ice hits have a free chance to cube), then
     // `chill` (applyChill's weight). Ice elementals take no damage, only the chill. 'kill' if it died.
-    static hit(S, e, dmg, chill = 0, col = '#aaeeff') {
+    static hit(S, e, dmg, chill = 0, col = '#aaeeff', more = false) {   // (more: a later blow of one hit, its ult charge already paid)
         if (S._roomGated?.() && e.tutorialRoomIndex !== undefined && e.tutorialRoomIndex !== S.getCurrentPlayerRoom()) return false;   // a room you haven't entered
         if (!e.iceImmune) {
             const d = S.resolveElementalHit(e, dmg, 'ice');
@@ -334,7 +334,7 @@ class Trident {
             S.showDamageNumber(e.sprite.x, e.sprite.y - 10, Math.round(d), col);
             CombatSystem.hitFlash(S, e, d, 'ice', 'tri_hit');
             S.updateEnemyHealthBar(e);
-            if (!e._noUlt) S.gainUltCharge?.(S.ultChargePerHit);
+            if (!e._noUlt && !more) S.gainUltCharge?.(S.ultChargePerHit);
             if (e.health <= 0) { S._destroyChillIndicator?.(e); S.killEnemy(e); return 'kill'; }
         }
         if (chill) S.applyChill(e, chill);
@@ -400,14 +400,26 @@ class Trident {
     // how far out on the slam a tile is, dx, dy from where you came down: 1 all round its squircle's rim, its corners too
     static rimK(dx, dy) { const x = Math.abs(dx), y = Math.abs(dy); return Math.max(x, y, (x + y) * 0.75) / Trident.CFG.SLAM_R; }
     // a hit of the combo, k of the way out: its number dim when it's weak, bright when it's a crest hit
-    static hitFar(S, e, dmg, chill, k, frost = false) {   // (frost: this hit pays Frost, and you see it come)
+    static hitFar(S, e, dmg, chill, k, frost = false, more = false) {   // (frost: this hit pays Frost, and you see it come; more: see hit)
         const hot = k >= Trident.CFG.FAR_HOT, x = e.sprite?.x, y = e.sprite?.y;
         S._numK = Trident.far(k) ** 1.2;   // (the number itself says how far out it landed: small and dim up close, huge and white on the crest)
-        const r = Trident.hit(S, e, dmg * Trident.far(k), chill, hot ? '#f2feff' : k < 0.5 ? '#6f9fc4' : '#aaeeff');
+        const r = Trident.hit(S, e, dmg * Trident.far(k), chill, hot ? '#f2feff' : k < 0.5 ? '#6f9fc4' : '#aaeeff', more);
         S._numK = 0;
         if (r && frost) CombatSystem.essence(S, x, y - 6, 'fx_trident', 'shard_1', 0x9fe8ff, hot ? 1.5 : 1);
-        if (r && hot) Trident.crestFx(S, x, y);
+        if (r && hot && !more) Trident.crestFx(S, x, y);
         return r;
+    }
+    // An aftershock's hit on e as n blows, tick ms apart, dmg in all (each k out for the Crest; the ult charge once, with the first):
+    // the ice bursting under it each time, hardest on the last. Its number climbs with them (hits on one spot add up). The first blow's result
+    static blows(S, e, dmg, k, n, tick, burst, jolt) {
+        const one = i => {
+            if (!S.sys?.isActive() || !e.sprite?.active || e.health <= 0 || S._phasedOut?.(e)) return false;
+            const r = Trident.hitFar(S, e, dmg / n, 0, k, false, i > 0), last = i === n - 1;
+            if (r && e.sprite?.active) { Trident.burst(S, e.sprite.x, e.sprite.y - 6, last ? burst : burst * 0.6); Trident.jolt(S, e, last ? jolt : 2); }
+            return r;
+        };
+        for (let i = 1; i < n; i++) S.time.delayedCall(tick * i, () => one(i));
+        return one(0);
     }
     // a crest hit landing: a burst, a ring of frost round it, and (no more than every 350ms) a crack
     static crestFx(S, x, y) {
@@ -428,7 +440,7 @@ class Trident {
     }
     // 1. The thrust: a quick poke down a line REACH tiles toward `aim`, WIDTH across (short of a wall): POKE_DMG, a little chill
     // and MARK_THRUST Rime marks on what it hits. Then the AFTERSHOCK (AFTER_THRUST later): the spine of ice erupts along the same line,
-    // your end to the tip, SPIKE_DMG to what's on it as it reaches it
+    // your end to the tip, SPIKE_DMG to what's on it as it reaches it, in SPINE_HITS blows SPINE_TICK apart
     static jab(S, aim) {
         const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, F = Trident.fx(S);
         Sfx.play(S, 'w_boreal_trident');
@@ -519,10 +531,10 @@ class Trident {
                             S.time.delayedCall(40 + 45 * g, () => S.sys?.isActive() && Trident.vertebra(S, sx, sy, 'spur', kk, life - 40 - 45 * g, (-uy * sd2 || Math.random() - 0.5) < 0));
                         }
                     }
-                    for (const e of [...(S.enemies || [])]) {   // the spine reaching this far: what's on the line here takes it, once
+                    for (const e of [...(S.enemies || [])]) {   // the spine reaching this far: what's on the line here takes it, in SPINE_HITS blows
                         if (hitAt.has(e) || !e.sprite?.active || e.health <= 0 || S._phasedOut?.(e) || !S.isInCurrentRoom(e.x, e.y)) continue;
                         const a = inLine(e); if (a < 0 || a > d + 0.3) continue;
-                        hitAt.add(e); if (Trident.hitFar(S, e, sd, 0, a / C.FAR_THRUST) && e.sprite?.active) { Trident.burst(S, e.sprite.x, e.sprite.y - 6, last ? 1.4 : 1); Trident.jolt(S, e, last ? 5 : 3); }
+                        hitAt.add(e); Trident.blows(S, e, sd, a / C.FAR_THRUST, C.SPINE_HITS, C.SPINE_TICK * pc, last ? 1.4 : 1, last ? 5 : 3);
                     }
                     if (last) {   // the great spike at the end: a heavier hit, a flash, a shake, a deeper crack
                         Trident.nova(S, x, y - 8, 1.3); S._vfxFlash?.(x, y - 16, 34, 0xd8fff4, 200, 0.55);
@@ -562,7 +574,7 @@ class Trident {
     // wide, WAVE_R out, a crescent: its ends trail the middle (WAVE_BOW) and start further out (WAVE_TAIL); a wall stops the stretch that meets it. What its crest reaches takes
     // SWIPE_DMG and MARK_SWIPE Rime marks, and enemy shots it reaches are knocked out of the air. The frost chases out through it from
     // you, catching it mid-crest, and AFTER_SWIPE after it's rolled it EXPLODES from you out, the blast taking SWIPE_SPREAD to reach the
-    // crest: SHATTER_DMG to what it covered as the blast gets there, and what's SHATTER_R tiles past the crest at the last of it; rime
+    // crest: SHATTER_DMG (in BLAST_HITS blows, BLAST_TICK apart) to what it covered as the blast gets there, and what's SHATTER_R tiles past the crest at the last of it; rime
     // spreads over its floor with the blast, which ends in a ROW of great spines along the crest, with the boom
     static swipe(S, aim) {
         const C = Trident.CFG, T = S.TILE_SIZE, now = S.time.now, pc = Trident.pace(S), st = Trident.st(S), HW = C.WAVE_W / 2, R = C.WAVE_R, PITCH = 18 / T;
@@ -655,7 +667,7 @@ class Trident {
                 for (const e of [...(S.enemies || [])]) {
                     if (blasted.has(e) || !live(e) || !inWave(e, d)) continue;
                     blasted.add(e);
-                    if (Trident.hitFar(S, e, sd, 0, crestK(e.x, e.y)) && e.sprite?.active) { if (!hits++) Glaive.hitstop(S, 60); Trident.burst(S, e.sprite.x, e.sprite.y - 6, 0.8); Trident.jolt(S, e, 3); }
+                    if (Trident.blows(S, e, sd, crestK(e.x, e.y), C.BLAST_HITS, C.BLAST_TICK * pc, 0.8, 3) && !hits++) Glaive.hitstop(S, 60);
                 }
                 if (i === Math.ceil(steps / 2) && Trident.tiles(S, cells, sd, crestK) && !hits++) Glaive.hitstop(S, 60);
                 for (const w of sea) {

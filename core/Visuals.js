@@ -1505,10 +1505,10 @@ void main() {
     // column of "-0.8".
     static NUM_BUDGET = 4;
     static numSize(v, k = 1) { return Math.round(Math.min(40, Math.min(28, 9 + Math.log2(1 + v) * 2.4) * k)); }   // world px, so x1.5 on screen
-    _vfxDamageNumber(x, y, amount, color = '#ffffff') {
+    _vfxDamageNumber(x, y, amount, color = '#ffffff', crit = false) {
         if (!amount || amount <= 0) return true;
         const now = this.time.now, list = this._vfxNums || (this._vfxNums = []), q = this._vfxNumQ || (this._vfxNumQ = []), size = VisualFX.numSize;
-        const K = this._numK || 1;   // (_numK: this hit's own scale, the Boreal Trident's Crest)
+        const K = (this._numK || 1) * (crit ? 1.25 : 1);   // (_numK: this hit's own scale, the Boreal Trident's Crest)
         for (let i = list.length - 1; i >= 0; i--) {
             const n = list[i];
             if (n.txt && (!n.txt.active || now - n.t > 1000)) { list.splice(i, 1); continue; }
@@ -1526,7 +1526,7 @@ void main() {
             if (!hit) break;
             y0 = hit.y0 - size(hit.total, hit.k) * 1.3 - 2;   // a step as tall as that number (a big one is drawn ~1.5x its font size)
         }
-        const n = { txt: null, x: x + (Math.random() - 0.5) * 10, y, y0, t: now, total: amount, color, k: K, due: true };
+        const n = { txt: null, x: x + (Math.random() - 0.5) * 10, y, y0, t: now, total: amount, color, k: K, crit, due: true };
         list.push(n); q.push(n);
         return true;
     }
@@ -1546,9 +1546,42 @@ void main() {
             n.txt.setText(str).setAlpha(1).setPosition(n.x, n.y0).setScale(1.35 + heft * 0.8);
         } else n.txt = this.add.text(n.x, n.y0, str, {
             fontSize: `${s}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
-            color: n.color, stroke: '#05060a', strokeThickness: 4, resolution: 2,
+            color: n.crit ? '#ffffff' : n.color, stroke: '#05060a', strokeThickness: n.crit ? 5 : 4, resolution: 2,   // (a crit is drawn white: its rainbow is a tint, free to change every frame where a new colour redraws the text)
         }).setOrigin(0.5).setDepth(10).setScale(1.5 + heft * 0.9).setAngle((Math.random() - 0.5) * 12 * heft);
         n.s = s; n.tw = this._vfxFloat(n.txt, heft);
+        if (n.crit) {   // a crit lands white-hot, then runs through the rainbow (two turns), and shakes as it settles
+            const txt = n.txt.clearTint(), h0 = Math.random(), c = h => Phaser.Display.Color.HSVToRGB((h0 + h) % 1, 0.6, 1).color;
+            n.tw.push(this.tweens.add({ targets: txt, angle: { from: Math.random() < 0.5 ? -16 : 16, to: 0 }, duration: 420, ease: 'Elastic.easeOut' }),
+                this.tweens.addCounter({ from: 0, to: 2, duration: 1400, delay: 70, onUpdate: tw => {
+                    const h = tw.getValue();
+                    if (txt.active) txt.setTint(c(h), c(h + 0.2), c(h + 0.1), c(h + 0.3));
+                } }));
+        }
+        if (n.share) {   // a boost's share of it ("+N" in its colour, Hex's pink), right beside it and drawn in its turn (CombatSystem._dmgShare)
+            const t2 = '+' + (n.share >= 9.95 ? String(Math.round(n.share)) : n.share.toFixed(1)), sx = n.txt.x + n.txt.displayWidth / 2 + 3;
+            if (n.stxt?.active) { for (const t of n.stw) t.stop(); n.stxt.setText(t2).setAlpha(1).setPosition(sx, n.y0).setScale(1.2); }
+            else n.stxt = this.add.text(sx, n.y0, t2, { fontSize: `${Math.max(9, Math.round(s * 0.8))}px`, fontFamily: UIKit.FONT.title, fontStyle: 'bold',
+                color: n.shareCol, stroke: '#05060a', strokeThickness: 4, resolution: 2 }).setOrigin(0, 0.5).setDepth(10).setScale(1.2);
+            n.stw = this._vfxFloat(n.stxt);
+        }
+    }
+    // A crit, where it lands: a flash and a ring in the hit's colour, gold stars flung out, a bright tink. (No hitstop: crits
+    // come several a second in a fight, and a freeze each read as lag.)
+    _vfxCrit(x, y, color) {
+        const now = this.time.now, col = /^#[0-9a-f]{6}$/i.test(color) && color !== '#ffffff' ? parseInt(color.slice(1), 16) : 0xffd34a, ADD = Phaser.BlendModes.ADD;
+        Sfx.play(this, 'crit');
+        if (now !== this._critFxT) { this._critFxT = now; this._critFxN = 0; }
+        if (this._critFxN++ >= 3 || !this.textures.exists('cfx_bits') || !this.textures.exists('vfx_ring')) return;   // a crowd critting at once: three bursts read as well as twenty
+        const fl = this.add.image(x, y, 'vfx_glow').setTint(col).setBlendMode(ADD).setScale(0.25).setAlpha(0.8).setDepth(6);
+        this.tweens.add({ targets: fl, scale: 0.5, alpha: 0, duration: 180, ease: 'Quad.easeOut', onComplete: () => fl.destroy() });
+        const r = this.add.image(x, y, 'vfx_ring').setTint(col).setBlendMode(ADD).setScale(0.25).setDepth(6);
+        this.tweens.add({ targets: r, scale: 1.15, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => r.destroy() });
+        for (let i = 0; i < 8; i++) {
+            const a = i / 8 * Math.PI * 2 + Math.random() * 0.4, d = 22 + Math.random() * 12;
+            const st = this.add.image(x, y, 'cfx_bits', 'star').setBlendMode(ADD).setScale(i % 2 ? 1.7 : 2.2).setDepth(6);   // (the stars stay their own gold, the crit's colour: tinted, gold turned ice green)
+            this.tweens.add({ targets: st, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, scale: 0.4, alpha: 0, angle: 90,
+                duration: 340 + Math.random() * 100, ease: 'Quad.easeOut', onComplete: () => st.destroy() });
+        }
     }
     // Status words (WET, BRITTLE, SLOWED...). The same word popping on several enemies at once
     // becomes one word with a count ("WET ×5"), and different words at one spot stack instead of

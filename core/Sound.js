@@ -15,7 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Sfx = {
-    GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, heal: 200,
+    GAP: { cspierce: 60, csbeam: 80, csplace: 60, hit: 45, kill: 60, hurt: 120, pickup: 50, hover: 60, click: 40, eshoot: 70, block: 60, clink: 90, crit: 70, heal: 200,
            w_orb_emitter: 70, w_lightning_fists: 50, zap: 35, orbhit: 60, blburst: 120, w_ice_fists: 50, w_flame_fists: 50, boom: 50, tri_boom: 80, tri_crack: 70, tri_frost: 60, tri_hit: 45, tri_surge: 120, freeze: 80, shatter: 80, pop: 60, ignite: 150, sburn: 220,
            lava_splat: 70, meteor_fall: 220, meteor_hit: 80, kindle_boom: 90, gale: 150, lava_pop: 400, sear: 450, blip: 60, bosshit: 70,
            tell: 120, swing: 60, slam: 80, laser_charge: 150, laser_fire: 80, portal: 120, lob: 80, pulse: 150, mine: 80, spawn: 60, split: 100, status: 200, rready: 300, snap: 100, coin: 40, splash: 90, bubbles: 200 },
@@ -862,6 +862,11 @@ const Sfx = {
             this._tone(ctx, t, { type: 'triangle', f0: 1200 * j, f1: 900, dur: 0.18, vol: 0.1 });
             this._tone(ctx, t, { type: 'sine', f0: 1800 * j, dur: 0.25, vol: 0.05 });
             this._noise(ctx, t, { filter: 'highpass', f0: 4000, dur: 0.05, vol: 0.08 });
+        },
+        crit(ctx, t, o, j) {               // a crit landing: a bright rising tink over the hit
+            this._tone(ctx, t, { type: 'triangle', f0: 1900 * j, f1: 2600, dur: 0.07, vol: 0.06 });
+            this._tone(ctx, t + 0.015, { type: 'sine', f0: 3800 * j, dur: 0.16, vol: 0.035 });
+            this._noise(ctx, t, { filter: 'highpass', f0: 5000, dur: 0.03, vol: 0.05 });
         },
         clink(ctx, t, o, j) {              // a hit glancing off a resistance
             if (this._rec(ctx, t, { name: 'block', rate: 1.5 + Math.random() * 0.3, vol: 0.07 })) return;

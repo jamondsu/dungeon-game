@@ -119,4 +119,19 @@ if (typeof Phaser !== 'undefined' && Phaser.Renderer?.WebGL?.Pipelines?.MultiPip
         stroke.call(this, kept, lineWidth, pathOpen, currentMatrix, parentMatrix);
         kept.length = 0;
     };
+    // Those 100 points are new objects every frame for as long as the arc is drawn (a dazed crowd's stars, a reaction's
+    // sparks, every rounded panel), and the heap filled with them till the browser stopped to sweep, a lag spike. So an arc
+    // is recorded as the straight lines its size needs, a quarter pixel off true at up to 3x on screen (a 1px circle 8
+    // sides, a 100px one ~80), in the same order the renderer walked it (its own rule for which way round and how far).
+    const GP = Phaser.GameObjects.Graphics.prototype, arc = GP.arc, PI2 = Math.PI * 2;
+    GP.arc = function (x, y, radius, startAngle, endAngle, anticlockwise = false, overshoot = 0) {
+        if (!(radius > 0.05) || overshoot) return arc.call(this, x, y, radius, startAngle, endAngle, anticlockwise, overshoot);   // (nothing here overshoots)
+        let sweep = endAngle - startAngle;
+        if (anticlockwise) { if (sweep < -PI2) sweep = -PI2; else if (sweep > 0) sweep = -PI2 + sweep % PI2; }
+        else if (sweep > PI2) sweep = PI2; else if (sweep < 0) sweep = PI2 + sweep % PI2;
+        const n = Math.min(100, Math.max(4, Math.ceil(Math.abs(sweep) / (2 * Math.acos(Math.max(-1, 1 - 0.25 / (3 * radius)))))));
+        for (let i = 0; i < n; i++) { const a = startAngle + sweep * i / n; this.lineTo(x + Math.cos(a) * radius, y + Math.sin(a) * radius); }
+        const a = startAngle + sweep;
+        return this.lineTo(x + Math.cos(a) * radius, y + Math.sin(a) * radius);
+    };
 }
