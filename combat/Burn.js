@@ -56,6 +56,14 @@ class Burn {
         }
     }
 
+    // A burn tick's ult charge (gainUltCharge's 'tick'): never a reaction, the same whatever the fire weapon, and a crowd's ticks
+    // count as at most TICK_CROWD burning enemies' between them: a burning crowd under another status filled a gem in seconds
+    _burnCharge() {
+        const C = this._ultCfg(), now = this.time.now;
+        if (this._burnN?.t !== now) this._burnN = { t: now, n: (this.enemies || []).filter(e => e.sprite?.active && (e.burnStacks > 0 || e.superBurn > 0)).length };
+        this.gainUltCharge(this.ultChargePerBurnTick * Math.min(1, C.TICK_CROWD / Math.max(1, this._burnN.n)), 'fire', false, 'tick');
+    }
+
     // n stacks onto an enemy. Not on ice elementals, not on anything out of the world.
     applyBurnStack(enemy, n = 1) {
         if (!enemy?.sprite?.active || enemy.health <= 0) return;
@@ -125,7 +133,7 @@ class Burn {
                     this._tick = true; let dmg; try { dmg = this.resolveElementalHit(enemy, B.PER_TICK[enemy.superBurn] * this.damageScaling + B.PCT_TICK[enemy.superBurn] * (enemy.maxHealth || 0) * (enemy.isBoss ? this._burnCfg().BOSS_PCT : 1), 'fire', true); } finally { this._tick = false; }   // a tick, not a hit
                     if (dmg !== null && dmg > 0) {
                         enemy.health -= dmg;
-                        this.gainUltCharge(this.ultChargePerBurnTick, 'fire');
+                        this._burnCharge();
                         this._scorchHeal();
                         if (enemy.sprite?.active) this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, '#ffe08a');
                         this.updateEnemyHealthBar(enemy);
@@ -297,7 +305,7 @@ class Burn {
             if (!(boss.burnStacks > 0)) return;
             if (!boss._isInvulnerable) {
                 this._tick = true; try { hurt(B.PER_TICK[boss.burnStacks] * this.damageScaling + B.PCT_TICK[boss.burnStacks] * B.BOSS_PCT * (boss.maxHp || boss.maxHealth || 0)); } finally { this._tick = false; }   // a tick, not a hit; a boss takes BOSS_PCT of the percent part
-                this.gainUltCharge(this.ultChargePerBurnTick, 'fire');
+                this._burnCharge();
             }
             boss._burnDoTTimer = this.time.delayedCall(B.TICK_MS, tick);
         };
@@ -345,7 +353,7 @@ class Burn {
                 this._tick = true; let dmg; try { dmg = this.resolveElementalHit(enemy, raw, 'fire', true); } finally { this._tick = false; }   // a tick, not a hit
                 if (dmg !== null && dmg > 0) {
                     enemy.health -= dmg;
-                    this.gainUltCharge(this.ultChargePerBurnTick, 'fire');
+                    this._burnCharge();
                     this._scorchHeal();   // Scorch: burn ticks heal you
                     if (enemy.sprite?.active) this.showDamageNumber(enemy.sprite.x, enemy.sprite.y - 8, dmg, enemy._purpleMarked ? '#ff44ff' : '#ff8800');
                     this.updateEnemyHealthBar(enemy);

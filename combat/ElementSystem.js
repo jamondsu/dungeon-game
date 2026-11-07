@@ -189,6 +189,10 @@ class ElementSystem {
                 singularity_staff: 0,
                 void_blade:        0,
             },
+            // A burn tick charges TICK_MULT (not its fire weapon's WEAPON_MULT: those make up for how fast each one hits, and a tick
+            // is a tick; the Flame Fists' 0.3 filled a gem in 3.5s off a Hexed crowd's burn), and a crowd's ticks count as at most
+            // TICK_CROWD burning enemies' (Burn._burnCharge). Never a reaction.
+            TICK_MULT: 0.1, TICK_CROWD: 5,
             // The one knob for all of the above: 1.5 fills every gem in ~30s of camping, 0.75 in
             // ~60s. Rotating stays about twice as fast either way.
             CHARGE_SCALE: 1,

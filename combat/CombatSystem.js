@@ -1349,7 +1349,7 @@ class CombatSystem {
     // number keys, because the status has to be on the enemy first.
     //
     // `raw` amounts (pickups, tutorial kills) are a flat share of a gem: no weapon scaling,
-    // no reaction bonus.
+    // no reaction bonus. `reaction` 'tick': a burn tick's (Burn._burnCharge), TICK_MULT for every weapon, never a reaction.
     gainUltCharge(amount, element = null, raw = false, reaction = null) {
         if (!this.ultGems) return;
         const C = this._ultCfg();
@@ -1360,8 +1360,9 @@ class CombatSystem {
         const max = this.ultChargeMax;
         let amt = amount;
         if (!raw) {
-            amt *= (C.WEAPON_MULT[this.equippedWeapons?.[el]] ?? 1) * C.CHARGE_SCALE;
-            const reacted = reaction !== null ? (reaction === 'residue' ? 'residue' : reaction ? 'full' : null) : hit && hit.el === el ? hit.reaction : null;
+            const tick = reaction === 'tick';
+            amt *= (tick ? C.TICK_MULT : C.WEAPON_MULT[this.equippedWeapons?.[el]] ?? 1) * C.CHARGE_SCALE;
+            const reacted = tick ? null : reaction !== null ? (reaction === 'residue' ? 'residue' : reaction ? 'full' : null) : hit && hit.el === el ? hit.reaction : null;
             amt *= (this._mods?.ult ?? 1) * Enchants.ult(this.equippedWeapons?.[el]);   // relics and Tower boons; the weapon's enchants
             if (reacted) {
                 amt *= (reacted === 'residue' ? C.RESIDUE_MULT : C.REACTION_MULT) * (this._mods?.react ?? 1) * Enchants.react(this.equippedWeapons?.[el]);
