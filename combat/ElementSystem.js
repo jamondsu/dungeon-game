@@ -167,21 +167,21 @@ class ElementSystem {
             // (reactions). Re-measured 2026-10-17: lava stopped dealing damage (and charging) in
             // the burn rework, which took fire's raw rates down to a third.
             WEAPON_MULT: {
-                flame_fists:       0.3011,   // raw 7.38/s (was 23.08)
+                flame_fists:       0.42,     // raw 5.29/s (2026-11-07; was 7.38, burn ticks no longer by this)
                 flame_sword:       0.2308,   // raw 9.63/s (was 33.11)
-                magma_staff:       0.1016,   // raw 21.87/s (was 51.4)
+                magma_staff:       0.14,     // raw 15.5/s (2026-11-07; was 21.87)
                 ignition:          0.0827,   // raw 26.9/s as the flamethrower (2026-10-20; it filled in 98s at 0.038)
-                ember_scythe:      0.09,     // (first guess, unmeasured)
+                ember_scythe:      0.24,     // raw 9.3/s (2026-11-07; souls and the Heat Wave on top)
                 ice_fists:         0.2788,   // raw 7.97/s
                 icicle_cannon:     0.1475,   // raw 15.07/s
-                fractal_shard:     0.0278,   // raw 79.9/s
-                rimeguard:         0.09,     // (first guess, unmeasured)
-                boreal_trident:    0.09,     // (first guess, unmeasured)
+                fractal_shard:     0.17,     // raw 13.03/s (2026-11-07; was 79.9 with splitting shards; the Shard Storm on top)
+                rimeguard:         0.12,     // raw 18.77/s (2026-11-07)
+                boreal_trident:    0.15,     // raw 15/s, clicks (2026-11-07; the geysers and Frostkin on top)
                 lightning_fists:   0.1599,   // raw 13.9/s
                 orb_emitter:       0.131,    // raw 16.96/s (was 5.9: its forks amp now)
                 ball_lightning:    0.074,    // raw 30.03/s
-                conductor:         0.09,     // (first guess, unmeasured)
-                thunder_glaive:    0.09,     // (first guess, unmeasured)
+                conductor:         0.45,     // raw 4.89/s, the button held (2026-11-07; its currents on top)
+                thunder_glaive:    0.04,     // raw 54.6/s (2026-11-07; the coils on top)
                 // The cosmic gem fills with time (Cosmic.js), never from hits, so these are moot.
                 cosmic_fists:      0,
                 barrier_staff:     0,
